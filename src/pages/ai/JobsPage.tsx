@@ -384,6 +384,9 @@ export function JobsPage(): JSX.Element {
         <div className="jobs-hero-meta">
           <span className={`live-pill${isLiveWindow ? " is-live" : ""}`}>{isLiveWindow ? "Live" : "Delayed"}</span>
           <small>Last update: {globalLastUpdated}</small>
+          {!isLiveWindow ? (
+            <small className="jobs-live-reminder">No recent updates. Check VPN/backend connectivity.</small>
+          ) : null}
         </div>
       </header>
 

@@ -19,45 +19,53 @@ export function AccountPage(): JSX.Element {
       <PageHeader title="Account" subtitle="Manage profile and display preferences." />
 
       <section className="account-grid">
-        <article className="panel">
+        <article className="panel account-panel">
           <h2>Profile Information</h2>
-          <div className="account-inline">
+          <div className="account-inline account-profile-head">
             {session?.role === "ai_manager" ? (
               <img className="account-avatar" src={AI_AVATAR_URL} alt={session.name} />
             ) : (
               <UserCircle2 size={56} />
             )}
-            <div>
-              <label>
-                <span>Full name</span>
-                <input value={name} onChange={(event) => setName(event.target.value)} />
-              </label>
-
-              <label>
-                <span>Email</span>
-                <input value={email} onChange={(event) => setEmail(event.target.value)} />
-              </label>
-
-              <label>
-                <span>Role</span>
-                <input value={session?.role.replaceAll("_", " ") || "-"} disabled />
-              </label>
+            <div className="account-identity">
+              <strong>{name || session?.name || "User"}</strong>
+              <small>{email || session?.email || "-"}</small>
+              <span className="badge badge-neutral">{session?.role.replaceAll("_", " ") || "unknown"}</span>
             </div>
           </div>
 
-          <Button
-            variant="primary"
-            iconLeft={<Save size={14} />}
-            onClick={() => {
-              updateProfile({ name, email });
-              notifySuccess("Profile updated", "Changes were saved in your local session.");
-            }}
-          >
-            Save changes
-          </Button>
+          <div className="account-form-grid">
+            <label>
+              <span>Full name</span>
+              <input value={name} onChange={(event) => setName(event.target.value)} />
+            </label>
+
+            <label>
+              <span>Email</span>
+              <input value={email} onChange={(event) => setEmail(event.target.value)} />
+            </label>
+
+            <label className="full-col">
+              <span>Role</span>
+              <input value={session?.role.replaceAll("_", " ") || "-"} disabled />
+            </label>
+          </div>
+
+          <div className="account-actions">
+            <Button
+              variant="primary"
+              iconLeft={<Save size={14} />}
+              onClick={() => {
+                updateProfile({ name, email });
+                notifySuccess("Profile updated", "Changes were saved in your local session.");
+              }}
+            >
+              Save changes
+            </Button>
+          </div>
         </article>
 
-        <article className="panel">
+        <article className="panel account-panel">
           <h2>Display</h2>
           <p>Switch between light and dark console themes.</p>
 

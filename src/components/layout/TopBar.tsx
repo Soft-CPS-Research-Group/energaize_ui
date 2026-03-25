@@ -1,6 +1,7 @@
 import {
   Bell,
   ChevronDown,
+  ExternalLink,
   FileText,
   Menu,
   Settings2
@@ -39,12 +40,12 @@ export function TopBar(): JSX.Element {
         <Link className="brand" to={brandLink}>
           <img
             className="brand-logo brand-logo-light"
-            src="/assets/logos/energaize-dark.png"
+            src="/assets/logos/energaize-light.png"
             alt={APP_NAME}
           />
           <img
             className="brand-logo brand-logo-dark"
-            src="/assets/logos/energaize-light.png"
+            src="/assets/logos/energaize-dark.png"
             alt={APP_NAME}
           />
         </Link>
@@ -90,6 +91,17 @@ export function TopBar(): JSX.Element {
       </nav>
 
       <div className="topbar-right">
+        <a
+          className="icon-btn"
+          href="http://193.136.62.78:5000/#/"
+          target="_blank"
+          rel="noreferrer"
+          title="Open MLflow"
+          aria-label="Open MLflow"
+        >
+          <ExternalLink size={16} />
+        </a>
+
         <Link className={`icon-btn${location.pathname === "/app/logs" ? " is-active" : ""}`} to="/app/logs" title="Logs">
           <FileText size={16} />
         </Link>

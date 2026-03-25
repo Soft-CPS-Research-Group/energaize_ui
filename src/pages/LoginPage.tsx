@@ -7,6 +7,18 @@ import { APP_NAME, LOGIN_BACKGROUNDS } from "../constants";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
 
+const LOGIN_CLAIMS = [
+  "Monitor. Optimize. Coordinate.",
+  "Clean energy. Better decisions.",
+  "Train smarter, operate faster.",
+  "From data to action, in one console.",
+  "Small grid, big intelligence.",
+  "Keep calm and optimize the grid.",
+  "Forecast today, save tomorrow.",
+  "Less guesswork. More green power.",
+  "Turning kWh into smart choices."
+] as const;
+
 export function LoginPage(): JSX.Element {
   const { session, login } = useAuth();
   const { theme, setTheme } = useUI();
@@ -18,11 +30,19 @@ export function LoginPage(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bgIndex, setBgIndex] = useState(0);
+  const [claimIndex, setClaimIndex] = useState(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       setBgIndex((previous) => (previous + 1) % LOGIN_BACKGROUNDS.length);
     }, 9000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setClaimIndex((previous) => (previous + 1) % LOGIN_CLAIMS.length);
+    }, 3200);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -84,21 +104,19 @@ export function LoginPage(): JSX.Element {
         transition={{ duration: 0.4, ease: "easeOut" }}
       >
         <form className="login-card" onSubmit={onSubmit}>
-          <header>
-            <div className="logo-row">
+          <header className="login-branding">
+            <div className="logo-row login-logo-center">
               <img
                 className="login-brand login-brand-light"
-                src="/assets/logos/energaize-dark.png"
+                src="/assets/logos/energaize-light.png"
                 alt={APP_NAME}
               />
               <img
                 className="login-brand login-brand-dark"
-                src="/assets/logos/energaize-light.png"
+                src="/assets/logos/energaize-dark.png"
                 alt={APP_NAME}
               />
             </div>
-            <h1>Log in to EnergAIze</h1>
-            <p>Intelligent Energy Communities Management</p>
           </header>
 
           <label>
@@ -157,14 +175,15 @@ export function LoginPage(): JSX.Element {
             {loading ? "Signing in..." : "Log in"}
           </button>
 
-          <motion.div
+          <motion.p
+            key={LOGIN_CLAIMS[claimIndex]}
             className="login-claim"
-            initial={{ opacity: 0.3 }}
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.26, ease: "easeOut" }}
           >
-            Monitor. Optimize. Coordinate.
-          </motion.div>
+            {LOGIN_CLAIMS[claimIndex]}
+          </motion.p>
         </form>
 
       </motion.main>

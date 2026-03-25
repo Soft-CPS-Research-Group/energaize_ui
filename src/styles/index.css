@@ -146,7 +146,7 @@ button {
 
 .login-card {
   margin-inline: auto;
-  width: min(460px, 100%);
+  width: min(500px, 100%);
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(9, 24, 20, 0.64);
@@ -154,8 +154,10 @@ button {
   backdrop-filter: blur(12px);
   color: #eaf5ef;
   padding: 28px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+  overflow: hidden;
 }
 
 :root[data-theme="light"] .login-card {
@@ -171,9 +173,21 @@ button {
   margin-bottom: 6px;
 }
 
+.login-branding {
+  display: grid;
+  justify-items: center;
+}
+
+.login-logo-center {
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+}
+
 .login-brand {
-  width: auto;
-  height: 88px;
+  width: min(360px, 100%);
+  max-width: 100%;
+  height: auto;
   object-fit: contain;
 }
 
@@ -204,9 +218,15 @@ button {
 .login-card label {
   display: grid;
   gap: 7px;
+  width: 100%;
+  min-width: 0;
 }
 
-.login-card label span {
+.login-card > * {
+  min-width: 0;
+}
+
+.login-card > label > span {
   font-size: 0.85rem;
 }
 
@@ -214,6 +234,8 @@ button {
   display: flex;
   align-items: center;
   gap: 9px;
+  width: 100%;
+  min-width: 0;
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 10px;
@@ -226,7 +248,9 @@ button {
 }
 
 .input-wrap input {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
   border: 0;
   outline: none;
   background: transparent;
@@ -267,6 +291,7 @@ button {
   justify-content: space-between;
   align-items: center;
   gap: 14px;
+  flex-wrap: nowrap;
 }
 
 .login-helpers .checkbox-inline span {
@@ -279,14 +304,18 @@ button {
   color: var(--brand);
   cursor: pointer;
   padding: 0;
+  white-space: nowrap;
+  margin-left: auto;
 }
 
 .login-claim {
   text-align: center;
-  letter-spacing: 0.05em;
-  font-size: 0.84rem;
+  letter-spacing: 0.03em;
+  font-size: 0.9rem;
+  font-weight: 500;
+  min-height: 1.4rem;
   color: inherit;
-  opacity: 0.72;
+  opacity: 0.84;
 }
 
 .login-footer {
@@ -376,7 +405,7 @@ button {
 }
 
 .brand-logo {
-  height: 46px;
+  height: 60px;
   width: auto;
   object-fit: contain;
   display: block;
@@ -416,9 +445,9 @@ button {
   display: flex;
   justify-content: center;
   justify-self: center;
-  gap: 2px;
+  gap: 4px;
   overflow: auto;
-  padding: 0 8px;
+  padding: 3px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: color-mix(in srgb, var(--bg-elev-2), transparent 18%);
@@ -1255,21 +1284,90 @@ button {
 .account-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .account-inline {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 12px;
+  gap: 14px;
+  align-items: center;
 }
 
 .account-avatar {
-  width: 64px;
-  height: 64px;
+  width: 86px;
+  height: 86px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid color-mix(in srgb, var(--brand) 42%, transparent);
+  border: 3px solid color-mix(in srgb, var(--brand) 42%, transparent);
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.account-panel {
+  padding: 14px;
+}
+
+.account-panel h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-heading);
+}
+
+.account-profile-head {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--brand) 7%, var(--bg-elev-2));
+  padding: 12px;
+}
+
+.account-identity {
+  display: grid;
+  gap: 4px;
+}
+
+.account-identity strong {
+  font-size: 1.06rem;
+  font-family: var(--font-heading);
+}
+
+.account-identity small {
+  color: var(--text-soft);
+}
+
+.account-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-form-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.account-form-grid .full-col {
+  grid-column: 1 / -1;
+}
+
+.account-form-grid label span {
+  font-size: 0.83rem;
+  color: var(--text-soft);
+}
+
+.account-form-grid input {
+  border: 1px solid var(--line);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 9px 10px;
+}
+
+.account-form-grid input:disabled {
+  opacity: 0.72;
+}
+
+.account-actions {
+  margin-top: 12px;
 }
 
 .jobs-page {
@@ -1304,6 +1402,11 @@ button {
   display: grid;
   justify-items: end;
   gap: 6px;
+}
+
+.jobs-live-reminder {
+  color: color-mix(in srgb, var(--warn) 82%, var(--text));
+  font-size: 0.78rem;
 }
 
 .live-pill {
@@ -1590,11 +1693,28 @@ button {
   color: var(--text-soft);
 }
 
+.institutional-inner a {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.institutional-inner a:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
 .dock-logo {
   height: 20px;
   width: auto;
   object-fit: contain;
   opacity: 0.95;
+}
+
+.isep-light,
+.isep-dark {
+  height: 24px;
 }
 
 .dock-softcps {
@@ -1716,10 +1836,15 @@ button {
     padding: 18px;
   }
 
+  .login-brand {
+    width: min(280px, 100%);
+  }
+
   .kpi-grid,
   .account-grid,
   .details-grid,
-  .form-grid {
+  .form-grid,
+  .account-form-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1736,6 +1861,15 @@ button {
     right: 10px;
     left: 10px;
     width: auto;
+  }
+
+  .login-helpers {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .link-btn {
+    margin-left: 0;
   }
 
 }
