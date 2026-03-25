@@ -1,0 +1,45 @@
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AppShell } from "./components/layout/AppShell";
+import { AccountPage } from "./pages/AccountPage";
+import { CommunitiesPage } from "./pages/CommunitiesPage";
+import { LoginPage } from "./pages/LoginPage";
+import { LogsPage } from "./pages/LogsPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
+import { RoleWorkspacePage } from "./pages/RoleWorkspacePage";
+import { ConfigsPage } from "./pages/ai/ConfigsPage";
+import { DatasetsPage } from "./pages/ai/DatasetsPage";
+import { JobsPage } from "./pages/ai/JobsPage";
+import { AppIndexRedirect } from "./routes/AppIndexRedirect";
+import { AuthGuard, RoleGuard, RootRedirect } from "./routes/guards";
+
+export default function App(): JSX.Element {
+  return (
+    <Routes>
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="/login" element={<LoginPage />} />
+
+      <Route element={<AuthGuard />}>
+        <Route path="/communities" element={<CommunitiesPage />} />
+
+        <Route path="/app" element={<AppShell />}>
+          <Route index element={<AppIndexRedirect />} />
+          <Route path="account" element={<AccountPage />} />
+          <Route path="logs" element={<LogsPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="workspace" element={<RoleWorkspacePage />} />
+
+          <Route element={<RoleGuard allowed={["ai_manager"]} />}>
+            <Route path="ai">
+              <Route index element={<Navigate to="jobs" replace />} />
+              <Route path="jobs" element={<JobsPage />} />
+              <Route path="datasets" element={<DatasetsPage />} />
+              <Route path="configs" element={<ConfigsPage />} />
+            </Route>
+          </Route>
+        </Route>
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
