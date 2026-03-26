@@ -1,7 +1,8 @@
 import {
   Bell,
+  Boxes,
   ChevronDown,
-  ExternalLink,
+  FlaskConical,
   FileText,
   Menu,
   Settings2
@@ -96,10 +97,21 @@ export function TopBar(): JSX.Element {
           href="http://193.136.62.78:5000/#/"
           target="_blank"
           rel="noreferrer"
-          title="Open MLflow"
-          aria-label="Open MLflow"
+          title="Open MLflow Tracking"
+          aria-label="Open MLflow Tracking"
         >
-          <ExternalLink size={16} />
+          <FlaskConical size={16} />
+        </a>
+
+        <a
+          className="icon-btn"
+          href="https://193.136.62.78:9443/"
+          target="_blank"
+          rel="noreferrer"
+          title="Open Portainer"
+          aria-label="Open Portainer"
+        >
+          <Boxes size={16} />
         </a>
 
         <Link className={`icon-btn${location.pathname === "/app/logs" ? " is-active" : ""}`} to="/app/logs" title="Logs">
