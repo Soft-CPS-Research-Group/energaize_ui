@@ -1,5 +1,6 @@
 import { LogOut, User } from "lucide-react";
 import { Link } from "react-router-dom";
+import { AUTH_SCENE_STORAGE_KEY } from "../../constants";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/Button";
 
@@ -30,6 +31,7 @@ export function UserMenu({ open, onClose }: Props): JSX.Element | null {
         size="sm"
         iconLeft={<LogOut size={14} />}
         onClick={() => {
+          sessionStorage.setItem(AUTH_SCENE_STORAGE_KEY, "logout");
           logout();
           onClose();
         }}

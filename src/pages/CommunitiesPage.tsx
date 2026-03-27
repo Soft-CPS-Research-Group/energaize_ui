@@ -33,7 +33,7 @@ export function CommunitiesPage(): JSX.Element {
 
   function enterCommunity(community: CommunityContext): void {
     setActiveCommunity(community.id);
-    navigate(session?.role === "ai_manager" ? "/app/ai/datasets" : "/app/logs");
+    navigate(session?.role === "ai_manager" ? "/app/ai/jobs" : "/app/logs");
   }
 
   return (

@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { useAuth } from "../contexts/AuthContext";
 import type { UserRole } from "../types";
 
@@ -7,7 +8,11 @@ export function AuthGuard(): JSX.Element {
   const location = useLocation();
 
   if (isLoading) {
-    return <div className="route-loading">Loading console...</div>;
+    return (
+      <div className="route-loading">
+        <EVChargingLoader label="Powering the console..." />
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
@@ -34,7 +39,13 @@ export function RoleGuard({ allowed }: { allowed: UserRole[] }): JSX.Element {
 export function RootRedirect(): JSX.Element {
   const { session, isLoading } = useAuth();
 
-  if (isLoading) return <div className="route-loading">Loading console...</div>;
+  if (isLoading) {
+    return (
+      <div className="route-loading">
+        <EVChargingLoader label="Starting EnergAIze..." />
+      </div>
+    );
+  }
   if (!session) return <Navigate to="/login" replace />;
 
   if (session.role === "ai_manager") {

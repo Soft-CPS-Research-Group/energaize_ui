@@ -1,9 +1,10 @@
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { InstitutionalDock } from "../components/layout/InstitutionalDock";
-import { APP_NAME, LOGIN_BACKGROUNDS } from "../constants";
+import { EVChargingLoader } from "../components/ui/EVChargingLoader";
+import { APP_NAME, AUTH_SCENE_STORAGE_KEY, LOGIN_BACKGROUNDS } from "../constants";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
 
@@ -19,6 +20,57 @@ const LOGIN_CLAIMS = [
   "Turning kWh into smart choices."
 ] as const;
 
+const LOGIN_SCENE_LINES = [
+  "Plugging into genius mode.",
+  "Booting optimism and clean electrons.",
+  "Charging the brain grid. Please honk once."
+] as const;
+
+const LOGOUT_SCENE_LINES = [
+  "Unplugged. No sparks, no drama.",
+  "Charging session complete. Grid says thanks.",
+  "Disconnecting like a very polite EV."
+] as const;
+
+type AuthSceneMode = "none" | "login" | "logout";
+const LOGIN_SCENE_DURATION_MS = 1500;
+const LOGOUT_SCENE_DURATION_MS = 1200;
+
+function pickRandomLine(lines: readonly string[]): string {
+  return lines[Math.floor(Math.random() * lines.length)] || "";
+}
+
+function AuthTransitionScene({
+  mode,
+  line
+}: {
+  mode: Exclude<AuthSceneMode, "none">;
+  line: string;
+}): JSX.Element {
+  return (
+    <motion.div
+      className="auth-scene-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+    >
+      <div className={`auth-scene${mode === "login" ? " is-login" : " is-logout"}`}>
+        <div className="auth-scene-track" aria-hidden="true">
+          {line ? <p className="auth-scene-caption">{line}</p> : null}
+          <span className="auth-scene-station" />
+          <span className="auth-scene-cable" />
+          <span className="auth-scene-car" />
+          <span className="auth-scene-energy e1" />
+          <span className="auth-scene-energy e2" />
+          <span className="auth-scene-energy e3" />
+          <span className="auth-scene-pulse" />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export function LoginPage(): JSX.Element {
   const { session, login } = useAuth();
   const { theme, setTheme } = useUI();
@@ -31,6 +83,9 @@ export function LoginPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [bgIndex, setBgIndex] = useState(0);
   const [claimIndex, setClaimIndex] = useState(0);
+  const [authScene, setAuthScene] = useState<AuthSceneMode>("none");
+  const [authSceneLine, setAuthSceneLine] = useState("");
+  const sceneTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -46,23 +101,76 @@ export function LoginPage(): JSX.Element {
     return () => window.clearInterval(timer);
   }, []);
 
-  if (session) {
+  useEffect(() => {
+    const stored = sessionStorage.getItem(AUTH_SCENE_STORAGE_KEY);
+    if (stored === "logout") {
+      sessionStorage.removeItem(AUTH_SCENE_STORAGE_KEY);
+      setAuthScene("logout");
+      setAuthSceneLine(pickRandomLine(LOGOUT_SCENE_LINES));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authScene !== "logout") return;
+    if (sceneTimeoutRef.current) {
+      window.clearTimeout(sceneTimeoutRef.current);
+      sceneTimeoutRef.current = null;
+    }
+    sceneTimeoutRef.current = window.setTimeout(() => {
+      setAuthScene("none");
+      setAuthSceneLine("");
+      sceneTimeoutRef.current = null;
+    }, LOGOUT_SCENE_DURATION_MS);
+    return () => {
+      if (sceneTimeoutRef.current) {
+        window.clearTimeout(sceneTimeoutRef.current);
+        sceneTimeoutRef.current = null;
+      }
+    };
+  }, [authScene]);
+
+  useEffect(() => {
+    return () => {
+      if (sceneTimeoutRef.current) {
+        window.clearTimeout(sceneTimeoutRef.current);
+        sceneTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  if (session && authScene !== "login") {
     return <Navigate to={session.role === "ai_manager" ? "/app/ai/jobs" : "/communities"} replace />;
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (authScene === "login") return;
     setLoading(true);
     setError(null);
+    let succeeded = false;
 
     try {
       await login({ email, password, remember });
+      succeeded = true;
       const role = email.trim().toLowerCase() === "ai@energaize.io" ? "ai_manager" : "other";
-      navigate(role === "ai_manager" ? "/app/ai/jobs" : "/communities", { replace: true });
+      const target = role === "ai_manager" ? "/app/ai/jobs" : "/communities";
+      setAuthScene("login");
+      setAuthSceneLine(pickRandomLine(LOGIN_SCENE_LINES));
+      if (sceneTimeoutRef.current) {
+        window.clearTimeout(sceneTimeoutRef.current);
+        sceneTimeoutRef.current = null;
+      }
+      sceneTimeoutRef.current = window.setTimeout(() => {
+        setLoading(false);
+        navigate(target, { replace: true });
+        sceneTimeoutRef.current = null;
+      }, LOGIN_SCENE_DURATION_MS);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected authentication error");
     } finally {
-      setLoading(false);
+      if (!succeeded) {
+        setLoading(false);
+      }
     }
   }
 
@@ -79,6 +187,9 @@ export function LoginPage(): JSX.Element {
         }}
       />
       <div className="login-overlay" />
+      {authScene === "login" || authScene === "logout" ? (
+        <AuthTransitionScene mode={authScene} line={authSceneLine} />
+      ) : null}
 
       <div className="login-theme-switch">
         <button
@@ -172,7 +283,7 @@ export function LoginPage(): JSX.Element {
           {error ? <p className="error-text">{error}</p> : null}
 
           <button type="submit" className="btn btn-primary btn-md login-submit" disabled={loading}>
-            {loading ? "Signing in..." : "Log in"}
+            {loading ? <EVChargingLoader compact /> : "Log in"}
           </button>
 
           <motion.p

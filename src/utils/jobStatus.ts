@@ -45,3 +45,27 @@ export function jobStatusTone(status: JobStatus): "info" | "success" | "warning"
 export function prettyJobStatus(status: JobStatus): string {
   return status.replaceAll("_", " ");
 }
+
+export function isCompletedForResults(status: JobStatus): boolean {
+  const key = status.toLowerCase();
+
+  const blockedTokens = [
+    "fail",
+    "error",
+    "cancel",
+    "stopp",
+    "queue",
+    "running",
+    "progress",
+    "pending",
+    "launch",
+    "dispatch"
+  ];
+
+  if (blockedTokens.some((token) => key.includes(token))) {
+    return false;
+  }
+
+  const completedTokens = ["complete", "completed", "success", "finished", "done"];
+  return completedTokens.some((token) => key.includes(token));
+}

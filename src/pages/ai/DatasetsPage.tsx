@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import {
@@ -10,6 +10,8 @@ import {
   type DatasetCreatePayload
 } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
@@ -46,6 +48,8 @@ export function DatasetsPage(): JSX.Element {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<DatasetForm>(initialForm);
   const [windowInfo, setWindowInfo] = useState<string>("");
+  const [refreshingVisual, setRefreshingVisual] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const datasetsQuery = useQuery({
     queryKey: ["datasets"],
@@ -91,26 +95,33 @@ export function DatasetsPage(): JSX.Element {
     }
   }
 
-  const stats = useMemo(() => {
-    const total = datasetsQuery.data?.length || 0;
-    return [
-      { label: "Total datasets", value: total.toString() },
-      { label: "Last update", value: datasetsQuery.dataUpdatedAt ? "Now" : "-" },
-      { label: "Pending jobs", value: "-" }
-    ];
-  }, [datasetsQuery.data?.length, datasetsQuery.dataUpdatedAt]);
+  async function refreshWithPreview(): Promise<void> {
+    if (refreshingVisual) return;
+    setRefreshingVisual(true);
+    try {
+      await Promise.all([
+        datasetsQuery.refetch(),
+        new Promise((resolve) => window.setTimeout(resolve, 1400))
+      ]);
+    } finally {
+      setRefreshingVisual(false);
+    }
+  }
 
   return (
     <div className="page">
       <header className="jobs-hero">
         <div>
-          <span className="section-kicker">Training Assets</span>
           <h1>Datasets</h1>
-          <p>Generate and manage training datasets.</p>
         </div>
         <div className="jobs-command-group">
-          <Button variant="secondary" iconLeft={<RefreshCcw size={14} />} onClick={() => datasetsQuery.refetch()}>
-            Refresh
+          <Button
+            variant="secondary"
+            iconLeft={!refreshingVisual ? <RefreshCcw size={14} /> : undefined}
+            onClick={refreshWithPreview}
+            disabled={refreshingVisual}
+          >
+            {refreshingVisual ? <EVChargingLoader compact /> : "Refresh"}
           </Button>
           <Button variant="primary" iconLeft={<Plus size={14} />} onClick={() => setModalOpen(true)}>
             Generate Dataset
@@ -119,14 +130,11 @@ export function DatasetsPage(): JSX.Element {
       </header>
 
       <section className="jobs-main">
-        <section className="kpi-grid">
-          {stats.map((item) => (
-            <article className="kpi" key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </article>
-          ))}
-        </section>
+        {refreshingVisual ? (
+          <section className="datasets-loader-preview">
+            <EVChargingLoader label="Refreshing datasets..." />
+          </section>
+        ) : null}
 
         {datasetsQuery.data && datasetsQuery.data.length > 0 ? (
           <section className="panel">
@@ -153,11 +161,7 @@ export function DatasetsPage(): JSX.Element {
                           size="sm"
                           variant="danger"
                           iconLeft={<Trash2 size={13} />}
-                          onClick={() => {
-                            if (window.confirm(`Delete dataset ${dataset.name}?`)) {
-                              deleteMutation.mutate(dataset.name);
-                            }
-                          }}
+                          onClick={() => setDeleteTarget(dataset.name)}
                         >
                           Delete
                         </Button>
@@ -278,6 +282,26 @@ export function DatasetsPage(): JSX.Element {
           {windowInfo ? <pre className="inline-output">{windowInfo}</pre> : null}
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete dataset"
+        message={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget}"?`
+            : "Are you sure you want to delete this dataset?"
+        }
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        pending={deleteMutation.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deleteMutation.mutate(deleteTarget, {
+            onSettled: () => setDeleteTarget(null)
+          });
+        }}
+      />
     </div>
   );
 }

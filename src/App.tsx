@@ -8,6 +8,8 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { RoleWorkspacePage } from "./pages/RoleWorkspacePage";
 import { ConfigsPage } from "./pages/ai/ConfigsPage";
 import { DatasetsPage } from "./pages/ai/DatasetsPage";
+import { JobDetailPage } from "./pages/ai/JobDetailPage";
+import { JobKpiComparePage } from "./pages/ai/JobKpiComparePage";
 import { JobsPage } from "./pages/ai/JobsPage";
 import { AppIndexRedirect } from "./routes/AppIndexRedirect";
 import { AuthGuard, RoleGuard, RootRedirect } from "./routes/guards";
@@ -32,6 +34,8 @@ export default function App(): JSX.Element {
             <Route path="ai">
               <Route index element={<Navigate to="jobs" replace />} />
               <Route path="jobs" element={<JobsPage />} />
+              <Route path="jobs/compare" element={<JobKpiComparePage />} />
+              <Route path="jobs/:jobId" element={<JobDetailPage />} />
               <Route path="datasets" element={<DatasetsPage />} />
               <Route path="configs" element={<ConfigsPage />} />
             </Route>

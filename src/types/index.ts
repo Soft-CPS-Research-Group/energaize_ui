@@ -74,6 +74,47 @@ export interface JobItem {
   job_info: JobInfo;
 }
 
+export interface JobResultViewModel {
+  jobId: string;
+  status: JobStatus;
+  info: JobInfo | null;
+  progress: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
+}
+
+export interface KpiEntry {
+  key: string;
+  label: string;
+  value: number;
+  unit?: string;
+}
+
+export interface TimeseriesPoint {
+  x: number | string;
+  y: number;
+}
+
+export interface TimeseriesEntry {
+  id: string;
+  name: string;
+  points: TimeseriesPoint[];
+}
+
+export interface ArtifactEntry {
+  name: string;
+  pathOrUri: string;
+  kind: string;
+}
+
+export interface JobKpiComparisonRow {
+  key: string;
+  label: string;
+  left: number | null;
+  right: number | null;
+  deltaAbs: number | null;
+  deltaPct: number | null;
+}
+
 export interface QueueItem {
   job_id: string;
   preferred_host?: string | null;
