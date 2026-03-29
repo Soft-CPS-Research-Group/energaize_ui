@@ -1,2 +1,0 @@
-timestamp,Charger Consumption-kWh,Charger Production-kWh,Incoming EV Name,Charging Action-kWh,EV SOC-%,EV Charger State,EV Required SOC Departure-%,EV Estimated SOC Arrival-%,EV Arrival Time,EV Departure Time,Is EV Connected,EV Name
-2024-08-01T00:00:00,8.269587516784668,-1.00,,8.800000190734863,0.99,1.0,0.87,-0.1,-1,12,True,Electric_Vehicle_7

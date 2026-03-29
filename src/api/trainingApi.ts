@@ -8,6 +8,14 @@ import type {
   QueueItem
 } from "../types";
 import { normalizeJobStatus } from "../utils/jobStatus";
+import {
+  getExampleJobInfo,
+  getExampleJobLogs,
+  getExampleJobProgress,
+  getExampleJobResult,
+  getExampleJobStatus,
+  listExampleJobs
+} from "../mocks/exampleJobs";
 
 export interface DatasetCreatePayload {
   name: string;
@@ -63,20 +71,36 @@ export async function listExperimentConfigs(): Promise<string[]> {
 
 export async function getExperimentConfig(
   fileName: string
-): Promise<{ config: Record<string, unknown> }> {
-  return http<{ config: Record<string, unknown> }>(
-    `/experiment-config/${encodeURIComponent(fileName)}`
+): Promise<{ yaml_content: string }> {
+  const yamlContent = await http<string>(
+    `/experiment-config/${encodeURIComponent(fileName)}`,
+    undefined,
+    { responseType: "text" }
   );
+  return { yaml_content: yamlContent };
 }
 
 export async function saveExperimentConfig(payload: {
   file_name: string;
-  config: Record<string, unknown>;
+  yaml_content: string;
 }): Promise<{ message: string; file: string }> {
   return http<{ message: string; file: string }>("/experiment-config/create", {
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export async function updateExperimentConfig(payload: {
+  file_name: string;
+  yaml_content: string;
+}): Promise<{ message: string; file?: string }> {
+  return http<{ message: string; file?: string }>(
+    `/experiment-config/${encodeURIComponent(payload.file_name)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ yaml_content: payload.yaml_content })
+    }
+  );
 }
 
 export async function deleteExperimentConfig(fileName: string): Promise<{ message: string }> {
@@ -108,14 +132,50 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
 }
 
 export async function listJobs(): Promise<JobItem[]> {
-  const result = await http<Array<{ job_id: string; status: string; job_info: JobInfo }>>("/jobs");
-  return result.map((item) => ({
+  let requestError: unknown = null;
+  let backendJobs: JobItem[] = [];
+
+  try {
+    const result = await http<
+      Array<
+        Omit<JobItem, "status"> & {
+          status: string;
+          job_info: JobInfo;
+        }
+      >
+    >("/jobs");
+    backendJobs = result.map((item) => ({
+      ...item,
+      status: normalizeJobStatus(item.status)
+    }));
+  } catch (error) {
+    requestError = error;
+  }
+
+  const localExampleJobs = listExampleJobs().map((item) => ({
     ...item,
     status: normalizeJobStatus(item.status)
   }));
+
+  const merged = new Map<string, JobItem>();
+  backendJobs.forEach((item) => merged.set(item.job_id, item));
+  localExampleJobs.forEach((item) => {
+    if (!merged.has(item.job_id)) merged.set(item.job_id, item);
+  });
+
+  if (merged.size === 0 && requestError) {
+    throw requestError;
+  }
+
+  return Array.from(merged.values());
 }
 
 export async function getJobStatus(jobId: string): Promise<{ job_id: string; status: JobStatus }> {
+  const local = getExampleJobStatus(jobId);
+  if (local) {
+    return { job_id: jobId, status: normalizeJobStatus(local) };
+  }
+
   const result = await http<{ job_id: string; status: string }>(`/status/${encodeURIComponent(jobId)}`);
   return {
     ...result,
@@ -124,24 +184,34 @@ export async function getJobStatus(jobId: string): Promise<{ job_id: string; sta
 }
 
 export async function getJobInfo(jobId: string): Promise<JobInfo> {
+  const local = getExampleJobInfo(jobId);
+  if (local) return local;
   return http<JobInfo>(`/job-info/${encodeURIComponent(jobId)}`);
 }
 
 export async function getJobProgress(jobId: string): Promise<Record<string, unknown>> {
+  const local = getExampleJobProgress(jobId);
+  if (local) return local;
   return http<Record<string, unknown>>(`/progress/${encodeURIComponent(jobId)}`);
 }
 
 export async function getJobResult(jobId: string): Promise<Record<string, unknown>> {
+  const local = getExampleJobResult(jobId);
+  if (local) return local;
   return http<Record<string, unknown>>(`/result/${encodeURIComponent(jobId)}`);
 }
 
 export async function getJobFileLogs(jobId: string): Promise<string> {
+  const local = await getExampleJobLogs(jobId);
+  if (local) return local;
   return http<string>(`/file-logs/${encodeURIComponent(jobId)}`, undefined, {
     responseType: "text"
   });
 }
 
 export async function getJobLogs(jobId: string): Promise<string> {
+  const local = await getExampleJobLogs(jobId);
+  if (local) return local;
   return http<string>(`/logs/${encodeURIComponent(jobId)}`, undefined, {
     responseType: "text"
   });

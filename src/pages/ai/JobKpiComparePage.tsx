@@ -6,7 +6,14 @@ import { getJobResult, getJobStatus } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { StatusPill } from "../../components/ui/StatusPill";
-import { buildKpiComparisonRows, extractKpis } from "../../utils/jobResult";
+import {
+  findSimulationDataDir,
+  findSimulationDataSessionDefault,
+  getSimulationDataIndex,
+  readSimulationDataFile
+} from "../../services/simulationDataService";
+import { extractKpis } from "../../utils/jobResult";
+import { buildComparedKpis, extractKpisFromSimulationData } from "../../utils/simulationData";
 
 function resolveBackTarget(fromParam: string | null): string {
   if (!fromParam) return "/app/ai/jobs";
@@ -18,6 +25,75 @@ function formatNumeric(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "-";
   if (Math.abs(value) >= 1000) return value.toFixed(2);
   return value.toFixed(4);
+}
+
+function useJobKpis(jobId: string, enabled: boolean): {
+  entries: ReturnType<typeof extractKpis>;
+  isLoading: boolean;
+  isError: boolean;
+} {
+  const resultQuery = useQuery({
+    queryKey: ["job-result", jobId],
+    queryFn: () => getJobResult(jobId),
+    enabled: Boolean(enabled && jobId)
+  });
+
+  const simulationDataDir = useMemo(
+    () => findSimulationDataDir(resultQuery.data),
+    [resultQuery.data]
+  );
+  const simulationDataSessionDefault = useMemo(
+    () => findSimulationDataSessionDefault(resultQuery.data),
+    [resultQuery.data]
+  );
+
+  const simulationIndexQuery = useQuery({
+    queryKey: ["simulation-data-index", jobId, simulationDataDir, simulationDataSessionDefault],
+    queryFn: () =>
+      getSimulationDataIndex({
+        jobId,
+        simulationDataDir,
+        simulationDataSessionDefault
+      }),
+    enabled: Boolean(enabled && jobId)
+  });
+
+  const kpiFilePath = useMemo(() => {
+    const file = simulationIndexQuery.data?.files.find((item) => item.kind === "kpi");
+    return file?.relativePath || null;
+  }, [simulationIndexQuery.data?.files]);
+
+  const kpiCsvQuery = useQuery({
+    queryKey: ["simulation-kpis", jobId, kpiFilePath || ""],
+    queryFn: async () => {
+      const source = simulationIndexQuery.data;
+      if (!source || !kpiFilePath) {
+        return { entries: [] };
+      }
+      const content = await readSimulationDataFile(source, kpiFilePath);
+      const parsed = extractKpisFromSimulationData(content);
+      return { entries: parsed.entries };
+    },
+    enabled: Boolean(enabled && jobId && simulationIndexQuery.data && kpiFilePath)
+  });
+
+  const fallbackKpis = useMemo(() => extractKpis(resultQuery.data), [resultQuery.data]);
+
+  const entries = useMemo(() => {
+    if (kpiCsvQuery.data?.entries && kpiCsvQuery.data.entries.length > 0) {
+      return kpiCsvQuery.data.entries;
+    }
+    return fallbackKpis;
+  }, [fallbackKpis, kpiCsvQuery.data?.entries]);
+
+  const isLoading = resultQuery.isLoading || simulationIndexQuery.isLoading || kpiCsvQuery.isLoading;
+  const isError = resultQuery.isError || simulationIndexQuery.isError || kpiCsvQuery.isError;
+
+  return {
+    entries,
+    isLoading,
+    isError
+  };
 }
 
 export function JobKpiComparePage(): JSX.Element {
@@ -42,29 +118,18 @@ export function JobKpiComparePage(): JSX.Element {
     enabled: Boolean(rightId)
   });
 
-  const leftResultQuery = useQuery({
-    queryKey: ["job-result", leftId],
-    queryFn: () => getJobResult(leftId),
-    enabled: Boolean(leftId)
-  });
+  const leftData = useJobKpis(leftId, Boolean(leftId));
+  const rightData = useJobKpis(rightId, Boolean(rightId));
 
-  const rightResultQuery = useQuery({
-    queryKey: ["job-result", rightId],
-    queryFn: () => getJobResult(rightId),
-    enabled: Boolean(rightId)
-  });
-
-  const leftKpis = useMemo(() => extractKpis(leftResultQuery.data), [leftResultQuery.data]);
-  const rightKpis = useMemo(() => extractKpis(rightResultQuery.data), [rightResultQuery.data]);
   const rows = useMemo(
-    () => buildKpiComparisonRows(leftKpis, rightKpis, showAll),
-    [leftKpis, rightKpis, showAll]
+    () => buildComparedKpis(leftData.entries, rightData.entries, showAll),
+    [leftData.entries, rightData.entries, showAll]
   );
 
   const missingSelection = !leftId || !rightId;
   const isLoading =
-    leftResultQuery.isLoading ||
-    rightResultQuery.isLoading ||
+    leftData.isLoading ||
+    rightData.isLoading ||
     leftStatusQuery.isLoading ||
     rightStatusQuery.isLoading;
 
@@ -81,7 +146,6 @@ export function JobKpiComparePage(): JSX.Element {
         <div>
           <span className="section-kicker">KPI Comparison</span>
           <h1>Compare Jobs</h1>
-          <p>Side-by-side KPI analysis for two completed simulations.</p>
         </div>
         <div className="jobs-command-group">
           <Button variant="ghost" iconLeft={<ArrowLeft size={14} />} onClick={() => navigate(backTarget)}>
@@ -108,12 +172,12 @@ export function JobKpiComparePage(): JSX.Element {
       {!missingSelection ? (
         <section className="job-compare-header panel">
           <article>
-            <small>Left job</small>
+            <small>Left job (baseline)</small>
             <strong>{leftId}</strong>
             <StatusPill status={leftStatusQuery.data?.status || "unknown"} />
           </article>
           <article>
-            <small>Right job</small>
+            <small>Right job (candidate)</small>
             <strong>{rightId}</strong>
             <StatusPill status={rightStatusQuery.data?.status || "unknown"} />
           </article>
@@ -126,18 +190,18 @@ export function JobKpiComparePage(): JSX.Element {
 
       {!missingSelection && isLoading ? <p className="jobs-meta">Loading comparison data...</p> : null}
 
-      {!missingSelection && !isLoading && (leftResultQuery.isError || rightResultQuery.isError) ? (
+      {!missingSelection && !isLoading && (leftData.isError || rightData.isError) ? (
         <EmptyState
           title="Could not load KPI payload"
-          message="One of the selected jobs has no accessible result endpoint right now."
+          message="One of the selected jobs has no accessible KPI source right now."
         />
       ) : null}
 
-      {!missingSelection && !isLoading && !leftResultQuery.isError && !rightResultQuery.isError ? (
+      {!missingSelection && !isLoading && !leftData.isError && !rightData.isError ? (
         rows.length === 0 ? (
           <EmptyState
             title="No comparable KPIs"
-            message="No common numeric KPI keys were found in the two result payloads."
+            message="No common numeric KPI keys were found in the two selected jobs."
           />
         ) : (
           <section className="panel job-compare-table-wrap">
@@ -147,7 +211,7 @@ export function JobKpiComparePage(): JSX.Element {
                   <th>KPI</th>
                   <th>{leftId}</th>
                   <th>{rightId}</th>
-                  <th>Delta</th>
+                  <th>Delta (R-L)</th>
                   <th>Delta %</th>
                 </tr>
               </thead>
@@ -157,10 +221,26 @@ export function JobKpiComparePage(): JSX.Element {
                     <td>{row.label}</td>
                     <td>{formatNumeric(row.left)}</td>
                     <td>{formatNumeric(row.right)}</td>
-                    <td className={row.deltaAbs !== null && row.deltaAbs > 0 ? "kpi-delta-positive" : row.deltaAbs !== null && row.deltaAbs < 0 ? "kpi-delta-negative" : ""}>
+                    <td
+                      className={
+                        row.tone === "better"
+                          ? "kpi-delta-better"
+                          : row.tone === "worse"
+                            ? "kpi-delta-worse"
+                            : ""
+                      }
+                    >
                       {formatNumeric(row.deltaAbs)}
                     </td>
-                    <td className={row.deltaPct !== null && row.deltaPct > 0 ? "kpi-delta-positive" : row.deltaPct !== null && row.deltaPct < 0 ? "kpi-delta-negative" : ""}>
+                    <td
+                      className={
+                        row.tone === "better"
+                          ? "kpi-delta-better"
+                          : row.tone === "worse"
+                            ? "kpi-delta-worse"
+                            : ""
+                      }
+                    >
                       {row.deltaPct === null ? "-" : `${row.deltaPct.toFixed(2)}%`}
                     </td>
                   </tr>

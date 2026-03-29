@@ -5,7 +5,8 @@ import {
   deleteExperimentConfig,
   getExperimentConfig,
   listExperimentConfigs,
-  saveExperimentConfig
+  saveExperimentConfig,
+  updateExperimentConfig
 } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -15,16 +16,13 @@ import { Modal } from "../../components/ui/Modal";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
 import { useSearchParams } from "react-router-dom";
 
-const DEFAULT_CONFIG = `{
-  "metadata": {
-    "experiment_name": "Solar Forecast",
-    "run_name": "baseline_v1"
-  },
-  "algorithm": {
-    "name": "MADDPG",
-    "seed": 42
-  }
-}`;
+const DEFAULT_CONFIG = `metadata:
+  experiment_name: Solar Forecast
+  run_name: baseline_v1
+algorithm:
+  name: MADDPG
+  seed: 42
+`;
 
 type EditorMode = "create" | "edit";
 
@@ -50,8 +48,10 @@ export function ConfigsPage(): JSX.Element {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (payload: { file_name: string; config: Record<string, unknown> }) =>
-      saveExperimentConfig(payload),
+    mutationFn: (payload: { file_name: string; yaml_content: string; mode: EditorMode }) =>
+      payload.mode === "edit"
+        ? updateExperimentConfig({ file_name: payload.file_name, yaml_content: payload.yaml_content })
+        : saveExperimentConfig({ file_name: payload.file_name, yaml_content: payload.yaml_content }),
     onSuccess: (_, payload) => {
       notifySuccess(
         editorMode === "edit" ? "Experiment config updated" : "Experiment config saved",
@@ -94,7 +94,7 @@ export function ConfigsPage(): JSX.Element {
     setEditorOpen(true);
     try {
       const payload = await getExperimentConfig(configFile);
-      setConfigText(JSON.stringify(payload.config || {}, null, 2));
+      setConfigText(payload.yaml_content || "");
     } catch (error) {
       notifyError("Failed to open experiment config", error);
       setEditorOpen(false);
@@ -136,7 +136,7 @@ export function ConfigsPage(): JSX.Element {
     setTemplateLoading(true);
     try {
       const payload = await getExperimentConfig(nextTemplate);
-      setConfigText(JSON.stringify(payload.config || {}, null, 2));
+      setConfigText(payload.yaml_content || "");
     } catch (error) {
       notifyError("Failed to load experiment config template", error);
     } finally {
@@ -258,12 +258,20 @@ export function ConfigsPage(): JSX.Element {
             className="form-grid"
             onSubmit={(event) => {
               event.preventDefault();
-              try {
-                const parsed = JSON.parse(configText) as Record<string, unknown>;
-                saveMutation.mutate({ file_name: fileName.trim(), config: parsed });
-              } catch {
-                notifyError("Invalid JSON", new Error("Experiment config content must be valid JSON"));
+              const trimmedName = fileName.trim();
+              if (!trimmedName) {
+                notifyError("Missing file name", new Error("Experiment config file name is required."));
+                return;
               }
+              if (!/\.ya?ml$/i.test(trimmedName)) {
+                notifyError("Invalid file name", new Error("Experiment config file must end with .yaml or .yml."));
+                return;
+              }
+              saveMutation.mutate({
+                file_name: trimmedName,
+                yaml_content: configText,
+                mode: editorMode
+              });
             }}
           >
             <label className="full-col">
@@ -301,7 +309,7 @@ export function ConfigsPage(): JSX.Element {
             ) : null}
 
             <label className="full-col">
-              <span>Experiment config body (JSON)</span>
+              <span>Experiment config body (YAML)</span>
               <textarea rows={16} value={configText} onChange={(event) => setConfigText(event.target.value)} />
             </label>
             <div className="full-col inline-end">

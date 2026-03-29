@@ -64,6 +64,9 @@ export interface JobInfo {
   target_host?: string;
   experiment_name?: string;
   run_name?: string;
+  community_name?: string;
+  energy_community?: string;
+  description?: string;
   mlflow_run_url?: string;
   [key: string]: unknown;
 }
@@ -72,6 +75,19 @@ export interface JobItem {
   job_id: string;
   status: JobStatus;
   job_info: JobInfo;
+  submitted_at?: number | null;
+  queued_at?: number | null;
+  dispatched_at?: number | null;
+  started_at?: number | null;
+  stop_requested_at?: number | null;
+  finished_at?: number | null;
+  last_status_at?: number | null;
+  queue_wait_seconds?: number | null;
+  run_duration_seconds?: number | null;
+  total_duration_seconds?: number | null;
+  requeue_count?: number | null;
+  attempt_number?: number | null;
+  job_meta?: Record<string, unknown>;
 }
 
 export interface JobResultViewModel {
@@ -87,6 +103,7 @@ export interface KpiEntry {
   label: string;
   value: number;
   unit?: string;
+  source?: string;
 }
 
 export interface TimeseriesPoint {
@@ -115,6 +132,70 @@ export interface JobKpiComparisonRow {
   deltaPct: number | null;
 }
 
+export type SimulationFileKind =
+  | "community"
+  | "building"
+  | "battery"
+  | "charger"
+  | "electric_vehicle"
+  | "pricing"
+  | "kpi"
+  | "unknown";
+
+export interface SimulationDataFileEntry {
+  id: string;
+  relativePath: string;
+  fileName: string;
+  runFolder: string | null;
+  episode: string | null;
+  kind: SimulationFileKind;
+  buildingId?: string;
+  chargerId?: string;
+  vehicleId?: string;
+}
+
+export interface SimulationTreeNode {
+  id: string;
+  label: string;
+  kind: SimulationFileKind | "group" | "root";
+  selectable: boolean;
+  fileRefs: string[];
+  children: SimulationTreeNode[];
+}
+
+export interface SimulationSeriesPoint {
+  timestamp: string;
+  epochMs: number | null;
+  value: number;
+}
+
+export interface SimulationSeries {
+  id: string;
+  fileRef: string;
+  metric: string;
+  unit?: string;
+  points: SimulationSeriesPoint[];
+}
+
+export interface KpiMatrixRow {
+  key: string;
+  label: string;
+  unit?: string;
+  values: Record<string, number | null>;
+}
+
+export type KpiImprovementTone = "better" | "worse" | "neutral" | "unknown";
+
+export interface ComparedKpiRow {
+  key: string;
+  label: string;
+  left: number | null;
+  right: number | null;
+  deltaAbs: number | null;
+  deltaPct: number | null;
+  tone: KpiImprovementTone;
+}
+
 export interface QueueItem {
   job_id: string;
   preferred_host?: string | null;
@@ -124,8 +205,29 @@ export interface QueueItem {
 export interface HostInfo {
   online: boolean;
   last_seen: number | null;
-  info: Record<string, unknown>;
+  info: {
+    executor?: string;
+    worker_version?: string;
+    active_job_id?: string | null;
+    active_job_count?: number | null;
+    active_job_status?: string | null;
+    last_job_id?: string | null;
+    last_terminal_status?: string | null;
+    budget?: {
+      accounts?: Array<{
+        account: string;
+        used_hours: number;
+        limit_hours: number;
+        used_percent: number;
+      }>;
+    } | null;
+    budget_refreshed_at?: number | null;
+    [key: string]: unknown;
+  };
   running: number;
+  active_job_ids?: string[];
+  current_job_id?: string | null;
+  current_job_status?: string | null;
 }
 
 export interface HostItem {

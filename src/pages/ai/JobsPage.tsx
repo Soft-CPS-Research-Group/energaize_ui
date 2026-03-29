@@ -108,13 +108,18 @@ function maxEpoch(values: Array<string | number | null | undefined>): number | n
   return maxValue;
 }
 
+function formatBudgetUsage(usedPercent: number | null | undefined): string {
+  if (typeof usedPercent !== "number" || !Number.isFinite(usedPercent)) return "-";
+  return `${usedPercent.toFixed(1)}%`;
+}
+
 function extractProgressInfo(payload: unknown): { percent: number | null; updatedAt: string | number | null } {
   if (!payload || typeof payload !== "object") {
     return { percent: null, updatedAt: null };
   }
 
   const data = payload as Record<string, unknown>;
-  const candidateKeys = ["percent", "progress", "progress_pct", "progress_percent", "completion"];
+  const candidateKeys = ["progress_pct", "percent", "progress", "progress_percent", "completion"];
   for (const key of candidateKeys) {
     const value = asNumber(data[key]);
     if (value !== null) {
@@ -195,6 +200,7 @@ export function JobsPage(): JSX.Element {
   const [compareSelection, setCompareSelection] = useState<string[]>([]);
   const [logsOpen, setLogsOpen] = useState(false);
   const [logsJobId, setLogsJobId] = useState("");
+  const [logsSearch, setLogsSearch] = useState("");
   const [configPreviewOpen, setConfigPreviewOpen] = useState(false);
   const [configPreviewTarget, setConfigPreviewTarget] = useState("");
   const [configPreviewLabel, setConfigPreviewLabel] = useState("");
@@ -236,11 +242,22 @@ export function JobsPage(): JSX.Element {
     enabled: Boolean(logsOpen && logsJobId)
   });
 
+  const allLogLines = useMemo(() => {
+    if (!logsQuery.data) return [];
+    return logsQuery.data.split(/\r?\n/);
+  }, [logsQuery.data]);
+
+  const filteredLogLines = useMemo(() => {
+    const query = logsSearch.trim().toLowerCase();
+    if (!query) return allLogLines;
+    return allLogLines.filter((line) => line.toLowerCase().includes(query));
+  }, [allLogLines, logsSearch]);
+
   const configPreviewQuery = useQuery({
     queryKey: ["job-config-preview", configPreviewTarget],
     queryFn: async () => {
       const payload = await getExperimentConfig(configPreviewTarget);
-      return payload.config;
+      return payload.yaml_content;
     },
     enabled: Boolean(configPreviewOpen && configPreviewTarget)
   });
@@ -768,6 +785,7 @@ export function JobsPage(): JSX.Element {
                               onClick={(event) => {
                                 event.stopPropagation();
                                 setLogsJobId(job.job_id);
+                                setLogsSearch("");
                                 setLogsOpen(true);
                               }}
                             >
@@ -891,6 +909,8 @@ export function JobsPage(): JSX.Element {
               {hostRows.length > 0 ? (
                 hostRows.map((host) => {
                   const isLive = isRecentTimestamp(host.last_seen);
+                  const budgetAccounts = host.info?.budget?.accounts;
+                  const budgetPrimary = Array.isArray(budgetAccounts) && budgetAccounts.length > 0 ? budgetAccounts[0] : null;
                   return (
                     <li key={host.name}>
                       <div className="jobs-host-line">
@@ -900,6 +920,19 @@ export function JobsPage(): JSX.Element {
                         <small>{isLive ? "Live" : "Offline"}</small>
                       </div>
                       <small className="jobs-meta">Last seen: {formatDateTime(host.last_seen)}</small>
+                      {host.current_job_id || host.info?.active_job_id ? (
+                        <small className="jobs-meta">
+                          Active: {host.current_job_id || host.info?.active_job_id}
+                          {host.current_job_status || host.info?.active_job_status
+                            ? ` (${host.current_job_status || host.info?.active_job_status})`
+                            : ""}
+                        </small>
+                      ) : null}
+                      {budgetPrimary ? (
+                        <small className="jobs-meta">
+                          Budget {budgetPrimary.account}: {formatBudgetUsage(budgetPrimary.used_percent)}
+                        </small>
+                      ) : null}
                     </li>
                   );
                 })
@@ -1070,27 +1103,51 @@ export function JobsPage(): JSX.Element {
         onClose={() => {
           setLogsOpen(false);
           setLogsJobId("");
+          setLogsSearch("");
         }}
         width="lg"
       >
         <section className="job-logs-modal-content">
-          <div className="job-logs-modal-actions">
-            <Button variant="ghost" iconLeft={<Copy size={13} />} onClick={copyLogs} disabled={!logsQuery.data}>
-              Copy
-            </Button>
-            <Button
-              variant="ghost"
-              iconLeft={<Download size={13} />}
-              onClick={downloadLogs}
-              disabled={!logsQuery.data}
-            >
-              Download
-            </Button>
+          <div className="job-logs-toolbar">
+            <div className="job-logs-modal-actions">
+              <Button variant="ghost" iconLeft={<Copy size={13} />} onClick={copyLogs} disabled={!logsQuery.data}>
+                Copy
+              </Button>
+              <Button
+                variant="ghost"
+                iconLeft={<Download size={13} />}
+                onClick={downloadLogs}
+                disabled={!logsQuery.data}
+              >
+                Download
+              </Button>
+            </div>
+
+            <label className="search-inline job-logs-search">
+              <Search size={14} />
+              <input
+                value={logsSearch}
+                onChange={(event) => setLogsSearch(event.target.value)}
+                placeholder="Search logs..."
+                disabled={!logsQuery.data}
+              />
+            </label>
           </div>
 
           {logsQuery.isLoading ? <p className="jobs-meta">Loading logs...</p> : null}
           {logsQuery.isError ? <p className="error-text">Could not load logs for this job.</p> : null}
-          {logsQuery.data ? <pre className="json-view compact">{logsQuery.data}</pre> : null}
+          {logsQuery.data ? (
+            <>
+              <small className="jobs-meta">
+                Showing {filteredLogLines.length} / {allLogLines.length} lines
+              </small>
+              {filteredLogLines.length > 0 ? (
+                <pre className="json-view compact">{filteredLogLines.join("\n")}</pre>
+              ) : (
+                <p className="jobs-meta">No lines match this search.</p>
+              )}
+            </>
+          ) : null}
           {!logsQuery.isLoading && !logsQuery.data ? <p className="jobs-meta">No logs available yet.</p> : null}
         </section>
       </Modal>
@@ -1111,7 +1168,7 @@ export function JobsPage(): JSX.Element {
         ) : null}
         {configPreviewQuery.data ? (
           <section className="job-config-preview-modal">
-            <pre className="json-view">{JSON.stringify(configPreviewQuery.data, null, 2)}</pre>
+            <pre className="json-view">{configPreviewQuery.data}</pre>
           </section>
         ) : null}
         {!configPreviewQuery.isLoading && !configPreviewQuery.data ? (

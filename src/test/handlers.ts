@@ -8,8 +8,21 @@ type JobRecord = {
 };
 
 let jobs: JobRecord[] = [];
+let experimentConfigs: Record<string, string> = {};
 const api = API_BASE_URL.replace(/\/$/, "");
 const endpoint = (path: string) => `${api}${path}`;
+const DEMO_SIM_FILES = [
+  "2026-03-20_10-00-00/exported_data_community_ep0.csv",
+  "2026-03-20_10-00-00/exported_kpis.csv"
+];
+const DEMO_COMMUNITY_CSV = `timestamp,net_electricity_consumption_kwh,self_consumption_kwh
+2026-03-20T00:00:00Z,10,7
+2026-03-20T01:00:00Z,11,8
+`;
+const DEMO_KPIS_CSV = `kpi,value
+total_cost_eur,120.5
+self_consumption_pct,71.2
+`;
 
 export function resetMockState(): void {
   jobs = [
@@ -44,13 +57,25 @@ export function resetMockState(): void {
       }
     }
   ];
+  experimentConfigs = {
+    "demo.yaml": "metadata:\n  experiment_name: Demo\n  run_name: baseline\n"
+  };
 }
 
 resetMockState();
 
 export const handlers = [
   http.get(endpoint("/datasets"), () => HttpResponse.json([])),
-  http.get(endpoint("/experiment-configs"), () => HttpResponse.json(["demo.yaml"])),
+  http.get(endpoint("/experiment-configs"), () => HttpResponse.json(Object.keys(experimentConfigs))),
+  http.get(endpoint("/experiment-config/:fileName"), ({ params }) => {
+    const fileName = String(params.fileName || "");
+    if (!experimentConfigs[fileName]) {
+      return HttpResponse.json({ detail: "Config not found" }, { status: 404 });
+    }
+    return HttpResponse.text(experimentConfigs[fileName], {
+      headers: { "Content-Type": "text/yaml" }
+    });
+  }),
   http.get(endpoint("/jobs"), () => HttpResponse.json(jobs)),
   http.get(endpoint("/queue"), () => HttpResponse.json([])),
   http.get(endpoint("/hosts"), () =>
@@ -97,6 +122,9 @@ export const handlers = [
           total_cost_eur: 120.5,
           self_consumption_pct: 71.2
         },
+        simulation_data_available: true,
+        simulation_data_session_default: "latest",
+        kpi_source: "simulation_data_csv",
         timeseries: {
           load_kw: [2.2, 2.5, 3.1, 2.7, 2.3],
           price_eur: [
@@ -116,6 +144,9 @@ export const handlers = [
           total_cost_eur: 97.4,
           self_consumption_pct: 79.6
         },
+        simulation_data_available: true,
+        simulation_data_session_default: "latest",
+        kpi_source: "simulation_data_csv",
         timeseries: {
           load_kw: [1.9, 2.1, 2.7, 2.2, 2.0]
         },
@@ -126,6 +157,29 @@ export const handlers = [
     }
 
     return HttpResponse.json({});
+  }),
+  http.post(endpoint("/simulation-data/index"), async () =>
+    HttpResponse.json({
+      root_path: "/mock/jobs/job-completed-001/results/simulation_data",
+      session: "latest",
+      files: DEMO_SIM_FILES,
+      available_days: ["2026-03-20"]
+    })
+  ),
+  http.post(endpoint("/simulation-data/file"), async ({ request }) => {
+    const body = (await request.json()) as { relative_path?: string };
+    const file = body.relative_path || "";
+    if (file.endsWith("exported_kpis.csv")) {
+      return HttpResponse.text(DEMO_KPIS_CSV, {
+        headers: { "Content-Type": "text/plain" }
+      });
+    }
+    if (file.endsWith("exported_data_community_ep0.csv")) {
+      return HttpResponse.text(DEMO_COMMUNITY_CSV, {
+        headers: { "Content-Type": "text/plain" }
+      });
+    }
+    return HttpResponse.json({ detail: "file not found" }, { status: 404 });
   }),
   http.post(endpoint("/run-simulation"), async () => {
     const next = {
@@ -143,6 +197,28 @@ export const handlers = [
       host: "worker-a",
       job_name: "new-simulation"
     });
+  }),
+  http.post(endpoint("/experiment-config/create"), async ({ request }) => {
+    const body = (await request.json()) as { file_name?: string; yaml_content?: string };
+    if (!body.file_name) {
+      return HttpResponse.json({ detail: "Missing file_name" }, { status: 400 });
+    }
+    experimentConfigs[body.file_name] = body.yaml_content || "";
+    return HttpResponse.json({ message: "Config saved", file: body.file_name });
+  }),
+  http.put(endpoint("/experiment-config/:fileName"), async ({ params, request }) => {
+    const fileName = String(params.fileName || "");
+    const body = (await request.json()) as { yaml_content?: string };
+    if (!experimentConfigs[fileName]) {
+      return HttpResponse.json({ detail: "Config not found" }, { status: 404 });
+    }
+    experimentConfigs[fileName] = body.yaml_content || "";
+    return HttpResponse.json({ message: "Config updated", file: fileName });
+  }),
+  http.delete(endpoint("/experiment-config/:fileName"), ({ params }) => {
+    const fileName = String(params.fileName || "");
+    delete experimentConfigs[fileName];
+    return HttpResponse.json({ message: "deleted" });
   }),
   http.post(endpoint("/stop/:jobId"), ({ params }) =>
     HttpResponse.json({ message: `stop requested ${params.jobId}` })

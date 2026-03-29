@@ -13,6 +13,17 @@ function isRecentHostUpdate(lastSeen: number | null): boolean {
   return Date.now() - epochMs <= 5 * 60 * 1000;
 }
 
+function formatBudgetLine(
+  accounts:
+    | Array<{ account: string; used_hours: number; limit_hours: number; used_percent: number }>
+    | undefined
+): string {
+  if (!accounts || accounts.length === 0) return "-";
+  return accounts
+    .map((item) => `${item.account}: ${item.used_percent.toFixed(1)}% (${item.used_hours}/${item.limit_hours}h)`)
+    .join(" | ");
+}
+
 export function HostsPage(): JSX.Element {
   const hostsQuery = useQuery({
     queryKey: ["hosts"],
@@ -28,7 +39,7 @@ export function HostsPage(): JSX.Element {
     <div className="page">
       <PageHeader
         title="Hosts"
-        subtitle="Worker availability and heartbeat status."
+        subtitle="Worker availability, active jobs and Deucalion budget snapshot."
         actions={
           <Button variant="secondary" iconLeft={<RefreshCcw size={14} />} onClick={() => hostsQuery.refetch()}>
             Refresh
@@ -43,6 +54,9 @@ export function HostsPage(): JSX.Element {
               <tr>
                 <th>Host</th>
                 <th>Status</th>
+                <th>Active Job</th>
+                <th>Terminal State</th>
+                <th>Budget</th>
                 <th>Last Seen</th>
               </tr>
             </thead>
@@ -59,6 +73,9 @@ export function HostsPage(): JSX.Element {
                     <span className={`host-live-dot${isRecentHostUpdate(row.last_seen) ? " is-online" : ""}`} />
                     {isRecentHostUpdate(row.last_seen) ? " Live" : " Offline"}
                   </td>
+                  <td>{row.current_job_id || row.info.active_job_id || "-"}</td>
+                  <td>{row.current_job_status || row.info.active_job_status || row.info.last_terminal_status || "-"}</td>
+                  <td>{formatBudgetLine(row.info.budget?.accounts)}</td>
                   <td>{formatDateTime(row.last_seen)}</td>
                 </tr>
               ))}
