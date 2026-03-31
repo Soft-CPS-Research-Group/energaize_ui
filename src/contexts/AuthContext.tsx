@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     const user = MOCK_USERS[key];
 
     if (!user || user.password !== password) {
-      throw new Error("Invalid credentials. Try ai@energaize.io / ai123");
+      throw new Error("Invalid credentials. Try tiago.fonseca@energaize.io / TfTm#2026!");
     }
 
     const next: Session = {

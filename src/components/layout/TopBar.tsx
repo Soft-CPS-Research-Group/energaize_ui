@@ -12,6 +12,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { AI_AVATAR_URL, APP_NAME } from "../../constants";
 import { useAuth } from "../../contexts/AuthContext";
 import { useUI } from "../../contexts/UIContext";
+import { isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { NotificationPanel } from "./NotificationPanel";
 import { UserMenu } from "./UserMenu";
@@ -30,9 +31,18 @@ export function TopBar(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const tabs = session?.role === "ai_manager" ? AI_TABS : [{ to: "/app/logs", label: "Logs" }];
-  const isAiManager = session?.role === "ai_manager";
-  const brandLink = isAiManager ? "/app/ai/jobs" : "/communities";
+  const isTrainingManager = isTrainingManagerRole(session?.role);
+  const isPredictor = isPredictorRole(session?.role);
+  const isKpiManager = isKpiManagerRole(session?.role);
+  const showRoleMockMenu = isPredictor || isKpiManager;
+  const tabs = isTrainingManager ? AI_TABS : showRoleMockMenu ? [] : [{ to: "/app/logs", label: "Logs" }];
+  const brandLink = isTrainingManager
+    ? "/app/ai/jobs"
+    : isPredictor
+      ? "/app/predictor"
+      : isKpiManager
+        ? "/app/kpi-manager"
+        : "/communities";
   const avatarFallback = session?.name?.split(" ").map((part) => part[0]).slice(0, 2).join("") || "U";
 
   return (
@@ -51,7 +61,7 @@ export function TopBar(): JSX.Element {
           />
         </Link>
 
-        {!isAiManager ? (
+        {!isTrainingManager && !showRoleMockMenu ? (
           <div className="community-switcher">
             <button className="icon-btn mobile-only" type="button" onClick={() => setMobileTreeOpen(true)}>
               <Menu size={16} />
@@ -80,43 +90,53 @@ export function TopBar(): JSX.Element {
       </div>
 
       <nav className="topbar-nav" aria-label="Primary navigation">
-        {tabs.map((tab) => (
-          <NavLink
-            key={tab.to}
-            to={tab.to}
-            className={({ isActive }) => `top-tab${isActive ? " is-active" : ""}`}
-          >
-            {tab.label}
-          </NavLink>
-        ))}
+        {tabs.length > 0 ? (
+          tabs.map((tab) => (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              className={({ isActive }) => `top-tab${isActive ? " is-active" : ""}`}
+            >
+              {tab.label}
+            </NavLink>
+          ))
+        ) : (
+          <span className="topbar-nav-placeholder">Menu (mock)</span>
+        )}
       </nav>
 
       <div className="topbar-right">
-        <a
-          className="icon-btn"
-          href="http://193.136.62.78:5000/#/"
-          target="_blank"
-          rel="noreferrer"
-          title="Open MLflow Tracking"
-          aria-label="Open MLflow Tracking"
-        >
-          <FlaskConical size={16} />
-        </a>
+        {isTrainingManager ? (
+          <>
+            <a
+              className="icon-btn"
+              href="http://193.136.62.78:5000/#/"
+              target="_blank"
+              rel="noreferrer"
+              title="Open MLflow Tracking"
+              aria-label="Open MLflow Tracking"
+            >
+              <FlaskConical size={16} />
+            </a>
 
-        <a
-          className="icon-btn"
-          href="https://193.136.62.78:9443/"
-          target="_blank"
-          rel="noreferrer"
-          title="Open Portainer"
-          aria-label="Open Portainer"
-        >
-          <Boxes size={16} />
-        </a>
+            <a
+              className="icon-btn"
+              href="https://193.136.62.78:9443/"
+              target="_blank"
+              rel="noreferrer"
+              title="Open Portainer"
+              aria-label="Open Portainer"
+            >
+              <Boxes size={16} />
+            </a>
+          </>
+        ) : null}
 
-        <Link className={`icon-btn${location.pathname === "/app/logs" ? " is-active" : ""}`} to="/app/logs" title="Logs">
-          <FileText size={16} />
-        </Link>
+        {!showRoleMockMenu ? (
+          <Link className={`icon-btn${location.pathname === "/app/logs" ? " is-active" : ""}`} to="/app/logs" title="Logs">
+            <FileText size={16} />
+          </Link>
+        ) : null}
 
         <button
           className="icon-btn notif-trigger"
@@ -142,8 +162,8 @@ export function TopBar(): JSX.Element {
           }}
         >
           <span className="avatar-media">
-            {session?.role === "ai_manager" ? (
-              <img src={AI_AVATAR_URL} alt={session.name} />
+            {isTrainingManager ? (
+              <img src={AI_AVATAR_URL} alt={session?.name ?? "User"} />
             ) : (
               avatarFallback
             )}

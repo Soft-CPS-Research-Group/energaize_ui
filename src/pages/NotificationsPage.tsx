@@ -11,6 +11,7 @@ export function NotificationsPage(): JSX.Element {
     markAllNotificationsRead,
     markNotificationRead,
     removeNotification,
+    clearNotifications,
     unreadCount
   } = useUI();
 
@@ -20,9 +21,14 @@ export function NotificationsPage(): JSX.Element {
         title="Notifications"
         subtitle="Operational events and API feedback."
         actions={
-          <Button variant="secondary" onClick={markAllNotificationsRead}>
-            Mark all read ({unreadCount})
-          </Button>
+          <div className="jobs-command-group">
+            <Button variant="secondary" onClick={markAllNotificationsRead}>
+              Mark all read ({unreadCount})
+            </Button>
+            <Button variant="ghost" onClick={clearNotifications} disabled={notifications.length === 0}>
+              Clear all
+            </Button>
+          </div>
         }
       />
 

@@ -20,7 +20,8 @@
     "react-day-picker": "^9.14.0",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.0",
-    "recharts": "^3.2.1"
+    "recharts": "^3.2.1",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

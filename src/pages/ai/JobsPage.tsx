@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useMutation,
   useQueries,
@@ -10,11 +10,12 @@ import {
   Download,
   Eye,
   FileText,
+  FlaskConical,
+  Info,
   Play,
   RefreshCcw,
   Search,
   Server,
-  Square,
   Trash2
 } from "lucide-react";
 import {
@@ -23,8 +24,10 @@ import {
   getJobFileLogs,
   getJobLogs,
   getJobProgress,
+  getJobResolvedConfig,
   listExperimentConfigs,
   listHosts,
+  listJobImageVersions,
   listJobs,
   listQueue,
   opsCancelJob,
@@ -32,10 +35,11 @@ import {
   opsCleanupQueue,
   opsFailJob,
   opsRequeueJob,
+  opsStopJob,
   runSimulation,
   type RunSimulationPayload
 } from "../../api/trainingApi";
-import { HOSTS_POLL_MS, JOB_POLL_MS } from "../../constants";
+import { HOSTS_POLL_MS, JOB_POLL_MS, LOGS_POLL_MS } from "../../constants";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
@@ -44,27 +48,45 @@ import { Modal } from "../../components/ui/Modal";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
 import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications";
-import type { JobItem } from "../../types";
+import type { HostInfo, JobItem } from "../../types";
+import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { isCompletedForResults } from "../../utils/jobStatus";
 import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "../../utils/jobsListState";
 import { formatDateTime } from "../../utils/time";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 
 interface RunForm {
   configPath: string;
+  jobName: string;
   targetHost: string;
+  image: string;
 }
 
-type AdminActionType = "requeue" | "cancel" | "fail" | "cleanup_queue" | "cleanup_jobs";
+type AdminActionType = "requeue" | "cancel" | "stop" | "fail" | "cleanup_queue" | "cleanup_jobs";
 
 interface AdminConfirmState {
   action: AdminActionType;
   jobId?: string;
 }
 
+type DetailTabForJobs = "overview" | "timeseries" | "kpis" | "deploy";
+
+interface SlurmDispatchSnapshot {
+  details: Record<string, unknown> | null;
+  slurmJobId: string | null;
+  slurmState: string | null;
+  connectivity: string | null;
+  unknownSince: string | number | null;
+  datasetsSynced: string[];
+  datasetsSkipped: string[];
+}
+
 const defaultRunForm: RunForm = {
   configPath: "",
-  targetHost: ""
+  jobName: "",
+  targetHost: "",
+  image: "calof/opeva_simulator:latest"
 };
 
 function asNumber(value: unknown): number | null {
@@ -160,6 +182,41 @@ function resolveConfigName(configPath: string | undefined): string {
   return normalized[normalized.length - 1] || configPath;
 }
 
+function parseConfigDefaultJobName(yamlContent: string, fallback: string): string {
+  const experimentMatch = yamlContent.match(/(?:^|\n)\s*experiment_name:\s*["']?([^"\n']+)["']?/m);
+  const runMatch = yamlContent.match(/(?:^|\n)\s*run_name:\s*["']?([^"\n']+)["']?/m);
+  const experiment = experimentMatch?.[1]?.trim();
+  const runName = runMatch?.[1]?.trim();
+  if (experiment && runName) return `${experiment}-${runName}`;
+  if (runName) return runName;
+  if (experiment) return experiment;
+  return fallback;
+}
+
+function resolveDefaultJobNameFromConfigPath(configPath: string): string {
+  const baseName = resolveConfigName(configPath);
+  return baseName.replace(/\.ya?ml$/i, "");
+}
+
+function resolveSubmittedByLabel(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function computeUserInitials(label: string): string {
+  const normalized = label.includes("@") ? label.split("@")[0] : label;
+  const chunks = normalized
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (chunks.length === 0) return "U";
+  return chunks
+    .map((chunk) => chunk[0]!.toUpperCase())
+    .join("")
+    .slice(0, 2);
+}
+
 function hasAnyStatus(status: string, tokens: string[]): boolean {
   const key = status.toLowerCase();
   return tokens.some((token) => key.includes(token));
@@ -180,21 +237,53 @@ function canFailStatus(status: string): boolean {
   return !hasAnyStatus(status, ["fail", "error", "cancel", "finish", "complete", "done", "stopp"]);
 }
 
+function asObjectRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function readDispatchSnapshot(job: JobItem): SlurmDispatchSnapshot {
+  const detailsFromMeta = asObjectRecord(job.job_meta?.details);
+  const detailsFromInfo = asObjectRecord(job.job_info?.details);
+  const details = detailsFromMeta || detailsFromInfo;
+
+  const slurmJobId = typeof details?.slurm_job_id === "string" ? details.slurm_job_id : null;
+  const slurmState = typeof details?.slurm_state === "string" ? details.slurm_state : null;
+  const connectivity = typeof details?.connectivity === "string" ? details.connectivity : null;
+  const unknownSince =
+    typeof details?.unknown_since === "string" || typeof details?.unknown_since === "number"
+      ? details.unknown_since
+      : null;
+  const datasetsSynced = Array.isArray(details?.datasets_synced)
+    ? details.datasets_synced.filter((item): item is string => typeof item === "string")
+    : [];
+  const datasetsSkipped = Array.isArray(details?.datasets_skipped)
+    ? details.datasets_skipped.filter((item): item is string => typeof item === "string")
+    : [];
+
+  return { details, slurmJobId, slurmState, connectivity, unknownSince, datasetsSynced, datasetsSkipped };
+}
+
 export function JobsPage(): JSX.Element {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialState = buildJobsListStateFromSearchParams(searchParams);
+  const { session } = useAuth();
   const { notifyError, notifyInfo, notifySuccess } = useApiFeedback();
 
   const [runOpen, setRunOpen] = useState(false);
   const [configPickerOpen, setConfigPickerOpen] = useState(false);
+  const [jobNameAutoValue, setJobNameAutoValue] = useState("");
+  const [jobNameTouched, setJobNameTouched] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [compareMode, setCompareMode] = useState(false);
   const [refreshingVisual, setRefreshingVisual] = useState(false);
   const [statusFilter, setStatusFilter] = useState(initialState.status);
   const [hostFilter, setHostFilter] = useState(initialState.host);
+  const [submittedFilter, setSubmittedFilter] = useState(initialState.submitted);
+  const [queueHostFilter, setQueueHostFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState(initialState.q);
   const [runForm, setRunForm] = useState<RunForm>(defaultRunForm);
   const [compareSelection, setCompareSelection] = useState<string[]>([]);
@@ -204,30 +293,48 @@ export function JobsPage(): JSX.Element {
   const [configPreviewOpen, setConfigPreviewOpen] = useState(false);
   const [configPreviewTarget, setConfigPreviewTarget] = useState("");
   const [configPreviewLabel, setConfigPreviewLabel] = useState("");
+  const [configPreviewMode, setConfigPreviewMode] = useState<"base" | "resolved">("base");
+  const [configPreviewJobId, setConfigPreviewJobId] = useState("");
+  const [dispatchDetailsTarget, setDispatchDetailsTarget] = useState<JobItem | null>(null);
+  const [hostDetailsTarget, setHostDetailsTarget] = useState<{ name: string; data: HostInfo } | null>(null);
+  const [hostDetailsOpen, setHostDetailsOpen] = useState(false);
   const [adminConfirm, setAdminConfirm] = useState<AdminConfirmState | null>(null);
   const [deleteJobTarget, setDeleteJobTarget] = useState<string | null>(null);
+  const logsPreRef = useRef<HTMLPreElement | null>(null);
+  const configJobNameRequestRef = useRef(0);
 
   const jobsQuery = useQuery({
     queryKey: ["jobs"],
     queryFn: listJobs,
-    refetchInterval: JOB_POLL_MS
+    refetchInterval: JOB_POLL_MS,
+    networkMode: "always"
   });
 
   const hostsQuery = useQuery({
     queryKey: ["hosts"],
     queryFn: listHosts,
-    refetchInterval: HOSTS_POLL_MS
+    refetchInterval: HOSTS_POLL_MS,
+    networkMode: "always"
   });
 
   const queueQuery = useQuery({
     queryKey: ["queue"],
     queryFn: listQueue,
-    refetchInterval: JOB_POLL_MS
+    refetchInterval: JOB_POLL_MS,
+    networkMode: "always"
   });
 
   const configsQuery = useQuery({
     queryKey: ["configs"],
-    queryFn: listExperimentConfigs
+    queryFn: listExperimentConfigs,
+    networkMode: "always"
+  });
+
+  const jobImagesQuery = useQuery({
+    queryKey: ["job-images", "catalog", "default"],
+    queryFn: () => listJobImageVersions({ limit: 50 }),
+    staleTime: 120_000,
+    networkMode: "always"
   });
 
   const logsQuery = useQuery({
@@ -239,12 +346,15 @@ export function JobsPage(): JSX.Element {
         return getJobLogs(logsJobId).catch(() => "");
       }
     },
-    enabled: Boolean(logsOpen && logsJobId)
+    enabled: Boolean(logsOpen && logsJobId),
+    refetchInterval: logsOpen && logsJobId ? LOGS_POLL_MS : false,
+    networkMode: "always"
   });
 
   const allLogLines = useMemo(() => {
-    if (!logsQuery.data) return [];
-    return logsQuery.data.split(/\r?\n/);
+    const text = logsQuery.data || "";
+    if (!text.trim()) return [];
+    return text.split(/\r?\n/);
   }, [logsQuery.data]);
 
   const filteredLogLines = useMemo(() => {
@@ -252,22 +362,43 @@ export function JobsPage(): JSX.Element {
     if (!query) return allLogLines;
     return allLogLines.filter((line) => line.toLowerCase().includes(query));
   }, [allLogLines, logsSearch]);
+  const hasRawLogs = (logsQuery.data || "").trim().length > 0;
+
+  useEffect(() => {
+    if (!logsOpen || logsSearch.trim()) return;
+    const pre = logsPreRef.current;
+    if (!pre) return;
+    pre.scrollTop = pre.scrollHeight;
+  }, [allLogLines, logsOpen, logsSearch]);
 
   const configPreviewQuery = useQuery({
-    queryKey: ["job-config-preview", configPreviewTarget],
+    queryKey: ["job-config-preview", configPreviewMode, configPreviewTarget, configPreviewJobId],
     queryFn: async () => {
+      if (configPreviewMode === "resolved") {
+        const payload = await getJobResolvedConfig(configPreviewJobId);
+        return payload.yaml_content;
+      }
       const payload = await getExperimentConfig(configPreviewTarget);
       return payload.yaml_content;
     },
-    enabled: Boolean(configPreviewOpen && configPreviewTarget)
+    enabled: Boolean(
+      configPreviewOpen &&
+        ((configPreviewMode === "base" && configPreviewTarget) ||
+          (configPreviewMode === "resolved" && configPreviewJobId))
+    )
   });
 
   useEffect(() => {
-    const nextParams = toJobsListSearchParams({ q: searchQuery, status: statusFilter, host: hostFilter });
+    const nextParams = toJobsListSearchParams({
+      q: searchQuery,
+      status: statusFilter,
+      host: hostFilter,
+      submitted: submittedFilter
+    });
     if (nextParams.toString() !== searchParams.toString()) {
       setSearchParams(nextParams, { replace: true });
     }
-  }, [hostFilter, searchParams, searchQuery, setSearchParams, statusFilter]);
+  }, [hostFilter, searchParams, searchQuery, setSearchParams, statusFilter, submittedFilter]);
 
   useJobStatusNotifications(jobsQuery.data);
 
@@ -294,6 +425,8 @@ export function JobsPage(): JSX.Element {
       notifySuccess("Simulation submitted", `Job ${result.job_id} queued.`);
       setRunOpen(false);
       setRunForm(defaultRunForm);
+      setJobNameAutoValue("");
+      setJobNameTouched(false);
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["queue"] });
     },
@@ -311,12 +444,15 @@ export function JobsPage(): JSX.Element {
   });
 
   const opsMutation = useMutation({
-    mutationFn: async (payload: { type: "requeue" | "cancel" | "fail"; jobId: string }) => {
+    mutationFn: async (payload: { type: "requeue" | "cancel" | "stop" | "fail"; jobId: string }) => {
       if (payload.type === "requeue") {
         return opsRequeueJob({ job_id: payload.jobId, force: false });
       }
       if (payload.type === "cancel") {
         return opsCancelJob({ job_id: payload.jobId, reason: "ops_cancel", force: false });
+      }
+      if (payload.type === "stop") {
+        return opsStopJob({ job_id: payload.jobId, reason: "ops_manual_stop" });
       }
       return opsFailJob({ job_id: payload.jobId, reason: "ops_fail", force: false });
     },
@@ -352,6 +488,10 @@ export function JobsPage(): JSX.Element {
     return (jobsQuery.data || []).filter((job) => {
       if (statusFilter !== "all" && job.status !== statusFilter) return false;
       if (hostFilter !== "all" && (job.job_info.target_host || "") !== hostFilter) return false;
+      const submittedBy =
+        resolveSubmittedByLabel(job.job_info.submitted_by) ||
+        resolveSubmittedByLabel(job.job_meta?.submitted_by);
+      if (submittedFilter !== "all" && submittedBy !== submittedFilter) return false;
       if (!query) return true;
 
       const haystack = [
@@ -361,6 +501,7 @@ export function JobsPage(): JSX.Element {
         job.job_info.run_name || "",
         job.job_info.target_host || "",
         job.job_info.config_path || "",
+        job.job_info.submitted_by || "",
         job.status
       ]
         .join(" ")
@@ -368,22 +509,44 @@ export function JobsPage(): JSX.Element {
 
       return haystack.includes(query);
     });
-  }, [hostFilter, jobsQuery.data, searchQuery, statusFilter]);
+  }, [hostFilter, jobsQuery.data, searchQuery, statusFilter, submittedFilter]);
+
+  const submittedByOptions = useMemo(() => {
+    const values = new Set<string>();
+    (jobsQuery.data || []).forEach((job) => {
+      const submittedBy =
+        resolveSubmittedByLabel(job.job_info.submitted_by) ||
+        resolveSubmittedByLabel(job.job_meta?.submitted_by);
+      if (submittedBy) values.add(submittedBy);
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [jobsQuery.data]);
 
   const availableHosts = hostsQuery.data?.available_hosts || [];
   const availableConfigs = configsQuery.data || [];
+  const imageRepository = jobImagesQuery.data?.repository || "calof/opeva_simulator";
+  const runImageOptions = useMemo(() => {
+    const options = [`${imageRepository}:latest`];
+    const tags = jobImagesQuery.data?.tags || [];
+    tags.forEach((tag) => {
+      if (!tag?.name) return;
+      options.push(`${imageRepository}:${tag.name}`);
+    });
+    return Array.from(new Set(options));
+  }, [imageRepository, jobImagesQuery.data?.tags]);
   const filteredConfigOptions = useMemo(() => {
     const query = runForm.configPath.trim().toLowerCase();
     if (!query) return availableConfigs;
     return availableConfigs.filter((config) => config.toLowerCase().includes(query));
   }, [availableConfigs, runForm.configPath]);
+  const hasCustomRunImage = runForm.image.trim() !== "" && !runImageOptions.includes(runForm.image.trim());
 
   const selectedJob = useMemo(() => {
     return (jobsQuery.data || []).find((job) => job.job_id === selectedJobId) || null;
   }, [jobsQuery.data, selectedJobId]);
 
   const canRequeueSelected = selectedJob ? canRequeueStatus(selectedJob.status) : false;
-  const canCancelSelected = selectedJob ? canCancelStatus(selectedJob.status) : false;
+  const canStopSelected = selectedJob ? canCancelStatus(selectedJob.status) : false;
   const canFailSelected = selectedJob ? canFailStatus(selectedJob.status) : false;
   const canCleanupQueue = (queueQuery.data?.length || 0) > 0;
   const canCleanupJobs = (jobsQuery.data?.length || 0) > 0;
@@ -405,6 +568,89 @@ export function JobsPage(): JSX.Element {
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [availableHosts, hostRows]);
+
+  const jobsById = useMemo(() => {
+    return new Map((jobsQuery.data || []).map((job) => [job.job_id, job] as const));
+  }, [jobsQuery.data]);
+
+  const queueHostOptions = useMemo(() => {
+    const values = new Set<string>();
+    (queueQuery.data || []).forEach((entry) => {
+      const jobRef = jobsById.get(entry.job_id);
+      const host = entry.preferred_host || jobRef?.job_info.target_host;
+      if (host) values.add(host);
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [jobsById, queueQuery.data]);
+
+  const filteredQueueEntries = useMemo(() => {
+    return (queueQuery.data || []).filter((entry) => {
+      if (queueHostFilter === "all") return true;
+      const jobRef = jobsById.get(entry.job_id);
+      const host = entry.preferred_host || jobRef?.job_info.target_host || "";
+      return host === queueHostFilter;
+    });
+  }, [jobsById, queueHostFilter, queueQuery.data]);
+
+  useEffect(() => {
+    if (!runOpen) return;
+
+    const inputValue = runForm.configPath.trim();
+    if (!inputValue) {
+      if (!jobNameTouched) {
+        setRunForm((previous) => ({ ...previous, jobName: "" }));
+        setJobNameAutoValue("");
+      }
+      return;
+    }
+
+    const canAutoApply = !jobNameTouched || runForm.jobName.trim() === jobNameAutoValue;
+    if (!canAutoApply) return;
+
+    const fallbackName = resolveDefaultJobNameFromConfigPath(inputValue);
+    const matchedConfig =
+      availableConfigs.find((config) => config === inputValue || resolveConfigName(config) === resolveConfigName(inputValue)) ||
+      null;
+
+    if (!matchedConfig) {
+      setRunForm((previous) => (previous.jobName === fallbackName ? previous : { ...previous, jobName: fallbackName }));
+      if (jobNameAutoValue !== fallbackName) {
+        setJobNameAutoValue(fallbackName);
+      }
+      return;
+    }
+
+    const requestId = ++configJobNameRequestRef.current;
+    getExperimentConfig(matchedConfig)
+      .then((payload) => {
+        if (requestId !== configJobNameRequestRef.current) return;
+        const autoName = parseConfigDefaultJobName(payload.yaml_content || "", fallbackName);
+        setRunForm((previous) => {
+          if (previous.configPath === matchedConfig && previous.jobName === autoName) {
+            return previous;
+          }
+          return { ...previous, configPath: matchedConfig, jobName: autoName };
+        });
+        if (jobNameAutoValue !== autoName) {
+          setJobNameAutoValue(autoName);
+        }
+      })
+      .catch(() => {
+        if (requestId !== configJobNameRequestRef.current) return;
+        setRunForm((previous) => (previous.jobName === fallbackName ? previous : { ...previous, jobName: fallbackName }));
+        if (jobNameAutoValue !== fallbackName) {
+          setJobNameAutoValue(fallbackName);
+        }
+      });
+  }, [
+    availableConfigs,
+    jobNameAutoValue,
+    jobNameTouched,
+    runForm.configPath,
+    runForm.jobName,
+    runOpen
+  ]);
+
   useEffect(() => {
     const eligible = new Set((jobsQuery.data || []).filter((job) => isCompletedForResults(job.status)).map((job) => job.job_id));
 
@@ -423,7 +669,21 @@ export function JobsPage(): JSX.Element {
 
   useEffect(() => {
     if (!runOpen) return;
-    setRunForm((previous) => ({ ...previous, configPath: previous.configPath.trim() }));
+    setRunForm((previous) => ({
+      ...previous,
+      configPath: previous.configPath.trim()
+    }));
+  }, [runOpen]);
+
+  useEffect(() => {
+    if (!runOpen) return;
+    if (runForm.image.trim()) return;
+    setRunForm((previous) => ({ ...previous, image: `${imageRepository}:latest` }));
+  }, [imageRepository, runForm.image, runOpen]);
+
+  useEffect(() => {
+    if (runOpen) return;
+    configJobNameRequestRef.current += 1;
   }, [runOpen]);
 
   const latestHostEpoch = useMemo(() => {
@@ -448,8 +708,11 @@ export function JobsPage(): JSX.Element {
     });
   }
 
-  function openJobDetails(jobId: string): void {
+  function openJobDetails(jobId: string, tab?: DetailTabForJobs): void {
     const params = new URLSearchParams();
+    if (tab) {
+      params.set("tab", tab);
+    }
     if (location.search) {
       params.set("from", location.search);
     }
@@ -457,13 +720,48 @@ export function JobsPage(): JSX.Element {
     navigate(`/app/ai/jobs/${encodeURIComponent(jobId)}${params.toString() ? `?${params.toString()}` : ""}`);
   }
 
-  function openConfigPreview(configPath: string): void {
+  function openBaseConfigPreview(configPath: string): void {
     const normalized = configPath.split(/[\\/]/).filter(Boolean);
     const baseName = normalized[normalized.length - 1] || configPath;
     const resolvedName = availableConfigs.find((item) => item === configPath || item === baseName) || baseName;
     setConfigPreviewLabel(resolveConfigName(configPath));
     setConfigPreviewTarget(resolvedName);
+    setConfigPreviewMode("base");
+    setConfigPreviewJobId("");
     setConfigPreviewOpen(true);
+  }
+
+  function openResolvedConfigPreview(job: JobItem): void {
+    setConfigPreviewLabel(`Resolved config · ${resolveJobDisplayName(job)}`);
+    setConfigPreviewTarget("");
+    setConfigPreviewMode("resolved");
+    setConfigPreviewJobId(job.job_id);
+    setConfigPreviewOpen(true);
+  }
+
+  function openHostDetails(name: string, data: HostInfo): void {
+    setHostDetailsTarget({ name, data });
+    setHostDetailsOpen(true);
+  }
+
+  function resolveHostJobName(jobId: string | null | undefined): string {
+    if (!jobId) return "-";
+    const candidate = jobsById.get(jobId);
+    return candidate ? resolveJobDisplayName(candidate) : jobId;
+  }
+
+  function openJobOrLogsFromHost(jobId: string | null | undefined): void {
+    if (!jobId) return;
+    const candidate = jobsById.get(jobId);
+    if (candidate && isCompletedForResults(candidate.status)) {
+      setHostDetailsOpen(false);
+      openJobDetails(jobId);
+      return;
+    }
+    setHostDetailsOpen(false);
+    setLogsJobId(jobId);
+    setLogsSearch("");
+    setLogsOpen(true);
   }
 
   function openComparePage(): void {
@@ -483,10 +781,18 @@ export function JobsPage(): JSX.Element {
     setRefreshingVisual(true);
     try {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["jobs"], refetchType: "active" }),
+        queryClient.invalidateQueries({ queryKey: ["queue"], refetchType: "active" }),
+        queryClient.invalidateQueries({ queryKey: ["hosts"], refetchType: "active" }),
+        queryClient.invalidateQueries({ queryKey: ["configs"], refetchType: "active" }),
+        queryClient.invalidateQueries({ queryKey: ["job-images"], refetchType: "active" })
+      ]);
+      await Promise.all([
         jobsQuery.refetch(),
         queueQuery.refetch(),
         hostsQuery.refetch(),
         configsQuery.refetch(),
+        jobImagesQuery.refetch(),
         new Promise((resolve) => window.setTimeout(resolve, 1200))
       ]);
     } finally {
@@ -511,6 +817,13 @@ export function JobsPage(): JSX.Element {
         title: "Confirm Cancel",
         description: `Cancel job ${state.jobId}?`,
         confirmLabel: "Cancel Job"
+      };
+    }
+    if (state.action === "stop") {
+      return {
+        title: "Confirm Stop",
+        description: `Stop job ${state.jobId}?`,
+        confirmLabel: "Stop Job"
       };
     }
     if (state.action === "fail") {
@@ -541,6 +854,10 @@ export function JobsPage(): JSX.Element {
     }
     if (state.action === "cancel" && state.jobId) {
       opsMutation.mutate({ type: "cancel", jobId: state.jobId });
+      return;
+    }
+    if (state.action === "stop" && state.jobId) {
+      opsMutation.mutate({ type: "stop", jobId: state.jobId });
       return;
     }
     if (state.action === "fail" && state.jobId) {
@@ -601,6 +918,8 @@ export function JobsPage(): JSX.Element {
                 iconLeft={<Play size={14} />}
                 onClick={() => {
                   setRunForm(defaultRunForm);
+                  setJobNameAutoValue("");
+                  setJobNameTouched(false);
                   setConfigPickerOpen(false);
                   setRunOpen(true);
                 }}
@@ -650,6 +969,14 @@ export function JobsPage(): JSX.Element {
                   </option>
                 ))}
               </select>
+              <select value={submittedFilter} onChange={(event) => setSubmittedFilter(event.target.value)}>
+                <option value="all">All Submitters</option>
+                {submittedByOptions.map((submittedBy) => (
+                  <option key={submittedBy} value={submittedBy}>
+                    {submittedBy}
+                  </option>
+                ))}
+              </select>
               <div className="jobs-query-count">{filteredJobs.length} jobs</div>
             </div>
           </div>
@@ -663,6 +990,8 @@ export function JobsPage(): JSX.Element {
                   variant="primary"
                   onClick={() => {
                     setRunForm(defaultRunForm);
+                    setJobNameAutoValue("");
+                    setJobNameTouched(false);
                     setConfigPickerOpen(false);
                     setRunOpen(true);
                   }}
@@ -678,6 +1007,7 @@ export function JobsPage(): JSX.Element {
                   <tr>
                     {compareMode ? <th>Compare</th> : null}
                     <th>Job</th>
+                    <th>By</th>
                     <th>Experiment Config</th>
                     <th>Progress</th>
                     <th>Status</th>
@@ -693,12 +1023,29 @@ export function JobsPage(): JSX.Element {
                     const isCompleted = isCompletedForResults(job.status);
                     const isChecked = compareSelection.includes(job.job_id);
                     const checkboxDisabled = !isCompleted || (!isChecked && compareSelection.length >= 2);
+                    const submittedBy =
+                      resolveSubmittedByLabel(job.job_info.submitted_by) ||
+                      resolveSubmittedByLabel(job.job_meta?.submitted_by);
+                    const mlflowUrl =
+                      typeof job.job_info.mlflow_run_url === "string" && job.job_info.mlflow_run_url.trim() !== ""
+                        ? job.job_info.mlflow_run_url
+                        : null;
+                  const baseConfigPath =
+                    (typeof job.job_info.config_path === "string" && job.job_info.config_path) ||
+                    (typeof job.job_meta?.config_path === "string" ? job.job_meta.config_path : "");
+                  const resolvedConfigAvailable = Boolean(job.job_info.resolved_config_available) && isCompleted;
+                  const dispatchedStatus = hasAnyStatus(job.status, ["dispatch"]);
+                  const dispatchSnapshot = readDispatchSnapshot(job);
+                  const dispatchTitle = dispatchSnapshot.slurmState
+                    ? `Slurm state: ${dispatchSnapshot.slurmState}`
+                    : "Show Slurm queue details";
 
                     return (
                       <tr
                         key={job.job_id}
                         className={`jobs-row${selected ? " is-selected" : ""}`}
                         onClick={() => setSelectedJobId(job.job_id)}
+                        onDoubleClick={() => openJobDetails(job.job_id, "overview")}
                       >
                         {compareMode ? (
                           <td>
@@ -726,24 +1073,50 @@ export function JobsPage(): JSX.Element {
                           </div>
                         </td>
                         <td>
+                          {submittedBy ? (
+                            <div className="submitted-by-cell" title={`Submitted by: ${submittedBy}`}>
+                              <span className="submitted-by-avatar" aria-label={`Submitted by ${submittedBy}`}>
+                                {computeUserInitials(submittedBy)}
+                              </span>
+                            </div>
+                          ) : (
+                            <small className="jobs-meta">-</small>
+                          )}
+                        </td>
+                        <td>
                           <div className="jobs-config-cell">
-                            <strong>
-                              {job.job_info.config_path ? (
+                            {resolvedConfigAvailable ? (
+                              <strong>
                                 <button
                                   type="button"
                                   className="btn-link jobs-config-link"
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    openConfigPreview(job.job_info.config_path || "");
+                                    openResolvedConfigPreview(job);
+                                  }}
+                                  title="Preview resolved config"
+                                >
+                                  {job.job_info.resolved_config_file || "config.resolved.yaml"}
+                                </button>
+                              </strong>
+                            ) : null}
+                            {baseConfigPath ? (
+                              <small>
+                                {resolvedConfigAvailable ? "Based on " : ""}
+                                <button
+                                  type="button"
+                                  className="btn-link jobs-config-link"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openBaseConfigPreview(baseConfigPath);
                                   }}
                                   title="Preview experiment config"
                                 >
-                                  {resolveConfigName(job.job_info.config_path)}
+                                  {resolveConfigName(baseConfigPath)}
                                 </button>
-                              ) : (
-                                resolveConfigName(job.job_info.config_path)
-                              )}
-                            </strong>
+                              </small>
+                            ) : null}
+                            {!resolvedConfigAvailable && !baseConfigPath ? <small className="jobs-meta">-</small> : null}
                           </div>
                         </td>
                         <td>
@@ -756,10 +1129,24 @@ export function JobsPage(): JSX.Element {
                         </td>
                         <td>
                           <div className="jobs-status-cell">
-                            <StatusPill status={job.status} />
+                            {dispatchedStatus ? (
+                              <button
+                                type="button"
+                                className="jobs-status-trigger"
+                                title={dispatchTitle}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDispatchDetailsTarget(job);
+                                }}
+                              >
+                                <StatusPill status={job.status} />
+                              </button>
+                            ) : (
+                              <StatusPill status={job.status} />
+                            )}
                           </div>
                         </td>
-                        <td>{job.job_info.target_host || "-"}</td>
+                        <td>{job.job_info.target_host || (typeof job.job_meta?.target_host === "string" ? job.job_meta.target_host : "-")}</td>
                         <td>
                           <div className="table-actions table-actions-compact">
                             <button
@@ -791,6 +1178,20 @@ export function JobsPage(): JSX.Element {
                             >
                               <FileText size={15} />
                             </button>
+
+                            {mlflowUrl ? (
+                              <a
+                                className="icon-btn"
+                                href={mlflowUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label={`Open MLflow run for ${job.job_id}`}
+                                title="Open MLflow run"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <FlaskConical size={15} />
+                              </a>
+                            ) : null}
 
                             <button
                               type="button"
@@ -846,15 +1247,14 @@ export function JobsPage(): JSX.Element {
             </Button>
             <Button
               variant="secondary"
-              disabled={!selectedJobId || !canCancelSelected}
-              title={!selectedJobId ? "Select a job first" : !canCancelSelected ? "Cancel not available for this status" : "Cancel selected job"}
-              iconLeft={<Square size={13} />}
+              disabled={!selectedJobId || !canStopSelected}
+              title={!selectedJobId ? "Select a job first" : !canStopSelected ? "Stop not available for this status" : "Stop selected job"}
               onClick={() => {
-                if (!selectedJobId || !canCancelSelected) return;
-                setAdminConfirm({ action: "cancel", jobId: selectedJobId });
+                if (!selectedJobId || !canStopSelected) return;
+                setAdminConfirm({ action: "stop", jobId: selectedJobId });
               }}
             >
-              Cancel Job
+              Stop Job
             </Button>
             <Button
               variant="secondary"
@@ -866,16 +1266,6 @@ export function JobsPage(): JSX.Element {
               }}
             >
               Mark Failed
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={!canCleanupQueue}
-              onClick={() => {
-                if (!canCleanupQueue) return;
-                setAdminConfirm({ action: "cleanup_queue" });
-              }}
-            >
-              Cleanup Queue
             </Button>
             <Button
               variant="ghost"
@@ -909,30 +1299,31 @@ export function JobsPage(): JSX.Element {
               {hostRows.length > 0 ? (
                 hostRows.map((host) => {
                   const isLive = isRecentTimestamp(host.last_seen);
-                  const budgetAccounts = host.info?.budget?.accounts;
-                  const budgetPrimary = Array.isArray(budgetAccounts) && budgetAccounts.length > 0 ? budgetAccounts[0] : null;
                   return (
                     <li key={host.name}>
-                      <div className="jobs-host-line">
-                        <Server size={14} />
-                        <span className={`host-live-dot${isLive ? " is-online" : ""}`} />
-                        <strong>{host.name}</strong>
-                        <small>{isLive ? "Live" : "Offline"}</small>
-                      </div>
-                      <small className="jobs-meta">Last seen: {formatDateTime(host.last_seen)}</small>
-                      {host.current_job_id || host.info?.active_job_id ? (
-                        <small className="jobs-meta">
-                          Active: {host.current_job_id || host.info?.active_job_id}
-                          {host.current_job_status || host.info?.active_job_status
-                            ? ` (${host.current_job_status || host.info?.active_job_status})`
-                            : ""}
-                        </small>
-                      ) : null}
-                      {budgetPrimary ? (
-                        <small className="jobs-meta">
-                          Budget {budgetPrimary.account}: {formatBudgetUsage(budgetPrimary.used_percent)}
-                        </small>
-                      ) : null}
+                      <button
+                        type="button"
+                        className="host-card-btn"
+                        onClick={() => openHostDetails(host.name, host)}
+                        title={`Open details for ${host.name}`}
+                      >
+                        <div className="jobs-host-line">
+                          <Server size={14} />
+                          <span className={`host-live-dot${isLive ? " is-online" : ""}`} />
+                          <strong>{host.name}</strong>
+                          <small>{isLive ? "Live" : "Offline"}</small>
+                          <Info size={13} />
+                        </div>
+                        <small className="jobs-meta">Last seen: {formatDateTime(host.last_seen)}</small>
+                        {host.current_job_id || host.info?.active_job_id ? (
+                          <small className="jobs-meta">
+                            Active: {resolveHostJobName(host.current_job_id || host.info?.active_job_id)}
+                            {host.current_job_status || host.info?.active_job_status
+                              ? ` (${host.current_job_status || host.info?.active_job_status})`
+                              : ""}
+                          </small>
+                        ) : null}
+                      </button>
                     </li>
                   );
                 })
@@ -945,20 +1336,90 @@ export function JobsPage(): JSX.Element {
           </article>
 
           <article className="jobs-side-panel">
-            <header>
-              <h2>Queue</h2>
+            <header className="jobs-queue-header">
+              <div className="jobs-queue-header-main">
+                <h2>Queue</h2>
+                <span className="queue-count-pill">{queueQuery.data?.length || 0}</span>
+              </div>
+              {canCleanupQueue ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="jobs-queue-clean-btn"
+                  onClick={() => {
+                    setAdminConfirm({ action: "cleanup_queue" });
+                  }}
+                >
+                  Cleanup queue
+                </Button>
+              ) : null}
             </header>
+            <div className="jobs-queue-filters">
+              <select value={queueHostFilter} onChange={(event) => setQueueHostFilter(event.target.value)}>
+                <option value="all">All queue hosts</option>
+                {queueHostOptions.map((host) => (
+                  <option key={host} value={host}>
+                    {host}
+                  </option>
+                ))}
+              </select>
+            </div>
             <ul className="jobs-queue-list">
-              {(queueQuery.data || []).slice(0, 8).map((entry, index) => (
-                <li key={entry.job_id}>
-                  <span>{index + 1}</span>
-                  <strong>{entry.job_id}</strong>
-                  <small>{entry.preferred_host || "Any host"}</small>
-                </li>
-              ))}
-              {queueQuery.data && queueQuery.data.length === 0 ? (
-                <li>
-                  <small className="jobs-meta">Queue is empty.</small>
+              {filteredQueueEntries.map((entry, index) => {
+                const jobRef = jobsById.get(entry.job_id);
+                const queueName = jobRef ? resolveJobDisplayName(jobRef) : entry.job_id;
+                const queueHost = entry.preferred_host || jobRef?.job_info.target_host || "Any host";
+                const submittedBy =
+                  resolveSubmittedByLabel(entry.submitted_by) ||
+                  resolveSubmittedByLabel(jobRef?.job_info.submitted_by) ||
+                  resolveSubmittedByLabel(jobRef?.job_meta?.submitted_by);
+                const canCancelEntry = !jobRef || canCancelStatus(jobRef.status);
+                return (
+                  <li key={entry.job_id}>
+                    <article className="queue-row">
+                      <div className="queue-row-main">
+                        <span className="queue-index">{index + 1}</span>
+                        <div className="queue-row-title">
+                          <strong>{queueName}</strong>
+                          <small>{entry.job_id}</small>
+                        </div>
+                      </div>
+                      <div className="queue-row-footer">
+                        <div className="queue-row-meta">
+                          <span className="queue-host-pill">
+                            <Server size={12} />
+                            {queueHost}
+                          </span>
+                          {submittedBy ? (
+                            <span className="queue-submitter" title={`Submitted by: ${submittedBy}`}>
+                              <span className="submitted-by-avatar">{computeUserInitials(submittedBy)}</span>
+                            </span>
+                          ) : null}
+                          <small className="jobs-meta">
+                            {formatDateTime(entry.enqueued_at || jobRef?.queued_at || null)}
+                          </small>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="queue-cancel-btn"
+                          disabled={!canCancelEntry}
+                          onClick={() => setAdminConfirm({ action: "cancel", jobId: entry.job_id })}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </article>
+                  </li>
+                );
+              })}
+              {filteredQueueEntries.length === 0 ? (
+                <li className="queue-empty">
+                  <small>
+                    {queueQuery.data && queueQuery.data.length > 0
+                      ? "No queue entries match the selected host."
+                      : "Queue is empty. New jobs will appear here."}
+                  </small>
                 </li>
               ) : null}
             </ul>
@@ -972,6 +1433,7 @@ export function JobsPage(): JSX.Element {
         onClose={() => {
           setRunOpen(false);
           setConfigPickerOpen(false);
+          setJobNameTouched(false);
         }}
         width="md"
       >
@@ -985,7 +1447,11 @@ export function JobsPage(): JSX.Element {
               notifyError("Missing experiment config", new Error("Select a saved experiment config first."));
               return;
             }
-            if (!availableConfigs.includes(configPath)) {
+            const matchedConfig =
+              availableConfigs.find(
+                (config) => config === configPath || resolveConfigName(config) === resolveConfigName(configPath)
+              ) || "";
+            if (!matchedConfig) {
               notifyError(
                 "Unknown experiment config",
                 new Error("Choose one existing experiment config or create a new one.")
@@ -995,7 +1461,10 @@ export function JobsPage(): JSX.Element {
 
             const payload: RunSimulationPayload = {
               target_host: runForm.targetHost || undefined,
-              config_path: configPath
+              config_path: matchedConfig,
+              job_name: runForm.jobName.trim() || undefined,
+              submitted_by: session?.name || session?.email || undefined,
+              image: runForm.image.trim() || `${imageRepository}:latest`
             };
 
             runMutation.mutate(payload);
@@ -1012,6 +1481,7 @@ export function JobsPage(): JSX.Element {
                     onFocus={() => setConfigPickerOpen(true)}
                     onBlur={() => window.setTimeout(() => setConfigPickerOpen(false), 90)}
                     onChange={(event) => {
+                      setJobNameTouched(false);
                       setRunForm((prev) => ({ ...prev, configPath: event.target.value }));
                       setConfigPickerOpen(true);
                     }}
@@ -1026,6 +1496,7 @@ export function JobsPage(): JSX.Element {
                               type="button"
                               onMouseDown={(event) => event.preventDefault()}
                               onClick={() => {
+                                setJobNameTouched(false);
                                 setRunForm((prev) => ({ ...prev, configPath: config }));
                                 setConfigPickerOpen(false);
                               }}
@@ -1058,6 +1529,47 @@ export function JobsPage(): JSX.Element {
                 : "No saved experiment configs found. Create one before running."}
             </small>
           </section>
+
+          <label>
+            <span>Job name</span>
+            <input
+              placeholder="Custom job name"
+              value={runForm.jobName}
+              onChange={(event) => {
+                setJobNameTouched(true);
+                setRunForm((previous) => ({ ...previous, jobName: event.target.value }));
+              }}
+            />
+            <small className="jobs-meta">Pre-filled from selected config. You can override per run.</small>
+          </label>
+
+          <label className="full-col">
+            <span className="run-image-label">
+              Docker image
+              <span className="run-image-help" tabIndex={0} aria-label="Docker image hint">
+                <Info size={13} />
+                <span role="tooltip" className="run-image-help-tooltip">
+                  No Deucalion a imagem nao atualiza sozinha. Seleciona sempre a versao mais recente (ex:
+                  sha-hioabrf).
+                </span>
+              </span>
+            </span>
+            <select
+              value={runForm.image}
+              onChange={(event) => setRunForm((previous) => ({ ...previous, image: event.target.value }))}
+            >
+              {hasCustomRunImage ? <option value={runForm.image}>{runForm.image} (custom)</option> : null}
+              {runImageOptions.map((imageRef) => (
+                <option key={imageRef} value={imageRef}>
+                  {imageRef}
+                </option>
+              ))}
+            </select>
+            <small className="jobs-meta">
+              Default: {imageRepository}:latest
+              {jobImagesQuery.isFetching ? " · refreshing versions..." : ""}
+            </small>
+          </label>
 
           <section className="full-col run-host-section">
             <span>Target host</span>
@@ -1110,14 +1622,14 @@ export function JobsPage(): JSX.Element {
         <section className="job-logs-modal-content">
           <div className="job-logs-toolbar">
             <div className="job-logs-modal-actions">
-              <Button variant="ghost" iconLeft={<Copy size={13} />} onClick={copyLogs} disabled={!logsQuery.data}>
+              <Button variant="ghost" iconLeft={<Copy size={13} />} onClick={copyLogs} disabled={!hasRawLogs}>
                 Copy
               </Button>
               <Button
                 variant="ghost"
                 iconLeft={<Download size={13} />}
                 onClick={downloadLogs}
-                disabled={!logsQuery.data}
+                disabled={!hasRawLogs}
               >
                 Download
               </Button>
@@ -1129,42 +1641,292 @@ export function JobsPage(): JSX.Element {
                 value={logsSearch}
                 onChange={(event) => setLogsSearch(event.target.value)}
                 placeholder="Search logs..."
-                disabled={!logsQuery.data}
+                disabled={!hasRawLogs}
               />
             </label>
           </div>
 
-          {logsQuery.isLoading ? <p className="jobs-meta">Loading logs...</p> : null}
+          {(logsQuery.isLoading || (logsQuery.isFetching && !hasRawLogs)) ? (
+            <section className="datasets-loader-preview">
+              <EVChargingLoader label="Loading logs..." />
+            </section>
+          ) : null}
           {logsQuery.isError ? <p className="error-text">Could not load logs for this job.</p> : null}
-          {logsQuery.data ? (
+          {hasRawLogs ? (
             <>
               <small className="jobs-meta">
                 Showing {filteredLogLines.length} / {allLogLines.length} lines
               </small>
               {filteredLogLines.length > 0 ? (
-                <pre className="json-view compact">{filteredLogLines.join("\n")}</pre>
+                <pre ref={logsPreRef} className="json-view compact">
+                  {filteredLogLines.join("\n")}
+                </pre>
               ) : (
                 <p className="jobs-meta">No lines match this search.</p>
               )}
             </>
           ) : null}
-          {!logsQuery.isLoading && !logsQuery.data ? <p className="jobs-meta">No logs available yet.</p> : null}
+          {!logsQuery.isLoading && !logsQuery.isError && !hasRawLogs ? (
+            <p className="jobs-meta">Ainda não há logs para este job (ou o ficheiro está vazio).</p>
+          ) : null}
         </section>
       </Modal>
 
       <Modal
-        title={`Experiment Config preview: ${configPreviewLabel || "-"}`}
+        title={`Host details: ${hostDetailsTarget?.name || "-"}`}
+        open={hostDetailsOpen}
+        onClose={() => {
+          setHostDetailsOpen(false);
+          setHostDetailsTarget(null);
+        }}
+        width="md"
+      >
+        {hostDetailsTarget ? (
+          (() => {
+            const currentJobId =
+              hostDetailsTarget.data.current_job_id ||
+              (typeof hostDetailsTarget.data.info?.active_job_id === "string" ? hostDetailsTarget.data.info.active_job_id : null);
+            const currentJobStatus =
+              hostDetailsTarget.data.current_job_status ||
+              (typeof hostDetailsTarget.data.info?.active_job_status === "string"
+                ? hostDetailsTarget.data.info.active_job_status
+                : "-");
+            const lastJobId =
+              typeof hostDetailsTarget.data.info?.last_job_id === "string" ? hostDetailsTarget.data.info.last_job_id : null;
+            const lastTerminalStatus =
+              typeof hostDetailsTarget.data.info?.last_terminal_status === "string"
+                ? hostDetailsTarget.data.info.last_terminal_status
+                : "-";
+            return (
+              <section className="host-details-modal">
+                <dl className="host-details-grid">
+              <div>
+                <dt>Status</dt>
+                <dd>{isRecentTimestamp(hostDetailsTarget.data.last_seen) ? "Live" : "Offline"}</dd>
+              </div>
+              <div>
+                <dt>Last seen</dt>
+                <dd>{formatDateTime(hostDetailsTarget.data.last_seen)}</dd>
+              </div>
+              <div>
+                <dt>Executor</dt>
+                <dd>{typeof hostDetailsTarget.data.info?.executor === "string" ? hostDetailsTarget.data.info.executor : "-"}</dd>
+              </div>
+              <div>
+                <dt>Worker version</dt>
+                <dd>
+                  {typeof hostDetailsTarget.data.info?.worker_version === "string"
+                    ? hostDetailsTarget.data.info.worker_version
+                    : "-"}
+                </dd>
+              </div>
+              <div>
+                <dt>Current job</dt>
+                <dd>
+                  {currentJobId ? (
+                    <button
+                      type="button"
+                      className="host-job-pill"
+                      onClick={() => openJobOrLogsFromHost(currentJobId)}
+                      title={`Open ${currentJobId}`}
+                    >
+                      {resolveHostJobName(currentJobId)}
+                    </button>
+                  ) : (
+                    "-"
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Current status</dt>
+                <dd>
+                  {currentJobStatus && currentJobStatus !== "-" ? (
+                    <StatusPill status={currentJobStatus} />
+                  ) : (
+                    "-"
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Last terminal job</dt>
+                <dd>
+                  {lastJobId ? (
+                    <button
+                      type="button"
+                      className="btn-link jobs-config-link"
+                      onClick={() => openJobOrLogsFromHost(lastJobId)}
+                      title={lastJobId}
+                    >
+                      {resolveHostJobName(lastJobId)}
+                    </button>
+                  ) : (
+                    "-"
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Last terminal status</dt>
+                <dd>{lastTerminalStatus}</dd>
+              </div>
+            </dl>
+
+            {Array.isArray(hostDetailsTarget.data.info?.budget?.accounts) &&
+            hostDetailsTarget.data.info?.budget?.accounts.length ? (
+              <section className="host-budget-table-wrap">
+                <h4>Budget (Deucalion)</h4>
+                <table className="table host-budget-table">
+                  <thead>
+                    <tr>
+                      <th>Account</th>
+                      <th>Used (h)</th>
+                      <th>Limit (h)</th>
+                      <th>Used (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hostDetailsTarget.data.info.budget.accounts.map((account) => {
+                      const accountKind = inferBudgetAccountKind(account.account);
+                      return (
+                        <tr key={account.account}>
+                          <td>
+                            <div className="host-budget-account">
+                              <span className={`host-budget-kind is-${accountKind.toLowerCase()}`}>{accountKind}</span>
+                              <small className="host-budget-code">{account.account}</small>
+                            </div>
+                          </td>
+                          <td>{account.used_hours}</td>
+                          <td>{account.limit_hours}</td>
+                          <td>{formatBudgetUsage(account.used_percent)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </section>
+            ) : null}
+
+            <section>
+              <h4>Raw telemetry</h4>
+              <pre className="json-view compact">{JSON.stringify(hostDetailsTarget.data.info || {}, null, 2)}</pre>
+            </section>
+          </section>
+            );
+          })()
+        ) : null}
+      </Modal>
+
+      <Modal
+        title={`Queue details: ${dispatchDetailsTarget?.job_id || "-"}`}
+        open={Boolean(dispatchDetailsTarget)}
+        onClose={() => setDispatchDetailsTarget(null)}
+        width="md"
+      >
+        {dispatchDetailsTarget ? (
+          (() => {
+            const snapshot = readDispatchSnapshot(dispatchDetailsTarget);
+            return (
+              <section className="host-details-modal">
+                <dl className="host-details-grid slurm-details-grid">
+                  <div>
+                    <dt>Job</dt>
+                    <dd>{resolveJobDisplayName(dispatchDetailsTarget)}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>
+                      <StatusPill status={dispatchDetailsTarget.status} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Slurm job ID</dt>
+                    <dd>{snapshot.slurmJobId || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Slurm state</dt>
+                    <dd>{snapshot.slurmState || "PENDING / not reported yet"}</dd>
+                  </div>
+                  <div>
+                    <dt>Target host</dt>
+                    <dd>{dispatchDetailsTarget.job_info.target_host || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Connectivity</dt>
+                    <dd>{snapshot.connectivity || "ok"}</dd>
+                  </div>
+                  <div>
+                    <dt>Queued at</dt>
+                    <dd>{formatDateTime(dispatchDetailsTarget.queued_at || null)}</dd>
+                  </div>
+                  <div>
+                    <dt>Dispatched at</dt>
+                    <dd>{formatDateTime(dispatchDetailsTarget.dispatched_at || null)}</dd>
+                  </div>
+                  <div>
+                    <dt>Last status update</dt>
+                    <dd>{formatDateTime(dispatchDetailsTarget.last_status_at || null)}</dd>
+                  </div>
+                  <div>
+                    <dt>Queue wait</dt>
+                    <dd>
+                      {typeof dispatchDetailsTarget.queue_wait_seconds === "number"
+                        ? `${Math.round(dispatchDetailsTarget.queue_wait_seconds)}s`
+                        : "-"}
+                    </dd>
+                  </div>
+                  {snapshot.unknownSince ? (
+                    <div>
+                      <dt>Unknown since</dt>
+                      <dd>{formatDateTime(snapshot.unknownSince)}</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt>Datasets copied</dt>
+                    <dd>{snapshot.datasetsSynced.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Datasets reused</dt>
+                    <dd>{snapshot.datasetsSkipped.length}</dd>
+                  </div>
+                </dl>
+                <div className="jobs-command-group inline-end">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setLogsJobId(dispatchDetailsTarget.job_id);
+                      setLogsSearch("");
+                      setLogsOpen(true);
+                    }}
+                  >
+                    Open logs
+                  </Button>
+                </div>
+              </section>
+            );
+          })()
+        ) : null}
+      </Modal>
+
+      <Modal
+        title={`${configPreviewMode === "resolved" ? "Resolved Config" : "Experiment Config"} preview: ${configPreviewLabel || "-"}`}
         open={configPreviewOpen}
         onClose={() => {
           setConfigPreviewOpen(false);
           setConfigPreviewTarget("");
           setConfigPreviewLabel("");
+          setConfigPreviewMode("base");
+          setConfigPreviewJobId("");
         }}
         width="lg"
       >
-        {configPreviewQuery.isLoading ? <p className="jobs-meta">Loading experiment config...</p> : null}
+        {configPreviewQuery.isLoading ? (
+          <p className="jobs-meta">
+            Loading {configPreviewMode === "resolved" ? "resolved config" : "experiment config"}...
+          </p>
+        ) : null}
         {configPreviewQuery.isError ? (
-          <p className="error-text">Could not load this experiment config preview.</p>
+          <p className="error-text">
+            Could not load this {configPreviewMode === "resolved" ? "resolved config" : "experiment config"} preview.
+          </p>
         ) : null}
         {configPreviewQuery.data ? (
           <section className="job-config-preview-modal">
@@ -1172,7 +1934,9 @@ export function JobsPage(): JSX.Element {
           </section>
         ) : null}
         {!configPreviewQuery.isLoading && !configPreviewQuery.data ? (
-          <p className="jobs-meta">No experiment config data available.</p>
+          <p className="jobs-meta">
+            No {configPreviewMode === "resolved" ? "resolved config" : "experiment config"} data available.
+          </p>
         ) : null}
       </Modal>
 

@@ -1,12 +1,14 @@
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Lock, Mail } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Eye, EyeOff, Info, Lock, Mail } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { InstitutionalDock } from "../components/layout/InstitutionalDock";
+import { Modal } from "../components/ui/Modal";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
-import { APP_NAME, AUTH_SCENE_STORAGE_KEY, LOGIN_BACKGROUNDS } from "../constants";
+import { APP_NAME, AUTH_SCENE_STORAGE_KEY, LOGIN_BACKGROUNDS, MOCK_USERS } from "../constants";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
+import { roleHomePath, roleLabel } from "../utils/roles";
 
 const LOGIN_CLAIMS = [
   "Monitor. Optimize. Coordinate.",
@@ -75,8 +77,8 @@ export function LoginPage(): JSX.Element {
   const { session, login } = useAuth();
   const { theme, setTheme } = useUI();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("ai@energaize.io");
-  const [password, setPassword] = useState("ai123");
+  const [email, setEmail] = useState("tiago.fonseca@energaize.io");
+  const [password, setPassword] = useState("TfTm#2026!");
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -85,7 +87,20 @@ export function LoginPage(): JSX.Element {
   const [claimIndex, setClaimIndex] = useState(0);
   const [authScene, setAuthScene] = useState<AuthSceneMode>("none");
   const [authSceneLine, setAuthSceneLine] = useState("");
+  const [accountsModalOpen, setAccountsModalOpen] = useState(false);
   const sceneTimeoutRef = useRef<number | null>(null);
+  const loginAccounts = useMemo(
+    () =>
+      Object.entries(MOCK_USERS)
+        .map(([accountEmail, account]) => ({
+          email: accountEmail,
+          password: account.password,
+          name: account.name,
+          role: roleLabel(account.role)
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    []
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -139,7 +154,7 @@ export function LoginPage(): JSX.Element {
   }, []);
 
   if (session && authScene !== "login") {
-    return <Navigate to={session.role === "ai_manager" ? "/app/ai/jobs" : "/communities"} replace />;
+    return <Navigate to={roleHomePath(session.role)} replace />;
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -152,8 +167,8 @@ export function LoginPage(): JSX.Element {
     try {
       await login({ email, password, remember });
       succeeded = true;
-      const role = email.trim().toLowerCase() === "ai@energaize.io" ? "ai_manager" : "other";
-      const target = role === "ai_manager" ? "/app/ai/jobs" : "/communities";
+      const role = MOCK_USERS[email.trim().toLowerCase()]?.role;
+      const target = roleHomePath(role ?? null);
       setAuthScene("login");
       setAuthSceneLine(pickRandomLine(LOGIN_SCENE_LINES));
       if (sceneTimeoutRef.current) {
@@ -191,6 +206,16 @@ export function LoginPage(): JSX.Element {
         <AuthTransitionScene mode={authScene} line={authSceneLine} />
       ) : null}
 
+      <button
+        className="login-accounts-trigger"
+        type="button"
+        title="Contas de teste"
+        aria-label="Ver contas de teste"
+        onClick={() => setAccountsModalOpen(true)}
+      >
+        <Info size={16} />
+      </button>
+
       <div className="login-theme-switch">
         <button
           type="button"
@@ -207,6 +232,36 @@ export function LoginPage(): JSX.Element {
           Dark
         </button>
       </div>
+
+      <Modal title="Contas de teste disponíveis" open={accountsModalOpen} onClose={() => setAccountsModalOpen(false)} width="md">
+        <section className="login-accounts-modal">
+          <p>Seleciona uma conta para preencher automaticamente o login.</p>
+          <ul className="login-accounts-list">
+            {loginAccounts.map((account) => (
+              <li key={account.email}>
+                <button
+                  type="button"
+                  className="login-account-item"
+                  onClick={() => {
+                    setEmail(account.email);
+                    setPassword(account.password);
+                    setRemember(true);
+                    setError(null);
+                    setAccountsModalOpen(false);
+                  }}
+                >
+                  <div className="login-account-main">
+                    <strong>{account.name}</strong>
+                    <small>{account.role}</small>
+                  </div>
+                  <code>{account.email}</code>
+                  <code>{account.password}</code>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </Modal>
 
       <motion.main
         className="login-content"

@@ -1,6 +1,7 @@
-import { ArrowRight, Plus, Search } from "lucide-react";
+import { ArrowRight, LogOut, Plus, Search, UserCircle2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AUTH_SCENE_STORAGE_KEY } from "../constants";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
 import type { CommunityContext } from "../types";
@@ -8,12 +9,13 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
+import { roleHomePath } from "../utils/roles";
 
 type SortMode = "name" | "status" | "activity";
 type FilterMode = "all" | "normal" | "alerts" | "offline";
 
 export function CommunitiesPage(): JSX.Element {
-  const { session } = useAuth();
+  const { session, logout } = useAuth();
   const { communities, setActiveCommunity } = useUI();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -33,7 +35,7 @@ export function CommunitiesPage(): JSX.Element {
 
   function enterCommunity(community: CommunityContext): void {
     setActiveCommunity(community.id);
-    navigate(session?.role === "ai_manager" ? "/app/ai/jobs" : "/app/logs");
+    navigate(roleHomePath(session?.role));
   }
 
   return (
@@ -42,9 +44,34 @@ export function CommunitiesPage(): JSX.Element {
         title="Communities"
         subtitle="Select a community to access operational views."
         actions={
-          <Button variant="primary" iconLeft={<Plus size={14} />}>
-            Create Community
-          </Button>
+          <div className="communities-header-actions">
+            {session ? (
+              <span className="communities-user-pill" title={`${session.name} · ${session.email}`}>
+                <UserCircle2 size={14} />
+                <strong>{session.name}</strong>
+              </span>
+            ) : null}
+
+            <Button variant="secondary" onClick={() => navigate("/app/account")}>
+              Account
+            </Button>
+
+            <Button
+              variant="danger"
+              iconLeft={<LogOut size={14} />}
+              onClick={() => {
+                sessionStorage.setItem(AUTH_SCENE_STORAGE_KEY, "logout");
+                logout();
+                navigate("/login", { replace: true });
+              }}
+            >
+              Logout
+            </Button>
+
+            <Button variant="primary" iconLeft={<Plus size={14} />}>
+              Create Community
+            </Button>
+          </div>
         }
       />
 

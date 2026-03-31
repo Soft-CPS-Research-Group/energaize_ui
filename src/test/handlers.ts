@@ -66,6 +66,9 @@ resetMockState();
 
 export const handlers = [
   http.get(endpoint("/datasets"), () => HttpResponse.json([])),
+  http.post(endpoint("/dataset/upload"), () =>
+    HttpResponse.json({ message: "Dataset uploaded", name: "uploaded_dataset" })
+  ),
   http.get(endpoint("/experiment-configs"), () => HttpResponse.json(Object.keys(experimentConfigs))),
   http.get(endpoint("/experiment-config/:fileName"), ({ params }) => {
     const fileName = String(params.fileName || "");
@@ -95,6 +98,18 @@ export const handlers = [
           running: 0
         }
       }
+    })
+  ),
+  http.get(endpoint("/job-images/versions"), () =>
+    HttpResponse.json({
+      repository: "calof/opeva_simulator",
+      tags: [
+        { name: "latest", last_updated: "2026-03-31T09:00:00Z", digest: "sha256:latest" },
+        { name: "v1.4.2", last_updated: "2026-03-30T18:10:00Z", digest: "sha256:v142" }
+      ],
+      count: 2,
+      cached: false,
+      fetched_at: Date.now() / 1000
     })
   ),
   http.get(endpoint("/file-logs/:jobId"), () => HttpResponse.text("")),
@@ -235,6 +250,9 @@ export const handlers = [
   ),
   http.post(endpoint("/ops/jobs/:jobId/fail"), ({ params }) =>
     HttpResponse.json({ message: "failed", job_id: params.jobId, status: "failed" })
+  ),
+  http.post(endpoint("/ops/jobs/:jobId/stop"), ({ params }) =>
+    HttpResponse.json({ message: "stop requested", job_id: params.jobId, status: "stop_requested" })
   ),
   http.post(endpoint("/ops/queue/cleanup"), () =>
     HttpResponse.json({ removed: [], count: 0 })

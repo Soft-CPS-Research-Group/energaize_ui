@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Building2, Factory, FolderTree } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getJobResult, getJobStatus } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
+import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { StatusPill } from "../../components/ui/StatusPill";
 import {
@@ -13,7 +14,7 @@ import {
   readSimulationDataFile
 } from "../../services/simulationDataService";
 import { extractKpis } from "../../utils/jobResult";
-import { buildComparedKpis, extractKpisFromSimulationData } from "../../utils/simulationData";
+import { extractKpisFromSimulationData, scoreKpiImprovement } from "../../utils/simulationData";
 
 function resolveBackTarget(fromParam: string | null): string {
   if (!fromParam) return "/app/ai/jobs";
@@ -25,6 +26,49 @@ function formatNumeric(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "-";
   if (Math.abs(value) >= 1000) return value.toFixed(2);
   return value.toFixed(4);
+}
+
+interface CompareScope {
+  id: string;
+  label: string;
+  group: "community" | "building" | "other";
+  entities: string[];
+}
+
+interface CompareRow {
+  key: string;
+  label: string;
+  entity: string;
+  left: number | null;
+  right: number | null;
+  deltaAbs: number | null;
+  deltaPct: number | null;
+  tone: "better" | "worse" | "neutral" | "unknown";
+}
+
+function parseEntity(entryKey: string, source: string | undefined): { metricKey: string; entity: string } {
+  if (source && source.trim() !== "") {
+    const [metricPart] = entryKey.split("::");
+    return { metricKey: metricPart || entryKey, entity: source };
+  }
+
+  const parts = entryKey.split("::");
+  if (parts.length >= 2) {
+    return { metricKey: parts[0] || entryKey, entity: parts.slice(1).join("::") || "unknown" };
+  }
+
+  return { metricKey: entryKey, entity: "global" };
+}
+
+function parseBuildingId(entity: string): number | null {
+  const match = entity.match(/building[_\s-]*(\d+)/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isCommunityEntity(entity: string): boolean {
+  return /(community|overall|global|rec|microgrid|district)/i.test(entity);
 }
 
 function useJobKpis(jobId: string, enabled: boolean): {
@@ -100,6 +144,7 @@ export function JobKpiComparePage(): JSX.Element {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showAll, setShowAll] = useState(false);
+  const [selectedScopeId, setSelectedScopeId] = useState("community");
 
   const leftId = searchParams.get("left") || "";
   const rightId = searchParams.get("right") || "";
@@ -121,10 +166,130 @@ export function JobKpiComparePage(): JSX.Element {
   const leftData = useJobKpis(leftId, Boolean(leftId));
   const rightData = useJobKpis(rightId, Boolean(rightId));
 
-  const rows = useMemo(
-    () => buildComparedKpis(leftData.entries, rightData.entries, showAll),
-    [leftData.entries, rightData.entries, showAll]
+  const rows = useMemo<CompareRow[]>(() => {
+    const leftMap = new Map<string, number>();
+    const rightMap = new Map<string, number>();
+    const labels = new Map<string, string>();
+
+    leftData.entries.forEach((entry) => {
+      const parsed = parseEntity(entry.key, entry.source);
+      const composite = `${parsed.metricKey}::${parsed.entity}`;
+      leftMap.set(composite, entry.value);
+      labels.set(composite, entry.label);
+    });
+
+    rightData.entries.forEach((entry) => {
+      const parsed = parseEntity(entry.key, entry.source);
+      const composite = `${parsed.metricKey}::${parsed.entity}`;
+      rightMap.set(composite, entry.value);
+      labels.set(composite, entry.label);
+    });
+
+    const keys = new Set<string>();
+    if (showAll) {
+      leftMap.forEach((_, key) => keys.add(key));
+      rightMap.forEach((_, key) => keys.add(key));
+    } else {
+      leftMap.forEach((_, key) => {
+        if (rightMap.has(key)) keys.add(key);
+      });
+    }
+
+    return Array.from(keys)
+      .map((compositeKey) => {
+        const [metricKey, ...entityParts] = compositeKey.split("::");
+        const entity = entityParts.join("::") || "global";
+        const left = leftMap.get(compositeKey) ?? null;
+        const right = rightMap.get(compositeKey) ?? null;
+        const deltaAbs = left !== null && right !== null ? right - left : null;
+        const deltaPct =
+          left !== null && right !== null && left !== 0 ? ((right - left) / Math.abs(left)) * 100 : null;
+
+        return {
+          key: compositeKey,
+          label: labels.get(compositeKey) || metricKey,
+          entity,
+          left,
+          right,
+          deltaAbs,
+          deltaPct,
+          tone: scoreKpiImprovement(metricKey, deltaAbs)
+        } satisfies CompareRow;
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [leftData.entries, rightData.entries, showAll]);
+
+  const scopes = useMemo<CompareScope[]>(() => {
+    if (rows.length === 0) return [];
+    const entities = new Set(rows.map((row) => row.entity).filter(Boolean));
+    const community: string[] = [];
+    const buildings = new Map<number, string[]>();
+    const others: string[] = [];
+
+    Array.from(entities)
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((entity) => {
+        if (isCommunityEntity(entity)) {
+          community.push(entity);
+          return;
+        }
+        const buildingId = parseBuildingId(entity);
+        if (buildingId !== null) {
+          const group = buildings.get(buildingId) || [];
+          group.push(entity);
+          buildings.set(buildingId, group);
+          return;
+        }
+        others.push(entity);
+      });
+
+    const next: CompareScope[] = [];
+    if (community.length > 0) {
+      next.push({
+        id: "community",
+        label: "Community",
+        group: "community",
+        entities: community
+      });
+    }
+    Array.from(buildings.entries())
+      .sort((left, right) => left[0] - right[0])
+      .forEach(([buildingId, entitiesInBuilding]) => {
+        next.push({
+          id: `building:${buildingId}`,
+          label: `Building ${buildingId}`,
+          group: "building",
+          entities: entitiesInBuilding
+        });
+      });
+    if (others.length > 0) {
+      next.push({
+        id: "other",
+        label: "Other entities",
+        group: "other",
+        entities: others
+      });
+    }
+    return next;
+  }, [rows]);
+
+  useEffect(() => {
+    if (scopes.length === 0) return;
+    if (!scopes.some((scope) => scope.id === selectedScopeId)) {
+      setSelectedScopeId(scopes[0]!.id);
+    }
+  }, [scopes, selectedScopeId]);
+
+  const selectedScope = useMemo(
+    () => scopes.find((scope) => scope.id === selectedScopeId) || null,
+    [scopes, selectedScopeId]
   );
+
+  const scopedRows = useMemo(() => {
+    if (!selectedScope) return rows;
+    const entitySet = new Set(selectedScope.entities);
+    return rows.filter((row) => entitySet.has(row.entity));
+  }, [rows, selectedScope]);
 
   const missingSelection = !leftId || !rightId;
   const isLoading =
@@ -188,7 +353,11 @@ export function JobKpiComparePage(): JSX.Element {
         </section>
       ) : null}
 
-      {!missingSelection && isLoading ? <p className="jobs-meta">Loading comparison data...</p> : null}
+      {!missingSelection && isLoading ? (
+        <section className="datasets-loader-preview">
+          <EVChargingLoader label="Loading comparison data..." />
+        </section>
+      ) : null}
 
       {!missingSelection && !isLoading && (leftData.isError || rightData.isError) ? (
         <EmptyState
@@ -204,50 +373,89 @@ export function JobKpiComparePage(): JSX.Element {
             message="No common numeric KPI keys were found in the two selected jobs."
           />
         ) : (
-          <section className="panel job-compare-table-wrap">
-            <table className="table job-compare-table">
-              <thead>
-                <tr>
-                  <th>KPI</th>
-                  <th>{leftId}</th>
-                  <th>{rightId}</th>
-                  <th>Delta (R-L)</th>
-                  <th>Delta %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.key}>
-                    <td>{row.label}</td>
-                    <td>{formatNumeric(row.left)}</td>
-                    <td>{formatNumeric(row.right)}</td>
-                    <td
-                      className={
-                        row.tone === "better"
-                          ? "kpi-delta-better"
-                          : row.tone === "worse"
-                            ? "kpi-delta-worse"
-                            : ""
-                      }
-                    >
-                      {formatNumeric(row.deltaAbs)}
-                    </td>
-                    <td
-                      className={
-                        row.tone === "better"
-                          ? "kpi-delta-better"
-                          : row.tone === "worse"
-                            ? "kpi-delta-worse"
-                            : ""
-                      }
-                    >
-                      {row.deltaPct === null ? "-" : `${row.deltaPct.toFixed(2)}%`}
-                    </td>
-                  </tr>
+          <div className="kpi-layout">
+            <aside className="kpi-tree-panel panel">
+              <header className="sim-tree-head">
+                <div className="sim-tree-headline">
+                  <small>Compare scope</small>
+                </div>
+              </header>
+              <ul className="sim-tree-list">
+                {scopes.map((scope) => (
+                  <li key={scope.id}>
+                    <div className={`sim-tree-row ${selectedScopeId === scope.id ? "is-selected" : ""}`}>
+                      <span className="sim-tree-toggle is-spacer" />
+                      <button type="button" className="sim-tree-label" onClick={() => setSelectedScopeId(scope.id)}>
+                        <span className="sim-tree-icon">
+                          {scope.group === "community" ? (
+                            <Factory size={14} />
+                          ) : scope.group === "building" ? (
+                            <Building2 size={14} />
+                          ) : (
+                            <FolderTree size={14} />
+                          )}
+                        </span>
+                        <span>{scope.label}</span>
+                      </button>
+                    </div>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </section>
+              </ul>
+            </aside>
+
+            <section className="kpi-main panel job-compare-table-wrap">
+              <table className="table job-compare-table">
+                <thead>
+                  <tr>
+                    <th>KPI</th>
+                    <th>Entity</th>
+                    <th>{leftId}</th>
+                    <th>{rightId}</th>
+                    <th>Delta (R-L)</th>
+                    <th>Delta %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scopedRows.map((row) => (
+                    <tr key={row.key}>
+                      <td>{row.label}</td>
+                      <td>{row.entity}</td>
+                      <td>{formatNumeric(row.left)}</td>
+                      <td>{formatNumeric(row.right)}</td>
+                      <td
+                        className={
+                          row.tone === "better"
+                            ? "kpi-delta-better"
+                            : row.tone === "worse"
+                              ? "kpi-delta-worse"
+                              : ""
+                        }
+                      >
+                        {formatNumeric(row.deltaAbs)}
+                      </td>
+                      <td
+                        className={
+                          row.tone === "better"
+                            ? "kpi-delta-better"
+                            : row.tone === "worse"
+                              ? "kpi-delta-worse"
+                              : ""
+                        }
+                      >
+                        {row.deltaPct === null ? "-" : `${row.deltaPct.toFixed(2)}%`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {scopedRows.length === 0 ? (
+                <EmptyState
+                  title="No KPIs in selected scope"
+                  message="Try another entity scope or enable Show all."
+                />
+              ) : null}
+            </section>
+          </div>
         )
       ) : null}
     </div>

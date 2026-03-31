@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
 import { CommunityTree } from "./CommunityTree";
 import { InstitutionalDock } from "./InstitutionalDock";
 import { TopBar } from "./TopBar";
@@ -9,7 +10,9 @@ import { ToastStack } from "./ToastStack";
 export function AppShell(): JSX.Element {
   const location = useLocation();
   const { session } = useAuth();
-  const showTree = session?.role !== "ai_manager";
+  const hideTree =
+    isTrainingManagerRole(session?.role) || isPredictorRole(session?.role) || isKpiManagerRole(session?.role);
+  const showTree = !hideTree;
 
   return (
     <div className="app-shell">

@@ -38,8 +38,8 @@ describe("App integration", () => {
     localStorage.setItem(
       "energaize_session",
       JSON.stringify({
-        email: "ai@energaize.io",
-        name: "Training Manager",
+        email: "tiago.fonseca@energaize.io",
+        name: "Tiago Fonseca",
         role: "ai_manager",
         remember: true
       })

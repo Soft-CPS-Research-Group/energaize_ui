@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import { Download, Plus, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
 import {
   createDataset,
   datasetDownloadUrl,
   deleteDataset,
   listDatasets,
   listDatesAvailable,
+  uploadDataset,
   type DatasetCreatePayload
 } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
@@ -50,6 +51,9 @@ export function DatasetsPage(): JSX.Element {
   const [windowInfo, setWindowInfo] = useState<string>("");
   const [refreshingVisual, setRefreshingVisual] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadName, setUploadName] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   const datasetsQuery = useQuery({
     queryKey: ["datasets"],
@@ -75,6 +79,18 @@ export function DatasetsPage(): JSX.Element {
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
     },
     onError: (error) => notifyError("Failed to delete dataset", error)
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (payload: { file: File; name: string }) => uploadDataset(payload),
+    onSuccess: (response) => {
+      notifySuccess("Dataset uploaded", `Dataset ${response.name || uploadName} uploaded successfully.`);
+      setUploadOpen(false);
+      setUploadName("");
+      setUploadFile(null);
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    },
+    onError: (error) => notifyError("Failed to upload dataset", error)
   });
 
   async function checkDateWindow(): Promise<void> {
@@ -125,6 +141,9 @@ export function DatasetsPage(): JSX.Element {
           </Button>
           <Button variant="primary" iconLeft={<Plus size={14} />} onClick={() => setModalOpen(true)}>
             Generate Dataset
+          </Button>
+          <Button variant="secondary" iconLeft={<UploadCloud size={14} />} onClick={() => setUploadOpen(true)}>
+            Upload Dataset
           </Button>
         </div>
       </header>
@@ -280,6 +299,58 @@ export function DatasetsPage(): JSX.Element {
           </div>
 
           {windowInfo ? <pre className="inline-output">{windowInfo}</pre> : null}
+        </form>
+      </Modal>
+
+      <Modal title="Upload dataset" open={uploadOpen} onClose={() => setUploadOpen(false)} width="md">
+        <form
+          className="form-grid"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!uploadFile) {
+              notifyError("Missing file", new Error("Select a dataset file (.zip)."));
+              return;
+            }
+            const normalizedName = uploadName.trim();
+            if (!normalizedName) {
+              notifyError("Missing dataset name", new Error("Provide a dataset name."));
+              return;
+            }
+            uploadMutation.mutate({ file: uploadFile, name: normalizedName });
+          }}
+        >
+          <label className="full-col">
+            <span>Dataset name</span>
+            <input
+              required
+              value={uploadName}
+              onChange={(event) => setUploadName(event.target.value)}
+              placeholder="dataset_name"
+            />
+          </label>
+
+          <label className="full-col">
+            <span>ZIP file</span>
+            <input
+              required
+              type="file"
+              accept=".zip,application/zip"
+              onChange={(event) => {
+                const file = event.target.files?.[0] || null;
+                setUploadFile(file);
+                if (file && !uploadName.trim()) {
+                  const baseName = file.name.replace(/\.zip$/i, "").trim();
+                  if (baseName) setUploadName(baseName);
+                }
+              }}
+            />
+          </label>
+
+          <div className="full-col inline-end">
+            <Button type="submit" variant="primary" disabled={uploadMutation.isPending}>
+              {uploadMutation.isPending ? "Uploading..." : "Upload"}
+            </Button>
+          </div>
         </form>
       </Modal>
 

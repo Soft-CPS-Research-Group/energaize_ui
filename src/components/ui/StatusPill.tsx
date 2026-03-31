@@ -7,5 +7,5 @@ export function StatusPill({ status }: { status: JobStatus }): JSX.Element {
   const badgeTone =
     tone === "error" ? "danger" : tone === "warning" ? "warning" : tone === "success" ? "success" : "info";
 
-  return <Badge tone={badgeTone}>{status || "unknown"}</Badge>;
+  return <Badge tone={badgeTone} className="status-pill">{status || "unknown"}</Badge>;
 }

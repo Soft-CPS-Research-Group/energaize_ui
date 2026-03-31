@@ -6,6 +6,7 @@ import { useApiFeedback } from "../hooks/useApiFeedback";
 import { Button } from "../components/ui/Button";
 import { PageHeader } from "../components/ui/PageHeader";
 import { AI_AVATAR_URL } from "../constants";
+import { isTrainingManagerRole, roleLabel } from "../utils/roles";
 
 export function AccountPage(): JSX.Element {
   const { session, updateProfile } = useAuth();
@@ -13,6 +14,7 @@ export function AccountPage(): JSX.Element {
   const { notifySuccess } = useApiFeedback();
   const [name, setName] = useState(session?.name || "");
   const [email, setEmail] = useState(session?.email || "");
+  const currentRoleLabel = roleLabel(session?.role);
 
   return (
     <div className="page account-page">
@@ -22,15 +24,15 @@ export function AccountPage(): JSX.Element {
         <article className="panel account-panel">
           <h2>Profile Information</h2>
           <div className="account-inline account-profile-head">
-            {session?.role === "ai_manager" ? (
-              <img className="account-avatar" src={AI_AVATAR_URL} alt={session.name} />
+            {isTrainingManagerRole(session?.role) ? (
+              <img className="account-avatar" src={AI_AVATAR_URL} alt={session?.name ?? "User"} />
             ) : (
               <UserCircle2 size={56} />
             )}
             <div className="account-identity">
               <strong>{name || session?.name || "User"}</strong>
               <small>{email || session?.email || "-"}</small>
-              <span className="badge badge-neutral">{session?.role.replaceAll("_", " ") || "unknown"}</span>
+              <span className="badge badge-neutral">{currentRoleLabel}</span>
             </div>
           </div>
 
@@ -47,7 +49,7 @@ export function AccountPage(): JSX.Element {
 
             <label className="full-col">
               <span>Role</span>
-              <input value={session?.role.replaceAll("_", " ") || "-"} disabled />
+              <input value={currentRoleLabel} disabled />
             </label>
           </div>
 

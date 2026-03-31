@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { useAuth } from "../contexts/AuthContext";
 import type { UserRole } from "../types";
+import { roleHomePath } from "../utils/roles";
 
 export function AuthGuard(): JSX.Element {
   const { isAuthenticated, isLoading } = useAuth();
@@ -30,7 +31,7 @@ export function RoleGuard({ allowed }: { allowed: UserRole[] }): JSX.Element {
   }
 
   if (!allowed.includes(session.role)) {
-    return <Navigate to="/communities" replace />;
+    return <Navigate to={roleHomePath(session.role)} replace />;
   }
 
   return <Outlet />;
@@ -48,9 +49,5 @@ export function RootRedirect(): JSX.Element {
   }
   if (!session) return <Navigate to="/login" replace />;
 
-  if (session.role === "ai_manager") {
-    return <Navigate to="/app/ai/jobs" replace />;
-  }
-
-  return <Navigate to="/communities" replace />;
+  return <Navigate to={roleHomePath(session.role)} replace />;
 }

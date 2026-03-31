@@ -8,6 +8,10 @@ export function normalizeJobStatus(value: string | undefined | null): JobStatus 
 export function jobStatusTone(status: JobStatus): "info" | "success" | "warning" | "error" {
   const key = status.toLowerCase();
 
+  if (key === "running") {
+    return "info";
+  }
+
   if (
     key.includes("fail") ||
     key.includes("error") ||
@@ -29,7 +33,6 @@ export function jobStatusTone(status: JobStatus): "info" | "success" | "warning"
 
   if (
     key.includes("queue") ||
-    key.includes("running") ||
     key.includes("launch") ||
     key.includes("dispatch") ||
     key.includes("progress") ||

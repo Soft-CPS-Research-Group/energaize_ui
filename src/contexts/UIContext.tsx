@@ -27,6 +27,7 @@ interface UIContextValue {
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   removeNotification: (id: string) => void;
+  clearNotifications: () => void;
   treeCollapsed: boolean;
   toggleTreeCollapsed: () => void;
   mobileTreeOpen: boolean;
@@ -134,6 +135,10 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
     setNotifications((previous) => previous.filter((item) => item.id !== id));
   }, []);
 
+  const clearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
   const toggleTreeCollapsed = useCallback(() => {
     setTreeCollapsed((previous) => !previous);
   }, []);
@@ -159,6 +164,7 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
       markNotificationRead,
       markAllNotificationsRead,
       removeNotification,
+      clearNotifications,
       treeCollapsed,
       toggleTreeCollapsed,
       mobileTreeOpen,
@@ -181,6 +187,7 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
       markNotificationRead,
       markAllNotificationsRead,
       removeNotification,
+      clearNotifications,
       treeCollapsed,
       toggleTreeCollapsed,
       mobileTreeOpen,

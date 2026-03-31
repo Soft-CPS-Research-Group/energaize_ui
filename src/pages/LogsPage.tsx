@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileWarning, Search } from "lucide-react";
 import { getJobFileLogs, getJobLogs, listJobs } from "../api/trainingApi";
+import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../hooks/useApiFeedback";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
+import { JOB_POLL_MS, LOGS_POLL_MS } from "../constants";
 
 export function LogsPage(): JSX.Element {
   const { notifyError } = useApiFeedback();
@@ -14,7 +16,7 @@ export function LogsPage(): JSX.Element {
   const jobsQuery = useQuery({
     queryKey: ["jobs", "for-logs"],
     queryFn: listJobs,
-    refetchInterval: 9000
+    refetchInterval: JOB_POLL_MS
   });
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export function LogsPage(): JSX.Element {
       }
     },
     enabled: Boolean(selectedJobId),
-    refetchInterval: 6000
+    refetchInterval: LOGS_POLL_MS
   });
 
   useEffect(() => {
@@ -55,6 +57,7 @@ export function LogsPage(): JSX.Element {
     if (!search) return lines;
     return lines.filter((line) => line.toLowerCase().includes(search.toLowerCase()));
   }, [logsQuery.data, search]);
+  const hasLogContent = (logsQuery.data || "").trim().length > 0;
 
   return (
     <div className="page logs-page">
@@ -87,8 +90,17 @@ export function LogsPage(): JSX.Element {
         />
       ) : (
         <section className="panel log-stream" role="log" aria-live="polite">
-          {logsQuery.isLoading ? <p>Loading logs...</p> : null}
-          {filteredLines.length === 0 ? <p>No log lines for current filter.</p> : null}
+          {(logsQuery.isLoading || (logsQuery.isFetching && !hasLogContent)) ? (
+            <section className="datasets-loader-preview">
+              <EVChargingLoader label="Loading logs..." />
+            </section>
+          ) : null}
+          {!logsQuery.isLoading && hasLogContent && filteredLines.length === 0 ? (
+            <p>No log lines for current filter.</p>
+          ) : null}
+          {!logsQuery.isLoading && !hasLogContent ? (
+            <p>Ainda não há logs para este job (ou o ficheiro está vazio).</p>
+          ) : null}
           {filteredLines.map((line, index) => (
             <code key={`${index}-${line.slice(0, 12)}`}>{line}</code>
           ))}

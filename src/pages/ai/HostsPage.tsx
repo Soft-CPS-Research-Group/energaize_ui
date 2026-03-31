@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCcw, Server } from "lucide-react";
-import { listHosts } from "../../api/trainingApi";
+import { listHosts, listJobs } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageHeader } from "../../components/ui/PageHeader";
+import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { formatDateTime } from "../../utils/time";
 
 function isRecentHostUpdate(lastSeen: number | null): boolean {
@@ -13,15 +14,26 @@ function isRecentHostUpdate(lastSeen: number | null): boolean {
   return Date.now() - epochMs <= 5 * 60 * 1000;
 }
 
-function formatBudgetLine(
+function renderBudgetLine(
   accounts:
     | Array<{ account: string; used_hours: number; limit_hours: number; used_percent: number }>
     | undefined
-): string {
+): JSX.Element | string {
   if (!accounts || accounts.length === 0) return "-";
-  return accounts
-    .map((item) => `${item.account}: ${item.used_percent.toFixed(1)}% (${item.used_hours}/${item.limit_hours}h)`)
-    .join(" | ");
+  return (
+    <div className="host-budget-inline-list">
+      {accounts.map((item) => {
+        const kind = inferBudgetAccountKind(item.account);
+        return (
+          <span key={item.account} className="host-budget-inline-item">
+            <span className={`host-budget-kind is-${kind.toLowerCase()}`}>{kind}</span>
+            <small className="host-budget-code">{item.account}</small>
+            <small>{item.used_percent.toFixed(1)}%</small>
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 export function HostsPage(): JSX.Element {
@@ -30,10 +42,25 @@ export function HostsPage(): JSX.Element {
     queryFn: listHosts,
     refetchInterval: 7000
   });
+  const jobsQuery = useQuery({
+    queryKey: ["jobs"],
+    queryFn: listJobs,
+    refetchInterval: 7000
+  });
 
   const rows = useMemo(() => {
     return Object.entries(hostsQuery.data?.hosts || {}).map(([name, data]) => ({ name, ...data }));
   }, [hostsQuery.data?.hosts]);
+  const jobsById = useMemo(() => {
+    return new Map((jobsQuery.data || []).map((job) => [job.job_id, job] as const));
+  }, [jobsQuery.data]);
+
+  function resolveJobName(jobId: string | null | undefined): string {
+    if (!jobId) return "-";
+    const candidate = jobsById.get(jobId);
+    if (!candidate) return jobId;
+    return candidate.job_info.job_name || candidate.job_info.run_name || jobId;
+  }
 
   return (
     <div className="page">
@@ -73,9 +100,9 @@ export function HostsPage(): JSX.Element {
                     <span className={`host-live-dot${isRecentHostUpdate(row.last_seen) ? " is-online" : ""}`} />
                     {isRecentHostUpdate(row.last_seen) ? " Live" : " Offline"}
                   </td>
-                  <td>{row.current_job_id || row.info.active_job_id || "-"}</td>
+                  <td>{resolveJobName(row.current_job_id || row.info.active_job_id || null)}</td>
                   <td>{row.current_job_status || row.info.active_job_status || row.info.last_terminal_status || "-"}</td>
-                  <td>{formatBudgetLine(row.info.budget?.accounts)}</td>
+                  <td>{renderBudgetLine(row.info.budget?.accounts)}</td>
                   <td>{formatDateTime(row.last_seen)}</td>
                 </tr>
               ))}

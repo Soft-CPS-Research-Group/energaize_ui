@@ -4,18 +4,19 @@ import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "./jo
 describe("jobsListState helpers", () => {
   it("reads search params with defaults", () => {
     const state = buildJobsListStateFromSearchParams(new URLSearchParams("q=solar&status=completed"));
-    expect(state).toEqual({ q: "solar", status: "completed", host: "all" });
+    expect(state).toEqual({ q: "solar", status: "completed", host: "all", submitted: "all" });
   });
 
   it("serializes only non-default values", () => {
     const params = toJobsListSearchParams({
       q: "abc",
       status: "all",
-      host: "worker-a"
+      host: "worker-a",
+      submitted: "Tiago"
     });
     expect(params.toString()).toContain("q=abc");
     expect(params.toString()).toContain("host=worker-a");
+    expect(params.toString()).toContain("submitted=Tiago");
     expect(params.toString()).not.toContain("status=");
   });
 });
-

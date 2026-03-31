@@ -8,10 +8,35 @@ export const MOCK_USERS: Record<
   string,
   { password: string; name: string; role: UserRole }
 > = {
-  "ai@energaize.io": {
-    password: "ai123",
-    name: "Training Manager",
-    role: "ai_manager"
+  "tiago.fonseca@energaize.io": {
+    password: "TfTm#2026!",
+    name: "Tiago Fonseca",
+    role: "training_manager"
+  },
+  "guilherme.sousa@energaize.io": {
+    password: "GbdsTm#2026!",
+    name: "Guilherme Barbosa De Sousa",
+    role: "training_manager"
+  },
+  "pedro.monteiro@energaize.io": {
+    password: "PamTm#2026!",
+    name: "Pedro Alves Monteiro",
+    role: "training_manager"
+  },
+  "gustavo.jorge@energaize.io": {
+    password: "GnCJTm#2026!",
+    name: "Gustavo Nuno Chaves Jorge",
+    role: "training_manager"
+  },
+  "bernardo.cardoso@energaize.io": {
+    password: "BpNgcPred#2026!",
+    name: "Bernardo Paiva Do Novo Granja Cardoso",
+    role: "predictor"
+  },
+  "francisco.lousada@energaize.io": {
+    password: "FbLlKpi#2026!",
+    name: "Francisco Barradas Lemos Lousada",
+    role: "kpi_manager"
   },
   "rec@energaize.io": {
     password: "rec123",
@@ -66,5 +91,6 @@ export const LOGIN_BACKGROUNDS = [
 export const JOB_POLL_MS = 5000;
 export const HOSTS_POLL_MS = 7000;
 export const DATASETS_POLL_MS = 10000;
+export const LOGS_POLL_MS = 2000;
 
 export const AUTH_SCENE_STORAGE_KEY = "energaize:auth-scene";

@@ -2,9 +2,11 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { AccountPage } from "./pages/AccountPage";
 import { CommunitiesPage } from "./pages/CommunitiesPage";
+import { KpiManagerWorkspacePage } from "./pages/KpiManagerWorkspacePage";
 import { LoginPage } from "./pages/LoginPage";
 import { LogsPage } from "./pages/LogsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { PredictorWorkspacePage } from "./pages/PredictorWorkspacePage";
 import { RoleWorkspacePage } from "./pages/RoleWorkspacePage";
 import { ConfigsPage } from "./pages/ai/ConfigsPage";
 import { DatasetsPage } from "./pages/ai/DatasetsPage";
@@ -30,7 +32,7 @@ export default function App(): JSX.Element {
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="workspace" element={<RoleWorkspacePage />} />
 
-          <Route element={<RoleGuard allowed={["ai_manager"]} />}>
+          <Route element={<RoleGuard allowed={["ai_manager", "training_manager"]} />}>
             <Route path="ai">
               <Route index element={<Navigate to="jobs" replace />} />
               <Route path="jobs" element={<JobsPage />} />
@@ -39,6 +41,14 @@ export default function App(): JSX.Element {
               <Route path="datasets" element={<DatasetsPage />} />
               <Route path="configs" element={<ConfigsPage />} />
             </Route>
+          </Route>
+
+          <Route element={<RoleGuard allowed={["predictor"]} />}>
+            <Route path="predictor" element={<PredictorWorkspacePage />} />
+          </Route>
+
+          <Route element={<RoleGuard allowed={["kpi_manager"]} />}>
+            <Route path="kpi-manager" element={<KpiManagerWorkspacePage />} />
           </Route>
         </Route>
       </Route>

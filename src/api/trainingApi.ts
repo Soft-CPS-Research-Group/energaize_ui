@@ -32,12 +32,29 @@ export interface RunSimulationPayload {
   config_path?: string;
   target_host?: string;
   save_as?: string;
+  job_name?: string;
+  submitted_by?: string;
+  image?: string;
 }
 
 export interface JobActionResponse {
   message?: string;
   status?: JobStatus;
   job_id?: string;
+}
+
+export interface JobImageTag {
+  name: string;
+  last_updated?: string;
+  digest?: string | null;
+}
+
+export interface JobImageVersionsResponse {
+  repository: string;
+  tags: JobImageTag[];
+  count: number;
+  cached: boolean;
+  fetched_at: number;
 }
 
 export async function listDatasets(): Promise<DatasetItem[]> {
@@ -48,6 +65,16 @@ export async function createDataset(payload: DatasetCreatePayload): Promise<{ me
   return http<{ message: string }>("/dataset", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export async function uploadDataset(payload: { file: File; name: string }): Promise<{ message: string; name: string }> {
+  const formData = new FormData();
+  formData.append("file", payload.file);
+  formData.append("name", payload.name);
+  return http<{ message: string; name: string }>("/dataset/upload", {
+    method: "POST",
+    body: formData
   });
 }
 
@@ -114,12 +141,14 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
   status: JobStatus;
   host?: string;
   job_name?: string;
+  image?: string;
 }> {
   const result = await http<{
     job_id: string;
     status: string;
     host?: string;
     job_name?: string;
+    image?: string;
   }>("/run-simulation", {
     method: "POST",
     body: JSON.stringify(payload)
@@ -217,9 +246,26 @@ export async function getJobLogs(jobId: string): Promise<string> {
   });
 }
 
+export async function getJobResolvedConfig(jobId: string): Promise<{ yaml_content: string }> {
+  const yamlContent = await http<string>(
+    `/job-resolved-config/${encodeURIComponent(jobId)}`,
+    undefined,
+    { responseType: "text" }
+  );
+  return { yaml_content: yamlContent };
+}
+
 export async function stopJob(jobId: string): Promise<JobActionResponse> {
   return http<JobActionResponse>(`/stop/${encodeURIComponent(jobId)}`, {
     method: "POST"
+  });
+}
+
+export async function opsStopJob(payload: { job_id: string; reason?: string }): Promise<JobActionResponse> {
+  const { job_id, reason = "ops_stop" } = payload;
+  return http<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/stop`, {
+    method: "POST",
+    body: JSON.stringify({ reason })
   });
 }
 
@@ -235,6 +281,17 @@ export async function listQueue(): Promise<QueueItem[]> {
 
 export async function listHosts(): Promise<HostsPayload> {
   return http<HostsPayload>("/hosts");
+}
+
+export async function listJobImageVersions(params?: {
+  repository?: string;
+  limit?: number;
+}): Promise<JobImageVersionsResponse> {
+  const search = new URLSearchParams();
+  if (params?.repository) search.set("repository", params.repository);
+  if (params?.limit) search.set("limit", String(params.limit));
+  const suffix = search.size ? `?${search.toString()}` : "";
+  return http<JobImageVersionsResponse>(`/job-images/versions${suffix}`);
 }
 
 export async function opsRequeueJob(payload: {

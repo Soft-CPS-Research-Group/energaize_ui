@@ -19,6 +19,7 @@ import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useUI } from "../../contexts/UIContext";
+import { isKpiManagerRole, isPredictorRole, isTrainingManagerRole, roleLabel } from "../../utils/roles";
 
 interface TreeNode {
   id: string;
@@ -123,14 +124,22 @@ export function CommunityTree(): JSX.Element {
     setMobileTreeOpen
   } = useUI();
   const tree = useEntityTree();
-  const isAiManager = session?.role === "ai_manager";
+  const isTrainingManager = isTrainingManagerRole(session?.role);
+  const isRoleMockMenu = isPredictorRole(session?.role) || isKpiManagerRole(session?.role);
+  const roleKicker =
+    session?.role && roleLabel(session.role) !== "unknown"
+      ? roleLabel(session.role)
+          .split(" ")
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(" ")
+      : "Context";
 
   return (
     <>
-      <aside className={`community-tree${treeCollapsed ? " is-collapsed" : ""}${isAiManager ? " is-ai" : ""}`}>
+      <aside className={`community-tree${treeCollapsed ? " is-collapsed" : ""}${isTrainingManager ? " is-ai" : ""}`}>
         <header>
           <div>
-            <span className="section-kicker">{isAiManager ? "Training Manager" : "Context"}</span>
+            <span className="section-kicker">{isTrainingManager ? "Training Manager" : roleKicker}</span>
             {!treeCollapsed ? <strong>{activeCommunity.name}</strong> : null}
           </div>
           <button className="icon-btn" type="button" onClick={toggleTreeCollapsed} title="Toggle tree">
@@ -140,7 +149,7 @@ export function CommunityTree(): JSX.Element {
 
         {!treeCollapsed ? (
           <section className="tree-section">
-            {isAiManager ? (
+            {isTrainingManager ? (
               <>
                 <label className="tree-community-picker">
                   <span className="section-kicker">Community</span>
@@ -170,17 +179,23 @@ export function CommunityTree(): JSX.Element {
                   ))}
                 </nav>
               </>
+            ) : isRoleMockMenu ? (
+              <nav className="role-side-nav-mock" aria-label="Role menu mock">
+                <span className="role-side-item">Menu items em breve</span>
+              </nav>
             ) : null}
 
-            <div className="tree-section-head">Community Composition</div>
+            {!isRoleMockMenu ? <div className="tree-section-head">Community Composition</div> : null}
           </section>
         ) : null}
 
-        <ul className="tree-root">
-          {tree.map((node) => (
-            <TreeItem key={node.id} node={node} />
-          ))}
-        </ul>
+        {!isRoleMockMenu ? (
+          <ul className="tree-root">
+            {tree.map((node) => (
+              <TreeItem key={node.id} node={node} />
+            ))}
+          </ul>
+        ) : null}
       </aside>
 
       {mobileTreeOpen ? (
@@ -198,7 +213,7 @@ export function CommunityTree(): JSX.Element {
               </button>
             </header>
 
-            {isAiManager ? (
+            {isTrainingManager ? (
               <section className="tree-section">
                 <label className="tree-community-picker">
                   <span className="section-kicker">Community</span>
@@ -230,13 +245,21 @@ export function CommunityTree(): JSX.Element {
                 </nav>
                 <div className="tree-section-head">Community Composition</div>
               </section>
+            ) : isRoleMockMenu ? (
+              <section className="tree-section">
+                <nav className="role-side-nav-mock" aria-label="Role menu mock">
+                  <span className="role-side-item">Menu items em breve</span>
+                </nav>
+              </section>
             ) : null}
 
-            <ul className="tree-root">
-              {tree.map((node) => (
-                <TreeItem key={node.id} node={node} />
-              ))}
-            </ul>
+            {!isRoleMockMenu ? (
+              <ul className="tree-root">
+                {tree.map((node) => (
+                  <TreeItem key={node.id} node={node} />
+                ))}
+              </ul>
+            ) : null}
           </aside>
         </div>
       ) : null}

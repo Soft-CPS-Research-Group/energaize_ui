@@ -23,11 +23,16 @@ export async function http<T>(
   init?: RequestInit,
   options?: { responseType?: "json" | "text" | "blob" }
 ): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const headers = new Headers(init?.headers || {});
+  if (isFormData) {
+    headers.delete("Content-Type");
+  } else if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(buildUrl(path), {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {})
-    },
+    headers,
     ...init
   });
 

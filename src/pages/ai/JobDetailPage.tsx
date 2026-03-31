@@ -35,6 +35,7 @@ import {
   getJobStatus
 } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
+import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { StatusPill } from "../../components/ui/StatusPill";
 import {
@@ -108,6 +109,14 @@ interface ChartMouseState {
       scale?: { invert?: (value: number) => number };
     }
   >;
+}
+
+interface ScopedKpiRow {
+  key: string;
+  label: string;
+  unit?: string;
+  value: number;
+  breakdown: Array<{ entity: string; value: number }>;
 }
 
 const CHART_COLORS = ["#1db97f", "#4f8cff", "#f4a340", "#ea5a5a", "#9e7bff", "#00bcd4"];
@@ -587,6 +596,24 @@ function resolveInclusiveCustomEnd(startEpoch: number | null, endEpoch: number |
 function listNodeChildren(node: SimulationTreeNode): SimulationTreeNode[] {
   if (!node.children || node.children.length === 0) return [];
   return node.children;
+}
+
+interface KpiEntityScope {
+  id: string;
+  label: string;
+  group: "community" | "building" | "other";
+  entityKeys: string[];
+}
+
+function parseBuildingEntityId(entity: string): number | null {
+  const match = entity.match(/building[_\s-]*(\d+)/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isCommunityEntity(entity: string): boolean {
+  return /(community|overall|global|rec|microgrid|district)/i.test(entity);
 }
 
 function nodeIcon(kind: SimulationTreeNode["kind"]): JSX.Element {
@@ -1248,6 +1275,7 @@ export function JobDetailPage(): JSX.Element {
   const [visibleSeries, setVisibleSeries] = useState<Record<string, string[]>>({});
   const [zoomHistory, setZoomHistory] = useState<ZoomHistoryEntry[]>([]);
   const [kpiSearch, setKpiSearch] = useState("");
+  const [selectedKpiScopeId, setSelectedKpiScopeId] = useState("community");
 
   const statusQuery = useQuery({
     queryKey: ["job-status", jobId],
@@ -1478,6 +1506,145 @@ export function JobDetailPage(): JSX.Element {
     return fallbackKpis;
   }, [fallbackKpis, kpiCsvQuery.data?.entries]);
 
+  const kpiCommunityLabel =
+    typeof infoQuery.data?.community_name === "string" && infoQuery.data.community_name.trim() !== ""
+      ? infoQuery.data.community_name.trim()
+      : typeof infoQuery.data?.energy_community === "string" && infoQuery.data.energy_community.trim() !== ""
+        ? infoQuery.data.energy_community.trim()
+        : "Solar Community";
+
+  const kpiScopes = useMemo<KpiEntityScope[]>(() => {
+    if (kpiRows.length === 0) return [];
+
+    const entities = new Set<string>();
+    kpiRows.forEach((row) => {
+      Object.keys(row.values).forEach((entity) => {
+        if (entity.trim()) entities.add(entity);
+      });
+    });
+
+    if (entities.size === 0) return [];
+
+    const buildingOrder = new Map<number, number>();
+    treeNodes.forEach((node, index) => {
+      if (node.kind !== "building") return;
+      const match = node.label.match(/(\d+)/);
+      const buildingId = match ? Number(match[1]) : Number.NaN;
+      if (Number.isFinite(buildingId) && !buildingOrder.has(buildingId)) {
+        buildingOrder.set(buildingId, index);
+      }
+    });
+
+    const communityEntities: string[] = [];
+    const buildingEntities = new Map<number, string[]>();
+    const otherEntities: string[] = [];
+
+    Array.from(entities)
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((entity) => {
+        if (isCommunityEntity(entity)) {
+          communityEntities.push(entity);
+          return;
+        }
+        const buildingId = parseBuildingEntityId(entity);
+        if (buildingId !== null) {
+          const group = buildingEntities.get(buildingId) || [];
+          group.push(entity);
+          buildingEntities.set(buildingId, group);
+          return;
+        }
+        otherEntities.push(entity);
+      });
+
+    const scopes: KpiEntityScope[] = [];
+    if (communityEntities.length > 0) {
+      scopes.push({
+        id: "community",
+        label: kpiCommunityLabel,
+        group: "community",
+        entityKeys: communityEntities
+      });
+    }
+
+    Array.from(buildingEntities.entries())
+      .sort((left, right) => {
+        const leftOrder = buildingOrder.get(left[0]) ?? left[0];
+        const rightOrder = buildingOrder.get(right[0]) ?? right[0];
+        return leftOrder - rightOrder;
+      })
+      .forEach(([buildingId, entityKeys]) => {
+        scopes.push({
+          id: `building:${buildingId}`,
+          label: `Building ${buildingId}`,
+          group: "building",
+          entityKeys
+        });
+      });
+
+    if (otherEntities.length > 0) {
+      scopes.push({
+        id: "other",
+        label: "Other entities",
+        group: "other",
+        entityKeys: otherEntities
+      });
+    }
+
+    return scopes;
+  }, [kpiCommunityLabel, kpiRows, treeNodes]);
+
+  useEffect(() => {
+    if (kpiScopes.length === 0) return;
+    if (!kpiScopes.some((scope) => scope.id === selectedKpiScopeId)) {
+      setSelectedKpiScopeId(kpiScopes[0]!.id);
+    }
+  }, [kpiScopes, selectedKpiScopeId]);
+
+  const selectedKpiScope = useMemo(
+    () => kpiScopes.find((scope) => scope.id === selectedKpiScopeId) || null,
+    [kpiScopes, selectedKpiScopeId]
+  );
+
+  const scopedKpiRows = useMemo<ScopedKpiRow[]>(() => {
+    if (kpiRows.length === 0 || !selectedKpiScope) return [];
+
+    const query = kpiSearch.trim().toLowerCase();
+    const collected = kpiRows.reduce<ScopedKpiRow[]>((acc, row) => {
+        const breakdown = selectedKpiScope.entityKeys
+          .map((entity) => ({ entity, value: row.values[entity] }))
+          .filter((entry): entry is { entity: string; value: number } => typeof entry.value === "number");
+
+        if (breakdown.length === 0) return acc;
+
+        const representative =
+          breakdown.length === 1
+            ? breakdown[0]!.value
+            : breakdown.reduce((sum, entry) => sum + entry.value, 0) / breakdown.length;
+
+        acc.push({
+          key: row.key,
+          label: row.label,
+          unit: row.unit,
+          value: representative,
+          breakdown
+        });
+        return acc;
+      }, []);
+
+    return collected
+      .filter((row) => {
+        if (!query) return true;
+        return `${row.label} ${row.key}`.toLowerCase().includes(query);
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [kpiRows, kpiSearch, selectedKpiScope]);
+
+  const scopedKpiMaxAbs = useMemo(() => {
+    if (scopedKpiRows.length === 0) return 1;
+    const maxValue = Math.max(...scopedKpiRows.map((row) => Math.abs(row.value)));
+    return maxValue > 0 ? maxValue : 1;
+  }, [scopedKpiRows]);
+
   const filteredKpis = useMemo(() => {
     const query = kpiSearch.trim().toLowerCase();
     if (!query) return displayKpis;
@@ -1672,8 +1839,40 @@ export function JobDetailPage(): JSX.Element {
     () => extractArtifacts(resultQuery.data, infoQuery.data || null),
     [infoQuery.data, resultQuery.data]
   );
+  const simulationOutputArtifacts = useMemo(() => {
+    return (simulationIndexQuery.data?.files || []).map((file) => ({
+      name: resolveFileTitle(file.relativePath),
+      kind: file.kind,
+      pathOrUri: `results/simulation_data/${file.relativePath}`
+    }));
+  }, [simulationIndexQuery.data?.files]);
 
   const updatedAt = pickUpdatedAt(progressQuery.data, infoQuery.data);
+  const progressPercent = useMemo(() => {
+    const payload = progressQuery.data as Record<string, unknown> | undefined;
+    if (!payload) return null;
+    const candidates = [
+      payload.progress_pct,
+      payload.percent,
+      payload.progress,
+      payload.progress_percent,
+      payload.completion
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === "number" && Number.isFinite(candidate)) {
+        const value = candidate <= 1 ? candidate * 100 : candidate;
+        return Math.max(0, Math.min(100, value));
+      }
+      if (typeof candidate === "string" && candidate.trim() !== "") {
+        const parsed = Number(candidate);
+        if (Number.isFinite(parsed)) {
+          const value = parsed <= 1 ? parsed * 100 : parsed;
+          return Math.max(0, Math.min(100, value));
+        }
+      }
+    }
+    return null;
+  }, [progressQuery.data]);
   const mlflowUrl =
     typeof infoQuery.data?.mlflow_run_url === "string" ? infoQuery.data.mlflow_run_url : null;
   const jobDescription =
@@ -1682,12 +1881,7 @@ export function JobDetailPage(): JSX.Element {
       : typeof infoQuery.data?.job_description === "string" && infoQuery.data.job_description.trim() !== ""
         ? infoQuery.data.job_description.trim()
         : null;
-  const communityLabel =
-    typeof infoQuery.data?.community_name === "string" && infoQuery.data.community_name.trim() !== ""
-      ? infoQuery.data.community_name.trim()
-      : typeof infoQuery.data?.energy_community === "string" && infoQuery.data.energy_community.trim() !== ""
-        ? infoQuery.data.energy_community.trim()
-        : "Solar Community";
+  const communityLabel = kpiCommunityLabel;
   const isCommunityMode = selectedNodeId === "__community__";
   const isBuildingCompareMode = selectedBuildingNodeIds.length === 2;
 
@@ -1889,27 +2083,6 @@ export function JobDetailPage(): JSX.Element {
     <div className="page job-detail-page">
       <h1 className="sr-only">{jobId}</h1>
 
-      {activeTab === "overview" ? (
-        <section className="job-detail-header panel">
-          <div>
-            <small>Status</small>
-            <StatusPill status={status} />
-          </div>
-          <div>
-            <small>Host</small>
-            <strong>{infoQuery.data?.target_host || "-"}</strong>
-          </div>
-          <div>
-            <small>Last update</small>
-            <strong>{formatDateTime(updatedAt)}</strong>
-          </div>
-          <div>
-            <small>Run name</small>
-            <strong>{infoQuery.data?.run_name || "-"}</strong>
-          </div>
-        </section>
-      ) : null}
-
       <div className="job-subnav-row">
         <nav className="job-subnav" aria-label="Job detail navigation">
           {DETAIL_TABS.map((tab) => (
@@ -1938,7 +2111,11 @@ export function JobDetailPage(): JSX.Element {
         </div>
       </div>
 
-      {isLoading ? <p className="jobs-meta">Loading job details...</p> : null}
+      {isLoading ? (
+        <section className="datasets-loader-preview">
+          <EVChargingLoader label="Loading job details..." />
+        </section>
+      ) : null}
       {!isLoading && (statusQuery.isError || infoQuery.isError || resultQuery.isError) ? (
         <EmptyState
           title="Could not load job details"
@@ -1954,8 +2131,37 @@ export function JobDetailPage(): JSX.Element {
       {!isLoading && !statusQuery.isError && !infoQuery.isError && !resultQuery.isError ? (
         <section className="job-detail-body">
           {activeTab === "overview" ? (
-            <section className="panel">
-              <h2>Overview</h2>
+            <section className="panel job-overview-panel">
+              <header className="job-overview-head">
+                <div>
+                  <h2>Overview</h2>
+                  <small className="jobs-meta">
+                    {infoQuery.data?.job_name || infoQuery.data?.run_name || infoQuery.data?.experiment_name || jobId}
+                  </small>
+                </div>
+                <StatusPill status={status} />
+              </header>
+              <section className="job-overview-kpis">
+                <article className="job-overview-card">
+                  <small>Progress</small>
+                  <strong>{progressPercent === null ? "-" : `${Math.round(progressPercent)}%`}</strong>
+                  <div className="progress-track is-thin">
+                    <div className="progress-fill" style={{ width: `${progressPercent ?? 0}%` }} />
+                  </div>
+                </article>
+                <article className="job-overview-card">
+                  <small>Last update</small>
+                  <strong>{formatDateTime(updatedAt)}</strong>
+                </article>
+                <article className="job-overview-card">
+                  <small>Target host</small>
+                  <strong>{infoQuery.data?.target_host || "auto"}</strong>
+                </article>
+                <article className="job-overview-card">
+                  <small>Run name</small>
+                  <strong>{infoQuery.data?.run_name || "-"}</strong>
+                </article>
+              </section>
               <dl className="job-overview-grid">
                 <div>
                   <dt>Job ID</dt>
@@ -2015,7 +2221,9 @@ export function JobDetailPage(): JSX.Element {
                   message="This job is not completed yet, so final result series are not available."
                 />
               ) : simulationIndexQuery.isLoading ? (
-                <p className="jobs-meta">Loading simulation index...</p>
+                <section className="datasets-loader-preview">
+                  <EVChargingLoader label="Loading simulation index..." />
+                </section>
               ) : simulationIndexQuery.isError ? (
                 <EmptyState
                   title="Could not load simulation files"
@@ -2250,7 +2458,9 @@ export function JobDetailPage(): JSX.Element {
 
                     <section className="timeseries-main">
                       {timeseriesQuery.isLoading ? (
-                        <p className="jobs-meta">Loading timeseries CSV files...</p>
+                        <section className="datasets-loader-preview">
+                          <EVChargingLoader label="Loading timeseries CSV files..." />
+                        </section>
                       ) : timeseriesBundles.length === 0 ? (
                         <EmptyState
                           title="No timeseries data"
@@ -2303,6 +2513,130 @@ export function JobDetailPage(): JSX.Element {
                   title="KPIs available after completion"
                   message="This job is still running or queued."
                 />
+              ) : simulationIndexQuery.isLoading ? (
+                <section className="datasets-loader-preview">
+                  <EVChargingLoader label="Loading KPI index..." />
+                </section>
+              ) : kpiCsvQuery.isLoading && kpiFilePath ? (
+                <section className="datasets-loader-preview">
+                  <EVChargingLoader label="Loading KPI file..." />
+                </section>
+              ) : kpiRows.length > 0 && kpiScopes.length > 0 ? (
+                <div className="kpi-layout">
+                  <aside className="kpi-tree-panel panel">
+                    <header className="sim-tree-head">
+                      <div className="sim-tree-headline">
+                        <small>KPI Scope</small>
+                      </div>
+                    </header>
+                    <ul className="sim-tree-list">
+                      {kpiScopes.map((scope) => (
+                        <li key={scope.id}>
+                          <div className={`sim-tree-row ${selectedKpiScopeId === scope.id ? "is-selected" : ""}`}>
+                            <span className="sim-tree-toggle is-spacer" />
+                            <button
+                              type="button"
+                              className="sim-tree-label"
+                              onClick={() => setSelectedKpiScopeId(scope.id)}
+                            >
+                              <span className="sim-tree-icon">
+                                {scope.group === "community" ? (
+                                  <Factory size={14} />
+                                ) : scope.group === "building" ? (
+                                  <Building2 size={14} />
+                                ) : (
+                                  <FolderTree size={14} />
+                                )}
+                              </span>
+                              <span>{scope.label}</span>
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </aside>
+
+                  <section className="kpi-main">
+                    <section className="kpi-toolbar">
+                      <label className="search-inline kpi-search">
+                        <input
+                          value={kpiSearch}
+                          onChange={(event) => setKpiSearch(event.target.value)}
+                          placeholder="Search KPI..."
+                        />
+                      </label>
+                      <small>
+                        {scopedKpiRows.length} KPI(s) · scope: {selectedKpiScope?.label || "-"}
+                      </small>
+                    </section>
+
+                    {scopedKpiRows.length === 0 ? (
+                      <EmptyState
+                        title="No KPIs in this scope"
+                        message="No KPI rows match this entity or search filter."
+                      />
+                    ) : (
+                      <>
+                        <div className="kpi-insight-grid">
+                          {scopedKpiRows.map((row) => (
+                            <article key={row.key} className="kpi-insight-card">
+                              <header>
+                                <small>{row.label}</small>
+                                <strong>{formatNumber(row.value)}</strong>
+                              </header>
+                              <div className="kpi-insight-meter">
+                                <span
+                                  style={{
+                                    width: `${Math.max(4, Math.min(100, (Math.abs(row.value) / scopedKpiMaxAbs) * 100))}%`
+                                  }}
+                                />
+                              </div>
+                              <footer>
+                                <small>{row.unit || "-"}</small>
+                                <small>
+                                  {row.breakdown.length === 1
+                                    ? row.breakdown[0]!.entity
+                                    : `${row.breakdown.length} entities`}
+                                </small>
+                              </footer>
+                            </article>
+                          ))}
+                        </div>
+
+                        <div className="job-kpi-table-wrap kpi-list-wrap">
+                          <table className="table">
+                            <thead>
+                              <tr>
+                                <th>KPI</th>
+                                <th>Value</th>
+                                <th>Unit</th>
+                                <th>Entity breakdown</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {scopedKpiRows.map((row) => (
+                                <tr key={`row:${row.key}`}>
+                                  <td>{row.label}</td>
+                                  <td>{formatNumber(row.value)}</td>
+                                  <td>{row.unit || "-"}</td>
+                                  <td>
+                                    <div className="kpi-breakdown-inline">
+                                      {row.breakdown.map((entry) => (
+                                        <span key={`${row.key}:${entry.entity}`}>
+                                          {entry.entity}: {formatNumber(entry.value)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </section>
+                </div>
               ) : (
                 <>
                   <section className="kpi-toolbar">
@@ -2318,8 +2652,6 @@ export function JobDetailPage(): JSX.Element {
                       {kpiRows.length > 0 ? ` · ${kpiRows.length} KPI rows from exported_kpis.csv` : ""}
                     </small>
                   </section>
-
-                  {kpiCsvQuery.isLoading && kpiFilePath ? <p className="jobs-meta">Loading KPI file...</p> : null}
 
                   {filteredKpis.length === 0 ? (
                     <EmptyState
@@ -2359,25 +2691,51 @@ export function JobDetailPage(): JSX.Element {
             <section className="panel">
               <h2>Deploy</h2>
               <p className="jobs-meta">
-                Read-only preview for artifacts. Deploy actions will be enabled in a next phase.
+                Read-only preview of artifacts generated under job results. Deploy actions will be enabled in a next phase.
               </p>
 
-              {artifacts.length === 0 ? (
+              {simulationIndexQuery.isLoading ? (
+                <section className="datasets-loader-preview">
+                  <EVChargingLoader label="Loading result artifacts..." />
+                </section>
+              ) : null}
+
+              {!simulationIndexQuery.isLoading && simulationOutputArtifacts.length > 0 ? (
+                <>
+                  <h4>Simulation outputs</h4>
+                  <div className="job-artifacts-list">
+                    {simulationOutputArtifacts.map((artifact) => (
+                      <article key={`${artifact.kind}:${artifact.pathOrUri}`} className="job-artifact-item">
+                        <strong>{artifact.name}</strong>
+                        <small>{artifact.kind}</small>
+                        <code>{artifact.pathOrUri}</code>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+
+              {!simulationIndexQuery.isLoading && artifacts.length > 0 ? (
+                <>
+                  <h4>Detected model/checkpoint references</h4>
+                  <div className="job-artifacts-list">
+                    {artifacts.map((artifact) => (
+                      <article key={`detected:${artifact.kind}:${artifact.pathOrUri}`} className="job-artifact-item">
+                        <strong>{artifact.name}</strong>
+                        <small>{artifact.kind}</small>
+                        <code>{artifact.pathOrUri}</code>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+
+              {!simulationIndexQuery.isLoading && simulationOutputArtifacts.length === 0 && artifacts.length === 0 ? (
                 <EmptyState
                   title="No artifacts detected"
-                  message="No artifact/model/checkpoint/path/uri entries were detected in result metadata."
+                  message="No simulation outputs or model/checkpoint references were found for this job."
                 />
-              ) : (
-                <div className="job-artifacts-list">
-                  {artifacts.map((artifact) => (
-                    <article key={`${artifact.kind}:${artifact.pathOrUri}`} className="job-artifact-item">
-                      <strong>{artifact.name}</strong>
-                      <small>{artifact.kind}</small>
-                      <code>{artifact.pathOrUri}</code>
-                    </article>
-                  ))}
-                </div>
-              )}
+              ) : null}
             </section>
           ) : null}
         </section>

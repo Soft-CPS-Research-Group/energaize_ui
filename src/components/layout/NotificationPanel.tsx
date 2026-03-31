@@ -14,6 +14,7 @@ export function NotificationPanel({ open, onClose }: Props): JSX.Element | null 
     markNotificationRead,
     markAllNotificationsRead,
     removeNotification,
+    clearNotifications,
     unreadCount
   } = useUI();
 
@@ -34,6 +35,9 @@ export function NotificationPanel({ open, onClose }: Props): JSX.Element | null 
       <div className="notif-actions">
         <Button variant="secondary" size="sm" onClick={markAllNotificationsRead}>
           Mark all read
+        </Button>
+        <Button variant="ghost" size="sm" onClick={clearNotifications} disabled={notifications.length === 0}>
+          Clear all
         </Button>
       </div>
 

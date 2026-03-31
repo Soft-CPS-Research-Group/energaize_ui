@@ -1,4 +1,10 @@
-export type UserRole = "rec_manager" | "prosumer" | "ai_manager";
+export type UserRole =
+  | "rec_manager"
+  | "prosumer"
+  | "ai_manager"
+  | "training_manager"
+  | "predictor"
+  | "kpi_manager";
 
 export type ThemeMode = "light" | "dark";
 
@@ -61,9 +67,13 @@ export interface JobInfo {
   job_id: string;
   job_name?: string;
   config_path?: string;
+  image?: string;
+  resolved_config_available?: boolean;
+  resolved_config_file?: string;
   target_host?: string;
   experiment_name?: string;
   run_name?: string;
+  submitted_by?: string;
   community_name?: string;
   energy_community?: string;
   description?: string;
@@ -198,8 +208,10 @@ export interface ComparedKpiRow {
 
 export interface QueueItem {
   job_id: string;
+  enqueued_at?: number | null;
   preferred_host?: string | null;
   require_host?: boolean;
+  submitted_by?: string | null;
 }
 
 export interface HostInfo {
