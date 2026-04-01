@@ -51,6 +51,7 @@ import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications
 import type { HostInfo, JobItem } from "../../types";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { isCompletedForResults } from "../../utils/jobStatus";
+import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "../../utils/jobsListState";
 import { formatDateTime } from "../../utils/time";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
@@ -1119,11 +1120,38 @@ export function JobsPage(): JSX.Element {
   async function copyLogs(): Promise<void> {
     if (!logsQuery.data) return;
 
+    const text = logsQuery.data;
+    const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+
+    if (clipboard?.writeText) {
+      try {
+        await clipboard.writeText(text);
+        notifySuccess("Logs copied", "Job logs copied to clipboard.");
+        return;
+      } catch {
+        // Fallback below for environments where Clipboard API is blocked.
+      }
+    }
+
     try {
-      await navigator.clipboard.writeText(logsQuery.data);
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      textarea.style.pointerEvents = "none";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (!copied) {
+        throw new Error("Clipboard copy command was rejected by the browser.");
+      }
       notifySuccess("Logs copied", "Job logs copied to clipboard.");
     } catch (error) {
-      notifyError("Failed to copy logs", error);
+      notifyError("Failed to copy logs", error instanceof Error ? error : new Error("Clipboard is unavailable."));
     }
   }
 
@@ -1363,19 +1391,16 @@ export function JobsPage(): JSX.Element {
                     const submittedBy =
                       resolveSubmittedByLabel(job.job_info.submitted_by) ||
                       resolveSubmittedByLabel(job.job_meta?.submitted_by);
-                    const mlflowUrl =
-                      typeof job.job_info.mlflow_run_url === "string" && job.job_info.mlflow_run_url.trim() !== ""
-                        ? job.job_info.mlflow_run_url
-                        : null;
-                  const baseConfigPath =
-                    (typeof job.job_info.config_path === "string" && job.job_info.config_path) ||
-                    (typeof job.job_meta?.config_path === "string" ? job.job_meta.config_path : "");
-                  const resolvedConfigAvailable = Boolean(job.job_info.resolved_config_available) && isCompleted;
-                  const dispatchedStatus = hasAnyStatus(job.status, ["dispatch"]);
-                  const dispatchSnapshot = readDispatchSnapshot(job);
-                  const dispatchTitle = dispatchSnapshot.slurmState
-                    ? `Slurm state: ${dispatchSnapshot.slurmState}`
-                    : "Show Slurm queue details";
+                    const mlflowUrl = resolveMlflowRunUrl(job.job_info, job.job_meta);
+                    const baseConfigPath =
+                      (typeof job.job_info.config_path === "string" && job.job_info.config_path) ||
+                      (typeof job.job_meta?.config_path === "string" ? job.job_meta.config_path : "");
+                    const resolvedConfigAvailable = Boolean(job.job_info.resolved_config_available) && isCompleted;
+                    const dispatchedStatus = hasAnyStatus(job.status, ["dispatch"]);
+                    const dispatchSnapshot = readDispatchSnapshot(job);
+                    const dispatchTitle = dispatchSnapshot.slurmState
+                      ? `Slurm state: ${dispatchSnapshot.slurmState}`
+                      : "Show Slurm queue details";
 
                     return (
                       <tr

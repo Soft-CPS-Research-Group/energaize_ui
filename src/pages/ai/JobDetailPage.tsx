@@ -55,6 +55,7 @@ import type {
 } from "../../types";
 import { extractArtifacts, extractKpis } from "../../utils/jobResult";
 import { isCompletedForResults } from "../../utils/jobStatus";
+import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import {
   buildSimulationTree,
   extractKpisFromSimulationData,
@@ -1873,8 +1874,7 @@ export function JobDetailPage(): JSX.Element {
     }
     return null;
   }, [progressQuery.data]);
-  const mlflowUrl =
-    typeof infoQuery.data?.mlflow_run_url === "string" ? infoQuery.data.mlflow_run_url : null;
+  const mlflowUrl = resolveMlflowRunUrl(infoQuery.data);
   const jobDescription =
     typeof infoQuery.data?.description === "string" && infoQuery.data.description.trim() !== ""
       ? infoQuery.data.description.trim()

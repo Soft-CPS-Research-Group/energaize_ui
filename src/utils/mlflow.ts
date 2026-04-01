@@ -1,0 +1,120 @@
+import { API_BASE_URL } from "../api/client";
+
+const NESTED_RECORD_KEYS = ["details", "last_status_details", "job_info", "job_meta"] as const;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeMlflowBaseUrl(value: string | null | undefined): string | null {
+  const text = asNonEmptyString(value);
+  if (!text) return null;
+  if (!(text.startsWith("http://") || text.startsWith("https://"))) return null;
+
+  let normalized = text;
+  const hashIndex = normalized.indexOf("/#/");
+  if (hashIndex > 0) {
+    normalized = normalized.slice(0, hashIndex);
+  }
+
+  normalized = normalized.replace(/\/+$/, "");
+  return normalized || null;
+}
+
+function deriveMlflowBaseUrlFromApi(): string | null {
+  const normalizedApi = normalizeMlflowBaseUrl(API_BASE_URL);
+  if (!normalizedApi) return null;
+  try {
+    const parsed = new URL(normalizedApi);
+    parsed.port = "5000";
+    parsed.hash = "";
+    parsed.pathname = "";
+    parsed.search = "";
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function collectSourceRecords(
+  source: unknown,
+  output: Array<Record<string, unknown>>,
+  visited: WeakSet<object>
+): void {
+  const record = asRecord(source);
+  if (!record) return;
+  if (visited.has(record)) return;
+  visited.add(record);
+  output.push(record);
+
+  NESTED_RECORD_KEYS.forEach((key) => {
+    const nested = asRecord(record[key]);
+    if (!nested) return;
+    if (visited.has(nested)) return;
+    visited.add(nested);
+    output.push(nested);
+  });
+}
+
+function findFirstString(records: Array<Record<string, unknown>>, keys: string[]): string | null {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = asNonEmptyString(record[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function resolveBaseUrl(records: Array<Record<string, unknown>>): string | null {
+  const configured = normalizeMlflowBaseUrl(import.meta.env.VITE_MLFLOW_UI_BASE_URL);
+  if (configured) return configured;
+
+  const fromPayload = normalizeMlflowBaseUrl(
+    findFirstString(records, ["mlflow_ui_base_url", "tracking_ui_base_url", "tracking_uri", "mlflow_uri"])
+  );
+  if (fromPayload) return fromPayload;
+
+  return deriveMlflowBaseUrlFromApi();
+}
+
+export function buildMlflowRunUrl(params: {
+  baseUrl: string | null;
+  experimentId: string | null;
+  runId: string | null;
+}): string | null {
+  const baseUrl = normalizeMlflowBaseUrl(params.baseUrl);
+  const experimentId = asNonEmptyString(params.experimentId);
+  const runId = asNonEmptyString(params.runId);
+  if (!baseUrl || !experimentId || !runId) return null;
+  return `${baseUrl}/#/experiments/${experimentId}/runs/${runId}`;
+}
+
+export function resolveMlflowRunUrl(...sources: unknown[]): string | null {
+  const records: Array<Record<string, unknown>> = [];
+  const visited = new WeakSet<object>();
+  sources.forEach((source) => collectSourceRecords(source, records, visited));
+  if (records.length === 0) return null;
+
+  const directUrl = findFirstString(records, ["mlflow_run_url"]);
+  const normalizedDirectUrl = normalizeMlflowBaseUrl(directUrl);
+  if (normalizedDirectUrl && directUrl?.includes("/#/experiments/")) {
+    return directUrl;
+  }
+  if (normalizedDirectUrl && directUrl && directUrl.includes("/runs/")) {
+    return directUrl;
+  }
+
+  const runId = findFirstString(records, ["mlflow_run_id", "run_id"]);
+  const experimentId = findFirstString(records, ["mlflow_experiment_id", "experiment_id"]);
+  const baseUrl = resolveBaseUrl(records);
+
+  return buildMlflowRunUrl({ baseUrl, experimentId, runId });
+}
