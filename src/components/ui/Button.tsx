@@ -7,6 +7,7 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   iconLeft?: ReactNode;
+  iconRight?: ReactNode;
 }
 
 export function Button({
@@ -14,6 +15,7 @@ export function Button({
   variant = "secondary",
   size = "md",
   iconLeft,
+  iconRight,
   className,
   ...rest
 }: Props): JSX.Element {
@@ -24,6 +26,7 @@ export function Button({
     >
       {iconLeft ? <span className="btn-icon">{iconLeft}</span> : null}
       <span>{children}</span>
+      {iconRight ? <span className="btn-icon">{iconRight}</span> : null}
     </button>
   );
 }
