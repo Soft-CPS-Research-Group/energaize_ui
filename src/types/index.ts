@@ -220,8 +220,25 @@ export interface HostInfo {
   info: {
     executor?: string;
     worker_version?: string;
+    max_active_jobs?: number | null;
     active_job_id?: string | null;
     active_job_count?: number | null;
+    active_job_ids?: string[];
+    active_jobs?: Array<{
+      job_id: string;
+      job_name?: string;
+      status?: string;
+      phase?: string;
+      slurm_job_id?: string;
+      slurm_state?: string;
+      slurm_partition?: string;
+      slurm_nodes?: number;
+      slurm_cpus?: number;
+      slurm_gpus?: number;
+      queue_pos?: number;
+      ahead?: number;
+      updated_at?: number | string;
+    }>;
     active_job_status?: string | null;
     last_job_id?: string | null;
     last_terminal_status?: string | null;

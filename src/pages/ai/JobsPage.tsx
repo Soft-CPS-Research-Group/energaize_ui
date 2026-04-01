@@ -60,7 +60,16 @@ interface RunForm {
   configPath: string;
   jobName: string;
   targetHost: string;
-  image: string;
+  imageTag: string;
+  deucalionOptions: {
+    account: string;
+    partition: string;
+    timeLimit: string;
+    cpusPerTask: string;
+    memGb: string;
+    gpus: string;
+    commandMode: "run" | "exec";
+  };
 }
 
 type AdminActionType = "requeue" | "cancel" | "stop" | "fail" | "cleanup_queue" | "cleanup_jobs";
@@ -92,12 +101,79 @@ interface SlurmDispatchSnapshot {
   datasetsSkipped: string[];
 }
 
+interface HostActiveJobSnapshot {
+  job_id: string;
+  job_name?: string;
+  status?: string;
+  phase?: string;
+  slurm_state?: string;
+  slurm_partition?: string;
+  slurm_nodes?: number;
+  slurm_cpus?: number;
+  slurm_gpus?: number;
+  queue_pos?: number;
+  ahead?: number;
+}
+
+type DeucalionRuntimeProfile = "cpu" | "gpu";
+type RunWizardStep = { id: string; label: string };
+
+const RUN_WIZARD_BASE_STEPS: RunWizardStep[] = [
+  { id: "config", label: "Config" },
+  { id: "target", label: "Host" },
+  { id: "runtime", label: "Runtime" },
+  { id: "review", label: "Review" }
+];
+
+const RUN_WIZARD_DEUCALION_STEP: RunWizardStep = { id: "deucalion", label: "Deucalion" };
+
+const DEUCALION_PROFILE_DEFAULTS: Record<
+  DeucalionRuntimeProfile,
+  { timeLimit: string; cpusPerTask: string; memGb: string; gpus: string }
+> = {
+  cpu: {
+    timeLimit: "04:00:00",
+    cpusPerTask: "4",
+    memGb: "8",
+    gpus: ""
+  },
+  gpu: {
+    timeLimit: "04:00:00",
+    cpusPerTask: "8",
+    memGb: "16",
+    gpus: "1"
+  }
+};
+
 const defaultRunForm: RunForm = {
   configPath: "",
   jobName: "",
   targetHost: "",
-  image: "calof/opeva_simulator:latest"
+  imageTag: "latest",
+  deucalionOptions: {
+    account: "",
+    partition: "",
+    timeLimit: "",
+    cpusPerTask: "",
+    memGb: "",
+    gpus: "",
+    commandMode: "run"
+  }
 };
+
+function isGpuLikePartition(partition: string): boolean {
+  const value = partition.trim().toLowerCase();
+  if (!value) return false;
+  return value.includes("gpu") || value.includes("a100") || value.includes("h100");
+}
+
+function inferComputeProfile(entry: HostActiveJobSnapshot): "GPU" | "CPU" | null {
+  if (typeof entry.slurm_gpus === "number" && entry.slurm_gpus > 0) return "GPU";
+  if (typeof entry.slurm_partition === "string" && entry.slurm_partition.trim()) {
+    return isGpuLikePartition(entry.slurm_partition) ? "GPU" : "CPU";
+  }
+  return null;
+}
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -208,6 +284,14 @@ function resolveDefaultJobNameFromConfigPath(configPath: string): string {
   return baseName.replace(/\.ya?ml$/i, "");
 }
 
+function toOptionalInt(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed)) return undefined;
+  return parsed;
+}
+
 function resolveSubmittedByLabel(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -312,7 +396,10 @@ export function JobsPage(): JSX.Element {
   const { notifyError, notifyInfo, notifySuccess } = useApiFeedback();
 
   const [runOpen, setRunOpen] = useState(false);
+  const [runStep, setRunStep] = useState(1);
   const [configPickerOpen, setConfigPickerOpen] = useState(false);
+  const [deucalionProfile, setDeucalionProfile] = useState<DeucalionRuntimeProfile>("cpu");
+  const [showDeucalionAdvanced, setShowDeucalionAdvanced] = useState(false);
   const [jobNameAutoValue, setJobNameAutoValue] = useState("");
   const [jobNameTouched, setJobNameTouched] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
@@ -340,6 +427,21 @@ export function JobsPage(): JSX.Element {
   const [deleteJobTarget, setDeleteJobTarget] = useState<string | null>(null);
   const logsPreRef = useRef<HTMLPreElement | null>(null);
   const configJobNameRequestRef = useRef(0);
+
+  function resetRunWizardState(): void {
+    setRunForm(defaultRunForm);
+    setRunStep(1);
+    setConfigPickerOpen(false);
+    setJobNameAutoValue("");
+    setJobNameTouched(false);
+    setDeucalionProfile("cpu");
+    setShowDeucalionAdvanced(false);
+  }
+
+  function openRunWizard(): void {
+    resetRunWizardState();
+    setRunOpen(true);
+  }
 
   const jobsQuery = useQuery({
     queryKey: ["jobs"],
@@ -462,9 +564,7 @@ export function JobsPage(): JSX.Element {
     onSuccess: (result) => {
       notifySuccess("Simulation submitted", `Job ${result.job_id} queued.`);
       setRunOpen(false);
-      setRunForm(defaultRunForm);
-      setJobNameAutoValue("");
-      setJobNameTouched(false);
+      resetRunWizardState();
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       queryClient.invalidateQueries({ queryKey: ["queue"] });
     },
@@ -579,20 +679,42 @@ export function JobsPage(): JSX.Element {
 
     const orderedTags = ["latest", ...Array.from(byTag.keys()).filter((tag) => tag !== "latest")];
     return orderedTags.map((tag) => ({
-      ref: `${imageRepository}:${tag}`,
+      tag,
       deucalionReady: byTag.get(tag) ?? true
     }));
-  }, [imageRepository, jobImagesQuery.data?.tags]);
+  }, [jobImagesQuery.data?.tags]);
   const filteredConfigOptions = useMemo(() => {
     const query = runForm.configPath.trim().toLowerCase();
     if (!query) return availableConfigs;
     return availableConfigs.filter((config) => config.toLowerCase().includes(query));
   }, [availableConfigs, runForm.configPath]);
   const hasCustomRunImage =
-    runForm.image.trim() !== "" && !runImageOptions.some((option) => option.ref === runForm.image.trim());
+    runForm.imageTag.trim() !== "" && !runImageOptions.some((option) => option.tag === runForm.imageTag.trim());
   const isRunHostDeucalion = runForm.targetHost === "deucalion";
-  const selectedImageOption = runImageOptions.find((option) => option.ref === runForm.image.trim()) || null;
+  const selectedImageOption = runImageOptions.find((option) => option.tag === runForm.imageTag.trim()) || null;
   const hasReadyDeucalionImage = runImageOptions.some((option) => option.deucalionReady);
+  const deucalionDefaults = DEUCALION_PROFILE_DEFAULTS[deucalionProfile];
+  const deucalionBudgetAccounts = useMemo(() => {
+    const host = hostsQuery.data?.hosts?.deucalion;
+    const entries = host?.info?.budget?.accounts;
+    if (!Array.isArray(entries)) return [];
+    return entries
+      .map((entry) => (typeof entry?.account === "string" ? entry.account.trim() : ""))
+      .filter((account): account is string => Boolean(account));
+  }, [hostsQuery.data?.hosts]);
+  const deucalionCpuAccountFromHost =
+    deucalionBudgetAccounts.find((account) => inferBudgetAccountKind(account) === "CPU") || "";
+  const deucalionGpuAccountFromHost =
+    deucalionBudgetAccounts.find((account) => inferBudgetAccountKind(account) === "GPU") || "";
+  const deucalionAutoAccount =
+    deucalionProfile === "gpu" ? deucalionGpuAccountFromHost : deucalionCpuAccountFromHost;
+  const deucalionAutoAccountDisplay =
+    deucalionAutoAccount || (deucalionProfile === "gpu" ? "GPU account (auto)" : "CPU account (auto)");
+  const deucalionAutoPartition = deucalionProfile === "gpu" ? "normal-a100-80" : "normal-x86";
+  const effectiveDeucalionAccount = runForm.deucalionOptions.account.trim() || deucalionAutoAccount;
+  const effectiveDeucalionPartition = runForm.deucalionOptions.partition.trim() || deucalionAutoPartition;
+  const showDeucalionGpuField =
+    deucalionProfile === "gpu" || isGpuLikePartition(runForm.deucalionOptions.partition);
 
   const selectedJob = useMemo(() => {
     return (jobsQuery.data || []).find((job) => job.job_id === selectedJobId) || null;
@@ -722,6 +844,7 @@ export function JobsPage(): JSX.Element {
 
   useEffect(() => {
     if (!runOpen) return;
+    setRunStep(1);
     setRunForm((previous) => ({
       ...previous,
       configPath: previous.configPath.trim()
@@ -730,25 +853,69 @@ export function JobsPage(): JSX.Element {
 
   useEffect(() => {
     if (!runOpen) return;
-    if (runForm.image.trim()) return;
-    setRunForm((previous) => ({ ...previous, image: `${imageRepository}:latest` }));
-  }, [imageRepository, runForm.image, runOpen]);
+    if (runForm.imageTag.trim()) return;
+    setRunForm((previous) => ({ ...previous, imageTag: "latest" }));
+  }, [runForm.imageTag, runOpen]);
+
+  useEffect(() => {
+    if (!runOpen) return;
+    if (!isRunHostDeucalion) return;
+
+    setRunForm((previous) => {
+      const defaults = DEUCALION_PROFILE_DEFAULTS[deucalionProfile];
+      const nextOptions = { ...previous.deucalionOptions };
+      let changed = false;
+
+      if (!nextOptions.timeLimit.trim()) {
+        nextOptions.timeLimit = defaults.timeLimit;
+        changed = true;
+      }
+      if (!nextOptions.cpusPerTask.trim()) {
+        nextOptions.cpusPerTask = defaults.cpusPerTask;
+        changed = true;
+      }
+      if (!nextOptions.memGb.trim()) {
+        nextOptions.memGb = defaults.memGb;
+        changed = true;
+      }
+      if (deucalionProfile === "gpu") {
+        if (!nextOptions.gpus.trim()) {
+          nextOptions.gpus = defaults.gpus;
+          changed = true;
+        }
+      } else if (nextOptions.gpus.trim()) {
+        nextOptions.gpus = "";
+        changed = true;
+      }
+
+      if (!changed) return previous;
+      return {
+        ...previous,
+        deucalionOptions: nextOptions
+      };
+    });
+  }, [deucalionProfile, isRunHostDeucalion, runOpen]);
+
+  useEffect(() => {
+    if (isRunHostDeucalion) return;
+    setShowDeucalionAdvanced(false);
+  }, [isRunHostDeucalion]);
 
   useEffect(() => {
     if (!runOpen) return;
     if (!isRunHostDeucalion) return;
     if (!hasReadyDeucalionImage) return;
 
-    const currentImage = runForm.image.trim();
-    const currentOption = runImageOptions.find((option) => option.ref === currentImage);
+    const currentImageTag = runForm.imageTag.trim();
+    const currentOption = runImageOptions.find((option) => option.tag === currentImageTag);
     if (currentOption?.deucalionReady) return;
 
     const fallback = runImageOptions.find((option) => option.deucalionReady);
     if (!fallback) return;
-    if (currentImage === fallback.ref) return;
+    if (currentImageTag === fallback.tag) return;
 
-    setRunForm((previous) => ({ ...previous, image: fallback.ref }));
-  }, [hasReadyDeucalionImage, isRunHostDeucalion, runForm.image, runImageOptions, runOpen]);
+    setRunForm((previous) => ({ ...previous, imageTag: fallback.tag }));
+  }, [hasReadyDeucalionImage, isRunHostDeucalion, runForm.imageTag, runImageOptions, runOpen]);
 
   useEffect(() => {
     if (runOpen) return;
@@ -813,10 +980,11 @@ export function JobsPage(): JSX.Element {
     setHostDetailsOpen(true);
   }
 
-  function resolveHostJobName(jobId: string | null | undefined): string {
-    if (!jobId) return "-";
+  function resolveHostJobName(jobId: string | null | undefined, hintedName?: string | null): string {
+    if (typeof hintedName === "string" && hintedName.trim()) return hintedName.trim();
+    if (!jobId) return "Unnamed job";
     const candidate = jobsById.get(jobId);
-    return candidate ? resolveJobDisplayName(candidate) : jobId;
+    return candidate ? resolveJobDisplayName(candidate) : "Unnamed job";
   }
 
   function openJobOrLogsFromHost(jobId: string | null | undefined): void {
@@ -963,6 +1131,110 @@ export function JobsPage(): JSX.Element {
     URL.revokeObjectURL(objectUrl);
   }
 
+  const matchedRunConfig =
+    availableConfigs.find(
+      (config) =>
+        config === runForm.configPath.trim() || resolveConfigName(config) === resolveConfigName(runForm.configPath.trim())
+    ) || "";
+
+  const normalizedImageTag = runForm.imageTag.trim() || "latest";
+  const selectedRunTagOption = runImageOptions.find((option) => option.tag === normalizedImageTag) || null;
+  const runTagExists = Boolean(selectedRunTagOption);
+  const runTagIsReadyForDeucalion = !isRunHostDeucalion || Boolean(selectedRunTagOption?.deucalionReady);
+  const runCanGoToReview =
+    Boolean(matchedRunConfig) &&
+    runTagExists &&
+    runTagIsReadyForDeucalion;
+  const runStepDefinitions = useMemo(() => {
+    if (!isRunHostDeucalion) return RUN_WIZARD_BASE_STEPS;
+    return [...RUN_WIZARD_BASE_STEPS.slice(0, 3), RUN_WIZARD_DEUCALION_STEP, RUN_WIZARD_BASE_STEPS[3]];
+  }, [isRunHostDeucalion]);
+  const runTotalSteps = runStepDefinitions.length;
+  const runProgressPercent =
+    runTotalSteps > 1 ? ((Math.max(1, runStep) - 1) / (runTotalSteps - 1)) * 100 : 0;
+  const currentRunStepLabel = runStepDefinitions[runStep - 1]?.label || "Step";
+
+  function buildDeucalionOptionsPayload() {
+    const options = runForm.deucalionOptions;
+    const payload: NonNullable<RunSimulationPayload["deucalion_options"]> = {
+      command_mode: options.commandMode
+    };
+
+    if (effectiveDeucalionAccount) payload.account = effectiveDeucalionAccount;
+    if (effectiveDeucalionPartition) payload.partition = effectiveDeucalionPartition;
+    if (options.timeLimit.trim()) payload.time_limit = options.timeLimit.trim();
+
+    const cpus = toOptionalInt(options.cpusPerTask);
+    if (typeof cpus === "number") payload.cpus_per_task = cpus;
+    const memGb = toOptionalInt(options.memGb);
+    if (typeof memGb === "number") payload.mem_gb = memGb;
+    const gpus = toOptionalInt(options.gpus);
+    if (showDeucalionGpuField && typeof gpus === "number") payload.gpus = gpus;
+
+    return payload;
+  }
+
+  function submitRunSimulation(): void {
+    if (!matchedRunConfig) {
+      notifyError("Missing experiment config", new Error("Choose one existing experiment config before continuing."));
+      setRunStep(1);
+      return;
+    }
+    if (!runTagExists) {
+      notifyError("Invalid runtime version", new Error("Select one of the available runtime versions."));
+      setRunStep(3);
+      return;
+    }
+    if (!runTagIsReadyForDeucalion) {
+      notifyError(
+        "Version not ready for Deucalion",
+        new Error("SIF desta versão ainda não está publicado para Deucalion.")
+      );
+      setRunStep(3);
+      return;
+    }
+
+    const payload: RunSimulationPayload = {
+      target_host: runForm.targetHost || undefined,
+      config_path: matchedRunConfig,
+      job_name: runForm.jobName.trim() || undefined,
+      submitted_by: session?.name || session?.email || undefined,
+      image_tag: normalizedImageTag
+    };
+
+    if (payload.target_host === "deucalion") {
+      payload.deucalion_options = buildDeucalionOptionsPayload();
+    }
+
+    runMutation.mutate(payload);
+  }
+
+  function goToNextRunStep(): void {
+    if (runStep === 1 && !matchedRunConfig) {
+      notifyError("Missing experiment config", new Error("Choose one existing experiment config before continuing."));
+      return;
+    }
+    if (runStep === 3) {
+      if (!runTagExists) {
+        notifyError("Invalid runtime version", new Error("Select one of the available runtime versions."));
+        return;
+      }
+      if (!runTagIsReadyForDeucalion) {
+        notifyError(
+          "Version not ready for Deucalion",
+          new Error("SIF desta versão ainda não está publicado para Deucalion.")
+        );
+        return;
+      }
+    }
+    setRunStep((previous) => Math.min(runTotalSteps, previous + 1));
+  }
+
+  useEffect(() => {
+    if (runStep <= runTotalSteps) return;
+    setRunStep(runTotalSteps);
+  }, [runStep, runTotalSteps]);
+
   return (
     <div className="page jobs-page">
       <header className="jobs-hero">
@@ -985,13 +1257,7 @@ export function JobsPage(): JSX.Element {
               <Button
                 variant="primary"
                 iconLeft={<Play size={14} />}
-                onClick={() => {
-                  setRunForm(defaultRunForm);
-                  setJobNameAutoValue("");
-                  setJobNameTouched(false);
-                  setConfigPickerOpen(false);
-                  setRunOpen(true);
-                }}
+                onClick={openRunWizard}
               >
                 Run Job
               </Button>
@@ -1057,13 +1323,7 @@ export function JobsPage(): JSX.Element {
               action={
                 <Button
                   variant="primary"
-                  onClick={() => {
-                    setRunForm(defaultRunForm);
-                    setJobNameAutoValue("");
-                    setJobNameTouched(false);
-                    setConfigPickerOpen(false);
-                    setRunOpen(true);
-                  }}
+                  onClick={openRunWizard}
                 >
                   Run Simulation
                 </Button>
@@ -1368,6 +1628,38 @@ export function JobsPage(): JSX.Element {
               {hostRows.length > 0 ? (
                 hostRows.map((host) => {
                   const isLive = isRecentTimestamp(host.last_seen);
+                  const cardActiveJobId =
+                    host.current_job_id ||
+                    (typeof host.info?.active_job_id === "string" ? host.info.active_job_id : null);
+                  const telemetryActiveJobs = Array.isArray(host.info?.active_jobs) ? host.info.active_jobs : [];
+                  const cardActiveJobName = (
+                    telemetryActiveJobs.find((entry) => {
+                      if (!entry || typeof entry !== "object") return false;
+                      const entryId =
+                        typeof (entry as { job_id?: unknown }).job_id === "string"
+                          ? (entry as { job_id: string }).job_id
+                          : null;
+                      return Boolean(cardActiveJobId) && entryId === cardActiveJobId;
+                    }) ||
+                    telemetryActiveJobs[0]
+                  ) as { job_name?: unknown } | undefined;
+                  const cardActiveJobLabel = resolveHostJobName(
+                    cardActiveJobId,
+                    typeof cardActiveJobName?.job_name === "string" ? cardActiveJobName.job_name : null
+                  );
+                  const activeCount =
+                    typeof host.info?.active_job_count === "number" && Number.isFinite(host.info.active_job_count)
+                      ? host.info.active_job_count
+                      : Array.isArray(host.active_job_ids)
+                        ? host.active_job_ids.length
+                        : host.running || 0;
+                  const configuredMaxSlots =
+                    typeof host.info?.max_active_jobs === "number" && Number.isFinite(host.info.max_active_jobs)
+                      ? host.info.max_active_jobs
+                      : host.name === "deucalion"
+                        ? 3
+                        : 1;
+                  const maxSlots = Math.max(1, configuredMaxSlots, activeCount);
                   return (
                     <li key={host.name}>
                       <button
@@ -1383,10 +1675,10 @@ export function JobsPage(): JSX.Element {
                           <small>{isLive ? "Live" : "Offline"}</small>
                           <Info size={13} />
                         </div>
-                        <small className="jobs-meta">Last seen: {formatDateTime(host.last_seen)}</small>
-                        {host.current_job_id || host.info?.active_job_id ? (
+                        <small className="jobs-meta">Slots: {activeCount}/{maxSlots}</small>
+                        {cardActiveJobId ? (
                           <small className="jobs-meta">
-                            Active: {resolveHostJobName(host.current_job_id || host.info?.active_job_id)}
+                            Active: {cardActiveJobLabel}
                             {host.current_job_status || host.info?.active_job_status
                               ? ` (${host.current_job_status || host.info?.active_job_status})`
                               : ""}
@@ -1501,8 +1793,7 @@ export function JobsPage(): JSX.Element {
         open={runOpen}
         onClose={() => {
           setRunOpen(false);
-          setConfigPickerOpen(false);
-          setJobNameTouched(false);
+          resetRunWizardState();
         }}
         width="md"
       >
@@ -1510,200 +1801,448 @@ export function JobsPage(): JSX.Element {
           className="form-grid run-modal-form"
           onSubmit={(event) => {
             event.preventDefault();
-
-            const configPath = runForm.configPath.trim();
-            if (!configPath) {
-              notifyError("Missing experiment config", new Error("Select a saved experiment config first."));
+            if (runStep < runTotalSteps) {
+              goToNextRunStep();
               return;
             }
-            const matchedConfig =
-              availableConfigs.find(
-                (config) => config === configPath || resolveConfigName(config) === resolveConfigName(configPath)
-              ) || "";
-            if (!matchedConfig) {
-              notifyError(
-                "Unknown experiment config",
-                new Error("Choose one existing experiment config or create a new one.")
-              );
-              return;
-            }
-
-            const payload: RunSimulationPayload = {
-              target_host: runForm.targetHost || undefined,
-              config_path: matchedConfig,
-              job_name: runForm.jobName.trim() || undefined,
-              submitted_by: session?.name || session?.email || undefined,
-              image: runForm.image.trim() || `${imageRepository}:latest`
-            };
-
-            if (payload.target_host === "deucalion") {
-              const selected = runImageOptions.find((option) => option.ref === (payload.image || ""));
-              if (!selected || !selected.deucalionReady) {
-                notifyError(
-                  "Docker image not ready for Deucalion",
-                  new Error("SIF desta versão ainda não está publicado para Deucalion.")
-                );
-                return;
-              }
-            }
-
-            runMutation.mutate(payload);
+            submitRunSimulation();
           }}
         >
           <section className="full-col run-modal-shell">
-            <label className="run-config-picker">
-              <span>Experiment Config file</span>
-              <div className="run-config-row">
-                <div className="run-config-combobox">
+            <header className="config-wizard-header">
+              <small className="jobs-meta">
+                Step {runStep} / {runTotalSteps} · {currentRunStepLabel}
+              </small>
+              <div className="config-progress-track run-progress-track" role="tablist" aria-label="Run simulation steps">
+                <div className="config-progress-line" aria-hidden="true">
+                  <div className="config-progress-line-fill" style={{ width: `${runProgressPercent}%` }} />
+                </div>
+                <div className="config-progress-points">
+                  {runStepDefinitions.map((step, index) => {
+                    const stepNumber = index + 1;
+                    const stateClass =
+                      stepNumber < runStep
+                        ? "is-done"
+                        : stepNumber === runStep
+                          ? "is-active"
+                          : "is-pending";
+                    return (
+                      <button
+                        key={step.id}
+                        type="button"
+                        className={`config-progress-point ${stateClass}`}
+                        onClick={() => {
+                          if (stepNumber <= runStep) setRunStep(stepNumber);
+                        }}
+                        disabled={stepNumber > runStep}
+                        title={step.label}
+                        aria-label={`Go to ${step.label}`}
+                      >
+                        <span>{stepNumber}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </header>
+
+            {runStep === 1 ? (
+              <>
+                <label className="run-config-picker">
+                  <span>Experiment Config file</span>
+                  <div className="run-config-row">
+                    <div className="run-config-combobox">
+                      <input
+                        placeholder="Select or type to filter experiment configs"
+                        value={runForm.configPath}
+                        onFocus={() => setConfigPickerOpen(true)}
+                        onBlur={() => window.setTimeout(() => setConfigPickerOpen(false), 90)}
+                        onChange={(event) => {
+                          setJobNameTouched(false);
+                          setRunForm((prev) => ({ ...prev, configPath: event.target.value }));
+                          setConfigPickerOpen(true);
+                        }}
+                        required
+                      />
+                      {configPickerOpen ? (
+                        <ul className="run-config-menu" role="listbox" aria-label="Experiment Config options">
+                          {filteredConfigOptions.length > 0 ? (
+                            filteredConfigOptions.map((config) => (
+                              <li key={config}>
+                                <button
+                                  type="button"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    setJobNameTouched(false);
+                                    setRunForm((prev) => ({ ...prev, configPath: config }));
+                                    setConfigPickerOpen(false);
+                                  }}
+                                >
+                                  {config}
+                                </button>
+                              </li>
+                            ))
+                          ) : (
+                            <li className="run-config-empty">No matching experiment config</li>
+                          )}
+                        </ul>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setRunOpen(false);
+                        navigate("/app/ai/configs");
+                      }}
+                    >
+                      New Experiment Config
+                    </Button>
+                  </div>
+                </label>
+                <small className="jobs-meta">
+                  {availableConfigs.length > 0
+                    ? `${availableConfigs.length} saved experiment config(s) available`
+                    : "No saved experiment configs found. Create one before running."}
+                </small>
+                <label>
+                  <span>Job name</span>
                   <input
-                    placeholder="Select or type to filter experiment configs"
-                    value={runForm.configPath}
-                    onFocus={() => setConfigPickerOpen(true)}
-                    onBlur={() => window.setTimeout(() => setConfigPickerOpen(false), 90)}
+                    placeholder="Custom job name"
+                    value={runForm.jobName}
                     onChange={(event) => {
-                      setJobNameTouched(false);
-                      setRunForm((prev) => ({ ...prev, configPath: event.target.value }));
-                      setConfigPickerOpen(true);
+                      setJobNameTouched(true);
+                      setRunForm((previous) => ({ ...previous, jobName: event.target.value }));
                     }}
-                    required
                   />
-                  {configPickerOpen ? (
-                    <ul className="run-config-menu" role="listbox" aria-label="Experiment Config options">
-                      {filteredConfigOptions.length > 0 ? (
-                        filteredConfigOptions.map((config) => (
-                          <li key={config}>
-                            <button
-                              type="button"
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => {
-                                setJobNameTouched(false);
-                                setRunForm((prev) => ({ ...prev, configPath: config }));
-                                setConfigPickerOpen(false);
-                              }}
-                            >
-                              {config}
-                            </button>
-                          </li>
-                        ))
-                      ) : (
-                        <li className="run-config-empty">No matching experiment config</li>
-                      )}
-                    </ul>
+                  <small className="jobs-meta">Pre-filled from selected config. You can override per run.</small>
+                </label>
+              </>
+            ) : null}
+
+            {runStep === 2 ? (
+              <section className="full-col run-host-section">
+                <span>Target host</span>
+                <div className="run-host-grid">
+                  <button
+                    type="button"
+                    className={`run-host-option is-auto${runForm.targetHost === "" ? " is-selected" : ""}`}
+                    onClick={() => setRunForm((prev) => ({ ...prev, targetHost: "" }))}
+                  >
+                    <span className="run-host-dot is-online" />
+                    <strong>Automatic</strong>
+                    <small>Use scheduler routing</small>
+                  </button>
+                  {hostOptions.map((host) => (
+                    <button
+                      type="button"
+                      key={host.name}
+                      className={`run-host-option${runForm.targetHost === host.name ? " is-selected" : ""}`}
+                      onClick={() => setRunForm((prev) => ({ ...prev, targetHost: host.name }))}
+                    >
+                      <span className={`run-host-dot${host.online === true ? " is-online" : ""}`} />
+                      <strong>{host.name}</strong>
+                      <small>{host.online === true ? "Online" : "Offline"}</small>
+                    </button>
+                  ))}
+                  {!hostOptions.length ? (
+                    <p className="jobs-meta">No host telemetry available.</p>
                   ) : null}
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setRunOpen(false);
-                    navigate("/app/ai/configs");
-                  }}
-                >
-                  New Experiment Config
-                </Button>
-              </div>
-            </label>
-            <small className="jobs-meta">
-              {availableConfigs.length > 0
-                ? `${availableConfigs.length} saved experiment config(s) available`
-                : "No saved experiment configs found. Create one before running."}
-            </small>
-          </section>
+              </section>
+            ) : null}
 
-          <label>
-            <span>Job name</span>
-            <input
-              placeholder="Custom job name"
-              value={runForm.jobName}
-              onChange={(event) => {
-                setJobNameTouched(true);
-                setRunForm((previous) => ({ ...previous, jobName: event.target.value }));
-              }}
-            />
-            <small className="jobs-meta">Pre-filled from selected config. You can override per run.</small>
-          </label>
-
-          <label className="full-col">
-            <span className="run-image-label">
-              Docker image
-                <span className="run-image-help" tabIndex={0} aria-label="Docker image hint">
-                  <Info size={13} />
-                  <span role="tooltip" className="run-image-help-tooltip">
-                    Em Deucalion, apenas versoes com SIF publicado podem ser executadas. Seleciona uma tag `sha-*`
-                    marcada como disponivel.
+            {runStep === 3 ? (
+              <label className="full-col">
+                <span className="run-image-label">
+                  Runtime version
+                  <span className="run-image-help" tabIndex={0} aria-label="Runtime version hint">
+                    <Info size={13} />
+                    <span role="tooltip" className="run-image-help-tooltip">
+                      Para Deucalion, apenas versões com SIF publicado estão disponíveis.
+                    </span>
                   </span>
                 </span>
-              </span>
-            <select
-              value={runForm.image}
-              onChange={(event) => setRunForm((previous) => ({ ...previous, image: event.target.value }))}
-            >
-              {hasCustomRunImage ? (
-                <option value={runForm.image} disabled={isRunHostDeucalion}>
-                  {runForm.image} {isRunHostDeucalion ? "(custom, SIF unknown)" : "(custom)"}
-                </option>
-              ) : null}
-              {runImageOptions.map((option) => (
-                <option
-                  key={option.ref}
-                  value={option.ref}
-                  disabled={isRunHostDeucalion && !option.deucalionReady}
-                  title={
-                    isRunHostDeucalion && !option.deucalionReady
-                      ? "SIF desta versão ainda não está publicado para Deucalion"
-                      : undefined
-                  }
+                <select
+                  value={runForm.imageTag}
+                  onChange={(event) => setRunForm((previous) => ({ ...previous, imageTag: event.target.value }))}
                 >
-                  {option.ref}
-                  {isRunHostDeucalion && !option.deucalionReady ? " (SIF not ready)" : ""}
-                </option>
-              ))}
-            </select>
-            <small className="jobs-meta">
-              Default: {imageRepository}:latest
-              {jobImagesQuery.isFetching ? " · refreshing versions..." : ""}
-            </small>
-            {isRunHostDeucalion && selectedImageOption && !selectedImageOption.deucalionReady ? (
-              <small className="jobs-meta">
-                SIF desta versão ainda não está publicado para Deucalion.
-              </small>
+                  {hasCustomRunImage ? (
+                    <option value={runForm.imageTag} disabled={isRunHostDeucalion}>
+                      {runForm.imageTag} {isRunHostDeucalion ? "(custom, SIF unknown)" : "(custom)"}
+                    </option>
+                  ) : null}
+                  {runImageOptions.map((option) => (
+                    <option
+                      key={option.tag}
+                      value={option.tag}
+                      disabled={isRunHostDeucalion && !option.deucalionReady}
+                      title={
+                        isRunHostDeucalion && !option.deucalionReady
+                          ? "SIF desta versão ainda não está publicado para Deucalion"
+                          : undefined
+                      }
+                    >
+                      {option.tag}
+                      {isRunHostDeucalion && !option.deucalionReady ? " (SIF not ready)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <small className="jobs-meta">
+                  Docker repository: {imageRepository}
+                  {jobImagesQuery.isFetching ? " · refreshing versions..." : ""}
+                </small>
+                {isRunHostDeucalion && selectedImageOption && !selectedImageOption.deucalionReady ? (
+                  <small className="jobs-meta">SIF desta versão ainda não está publicado para Deucalion.</small>
+                ) : null}
+              </label>
             ) : null}
-          </label>
 
-          <section className="full-col run-host-section">
-            <span>Target host</span>
-            <div className="run-host-grid">
-              <button
-                type="button"
-                className={`run-host-option is-auto${runForm.targetHost === "" ? " is-selected" : ""}`}
-                onClick={() => setRunForm((prev) => ({ ...prev, targetHost: "" }))}
-              >
-                <span className="run-host-dot is-online" />
-                <strong>Automatic</strong>
-                <small>Use scheduler routing</small>
-              </button>
-              {hostOptions.map((host) => (
-                <button
+            {isRunHostDeucalion && runStep === 4 ? (
+              <section className="full-col run-deucalion-section">
+                <h4>Deucalion runtime</h4>
+                <small className="jobs-meta">
+                  Escolhe um perfil. A conta e a partition são automáticas; podes fazer override nas opções avançadas.
+                </small>
+
+                <div className="run-deucalion-profile-grid">
+                  <button
+                    type="button"
+                    className={`run-host-option${deucalionProfile === "cpu" ? " is-selected" : ""}`}
+                    onClick={() => {
+                      setDeucalionProfile("cpu");
+                      setRunForm((previous) => ({
+                        ...previous,
+                        deucalionOptions: {
+                          ...previous.deucalionOptions,
+                          account: "",
+                          partition: "",
+                          gpus: ""
+                        }
+                      }));
+                    }}
+                  >
+                    <span className="run-host-dot is-online" />
+                    <strong>CPU</strong>
+                    <small>Queue normal-x86</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`run-host-option${deucalionProfile === "gpu" ? " is-selected" : ""}`}
+                    onClick={() => {
+                      setDeucalionProfile("gpu");
+                      setRunForm((previous) => ({
+                        ...previous,
+                        deucalionOptions: {
+                          ...previous.deucalionOptions,
+                          account: "",
+                          partition: ""
+                        }
+                      }));
+                    }}
+                  >
+                    <span className="run-host-dot is-online" />
+                    <strong>GPU</strong>
+                    <small>Queue normal-a100-80</small>
+                  </button>
+                </div>
+
+                <dl className="run-deucalion-summary">
+                  <div>
+                    <dt>Account</dt>
+                    <dd>{effectiveDeucalionAccount || deucalionAutoAccountDisplay}</dd>
+                  </div>
+                  <div>
+                    <dt>Partition</dt>
+                    <dd>{effectiveDeucalionPartition}</dd>
+                  </div>
+                </dl>
+
+                <div className="run-deucalion-core-grid">
+                  <label>
+                    <span>Time limit (HH:MM:SS)</span>
+                    <input
+                      placeholder={deucalionDefaults.timeLimit}
+                      value={runForm.deucalionOptions.timeLimit}
+                      onChange={(event) =>
+                        setRunForm((previous) => ({
+                          ...previous,
+                          deucalionOptions: { ...previous.deucalionOptions, timeLimit: event.target.value }
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>CPUs per task</span>
+                    <input
+                      placeholder={deucalionDefaults.cpusPerTask}
+                      value={runForm.deucalionOptions.cpusPerTask}
+                      onChange={(event) =>
+                        setRunForm((previous) => ({
+                          ...previous,
+                          deucalionOptions: { ...previous.deucalionOptions, cpusPerTask: event.target.value }
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Memory (GB)</span>
+                    <input
+                      placeholder={deucalionDefaults.memGb}
+                      value={runForm.deucalionOptions.memGb}
+                      onChange={(event) =>
+                        setRunForm((previous) => ({
+                          ...previous,
+                          deucalionOptions: { ...previous.deucalionOptions, memGb: event.target.value }
+                        }))
+                      }
+                    />
+                  </label>
+                  {showDeucalionGpuField ? (
+                    <label>
+                      <span>GPUs</span>
+                      <input
+                        placeholder={deucalionDefaults.gpus || "1"}
+                        value={runForm.deucalionOptions.gpus}
+                        onChange={(event) =>
+                          setRunForm((previous) => ({
+                            ...previous,
+                            deucalionOptions: { ...previous.deucalionOptions, gpus: event.target.value }
+                          }))
+                        }
+                      />
+                    </label>
+                  ) : null}
+                </div>
+
+                <small className="jobs-meta">
+                  `run` (recomendado) usa o entrypoint da imagem. `exec` executa o comando exato.
+                </small>
+
+                <Button
                   type="button"
-                  key={host.name}
-                  className={`run-host-option${runForm.targetHost === host.name ? " is-selected" : ""}`}
-                  onClick={() => setRunForm((prev) => ({ ...prev, targetHost: host.name }))}
+                  variant="ghost"
+                  onClick={() => setShowDeucalionAdvanced((value) => !value)}
                 >
-                  <span className={`run-host-dot${host.online === true ? " is-online" : ""}`} />
-                  <strong>{host.name}</strong>
-                  <small>{host.online === true ? "Online" : "Offline"}</small>
-                </button>
-              ))}
-              {!hostOptions.length ? (
-                <p className="jobs-meta">No host telemetry available.</p>
-              ) : null}
-            </div>
+                  {showDeucalionAdvanced ? "Hide advanced options" : "Show advanced options"}
+                </Button>
+
+                {showDeucalionAdvanced ? (
+                  <section className="run-deucalion-advanced">
+                    <label>
+                      <span>Command mode</span>
+                      <select
+                        value={runForm.deucalionOptions.commandMode}
+                        onChange={(event) =>
+                          setRunForm((previous) => ({
+                            ...previous,
+                            deucalionOptions: {
+                              ...previous.deucalionOptions,
+                              commandMode: event.target.value as "run" | "exec"
+                            }
+                          }))
+                        }
+                      >
+                        <option value="run">run (recommended)</option>
+                        <option value="exec">exec</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Account override (optional)</span>
+                      <input
+                        placeholder={`Auto: ${deucalionAutoAccountDisplay}`}
+                        value={runForm.deucalionOptions.account}
+                        onChange={(event) =>
+                          setRunForm((previous) => ({
+                            ...previous,
+                            deucalionOptions: { ...previous.deucalionOptions, account: event.target.value }
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Partition override (optional)</span>
+                      <input
+                        placeholder={`Auto: ${deucalionAutoPartition}`}
+                        value={runForm.deucalionOptions.partition}
+                        onChange={(event) =>
+                          setRunForm((previous) => ({
+                            ...previous,
+                            deucalionOptions: { ...previous.deucalionOptions, partition: event.target.value }
+                          }))
+                        }
+                      />
+                    </label>
+                    <small className="jobs-meta">
+                      Dataset sync é inferido automaticamente do teu config (`simulator.dataset_path` / `dataset_name`).
+                      O SIF é tratado automaticamente pelo worker (não precisas pôr em required paths).
+                    </small>
+                  </section>
+                ) : null}
+              </section>
+            ) : null}
+
+            {runStep === runTotalSteps ? (
+              <section className="full-col">
+                <h4>Review</h4>
+                <dl className="host-details-grid">
+                  <div>
+                    <dt>Config</dt>
+                    <dd>{matchedRunConfig || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Job name</dt>
+                    <dd>{runForm.jobName.trim() || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Target host</dt>
+                    <dd>{runForm.targetHost || "automatic"}</dd>
+                  </div>
+                  <div>
+                    <dt>Version tag</dt>
+                    <dd>{normalizedImageTag}</dd>
+                  </div>
+                  {isRunHostDeucalion ? (
+                    <>
+                      <div>
+                        <dt>Profile</dt>
+                        <dd>{deucalionProfile.toUpperCase()}</dd>
+                      </div>
+                      <div>
+                        <dt>Account / partition</dt>
+                        <dd>{`${effectiveDeucalionAccount || deucalionAutoAccountDisplay} / ${effectiveDeucalionPartition}`}</dd>
+                      </div>
+                    </>
+                  ) : null}
+                </dl>
+                {isRunHostDeucalion ? (
+                  <small className="jobs-meta">
+                    Deucalion will resolve SIF artifact from tag `{normalizedImageTag}`.
+                  </small>
+                ) : null}
+              </section>
+            ) : null}
           </section>
 
           <div className="full-col inline-end">
-            <Button type="submit" variant="primary" disabled={runMutation.isPending}>
-              {runMutation.isPending ? "Submitting..." : "Run simulation"}
-            </Button>
+            {runStep > 1 ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setRunStep((previous) => Math.max(1, previous - 1))}
+              >
+                Back
+              </Button>
+            ) : null}
+            {runStep < runTotalSteps ? (
+              <Button type="submit" variant="primary">
+                Next
+              </Button>
+            ) : (
+              <Button type="submit" variant="primary" disabled={runMutation.isPending || !runCanGoToReview}>
+                {runMutation.isPending ? "Submitting..." : "Run simulation"}
+              </Button>
+            )}
           </div>
         </form>
       </Modal>
@@ -1782,14 +2321,57 @@ export function JobsPage(): JSX.Element {
       >
         {hostDetailsTarget ? (
           (() => {
+            const rawActiveJobs = Array.isArray(hostDetailsTarget.data.info?.active_jobs)
+              ? (hostDetailsTarget.data.info.active_jobs as unknown[])
+              : [];
+            const telemetryActiveJobs: HostActiveJobSnapshot[] = rawActiveJobs
+              .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
+              .map((entry) => ({
+                job_id: typeof entry.job_id === "string" ? entry.job_id : "",
+                job_name: typeof entry.job_name === "string" ? entry.job_name : undefined,
+                status: typeof entry.status === "string" ? entry.status : undefined,
+                phase: typeof entry.phase === "string" ? entry.phase : undefined,
+                slurm_state: typeof entry.slurm_state === "string" ? entry.slurm_state : undefined,
+                slurm_partition: typeof entry.slurm_partition === "string" ? entry.slurm_partition : undefined,
+                slurm_nodes: typeof entry.slurm_nodes === "number" ? entry.slurm_nodes : undefined,
+                slurm_cpus: typeof entry.slurm_cpus === "number" ? entry.slurm_cpus : undefined,
+                slurm_gpus: typeof entry.slurm_gpus === "number" ? entry.slurm_gpus : undefined,
+                queue_pos: typeof entry.queue_pos === "number" ? entry.queue_pos : undefined,
+                ahead: typeof entry.ahead === "number" ? entry.ahead : undefined,
+              }))
+              .filter((entry) => Boolean(entry.job_id));
+            const fallbackActiveIds = Array.isArray(hostDetailsTarget.data.active_job_ids)
+              ? hostDetailsTarget.data.active_job_ids
+              : [];
+            const activeJobs: HostActiveJobSnapshot[] =
+              telemetryActiveJobs.length > 0
+                ? telemetryActiveJobs
+                : fallbackActiveIds.map((jobId) => ({ job_id: jobId }));
             const currentJobId =
               hostDetailsTarget.data.current_job_id ||
               (typeof hostDetailsTarget.data.info?.active_job_id === "string" ? hostDetailsTarget.data.info.active_job_id : null);
+            const currentActiveEntry = currentJobId
+              ? telemetryActiveJobs.find((entry) => entry.job_id === currentJobId)
+              : telemetryActiveJobs[0];
+            const currentJobName = currentActiveEntry?.job_name || null;
             const currentJobStatus =
               hostDetailsTarget.data.current_job_status ||
               (typeof hostDetailsTarget.data.info?.active_job_status === "string"
                 ? hostDetailsTarget.data.info.active_job_status
                 : "-");
+            const activeCount =
+              typeof hostDetailsTarget.data.info?.active_job_count === "number" &&
+              Number.isFinite(hostDetailsTarget.data.info.active_job_count)
+                ? hostDetailsTarget.data.info.active_job_count
+                : activeJobs.length;
+            const configuredMaxSlots =
+              typeof hostDetailsTarget.data.info?.max_active_jobs === "number" &&
+              Number.isFinite(hostDetailsTarget.data.info.max_active_jobs)
+                ? hostDetailsTarget.data.info.max_active_jobs
+                : hostDetailsTarget.name === "deucalion"
+                  ? 3
+                  : 1;
+            const maxSlots = Math.max(1, configuredMaxSlots, activeCount);
             const lastJobId =
               typeof hostDetailsTarget.data.info?.last_job_id === "string" ? hostDetailsTarget.data.info.last_job_id : null;
             const lastTerminalStatus =
@@ -1827,9 +2409,9 @@ export function JobsPage(): JSX.Element {
                       type="button"
                       className="host-job-pill"
                       onClick={() => openJobOrLogsFromHost(currentJobId)}
-                      title={`Open ${currentJobId}`}
+                      title={`Open ${resolveHostJobName(currentJobId, currentJobName)}`}
                     >
-                      {resolveHostJobName(currentJobId)}
+                      {resolveHostJobName(currentJobId, currentJobName)}
                     </button>
                   ) : (
                     "-"
@@ -1847,6 +2429,10 @@ export function JobsPage(): JSX.Element {
                 </dd>
               </div>
               <div>
+                <dt>Slots</dt>
+                <dd>{activeCount}/{maxSlots}</dd>
+              </div>
+              <div>
                 <dt>Last terminal job</dt>
                 <dd>
                   {lastJobId ? (
@@ -1854,7 +2440,7 @@ export function JobsPage(): JSX.Element {
                       type="button"
                       className="btn-link jobs-config-link"
                       onClick={() => openJobOrLogsFromHost(lastJobId)}
-                      title={lastJobId}
+                      title={resolveHostJobName(lastJobId)}
                     >
                       {resolveHostJobName(lastJobId)}
                     </button>
@@ -1868,6 +2454,56 @@ export function JobsPage(): JSX.Element {
                 <dd>{lastTerminalStatus}</dd>
               </div>
             </dl>
+
+            {activeJobs.length > 0 ? (
+              <section className="host-active-jobs-section">
+                <h4>Active jobs</h4>
+                <div className="host-active-jobs-list">
+                  {activeJobs.map((entry) => {
+                    const profile = inferComputeProfile(entry);
+                    return (
+                      <article key={entry.job_id} className="host-active-job-card">
+                        <div className="host-active-job-head">
+                          <button
+                            type="button"
+                            className="host-job-pill"
+                            onClick={() => openJobOrLogsFromHost(entry.job_id)}
+                            title={`Open ${resolveHostJobName(entry.job_id, entry.job_name)}`}
+                          >
+                            {resolveHostJobName(entry.job_id, entry.job_name)}
+                          </button>
+                          {typeof entry.status === "string" ? <StatusPill status={entry.status} /> : null}
+                        </div>
+                        <div className="host-active-job-meta">
+                          {profile ? <small className="jobs-meta">Profile: {profile}</small> : null}
+                          {typeof entry.phase === "string" && entry.phase ? (
+                            <small className="jobs-meta">{entry.phase}</small>
+                          ) : null}
+                          {typeof entry.slurm_state === "string" && entry.slurm_state ? (
+                            <small className="jobs-meta">Slurm: {entry.slurm_state}</small>
+                          ) : null}
+                          {typeof entry.slurm_partition === "string" && entry.slurm_partition ? (
+                            <small className="jobs-meta">partition {entry.slurm_partition}</small>
+                          ) : null}
+                          {typeof entry.slurm_cpus === "number" ? (
+                            <small className="jobs-meta">cpus {entry.slurm_cpus}</small>
+                          ) : null}
+                          {typeof entry.slurm_gpus === "number" && entry.slurm_gpus > 0 ? (
+                            <small className="jobs-meta">gpus {entry.slurm_gpus}</small>
+                          ) : null}
+                          {typeof entry.queue_pos === "number" ? (
+                            <small className="jobs-meta">queue #{entry.queue_pos}</small>
+                          ) : null}
+                          {typeof entry.ahead === "number" ? (
+                            <small className="jobs-meta">ahead {entry.ahead}</small>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
 
             {Array.isArray(hostDetailsTarget.data.info?.budget?.accounts) &&
             hostDetailsTarget.data.info?.budget?.accounts.length ? (

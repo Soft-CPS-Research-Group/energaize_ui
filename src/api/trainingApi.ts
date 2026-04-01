@@ -34,7 +34,19 @@ export interface RunSimulationPayload {
   save_as?: string;
   job_name?: string;
   submitted_by?: string;
-  image?: string;
+  image_tag?: string;
+  deucalion_options?: {
+    account?: string;
+    partition?: string;
+    time_limit?: string;
+    cpus_per_task?: number;
+    mem_gb?: number;
+    gpus?: number;
+    modules?: string[];
+    command_mode?: "run" | "exec";
+    datasets?: string[];
+    required_paths?: string[];
+  };
 }
 
 export interface JobActionResponse {
@@ -143,6 +155,7 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
   status: JobStatus;
   host?: string;
   job_name?: string;
+  image_tag?: string;
   image?: string;
 }> {
   const result = await http<{
@@ -150,6 +163,7 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
     status: string;
     host?: string;
     job_name?: string;
+    image_tag?: string;
     image?: string;
   }>("/run-simulation", {
     method: "POST",

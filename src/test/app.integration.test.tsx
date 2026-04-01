@@ -66,6 +66,9 @@ describe("App integration", () => {
     await user.click(screen.getByRole("button", { name: /run job/i }));
     await user.clear(screen.getByLabelText(/config file/i));
     await user.type(screen.getByLabelText(/config file/i), "demo.yaml");
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
     await user.click(screen.getByRole("button", { name: /^run simulation$/i }));
 
     await waitFor(() => {
