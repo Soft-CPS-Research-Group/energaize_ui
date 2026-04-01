@@ -47,10 +47,12 @@ export interface JobImageTag {
   name: string;
   last_updated?: string;
   digest?: string | null;
+  deucalion_ready?: boolean;
 }
 
 export interface JobImageVersionsResponse {
   repository: string;
+  sif_repository?: string;
   tags: JobImageTag[];
   count: number;
   cached: boolean;

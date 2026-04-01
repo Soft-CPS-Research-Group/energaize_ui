@@ -103,9 +103,10 @@ export const handlers = [
   http.get(endpoint("/job-images/versions"), () =>
     HttpResponse.json({
       repository: "calof/opeva_simulator",
+      sif_repository: "calof/opeva_simulator_sif",
       tags: [
-        { name: "latest", last_updated: "2026-03-31T09:00:00Z", digest: "sha256:latest" },
-        { name: "v1.4.2", last_updated: "2026-03-30T18:10:00Z", digest: "sha256:v142" }
+        { name: "latest", last_updated: "2026-03-31T09:00:00Z", digest: "sha256:latest", deucalion_ready: true },
+        { name: "v1.4.2", last_updated: "2026-03-30T18:10:00Z", digest: "sha256:v142", deucalion_ready: false }
       ],
       count: 2,
       cached: false,

@@ -76,6 +76,16 @@ interface SlurmDispatchSnapshot {
   details: Record<string, unknown> | null;
   slurmJobId: string | null;
   slurmState: string | null;
+  slurmPartition: string | null;
+  slurmReason: string | null;
+  slurmSubmitTime: string | null;
+  slurmStartTime: string | null;
+  slurmElapsed: string | null;
+  slurmTimeLeft: string | null;
+  slurmPriority: number | null;
+  slurmQueuePosition: number | null;
+  slurmJobsAhead: number | null;
+  slurmPendingJobsInPartition: number | null;
   connectivity: string | null;
   unknownSince: string | number | null;
   datasetsSynced: string[];
@@ -249,6 +259,16 @@ function readDispatchSnapshot(job: JobItem): SlurmDispatchSnapshot {
 
   const slurmJobId = typeof details?.slurm_job_id === "string" ? details.slurm_job_id : null;
   const slurmState = typeof details?.slurm_state === "string" ? details.slurm_state : null;
+  const slurmPartition = typeof details?.slurm_partition === "string" ? details.slurm_partition : null;
+  const slurmReason = typeof details?.slurm_reason === "string" ? details.slurm_reason : null;
+  const slurmSubmitTime = typeof details?.slurm_submit_time === "string" ? details.slurm_submit_time : null;
+  const slurmStartTime = typeof details?.slurm_start_time === "string" ? details.slurm_start_time : null;
+  const slurmElapsed = typeof details?.slurm_elapsed === "string" ? details.slurm_elapsed : null;
+  const slurmTimeLeft = typeof details?.slurm_time_left === "string" ? details.slurm_time_left : null;
+  const slurmPriority = asNumber(details?.slurm_priority);
+  const slurmQueuePosition = asNumber(details?.slurm_queue_position);
+  const slurmJobsAhead = asNumber(details?.slurm_jobs_ahead);
+  const slurmPendingJobsInPartition = asNumber(details?.slurm_pending_jobs_in_partition);
   const connectivity = typeof details?.connectivity === "string" ? details.connectivity : null;
   const unknownSince =
     typeof details?.unknown_since === "string" || typeof details?.unknown_since === "number"
@@ -261,7 +281,25 @@ function readDispatchSnapshot(job: JobItem): SlurmDispatchSnapshot {
     ? details.datasets_skipped.filter((item): item is string => typeof item === "string")
     : [];
 
-  return { details, slurmJobId, slurmState, connectivity, unknownSince, datasetsSynced, datasetsSkipped };
+  return {
+    details,
+    slurmJobId,
+    slurmState,
+    slurmPartition,
+    slurmReason,
+    slurmSubmitTime,
+    slurmStartTime,
+    slurmElapsed,
+    slurmTimeLeft,
+    slurmPriority,
+    slurmQueuePosition,
+    slurmJobsAhead,
+    slurmPendingJobsInPartition,
+    connectivity,
+    unknownSince,
+    datasetsSynced,
+    datasetsSkipped
+  };
 }
 
 export function JobsPage(): JSX.Element {
@@ -526,20 +564,35 @@ export function JobsPage(): JSX.Element {
   const availableConfigs = configsQuery.data || [];
   const imageRepository = jobImagesQuery.data?.repository || "calof/opeva_simulator";
   const runImageOptions = useMemo(() => {
-    const options = [`${imageRepository}:latest`];
     const tags = jobImagesQuery.data?.tags || [];
+    const byTag = new Map<string, boolean>();
+
     tags.forEach((tag) => {
       if (!tag?.name) return;
-      options.push(`${imageRepository}:${tag.name}`);
+      const ready = typeof tag.deucalion_ready === "boolean" ? tag.deucalion_ready : true;
+      byTag.set(tag.name, ready);
     });
-    return Array.from(new Set(options));
+
+    if (!byTag.has("latest")) {
+      byTag.set("latest", true);
+    }
+
+    const orderedTags = ["latest", ...Array.from(byTag.keys()).filter((tag) => tag !== "latest")];
+    return orderedTags.map((tag) => ({
+      ref: `${imageRepository}:${tag}`,
+      deucalionReady: byTag.get(tag) ?? true
+    }));
   }, [imageRepository, jobImagesQuery.data?.tags]);
   const filteredConfigOptions = useMemo(() => {
     const query = runForm.configPath.trim().toLowerCase();
     if (!query) return availableConfigs;
     return availableConfigs.filter((config) => config.toLowerCase().includes(query));
   }, [availableConfigs, runForm.configPath]);
-  const hasCustomRunImage = runForm.image.trim() !== "" && !runImageOptions.includes(runForm.image.trim());
+  const hasCustomRunImage =
+    runForm.image.trim() !== "" && !runImageOptions.some((option) => option.ref === runForm.image.trim());
+  const isRunHostDeucalion = runForm.targetHost === "deucalion";
+  const selectedImageOption = runImageOptions.find((option) => option.ref === runForm.image.trim()) || null;
+  const hasReadyDeucalionImage = runImageOptions.some((option) => option.deucalionReady);
 
   const selectedJob = useMemo(() => {
     return (jobsQuery.data || []).find((job) => job.job_id === selectedJobId) || null;
@@ -680,6 +733,22 @@ export function JobsPage(): JSX.Element {
     if (runForm.image.trim()) return;
     setRunForm((previous) => ({ ...previous, image: `${imageRepository}:latest` }));
   }, [imageRepository, runForm.image, runOpen]);
+
+  useEffect(() => {
+    if (!runOpen) return;
+    if (!isRunHostDeucalion) return;
+    if (!hasReadyDeucalionImage) return;
+
+    const currentImage = runForm.image.trim();
+    const currentOption = runImageOptions.find((option) => option.ref === currentImage);
+    if (currentOption?.deucalionReady) return;
+
+    const fallback = runImageOptions.find((option) => option.deucalionReady);
+    if (!fallback) return;
+    if (currentImage === fallback.ref) return;
+
+    setRunForm((previous) => ({ ...previous, image: fallback.ref }));
+  }, [hasReadyDeucalionImage, isRunHostDeucalion, runForm.image, runImageOptions, runOpen]);
 
   useEffect(() => {
     if (runOpen) return;
@@ -1467,6 +1536,17 @@ export function JobsPage(): JSX.Element {
               image: runForm.image.trim() || `${imageRepository}:latest`
             };
 
+            if (payload.target_host === "deucalion") {
+              const selected = runImageOptions.find((option) => option.ref === (payload.image || ""));
+              if (!selected || !selected.deucalionReady) {
+                notifyError(
+                  "Docker image not ready for Deucalion",
+                  new Error("SIF desta versão ainda não está publicado para Deucalion.")
+                );
+                return;
+              }
+            }
+
             runMutation.mutate(payload);
           }}
         >
@@ -1546,22 +1626,36 @@ export function JobsPage(): JSX.Element {
           <label className="full-col">
             <span className="run-image-label">
               Docker image
-              <span className="run-image-help" tabIndex={0} aria-label="Docker image hint">
-                <Info size={13} />
-                <span role="tooltip" className="run-image-help-tooltip">
-                  No Deucalion a imagem nao atualiza sozinha. Seleciona sempre a versao mais recente (ex:
-                  sha-hioabrf).
+                <span className="run-image-help" tabIndex={0} aria-label="Docker image hint">
+                  <Info size={13} />
+                  <span role="tooltip" className="run-image-help-tooltip">
+                    Em Deucalion, apenas versoes com SIF publicado podem ser executadas. Seleciona uma tag `sha-*`
+                    marcada como disponivel.
+                  </span>
                 </span>
               </span>
-            </span>
             <select
               value={runForm.image}
               onChange={(event) => setRunForm((previous) => ({ ...previous, image: event.target.value }))}
             >
-              {hasCustomRunImage ? <option value={runForm.image}>{runForm.image} (custom)</option> : null}
-              {runImageOptions.map((imageRef) => (
-                <option key={imageRef} value={imageRef}>
-                  {imageRef}
+              {hasCustomRunImage ? (
+                <option value={runForm.image} disabled={isRunHostDeucalion}>
+                  {runForm.image} {isRunHostDeucalion ? "(custom, SIF unknown)" : "(custom)"}
+                </option>
+              ) : null}
+              {runImageOptions.map((option) => (
+                <option
+                  key={option.ref}
+                  value={option.ref}
+                  disabled={isRunHostDeucalion && !option.deucalionReady}
+                  title={
+                    isRunHostDeucalion && !option.deucalionReady
+                      ? "SIF desta versão ainda não está publicado para Deucalion"
+                      : undefined
+                  }
+                >
+                  {option.ref}
+                  {isRunHostDeucalion && !option.deucalionReady ? " (SIF not ready)" : ""}
                 </option>
               ))}
             </select>
@@ -1569,6 +1663,11 @@ export function JobsPage(): JSX.Element {
               Default: {imageRepository}:latest
               {jobImagesQuery.isFetching ? " · refreshing versions..." : ""}
             </small>
+            {isRunHostDeucalion && selectedImageOption && !selectedImageOption.deucalionReady ? (
+              <small className="jobs-meta">
+                SIF desta versão ainda não está publicado para Deucalion.
+              </small>
+            ) : null}
           </label>
 
           <section className="full-col run-host-section">
@@ -1844,6 +1943,50 @@ export function JobsPage(): JSX.Element {
                   <div>
                     <dt>Slurm state</dt>
                     <dd>{snapshot.slurmState || "PENDING / not reported yet"}</dd>
+                  </div>
+                  <div>
+                    <dt>Slurm reason</dt>
+                    <dd>{snapshot.slurmReason || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Queue position</dt>
+                    <dd>{typeof snapshot.slurmQueuePosition === "number" ? `#${snapshot.slurmQueuePosition}` : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Jobs ahead</dt>
+                    <dd>{typeof snapshot.slurmJobsAhead === "number" ? snapshot.slurmJobsAhead : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Pending jobs (partition)</dt>
+                    <dd>
+                      {typeof snapshot.slurmPendingJobsInPartition === "number"
+                        ? snapshot.slurmPendingJobsInPartition
+                        : "-"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Partition</dt>
+                    <dd>{snapshot.slurmPartition || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Priority</dt>
+                    <dd>{typeof snapshot.slurmPriority === "number" ? snapshot.slurmPriority : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Slurm submit time</dt>
+                    <dd>{snapshot.slurmSubmitTime ? formatDateTime(snapshot.slurmSubmitTime) : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Expected start</dt>
+                    <dd>{snapshot.slurmStartTime ? formatDateTime(snapshot.slurmStartTime) : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Slurm elapsed</dt>
+                    <dd>{snapshot.slurmElapsed || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Slurm time left</dt>
+                    <dd>{snapshot.slurmTimeLeft || "-"}</dd>
                   </div>
                   <div>
                     <dt>Target host</dt>
