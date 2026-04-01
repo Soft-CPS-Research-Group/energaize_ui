@@ -665,22 +665,30 @@ export function JobsPage(): JSX.Element {
   const imageRepository = jobImagesQuery.data?.repository || "calof/opeva_simulator";
   const runImageOptions = useMemo(() => {
     const tags = jobImagesQuery.data?.tags || [];
-    const byTag = new Map<string, boolean>();
+    const byTag = new Map<string, { deucalionReady: boolean; lastUpdated?: string }>();
 
     tags.forEach((tag) => {
       if (!tag?.name) return;
       const ready = typeof tag.deucalion_ready === "boolean" ? tag.deucalion_ready : true;
-      byTag.set(tag.name, ready);
+      const previous = byTag.get(tag.name);
+      byTag.set(tag.name, {
+        deucalionReady: ready,
+        lastUpdated:
+          typeof tag.last_updated === "string" && tag.last_updated.trim()
+            ? tag.last_updated
+            : previous?.lastUpdated
+      });
     });
 
     if (!byTag.has("latest")) {
-      byTag.set("latest", true);
+      byTag.set("latest", { deucalionReady: true });
     }
 
     const orderedTags = ["latest", ...Array.from(byTag.keys()).filter((tag) => tag !== "latest")];
     return orderedTags.map((tag) => ({
       tag,
-      deucalionReady: byTag.get(tag) ?? true
+      deucalionReady: byTag.get(tag)?.deucalionReady ?? true,
+      lastUpdated: byTag.get(tag)?.lastUpdated
     }));
   }, [jobImagesQuery.data?.tags]);
   const filteredConfigOptions = useMemo(() => {
@@ -1984,6 +1992,7 @@ export function JobsPage(): JSX.Element {
                       }
                     >
                       {option.tag}
+                      {option.lastUpdated ? ` · ${formatDateTime(option.lastUpdated)}` : ""}
                       {isRunHostDeucalion && !option.deucalionReady ? " (SIF not ready)" : ""}
                     </option>
                   ))}
