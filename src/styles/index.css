@@ -2401,6 +2401,27 @@ button {
   flex-wrap: nowrap;
 }
 
+.table th.jobs-actions-col,
+.table td.jobs-actions-col {
+  width: 168px;
+  white-space: nowrap;
+}
+
+.table th.jobs-actions-col {
+  text-align: left;
+}
+
+.table td.jobs-actions-col {
+  text-align: right;
+  padding-right: 12px;
+}
+
+.table td.jobs-actions-col .jobs-table-actions {
+  width: 100%;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
 .jobs-progress-cell {
   display: grid;
   gap: 4px;

@@ -28,6 +28,25 @@ function normalizeMlflowBaseUrl(value: string | null | undefined): string | null
   return normalized || null;
 }
 
+function isLikelyInternalHostname(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase();
+  if (!host) return true;
+  if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1") return true;
+  if (host.endsWith(".local") || host.endsWith(".internal")) return true;
+  // Common docker-compose service names and single-label hosts.
+  if (!host.includes(".")) return true;
+  return false;
+}
+
+function extractRunIdentityFromRunUrl(value: string): { experimentId: string; runId: string } | null {
+  const match = value.match(/\/#\/experiments\/([^/]+)\/runs\/([^/?#]+)/);
+  if (!match) return null;
+  const experimentId = asNonEmptyString(decodeURIComponent(match[1]));
+  const runId = asNonEmptyString(decodeURIComponent(match[2]));
+  if (!experimentId || !runId) return null;
+  return { experimentId, runId };
+}
+
 function deriveMlflowBaseUrlFromApi(): string | null {
   const normalizedApi = normalizeMlflowBaseUrl(API_BASE_URL);
   if (!normalizedApi) return null;
@@ -82,6 +101,13 @@ function resolveBaseUrl(records: Array<Record<string, unknown>>): string | null 
   );
   if (fromPayload) return fromPayload;
 
+  const rawTrackingUri = findFirstString(records, ["tracking_uri", "mlflow_uri"]);
+  if (rawTrackingUri && !normalizeMlflowBaseUrl(rawTrackingUri)) {
+    // Example: file:/data/mlflow/mlruns on Deucalion.
+    // In this case there is no externally reachable MLflow UI URL to open.
+    return null;
+  }
+
   return deriveMlflowBaseUrlFromApi();
 }
 
@@ -104,17 +130,24 @@ export function resolveMlflowRunUrl(...sources: unknown[]): string | null {
   if (records.length === 0) return null;
 
   const directUrl = findFirstString(records, ["mlflow_run_url"]);
-  const normalizedDirectUrl = normalizeMlflowBaseUrl(directUrl);
-  if (normalizedDirectUrl && directUrl?.includes("/#/experiments/")) {
-    return directUrl;
-  }
-  if (normalizedDirectUrl && directUrl && directUrl.includes("/runs/")) {
-    return directUrl;
-  }
-
-  const runId = findFirstString(records, ["mlflow_run_id", "run_id"]);
-  const experimentId = findFirstString(records, ["mlflow_experiment_id", "experiment_id"]);
+  const directIdentity = directUrl ? extractRunIdentityFromRunUrl(directUrl) : null;
+  const runId = findFirstString(records, ["mlflow_run_id", "run_id"]) || directIdentity?.runId || null;
+  const experimentId =
+    findFirstString(records, ["mlflow_experiment_id", "experiment_id"]) || directIdentity?.experimentId || null;
   const baseUrl = resolveBaseUrl(records);
+
+  if (directUrl) {
+    try {
+      const parsed = new URL(directUrl);
+      // If the stored URL already points to an externally reachable host, keep it.
+      if (!isLikelyInternalHostname(parsed.hostname)) return directUrl;
+    } catch {
+      // Ignore parse failures and fall back to rebuilt URL.
+    }
+
+    const rebuilt = buildMlflowRunUrl({ baseUrl, experimentId, runId });
+    if (rebuilt) return rebuilt;
+  }
 
   return buildMlflowRunUrl({ baseUrl, experimentId, runId });
 }

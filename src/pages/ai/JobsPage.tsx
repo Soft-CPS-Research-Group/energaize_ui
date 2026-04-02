@@ -1377,7 +1377,7 @@ export function JobsPage(): JSX.Element {
                     <th>Progress</th>
                     <th>Status</th>
                     <th>Host</th>
-                    <th>Actions</th>
+                    <th className="jobs-actions-col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1509,8 +1509,8 @@ export function JobsPage(): JSX.Element {
                           </div>
                         </td>
                         <td>{job.job_info.target_host || (typeof job.job_meta?.target_host === "string" ? job.job_meta.target_host : "-")}</td>
-                        <td>
-                          <div className="table-actions table-actions-compact">
+                        <td className="jobs-actions-col">
+                          <div className="table-actions table-actions-compact jobs-table-actions">
                             <button
                               type="button"
                               className={`icon-btn job-eye-btn${!isCompleted ? " is-disabled" : ""}`}
@@ -1541,19 +1541,20 @@ export function JobsPage(): JSX.Element {
                               <FileText size={15} />
                             </button>
 
-                            {mlflowUrl ? (
-                              <a
-                                className="icon-btn"
-                                href={mlflowUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-label={`Open MLflow run for ${job.job_id}`}
-                                title="Open MLflow run"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                <FlaskConical size={15} />
-                              </a>
-                            ) : null}
+                            <button
+                              type="button"
+                              className={`icon-btn${mlflowUrl ? "" : " is-disabled"}`}
+                              aria-label={`Open MLflow run for ${job.job_id}`}
+                              title={mlflowUrl ? "Open MLflow run" : "MLflow run not available yet"}
+                              disabled={!mlflowUrl}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (!mlflowUrl || typeof window === "undefined") return;
+                                window.open(mlflowUrl, "_blank", "noopener,noreferrer");
+                              }}
+                            >
+                              <FlaskConical size={15} />
+                            </button>
 
                             <button
                               type="button"

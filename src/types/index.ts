@@ -78,6 +78,16 @@ export interface JobInfo {
   energy_community?: string;
   description?: string;
   mlflow_run_url?: string;
+  submitted_at?: number | null;
+  queued_at?: number | null;
+  dispatched_at?: number | null;
+  started_at?: number | null;
+  stop_requested_at?: number | null;
+  finished_at?: number | null;
+  last_status_at?: number | null;
+  queue_wait_seconds?: number | null;
+  run_duration_seconds?: number | null;
+  total_duration_seconds?: number | null;
   [key: string]: unknown;
 }
 

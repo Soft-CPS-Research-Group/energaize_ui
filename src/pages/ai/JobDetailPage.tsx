@@ -65,7 +65,7 @@ import {
   listEpisodes,
   loadSimulationCsv
 } from "../../utils/simulationData";
-import { formatDateTime } from "../../utils/time";
+import { formatDateTime, formatDurationSeconds } from "../../utils/time";
 import { DayPicker } from "react-day-picker";
 
 const DETAIL_TABS = ["overview", "timeseries", "kpis", "deploy"] as const;
@@ -1849,6 +1849,15 @@ export function JobDetailPage(): JSX.Element {
   }, [simulationIndexQuery.data?.files]);
 
   const updatedAt = pickUpdatedAt(progressQuery.data, infoQuery.data);
+  const runDurationSeconds =
+    typeof infoQuery.data?.run_duration_seconds === "number" ? infoQuery.data.run_duration_seconds : null;
+  const queueWaitSeconds =
+    typeof infoQuery.data?.queue_wait_seconds === "number" ? infoQuery.data.queue_wait_seconds : null;
+  const totalDurationSeconds =
+    typeof infoQuery.data?.total_duration_seconds === "number" ? infoQuery.data.total_duration_seconds : null;
+  const submittedAt = infoQuery.data?.submitted_at;
+  const startedAt = infoQuery.data?.started_at;
+  const finishedAt = infoQuery.data?.finished_at;
   const progressPercent = useMemo(() => {
     const payload = progressQuery.data as Record<string, unknown> | undefined;
     if (!payload) return null;
@@ -2158,8 +2167,8 @@ export function JobDetailPage(): JSX.Element {
                   <strong>{infoQuery.data?.target_host || "auto"}</strong>
                 </article>
                 <article className="job-overview-card">
-                  <small>Run name</small>
-                  <strong>{infoQuery.data?.run_name || "-"}</strong>
+                  <small>Running time</small>
+                  <strong>{formatDurationSeconds(runDurationSeconds)}</strong>
                 </article>
               </section>
               <dl className="job-overview-grid">
@@ -2172,12 +2181,36 @@ export function JobDetailPage(): JSX.Element {
                   <dd>{infoQuery.data?.experiment_name || "-"}</dd>
                 </div>
                 <div>
+                  <dt>Run name</dt>
+                  <dd>{infoQuery.data?.run_name || "-"}</dd>
+                </div>
+                <div>
                   <dt>Config path</dt>
                   <dd>{infoQuery.data?.config_path || "-"}</dd>
                 </div>
                 <div>
                   <dt>Target host</dt>
                   <dd>{infoQuery.data?.target_host || "auto"}</dd>
+                </div>
+                <div>
+                  <dt>Submitted at</dt>
+                  <dd>{formatDateTime(submittedAt)}</dd>
+                </div>
+                <div>
+                  <dt>Started at</dt>
+                  <dd>{formatDateTime(startedAt)}</dd>
+                </div>
+                <div>
+                  <dt>Finished at</dt>
+                  <dd>{formatDateTime(finishedAt)}</dd>
+                </div>
+                <div>
+                  <dt>Queue wait</dt>
+                  <dd>{formatDurationSeconds(queueWaitSeconds)}</dd>
+                </div>
+                <div>
+                  <dt>Total time</dt>
+                  <dd>{formatDurationSeconds(totalDurationSeconds)}</dd>
                 </div>
                 <div>
                   <dt>Simulation data path</dt>
