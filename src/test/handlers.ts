@@ -12,6 +12,7 @@ let experimentConfigs: Record<string, string> = {};
 let deployBundles: Array<{
   bundle_id: string;
   name: string;
+  storage_dir_name?: string;
   file_count: number;
   artifacts_dir_host: string;
   manifest_path_host: string;
@@ -90,9 +91,10 @@ export function resetMockState(): void {
     {
       bundle_id: "bundle_demo_001",
       name: "hq_bundle",
+      storage_dir_name: "hq_bundle",
       file_count: 4,
-      artifacts_dir_host: "/opt/opeva_shared_data/inference_bundles/bundles/bundle_demo_001",
-      manifest_path_host: "/opt/opeva_shared_data/inference_bundles/bundles/bundle_demo_001/artifact_manifest.json",
+      artifacts_dir_host: "/opt/opeva_shared_data/inference_bundles/bundles/hq_bundle",
+      manifest_path_host: "/opt/opeva_shared_data/inference_bundles/bundles/hq_bundle/artifact_manifest.json",
       created_at: "2026-04-01T12:00:00Z",
       updated_at: "2026-04-01T12:00:00Z"
     }
@@ -149,7 +151,7 @@ export const handlers = [
       reachable: true,
       configured: true,
       healthy: true,
-      active_manifest_path: `/data/bundles/${deployBundles[0]?.bundle_id || "bundle_demo_001"}/artifact_manifest.json`
+      active_manifest_path: `/data/bundles/${deployBundles[0]?.storage_dir_name || deployBundles[0]?.bundle_id || "bundle_demo_001"}/artifact_manifest.json`
     });
   }),
   http.post(endpoint("/deploy/inferences/:targetId/switch-bundle"), async ({ params, request }) => {
@@ -162,18 +164,20 @@ export const handlers = [
     if (!body.bundle_id) {
       return HttpResponse.json({ detail: "Missing bundle_id" }, { status: 400 });
     }
+    const selected = deployBundles.find((item) => item.bundle_id === body.bundle_id);
+    const selectedStorage = selected?.storage_dir_name || body.bundle_id;
     return HttpResponse.json({
       status: "switched",
       target_id: target.id,
       bundle_id: body.bundle_id,
-      requested_manifest_path: `/data/bundles/${body.bundle_id}/artifact_manifest.json`,
+      requested_manifest_path: `/data/bundles/${selectedStorage}/artifact_manifest.json`,
       load_response: { status: "loaded" },
       health: {
         ...target,
         reachable: true,
         configured: true,
         healthy: true,
-        active_manifest_path: `/data/bundles/${body.bundle_id}/artifact_manifest.json`
+        active_manifest_path: `/data/bundles/${selectedStorage}/artifact_manifest.json`
       }
     });
   }),
@@ -181,13 +185,57 @@ export const handlers = [
     HttpResponse.text(`[${params.targetId}] inference logs\\nline 2\\n`)
   ),
   http.get(endpoint("/deploy/bundles"), () => HttpResponse.json(deployBundles)),
+  http.get(endpoint("/deploy/bundles/:bundleId/files"), ({ params }) => {
+    const bundleId = String(params.bundleId || "");
+    const exists = deployBundles.some((item) => item.bundle_id === bundleId);
+    if (!exists) {
+      return HttpResponse.json({ detail: "Bundle not found" }, { status: 404 });
+    }
+    const files = [
+      { path: "artifact_manifest.json", size_bytes: 832 },
+      { path: "policy_agent_0.json", size_bytes: 256 },
+      { path: "aliases.json", size_bytes: 192 }
+    ];
+    return HttpResponse.json({
+      bundle_id: bundleId,
+      bundle_name: deployBundles.find((item) => item.bundle_id === bundleId)?.name || bundleId,
+      file_count: files.length,
+      files
+    });
+  }),
+  http.get(endpoint("/deploy/bundles/:bundleId/files/content"), ({ params, request }) => {
+    const bundleId = String(params.bundleId || "");
+    const exists = deployBundles.some((item) => item.bundle_id === bundleId);
+    if (!exists) {
+      return HttpResponse.json({ detail: "Bundle not found" }, { status: 404 });
+    }
+    const url = new URL(request.url);
+    const path = url.searchParams.get("path") || "";
+    if (!path) {
+      return HttpResponse.json({ detail: "Missing path" }, { status: 400 });
+    }
+    const contentByPath: Record<string, string> = {
+      "artifact_manifest.json": '{\n  "manifest_version": 1,\n  "topology": { "num_agents": 1 }\n}',
+      "policy_agent_0.json": '{\n  "default_actions": { "a": 0.0 },\n  "rules": []\n}',
+      "aliases.json": '{\n  "community.energy_in_total": "community.energy_in_total"\n}'
+    };
+    return HttpResponse.json({
+      bundle_id: bundleId,
+      path,
+      is_text: true,
+      size_bytes: contentByPath[path]?.length || 0,
+      truncated: false,
+      content: contentByPath[path] || ""
+    });
+  }),
   http.post(endpoint("/deploy/bundles/upload-folder"), () => {
     const created = {
       bundle_id: `bundle_uploaded_${deployBundles.length + 1}`,
       name: "uploaded_bundle",
+      storage_dir_name: "uploaded_bundle",
       file_count: 2,
-      artifacts_dir_host: "/opt/opeva_shared_data/inference_bundles/bundles/uploaded",
-      manifest_path_host: "/opt/opeva_shared_data/inference_bundles/bundles/uploaded/artifact_manifest.json",
+      artifacts_dir_host: "/opt/opeva_shared_data/inference_bundles/bundles/uploaded_bundle",
+      manifest_path_host: "/opt/opeva_shared_data/inference_bundles/bundles/uploaded_bundle/artifact_manifest.json",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -212,6 +260,21 @@ export const handlers = [
       fetched_at: Date.now() / 1000
     })
   ),
+  http.get(endpoint("/logs-chunk/:jobId"), ({ params, request }) => {
+    const url = new URL(request.url);
+    const offsetRaw = url.searchParams.get("offset");
+    const offset = offsetRaw ? Number(offsetRaw) : null;
+    const text = offset && Number.isFinite(offset) && offset > 0 ? "" : "";
+    const nextOffset = offset && Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) + text.length : text.length;
+    return HttpResponse.json({
+      job_id: params.jobId,
+      text,
+      next_offset: nextOffset,
+      truncated: false,
+      available: true,
+      message: null
+    });
+  }),
   http.get(endpoint("/file-logs/:jobId"), () => HttpResponse.text("")),
   http.get(endpoint("/logs/:jobId"), () => HttpResponse.text("")),
   http.get(endpoint("/status/:jobId"), ({ params }) => {

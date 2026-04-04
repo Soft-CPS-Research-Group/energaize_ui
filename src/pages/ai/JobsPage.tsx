@@ -21,8 +21,6 @@ import {
 import {
   deleteJob,
   getExperimentConfig,
-  getJobFileLogs,
-  getJobLogs,
   getJobProgress,
   getJobResolvedConfig,
   listExperimentConfigs,
@@ -47,6 +45,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import { useJobLogsPolling } from "../../hooks/useJobLogsPolling";
 import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications";
 import type { HostInfo, JobItem } from "../../types";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
@@ -174,6 +173,56 @@ function inferComputeProfile(entry: HostActiveJobSnapshot): "GPU" | "CPU" | null
     return isGpuLikePartition(entry.slurm_partition) ? "GPU" : "CPU";
   }
   return null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function readString(record: Record<string, unknown> | null, key: string): string | null {
+  if (!record) return null;
+  const value = record[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function resolveJobTargetHost(job: JobItem): string {
+  const fromInfo = typeof job.job_info.target_host === "string" ? job.job_info.target_host.trim() : "";
+  if (fromInfo) return fromInfo;
+  const meta = asRecord(job.job_meta);
+  const fromMeta = readString(meta, "target_host");
+  return fromMeta || "-";
+}
+
+function inferDeucalionJobRuntime(job: JobItem, host: string): "CPU" | "GPU" | null {
+  if (host.toLowerCase() !== "deucalion") return null;
+
+  const meta = asRecord(job.job_meta);
+  const infoRecord = asRecord(job.job_info as unknown);
+  const options =
+    asRecord(job.job_info.deucalion_options) ||
+    asRecord(meta?.deucalion_options) ||
+    asRecord(infoRecord?.deucalion_options);
+
+  const gpusValue =
+    asNumber(options?.gpus) ??
+    asNumber(options?.gpu_count) ??
+    asNumber(options?.gpus_per_task) ??
+    asNumber(meta?.slurm_gpus) ??
+    asNumber(infoRecord?.slurm_gpus);
+  if (typeof gpusValue === "number" && gpusValue > 0) return "GPU";
+
+  const partition =
+    readString(options, "partition") ||
+    readString(meta, "slurm_partition") ||
+    readString(meta, "partition") ||
+    readString(infoRecord, "slurm_partition") ||
+    readString(infoRecord, "partition");
+
+  if (partition && isGpuLikePartition(partition)) return "GPU";
+  return "CPU";
 }
 
 function asNumber(value: unknown): number | null {
@@ -478,32 +527,24 @@ export function JobsPage(): JSX.Element {
     networkMode: "always"
   });
 
-  const logsQuery = useQuery({
-    queryKey: ["job-quick-logs", logsJobId],
-    queryFn: async () => {
-      try {
-        return await getJobFileLogs(logsJobId);
-      } catch {
-        return getJobLogs(logsJobId).catch(() => "");
-      }
-    },
+  const logsQuery = useJobLogsPolling(logsJobId, {
     enabled: Boolean(logsOpen && logsJobId),
-    refetchInterval: logsOpen && logsJobId ? LOGS_POLL_MS : false,
-    networkMode: "always"
+    pollMs: LOGS_POLL_MS,
+    tailLines: 300
   });
 
   const allLogLines = useMemo(() => {
-    const text = logsQuery.data || "";
+    const text = logsQuery.text || "";
     if (!text.trim()) return [];
     return text.split(/\r?\n/);
-  }, [logsQuery.data]);
+  }, [logsQuery.text]);
 
   const filteredLogLines = useMemo(() => {
     const query = logsSearch.trim().toLowerCase();
     if (!query) return allLogLines;
     return allLogLines.filter((line) => line.toLowerCase().includes(query));
   }, [allLogLines, logsSearch]);
-  const hasRawLogs = (logsQuery.data || "").trim().length > 0;
+  const hasRawLogs = logsQuery.text.trim().length > 0;
 
   useEffect(() => {
     if (!logsOpen || logsSearch.trim()) return;
@@ -1118,9 +1159,9 @@ export function JobsPage(): JSX.Element {
   }
 
   async function copyLogs(): Promise<void> {
-    if (!logsQuery.data) return;
+    if (!logsQuery.text) return;
 
-    const text = logsQuery.data;
+    const text = logsQuery.text;
     const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
 
     if (clipboard?.writeText) {
@@ -1156,9 +1197,9 @@ export function JobsPage(): JSX.Element {
   }
 
   function downloadLogs(): void {
-    if (!logsQuery.data || !logsJobId) return;
+    if (!logsQuery.text || !logsJobId) return;
 
-    const blob = new Blob([logsQuery.data], { type: "text/plain;charset=utf-8" });
+    const blob = new Blob([logsQuery.text], { type: "text/plain;charset=utf-8" });
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
@@ -1376,7 +1417,7 @@ export function JobsPage(): JSX.Element {
                     <th>Experiment Config</th>
                     <th>Progress</th>
                     <th>Status</th>
-                    <th>Host</th>
+                    <th className="jobs-host-col">Host</th>
                     <th className="jobs-actions-col">Actions</th>
                   </tr>
                 </thead>
@@ -1401,6 +1442,8 @@ export function JobsPage(): JSX.Element {
                     const dispatchTitle = dispatchSnapshot.slurmState
                       ? `Slurm state: ${dispatchSnapshot.slurmState}`
                       : "Show Slurm queue details";
+                    const hostLabel = resolveJobTargetHost(job);
+                    const deucalionRuntime = inferDeucalionJobRuntime(job, hostLabel);
 
                     return (
                       <tr
@@ -1508,7 +1551,16 @@ export function JobsPage(): JSX.Element {
                             )}
                           </div>
                         </td>
-                        <td>{job.job_info.target_host || (typeof job.job_meta?.target_host === "string" ? job.job_meta.target_host : "-")}</td>
+                        <td className="jobs-host-col">
+                          <div className="jobs-host-cell">
+                            <strong>{hostLabel}</strong>
+                            {deucalionRuntime ? (
+                              <small className={`jobs-host-runtime-pill is-${deucalionRuntime.toLowerCase()}`}>
+                                {deucalionRuntime}
+                              </small>
+                            ) : null}
+                          </div>
+                        </td>
                         <td className="jobs-actions-col">
                           <div className="table-actions table-actions-compact jobs-table-actions">
                             <button
@@ -2319,12 +2371,12 @@ export function JobsPage(): JSX.Element {
             </label>
           </div>
 
-          {(logsQuery.isLoading || (logsQuery.isFetching && !hasRawLogs)) ? (
+          {(logsQuery.loading || (logsQuery.fetching && !hasRawLogs)) ? (
             <section className="datasets-loader-preview">
               <EVChargingLoader label="Loading logs..." />
             </section>
           ) : null}
-          {logsQuery.isError ? <p className="error-text">Could not load logs for this job.</p> : null}
+          {logsQuery.error ? <p className="error-text">Could not load logs for this job.</p> : null}
           {hasRawLogs ? (
             <>
               <small className="jobs-meta">
@@ -2339,8 +2391,8 @@ export function JobsPage(): JSX.Element {
               )}
             </>
           ) : null}
-          {!logsQuery.isLoading && !logsQuery.isError && !hasRawLogs ? (
-            <p className="jobs-meta">Ainda não há logs para este job (ou o ficheiro está vazio).</p>
+          {!logsQuery.loading && !logsQuery.error && !hasRawLogs ? (
+            <p className="jobs-meta">{logsQuery.message || "Ainda não há logs para este job (ou o ficheiro está vazio)."}</p>
           ) : null}
         </section>
       </Modal>

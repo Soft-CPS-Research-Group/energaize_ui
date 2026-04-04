@@ -262,6 +262,35 @@ export async function getJobLogs(jobId: string): Promise<string> {
   });
 }
 
+export interface JobLogsChunkResponse {
+  job_id: string;
+  text: string;
+  next_offset: number;
+  truncated: boolean;
+  available: boolean;
+  message?: string | null;
+}
+
+export async function getJobLogsChunk(
+  jobId: string,
+  params?: { offset?: number; tailLines?: number; maxBytes?: number }
+): Promise<JobLogsChunkResponse> {
+  const query = new URLSearchParams();
+  if (typeof params?.offset === "number" && Number.isFinite(params.offset) && params.offset >= 0) {
+    query.set("offset", String(Math.floor(params.offset)));
+  }
+  if (typeof params?.tailLines === "number" && Number.isFinite(params.tailLines) && params.tailLines > 0) {
+    query.set("tail_lines", String(Math.floor(params.tailLines)));
+  }
+  if (typeof params?.maxBytes === "number" && Number.isFinite(params.maxBytes) && params.maxBytes > 0) {
+    query.set("max_bytes", String(Math.floor(params.maxBytes)));
+  }
+  const suffix = query.toString();
+  return http<JobLogsChunkResponse>(
+    `/logs-chunk/${encodeURIComponent(jobId)}${suffix ? `?${suffix}` : ""}`
+  );
+}
+
 export async function getJobResolvedConfig(jobId: string): Promise<{ yaml_content: string }> {
   const yamlContent = await http<string>(
     `/job-resolved-config/${encodeURIComponent(jobId)}`,

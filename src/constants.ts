@@ -91,6 +91,6 @@ export const LOGIN_BACKGROUNDS = [
 export const JOB_POLL_MS = 5000;
 export const HOSTS_POLL_MS = 7000;
 export const DATASETS_POLL_MS = 10000;
-export const LOGS_POLL_MS = 2000;
+export const LOGS_POLL_MS = 5000;
 
 export const AUTH_SCENE_STORAGE_KEY = "energaize:auth-scene";

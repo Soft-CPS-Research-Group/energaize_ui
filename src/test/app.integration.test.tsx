@@ -82,8 +82,21 @@ describe("App integration", () => {
 
     const api = API_BASE_URL.replace(/\/$/, "");
     server.use(
-      http.get(`${api}/file-logs/:jobId`, () => new HttpResponse(null, { status: 404 })),
-      http.get(`${api}/logs/:jobId`, () => HttpResponse.text("fallback logs content"))
+      http.get(`${api}/logs-chunk/:jobId`, ({ request, params }) => {
+        const url = new URL(request.url);
+        const hasOffset = url.searchParams.has("offset");
+        const text = hasOffset ? "" : "fallback logs content";
+        const offsetRaw = url.searchParams.get("offset");
+        const baseOffset = offsetRaw ? Number(offsetRaw) || 0 : 0;
+        return HttpResponse.json({
+          job_id: params.jobId,
+          text,
+          next_offset: baseOffset + text.length,
+          truncated: false,
+          available: true,
+          message: null
+        });
+      })
     );
 
     renderApp("/app/ai/jobs");

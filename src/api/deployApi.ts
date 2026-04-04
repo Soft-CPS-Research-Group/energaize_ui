@@ -25,11 +25,33 @@ export interface DeployInferenceHealth {
 export interface DeployBundleRecord {
   bundle_id: string;
   name?: string;
+  storage_dir_name?: string;
   file_count?: number;
   artifacts_dir_host: string;
   manifest_path_host: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface DeployBundleFileEntry {
+  path: string;
+  size_bytes: number;
+}
+
+export interface DeployBundleFilesResponse {
+  bundle_id: string;
+  bundle_name: string;
+  file_count: number;
+  files: DeployBundleFileEntry[];
+}
+
+export interface DeployBundleFileContentResponse {
+  bundle_id: string;
+  path: string;
+  is_text: boolean;
+  size_bytes: number;
+  truncated: boolean;
+  content: string | null;
 }
 
 export interface DeployUploadResponse {
@@ -66,6 +88,19 @@ export async function switchDeployInferenceBundle(
 
 export async function listDeployBundles(): Promise<DeployBundleRecord[]> {
   return http<DeployBundleRecord[]>("/deploy/bundles");
+}
+
+export async function listDeployBundleFiles(bundleId: string): Promise<DeployBundleFilesResponse> {
+  return http<DeployBundleFilesResponse>(`/deploy/bundles/${encodeURIComponent(bundleId)}/files`);
+}
+
+export async function readDeployBundleFileContent(
+  bundleId: string,
+  filePath: string
+): Promise<DeployBundleFileContentResponse> {
+  return http<DeployBundleFileContentResponse>(
+    `/deploy/bundles/${encodeURIComponent(bundleId)}/files/content?path=${encodeURIComponent(filePath)}`
+  );
 }
 
 export async function uploadDeployBundleFolder(files: File[]): Promise<DeployUploadResponse> {

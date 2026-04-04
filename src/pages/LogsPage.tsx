@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileWarning, Search } from "lucide-react";
-import { getJobFileLogs, getJobLogs, listJobs } from "../api/trainingApi";
+import { listJobs } from "../api/trainingApi";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../hooks/useApiFeedback";
+import { useJobLogsPolling } from "../hooks/useJobLogsPolling";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageHeader } from "../components/ui/PageHeader";
 import { JOB_POLL_MS, LOGS_POLL_MS } from "../constants";
@@ -25,18 +26,10 @@ export function LogsPage(): JSX.Element {
     }
   }, [jobsQuery.data, selectedJobId]);
 
-  const logsQuery = useQuery({
-    queryKey: ["logs", selectedJobId],
-    queryFn: async () => {
-      if (!selectedJobId) return "";
-      try {
-        return await getJobFileLogs(selectedJobId);
-      } catch {
-        return getJobLogs(selectedJobId);
-      }
-    },
+  const logsQuery = useJobLogsPolling(selectedJobId, {
     enabled: Boolean(selectedJobId),
-    refetchInterval: LOGS_POLL_MS
+    pollMs: LOGS_POLL_MS,
+    tailLines: 300
   });
 
   useEffect(() => {
@@ -52,12 +45,12 @@ export function LogsPage(): JSX.Element {
   }, [logsQuery.error, notifyError]);
 
   const filteredLines = useMemo(() => {
-    const text = logsQuery.data || "";
+    const text = logsQuery.text || "";
     const lines = text.split("\n").filter(Boolean);
     if (!search) return lines;
     return lines.filter((line) => line.toLowerCase().includes(search.toLowerCase()));
-  }, [logsQuery.data, search]);
-  const hasLogContent = (logsQuery.data || "").trim().length > 0;
+  }, [logsQuery.text, search]);
+  const hasLogContent = logsQuery.text.trim().length > 0;
 
   return (
     <div className="page logs-page">
@@ -90,16 +83,16 @@ export function LogsPage(): JSX.Element {
         />
       ) : (
         <section className="panel log-stream" role="log" aria-live="polite">
-          {(logsQuery.isLoading || (logsQuery.isFetching && !hasLogContent)) ? (
+          {(logsQuery.loading || (logsQuery.fetching && !hasLogContent)) ? (
             <section className="datasets-loader-preview">
               <EVChargingLoader label="Loading logs..." />
             </section>
           ) : null}
-          {!logsQuery.isLoading && hasLogContent && filteredLines.length === 0 ? (
+          {!logsQuery.loading && hasLogContent && filteredLines.length === 0 ? (
             <p>No log lines for current filter.</p>
           ) : null}
-          {!logsQuery.isLoading && !hasLogContent ? (
-            <p>Ainda não há logs para este job (ou o ficheiro está vazio).</p>
+          {!logsQuery.loading && !hasLogContent ? (
+            <p>{logsQuery.message || "Ainda não há logs para este job (ou o ficheiro está vazio)."}</p>
           ) : null}
           {filteredLines.map((line, index) => (
             <code key={`${index}-${line.slice(0, 12)}`}>{line}</code>

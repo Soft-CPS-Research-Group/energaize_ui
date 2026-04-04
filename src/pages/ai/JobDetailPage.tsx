@@ -33,9 +33,7 @@ import {
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   getExperimentConfig,
-  getJobFileLogs,
   getJobInfo,
-  getJobLogs,
   getJobProgress,
   getJobResolvedConfig,
   getJobResult,
@@ -43,6 +41,7 @@ import {
   listExperimentConfigs
 } from "../../api/trainingApi";
 import { LOGS_POLL_MS } from "../../constants";
+import { useJobLogsPolling } from "../../hooks/useJobLogsPolling";
 import { Button } from "../../components/ui/Button";
 import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -1515,17 +1514,10 @@ export function JobDetailPage(): JSX.Element {
     queryFn: listExperimentConfigs
   });
 
-  const overviewLogsQuery = useQuery({
-    queryKey: ["job-detail-overview-logs", jobId],
-    queryFn: async () => {
-      try {
-        return await getJobFileLogs(jobId);
-      } catch {
-        return getJobLogs(jobId).catch(() => "");
-      }
-    },
+  const overviewLogs = useJobLogsPolling(jobId, {
     enabled: Boolean(overviewLogsOpen && jobId),
-    refetchInterval: overviewLogsOpen ? LOGS_POLL_MS : false
+    pollMs: LOGS_POLL_MS,
+    tailLines: 300
   });
 
   const configPreviewQuery = useQuery({
@@ -2519,7 +2511,7 @@ export function JobDetailPage(): JSX.Element {
   const canOpenResolvedConfig = Boolean(jobId && resolvedConfigAvailable);
   const availableConfigs = configsQuery.data || [];
 
-  const hasOverviewLogs = (overviewLogsQuery.data || "").trim().length > 0;
+  const hasOverviewLogs = overviewLogs.text.trim().length > 0;
 
   const mlflowUrl = resolveMlflowRunUrl(infoQuery.data);
   const jobDescription =
@@ -3850,17 +3842,17 @@ export function JobDetailPage(): JSX.Element {
         width="lg"
       >
         <section className="job-logs-modal-content">
-          {(overviewLogsQuery.isLoading || (overviewLogsQuery.isFetching && !hasOverviewLogs)) ? (
+          {(overviewLogs.loading || (overviewLogs.fetching && !hasOverviewLogs)) ? (
             <section className="datasets-loader-preview">
               <EVChargingLoader label="Loading logs..." />
             </section>
           ) : null}
-          {overviewLogsQuery.isError ? <p className="error-text">Could not load logs for this job.</p> : null}
-          {!overviewLogsQuery.isLoading && !overviewLogsQuery.isError ? (
+          {overviewLogs.error ? <p className="error-text">Could not load logs for this job.</p> : null}
+          {!overviewLogs.loading && !overviewLogs.error ? (
             hasOverviewLogs ? (
-              <pre className="json-view compact">{overviewLogsQuery.data}</pre>
+              <pre className="json-view compact">{overviewLogs.text}</pre>
             ) : (
-              <p className="jobs-meta">No logs available yet for this job.</p>
+              <p className="jobs-meta">{overviewLogs.message || "No logs available yet for this job."}</p>
             )
           ) : null}
         </section>
