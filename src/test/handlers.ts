@@ -9,6 +9,32 @@ type JobRecord = {
 
 let jobs: JobRecord[] = [];
 let experimentConfigs: Record<string, string> = {};
+let deployBundles: Array<{
+  bundle_id: string;
+  name: string;
+  file_count: number;
+  artifacts_dir_host: string;
+  manifest_path_host: string;
+  created_at: string;
+  updated_at: string;
+}> = [];
+
+const deployTargets = [
+  {
+    id: "hq",
+    name: "HQ Inference",
+    base_url: "http://inference-hq:8000",
+    container_name: "inference_hq",
+    bundle_mount_path: "/data/bundles"
+  },
+  {
+    id: "sm",
+    name: "Sao Mamede Inference",
+    base_url: "http://inference-sm:8000",
+    container_name: "inference_sm",
+    bundle_mount_path: "/data/bundles"
+  }
+];
 const api = API_BASE_URL.replace(/\/$/, "");
 const endpoint = (path: string) => `${api}${path}`;
 const DEMO_SIM_FILES = [
@@ -60,6 +86,17 @@ export function resetMockState(): void {
   experimentConfigs = {
     "demo.yaml": "metadata:\n  experiment_name: Demo\n  run_name: baseline\n"
   };
+  deployBundles = [
+    {
+      bundle_id: "bundle_demo_001",
+      name: "hq_bundle",
+      file_count: 4,
+      artifacts_dir_host: "/opt/opeva_shared_data/inference_bundles/bundles/bundle_demo_001",
+      manifest_path_host: "/opt/opeva_shared_data/inference_bundles/bundles/bundle_demo_001/artifact_manifest.json",
+      created_at: "2026-04-01T12:00:00Z",
+      updated_at: "2026-04-01T12:00:00Z"
+    }
+  ];
 }
 
 resetMockState();
@@ -100,6 +137,68 @@ export const handlers = [
       }
     })
   ),
+  http.get(endpoint("/deploy/inferences"), () => HttpResponse.json(deployTargets)),
+  http.get(endpoint("/deploy/inferences/:targetId/health"), ({ params }) => {
+    const targetId = String(params.targetId || "");
+    const target = deployTargets.find((item) => item.id === targetId);
+    if (!target) {
+      return HttpResponse.json({ detail: "Inference target not found" }, { status: 404 });
+    }
+    return HttpResponse.json({
+      ...target,
+      reachable: true,
+      configured: true,
+      healthy: true,
+      active_manifest_path: `/data/bundles/${deployBundles[0]?.bundle_id || "bundle_demo_001"}/artifact_manifest.json`
+    });
+  }),
+  http.post(endpoint("/deploy/inferences/:targetId/switch-bundle"), async ({ params, request }) => {
+    const targetId = String(params.targetId || "");
+    const target = deployTargets.find((item) => item.id === targetId);
+    if (!target) {
+      return HttpResponse.json({ detail: "Inference target not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { bundle_id?: string };
+    if (!body.bundle_id) {
+      return HttpResponse.json({ detail: "Missing bundle_id" }, { status: 400 });
+    }
+    return HttpResponse.json({
+      status: "switched",
+      target_id: target.id,
+      bundle_id: body.bundle_id,
+      requested_manifest_path: `/data/bundles/${body.bundle_id}/artifact_manifest.json`,
+      load_response: { status: "loaded" },
+      health: {
+        ...target,
+        reachable: true,
+        configured: true,
+        healthy: true,
+        active_manifest_path: `/data/bundles/${body.bundle_id}/artifact_manifest.json`
+      }
+    });
+  }),
+  http.get(endpoint("/deploy/inferences/:targetId/logs/stream"), ({ params }) =>
+    HttpResponse.text(`[${params.targetId}] inference logs\\nline 2\\n`)
+  ),
+  http.get(endpoint("/deploy/bundles"), () => HttpResponse.json(deployBundles)),
+  http.post(endpoint("/deploy/bundles/upload-folder"), () => {
+    const created = {
+      bundle_id: `bundle_uploaded_${deployBundles.length + 1}`,
+      name: "uploaded_bundle",
+      file_count: 2,
+      artifacts_dir_host: "/opt/opeva_shared_data/inference_bundles/bundles/uploaded",
+      manifest_path_host: "/opt/opeva_shared_data/inference_bundles/bundles/uploaded/artifact_manifest.json",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    deployBundles = [created, ...deployBundles];
+    return HttpResponse.json({ created: true, bundle: created });
+  }),
+  http.delete(endpoint("/deploy/bundles/:bundleId"), ({ params }) => {
+    const bundleId = String(params.bundleId || "");
+    deployBundles = deployBundles.filter((item) => item.bundle_id !== bundleId);
+    return HttpResponse.json({ status: "deleted", bundle_id: bundleId });
+  }),
   http.get(endpoint("/job-images/versions"), () =>
     HttpResponse.json({
       repository: "calof/opeva_simulator",

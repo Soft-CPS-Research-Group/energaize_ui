@@ -10,8 +10,11 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
+  Download,
+  Eye,
   ExternalLink,
   Factory,
+  FileText,
   FolderTree,
   Gauge,
   Home,
@@ -29,32 +32,54 @@ import {
 } from "recharts";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  getExperimentConfig,
+  getJobFileLogs,
   getJobInfo,
+  getJobLogs,
   getJobProgress,
+  getJobResolvedConfig,
   getJobResult,
-  getJobStatus
+  getJobStatus,
+  listExperimentConfigs
 } from "../../api/trainingApi";
+import { LOGS_POLL_MS } from "../../constants";
 import { Button } from "../../components/ui/Button";
 import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { Modal } from "../../components/ui/Modal";
 import { StatusPill } from "../../components/ui/StatusPill";
 import {
-  findKpiSource,
-  findSimulationDataAvailable,
   findSimulationDataDir,
   findSimulationDataSessionDefault,
   getSimulationDataIndex,
   readSimulationDataFile,
   type SimulationDataSource
 } from "../../services/simulationDataService";
+import {
+  readBackendBundleFileAsBlob,
+  readBackendBundleManifest,
+  readExampleBundleManifest,
+  resolveExampleOnnxAssetUrl
+} from "../../services/deployBundleService";
 import type {
   KpiEntry,
   KpiMatrixRow,
   SimulationSeries,
   SimulationTreeNode
 } from "../../types";
-import { extractArtifacts, extractKpis } from "../../utils/jobResult";
+import { extractKpis } from "../../utils/jobResult";
 import { isCompletedForResults } from "../../utils/jobStatus";
+import {
+  buildKpiMeta,
+  formatKpiFamilyLabel,
+  groupScopedKpis,
+  isKpiGroupUsed,
+  scoreKpiGroupTone,
+  type KpiAggregation,
+  type KpiFamily,
+  type KpiMetricGroupRow,
+  type KpiVariant
+} from "../../utils/kpiMetadata";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import {
   buildSimulationTree,
@@ -120,6 +145,55 @@ interface ScopedKpiRow {
   breakdown: Array<{ entity: string; value: number }>;
 }
 
+interface DeployManifestData {
+  content: string;
+  relativePath: string;
+  source: "mock" | "backend";
+  backendBasePrefix: string;
+  manifest: Record<string, unknown> | null;
+}
+
+interface DeployArtifactRow {
+  agentIndex: number | null;
+  buildingId: number | null;
+  format: string | null;
+  path: string;
+  onnxUrl: string | null;
+}
+
+const CORE_CITYLEARN_KEYS = [
+  "cost_total",
+  "carbon_emissions_total",
+  "electricity_consumption_total",
+  "daily_peak_average",
+  "ramping_average",
+  "daily_one_minus_load_factor_average"
+] as const;
+
+const KPI_VARIANT_LABELS: Record<KpiVariant, string> = {
+  normalized: "Normalized",
+  control: "Control",
+  baseline: "Baseline",
+  delta: "Delta",
+  absolute: "Absolute"
+};
+
+const KPI_AGGREGATION_LABELS: Record<KpiAggregation, string> = {
+  total: "Total",
+  daily_average: "Daily Average",
+  instant: "Instant",
+  ratio: "Ratio / Percent"
+};
+
+const CORE_HIGHLIGHT_LABELS: Record<(typeof CORE_CITYLEARN_KEYS)[number], string> = {
+  cost_total: "Cost",
+  carbon_emissions_total: "Carbon Emissions",
+  electricity_consumption_total: "Grid Electricity",
+  daily_peak_average: "Daily Peak",
+  ramping_average: "Ramping",
+  daily_one_minus_load_factor_average: "Load Factor Penalty"
+};
+
 const CHART_COLORS = ["#1db97f", "#4f8cff", "#f4a340", "#ea5a5a", "#9e7bff", "#00bcd4"];
 const TIMESERIES_CHART_HEIGHT = 258;
 const HOUR_MS = 60 * 60 * 1000;
@@ -161,6 +235,75 @@ function pickUpdatedAt(
   }
 
   return null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function parseJsonRecord(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text);
+    return asRecord(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function readStringValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function readNumberValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function readStringFrom(source: Record<string, unknown> | null, keys: string[]): string | null {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = readStringValue(source[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function readNumberFrom(source: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = readNumberValue(source[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function readDateLikeFrom(source: Record<string, unknown> | null, keys: string[]): string | number | null {
+  if (!source) return null;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return null;
+}
+
+function resolveConfigLabel(configPath: string | null | undefined): string {
+  if (!configPath) return "-";
+  const normalized = configPath.split(/[\\/]/).filter(Boolean);
+  return normalized[normalized.length - 1] || configPath;
+}
+
+function isGpuLikePartition(partition: string | null | undefined): boolean {
+  if (!partition) return false;
+  const key = partition.toLowerCase();
+  return key.includes("gpu") || key.includes("a100") || key.includes("h100");
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -611,6 +754,58 @@ function parseBuildingEntityId(entity: string): number | null {
   if (!match) return null;
   const parsed = Number(match[1]);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseBuildingNodeNumber(node: SimulationTreeNode): number | null {
+  const matchFromId = node.id.match(/building:(\d+)/i);
+  if (matchFromId) {
+    const parsed = Number(matchFromId[1]);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return parseBuildingEntityId(node.label);
+}
+
+function readAgentIndex(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.round(parsed);
+  }
+  return null;
+}
+
+function inferBuildingFromAgentConfig(config: Record<string, unknown> | null): number | null {
+  if (!config) return null;
+  const chargerRecord = asRecord(config.chargers);
+  if (chargerRecord) {
+    for (const chargerName of Object.keys(chargerRecord)) {
+      const match = chargerName.match(/charger_(\d+)_/i);
+      if (match) {
+        const parsed = Number(match[1]);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+  }
+
+  const actionOrder = Array.isArray(config.action_order) ? config.action_order : [];
+  for (const item of actionOrder) {
+    if (typeof item !== "string") continue;
+    const match = item.match(/charger_(\d+)_/i);
+    if (!match) continue;
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+function triggerBlobDownload(blob: Blob, fileName: string): void {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
 }
 
 function isCommunityEntity(entity: string): boolean {
@@ -1277,6 +1472,19 @@ export function JobDetailPage(): JSX.Element {
   const [zoomHistory, setZoomHistory] = useState<ZoomHistoryEntry[]>([]);
   const [kpiSearch, setKpiSearch] = useState("");
   const [selectedKpiScopeId, setSelectedKpiScopeId] = useState("community");
+  const [kpiFamilyFilter, setKpiFamilyFilter] = useState<KpiFamily | "all">("all");
+  const [kpiVariantFilter, setKpiVariantFilter] = useState<KpiVariant | "all">("all");
+  const [kpiAggregationFilter, setKpiAggregationFilter] = useState<KpiAggregation | "all">("all");
+  const [selectedDeployScopeId, setSelectedDeployScopeId] = useState("community");
+  const [deployManifestPreviewOpen, setDeployManifestPreviewOpen] = useState(false);
+  const [deployActionError, setDeployActionError] = useState<string | null>(null);
+  const [deployDownloadBusyKey, setDeployDownloadBusyKey] = useState<string | null>(null);
+  const [overviewLogsOpen, setOverviewLogsOpen] = useState(false);
+  const [configPreviewOpen, setConfigPreviewOpen] = useState(false);
+  const [configPreviewTarget, setConfigPreviewTarget] = useState("");
+  const [configPreviewLabel, setConfigPreviewLabel] = useState("");
+  const [configPreviewMode, setConfigPreviewMode] = useState<"base" | "resolved">("base");
+  const [configPreviewJobId, setConfigPreviewJobId] = useState("");
 
   const statusQuery = useQuery({
     queryKey: ["job-status", jobId],
@@ -1302,21 +1510,67 @@ export function JobDetailPage(): JSX.Element {
     enabled: Boolean(jobId)
   });
 
+  const configsQuery = useQuery({
+    queryKey: ["configs"],
+    queryFn: listExperimentConfigs
+  });
+
+  const overviewLogsQuery = useQuery({
+    queryKey: ["job-detail-overview-logs", jobId],
+    queryFn: async () => {
+      try {
+        return await getJobFileLogs(jobId);
+      } catch {
+        return getJobLogs(jobId).catch(() => "");
+      }
+    },
+    enabled: Boolean(overviewLogsOpen && jobId),
+    refetchInterval: overviewLogsOpen ? LOGS_POLL_MS : false
+  });
+
+  const configPreviewQuery = useQuery({
+    queryKey: ["job-config-preview", configPreviewMode, configPreviewTarget, configPreviewJobId],
+    queryFn: async () => {
+      if (configPreviewMode === "resolved") {
+        const payload = await getJobResolvedConfig(configPreviewJobId);
+        return payload.yaml_content;
+      }
+
+      const payload = await getExperimentConfig(configPreviewTarget);
+      return payload.yaml_content;
+    },
+    enabled: Boolean(
+      configPreviewOpen &&
+        ((configPreviewMode === "base" && configPreviewTarget) ||
+          (configPreviewMode === "resolved" && configPreviewJobId))
+    )
+  });
+
   const isLoading =
     statusQuery.isLoading || infoQuery.isLoading || progressQuery.isLoading || resultQuery.isLoading;
 
+  useEffect(() => {
+    if (activeTab === "overview") return;
+    setOverviewLogsOpen(false);
+    setConfigPreviewOpen(false);
+    setConfigPreviewTarget("");
+    setConfigPreviewLabel("");
+    setConfigPreviewMode("base");
+    setConfigPreviewJobId("");
+    if (activeTab !== "deploy") {
+      setDeployManifestPreviewOpen(false);
+      setDeployActionError(null);
+      setDeployDownloadBusyKey(null);
+    }
+  }, [activeTab]);
+
   const status = statusQuery.data?.status || "unknown";
   const isCompleted = isCompletedForResults(status);
-  const simulationDataAvailable = useMemo(
-    () => findSimulationDataAvailable(resultQuery.data),
-    [resultQuery.data]
-  );
   const simulationDataDir = useMemo(() => findSimulationDataDir(resultQuery.data), [resultQuery.data]);
   const simulationDataSessionDefault = useMemo(
     () => findSimulationDataSessionDefault(resultQuery.data),
     [resultQuery.data]
   );
-  const kpiSource = useMemo(() => findKpiSource(resultQuery.data), [resultQuery.data]);
 
   const simulationIndexQuery = useQuery({
     queryKey: ["simulation-data-index", jobId, simulationDataDir, simulationDataSessionDefault],
@@ -1507,12 +1761,158 @@ export function JobDetailPage(): JSX.Element {
     return fallbackKpis;
   }, [fallbackKpis, kpiCsvQuery.data?.entries]);
 
+  const deployManifestQuery = useQuery({
+    queryKey: [
+      "deploy-bundle-manifest",
+      jobId,
+      simulationIndexQuery.data?.provider || "none",
+      simulationIndexQuery.data?.session || "none"
+    ],
+    queryFn: async (): Promise<DeployManifestData | null> => {
+      const localManifest = await readExampleBundleManifest(jobId);
+      if (localManifest) {
+        return {
+          content: localManifest.content,
+          relativePath: localManifest.relativePath,
+          source: "mock",
+          backendBasePrefix: "",
+          manifest: parseJsonRecord(localManifest.content)
+        };
+      }
+
+      const source = simulationIndexQuery.data as SimulationDataSource | undefined;
+      if (!source || source.provider !== "backend") return null;
+
+      const backendManifest = await readBackendBundleManifest(source.jobId, source.session);
+      if (!backendManifest) return null;
+
+      return {
+        content: backendManifest.content,
+        relativePath: backendManifest.relativePath,
+        source: "backend",
+        backendBasePrefix: backendManifest.basePrefix,
+        manifest: parseJsonRecord(backendManifest.content)
+      };
+    },
+    enabled: Boolean(activeTab === "deploy" && isCompleted && jobId)
+  });
+
   const kpiCommunityLabel =
     typeof infoQuery.data?.community_name === "string" && infoQuery.data.community_name.trim() !== ""
       ? infoQuery.data.community_name.trim()
       : typeof infoQuery.data?.energy_community === "string" && infoQuery.data.energy_community.trim() !== ""
         ? infoQuery.data.energy_community.trim()
         : "Solar Community";
+
+  const deployBuildingScopes = useMemo(() => {
+    return treeNodes
+      .filter((node) => node.kind === "building")
+      .map((node, order) => {
+        const buildingId = parseBuildingNodeNumber(node);
+        return {
+          id: node.id,
+          label: node.label,
+          buildingId,
+          order
+        };
+      })
+      .sort((left, right) => left.order - right.order);
+  }, [treeNodes]);
+
+  const deployTreeRoot = useMemo<SimulationTreeNode>(
+    () => ({
+      id: "deploy-root",
+      label: "Deploy",
+      kind: "root",
+      selectable: false,
+      fileRefs: [],
+      children: deployBuildingScopes.map((scope) => ({
+        id: scope.id,
+        label: scope.label,
+        kind: "building",
+        selectable: true,
+        fileRefs: [],
+        children: []
+      }))
+    }),
+    [deployBuildingScopes]
+  );
+
+  useEffect(() => {
+    if (selectedDeployScopeId === "community") return;
+    if (!deployBuildingScopes.some((scope) => scope.id === selectedDeployScopeId)) {
+      setSelectedDeployScopeId("community");
+    }
+  }, [deployBuildingScopes, selectedDeployScopeId]);
+
+  const selectedDeployBuildingScope = useMemo(
+    () => deployBuildingScopes.find((scope) => scope.id === selectedDeployScopeId) || null,
+    [deployBuildingScopes, selectedDeployScopeId]
+  );
+
+  const deployAgentArtifacts = useMemo<DeployArtifactRow[]>(() => {
+    const manifest = deployManifestQuery.data?.manifest;
+    const agentRecord = asRecord(manifest?.agent);
+    const artifacts = Array.isArray(agentRecord?.artifacts) ? agentRecord.artifacts : [];
+    return artifacts
+      .map((item) => {
+        const record = asRecord(item);
+        if (!record) return null;
+        const path = readStringValue(record.path);
+        if (!path) return null;
+        const normalizedPath = path.replace(/^\.?\//, "");
+        const format = readStringValue(record.format);
+        const isOnnx = normalizedPath.toLowerCase().endsWith(".onnx") || (format || "").toLowerCase() === "onnx";
+        if (!isOnnx) return null;
+
+        const agentIndex = readAgentIndex(record.agent_index);
+        const config = asRecord(record.config);
+        const buildingFromConfig = inferBuildingFromAgentConfig(config);
+        const buildingId = buildingFromConfig ?? (agentIndex !== null ? agentIndex + 1 : null);
+
+        return {
+          agentIndex,
+          buildingId,
+          format,
+          path: normalizedPath,
+          onnxUrl: resolveExampleOnnxAssetUrl(jobId, normalizedPath)
+        };
+      })
+      .filter((artifact): artifact is DeployArtifactRow => Boolean(artifact));
+  }, [deployManifestQuery.data?.manifest, jobId]);
+
+  const deployOnnxByBuilding = useMemo(() => {
+    const map = new Map<number, DeployArtifactRow>();
+    deployAgentArtifacts.forEach((artifact) => {
+      if (artifact.buildingId === null) return;
+      if (map.has(artifact.buildingId)) return;
+      map.set(artifact.buildingId, artifact);
+    });
+    return map;
+  }, [deployAgentArtifacts]);
+
+  const selectedDeployOnnx = useMemo(() => {
+    if (!selectedDeployBuildingScope || selectedDeployBuildingScope.buildingId === null) return null;
+    return deployOnnxByBuilding.get(selectedDeployBuildingScope.buildingId) || null;
+  }, [deployOnnxByBuilding, selectedDeployBuildingScope]);
+
+  const deployManifestSummary = useMemo(() => {
+    const manifest = deployManifestQuery.data?.manifest;
+    const metadata = asRecord(manifest?.metadata);
+    const algorithm = asRecord(manifest?.algorithm);
+    const agent = asRecord(manifest?.agent);
+    const generatedAt = readStringValue(manifest?.generated_at) || "-";
+    const algorithmName = readStringValue(algorithm?.name) || "-";
+    const agentFormat = readStringValue(agent?.format) || "-";
+    const runName = readStringValue(metadata?.run_name) || "-";
+    return {
+      generatedAt,
+      algorithmName,
+      agentFormat,
+      runName,
+      modelCount: deployAgentArtifacts.length
+    };
+  }, [deployAgentArtifacts.length, deployManifestQuery.data?.manifest]);
 
   const kpiScopes = useMemo<KpiEntityScope[]>(() => {
     if (kpiRows.length === 0) return [];
@@ -1605,11 +2005,29 @@ export function JobDetailPage(): JSX.Element {
     () => kpiScopes.find((scope) => scope.id === selectedKpiScopeId) || null,
     [kpiScopes, selectedKpiScopeId]
   );
+  const kpiTreeRoot = useMemo<SimulationTreeNode>(() => {
+    return {
+      id: "kpi-root",
+      label: "KPI root",
+      kind: "root",
+      selectable: false,
+      fileRefs: [],
+      children: kpiScopes
+        .filter((scope) => scope.id !== "community")
+        .map((scope) => ({
+          id: scope.id,
+          label: scope.label,
+          kind: scope.group === "building" ? "building" : "group",
+          selectable: true,
+          fileRefs: [],
+          children: []
+        }))
+    };
+  }, [kpiScopes]);
 
   const scopedKpiRows = useMemo<ScopedKpiRow[]>(() => {
     if (kpiRows.length === 0 || !selectedKpiScope) return [];
 
-    const query = kpiSearch.trim().toLowerCase();
     const collected = kpiRows.reduce<ScopedKpiRow[]>((acc, row) => {
         const breakdown = selectedKpiScope.entityKeys
           .map((entity) => ({ entity, value: row.values[entity] }))
@@ -1632,19 +2050,148 @@ export function JobDetailPage(): JSX.Element {
         return acc;
       }, []);
 
-    return collected
-      .filter((row) => {
-        if (!query) return true;
-        return `${row.label} ${row.key}`.toLowerCase().includes(query);
-      })
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [kpiRows, kpiSearch, selectedKpiScope]);
+    return collected.sort((a, b) => a.label.localeCompare(b.label));
+  }, [kpiRows, selectedKpiScope]);
 
-  const scopedKpiMaxAbs = useMemo(() => {
-    if (scopedKpiRows.length === 0) return 1;
-    const maxValue = Math.max(...scopedKpiRows.map((row) => Math.abs(row.value)));
+  const groupedKpiRows = useMemo(() => groupScopedKpis(scopedKpiRows), [scopedKpiRows]);
+  const usedKpiGroupRows = useMemo(
+    () => groupedKpiRows.filter((row) => isKpiGroupUsed(row)),
+    [groupedKpiRows]
+  );
+
+  const kpiFamilyOptions = useMemo(
+    () =>
+      Array.from(new Set(usedKpiGroupRows.map((row) => row.family))).sort((a, b) =>
+        formatKpiFamilyLabel(a).localeCompare(formatKpiFamilyLabel(b))
+      ),
+    [usedKpiGroupRows]
+  );
+
+  const kpiVariantOptions = useMemo(
+    () =>
+      (["normalized", "control", "baseline", "delta", "absolute"] as KpiVariant[]).filter((variant) =>
+        usedKpiGroupRows.some((row) => row[variant] !== null)
+      ),
+    [usedKpiGroupRows]
+  );
+
+  const kpiAggregationOptions = useMemo(
+    () =>
+      (["ratio", "daily_average", "total", "instant"] as KpiAggregation[]).filter((aggregation) =>
+        usedKpiGroupRows.some((row) => row.aggregation === aggregation)
+      ),
+    [usedKpiGroupRows]
+  );
+
+  useEffect(() => {
+    if (kpiFamilyFilter !== "all" && !kpiFamilyOptions.includes(kpiFamilyFilter)) {
+      setKpiFamilyFilter("all");
+    }
+  }, [kpiFamilyFilter, kpiFamilyOptions]);
+
+  useEffect(() => {
+    if (kpiVariantFilter !== "all" && !kpiVariantOptions.includes(kpiVariantFilter)) {
+      setKpiVariantFilter("all");
+    }
+  }, [kpiVariantFilter, kpiVariantOptions]);
+
+  useEffect(() => {
+    if (kpiAggregationFilter !== "all" && !kpiAggregationOptions.includes(kpiAggregationFilter)) {
+      setKpiAggregationFilter("all");
+    }
+  }, [kpiAggregationFilter, kpiAggregationOptions]);
+
+  const filteredKpiGroupRows = useMemo(() => {
+    const query = kpiSearch.trim().toLowerCase();
+    return usedKpiGroupRows.filter((row) => {
+      if (kpiFamilyFilter !== "all" && row.family !== kpiFamilyFilter) return false;
+      if (kpiAggregationFilter !== "all" && row.aggregation !== kpiAggregationFilter) return false;
+      if (kpiVariantFilter !== "all" && row[kpiVariantFilter] === null) return false;
+      if (!query) return true;
+      return `${row.label} ${row.comparisonKey} ${row.sourceKeys.join(" ")}`.toLowerCase().includes(query);
+    });
+  }, [usedKpiGroupRows, kpiSearch, kpiFamilyFilter, kpiAggregationFilter, kpiVariantFilter]);
+
+  const coreHighlightRows = useMemo(() => {
+    return CORE_CITYLEARN_KEYS.map((key) => {
+      const row = usedKpiGroupRows.find(
+        (candidate) => candidate.sourceKeys.includes(key) || candidate.comparisonKey === key
+      );
+      const fallbackMeta = buildKpiMeta(key);
+      return {
+        key,
+        title: CORE_HIGHLIGHT_LABELS[key],
+        comparisonKey: row?.comparisonKey || null,
+        value:
+          row?.normalized ??
+          row?.absolute ??
+          row?.control ??
+          row?.baseline ??
+          null,
+        tone: row ? scoreKpiGroupTone(row) : "unknown",
+        tooltip: row?.tooltip || fallbackMeta.tooltip
+      };
+    });
+  }, [usedKpiGroupRows]);
+
+  const deltaBoardRows = useMemo<KpiMetricGroupRow[]>(() => {
+    const query = kpiSearch.trim().toLowerCase();
+    const candidates = usedKpiGroupRows.filter((row) => {
+      if (row.delta === null) return false;
+      if (kpiFamilyFilter !== "all" && row.family !== kpiFamilyFilter) return false;
+      if (kpiAggregationFilter !== "all" && row.aggregation !== kpiAggregationFilter) return false;
+      if (!query) return true;
+      return `${row.label} ${row.comparisonKey}`.toLowerCase().includes(query);
+    });
+
+    const byMetric = new Map<string, KpiMetricGroupRow>();
+    const scoreAggregation = (value: KpiAggregation): number => {
+      if (value === "daily_average") return 2;
+      if (value === "total") return 1;
+      return 0;
+    };
+
+    candidates.forEach((row) => {
+      const existing = byMetric.get(row.boardMetricKey);
+      if (!existing) {
+        byMetric.set(row.boardMetricKey, row);
+        return;
+      }
+      if (scoreAggregation(row.aggregation) > scoreAggregation(existing.aggregation)) {
+        byMetric.set(row.boardMetricKey, row);
+      }
+    });
+
+    return Array.from(byMetric.values()).sort(
+      (left, right) => Math.abs(right.delta || 0) - Math.abs(left.delta || 0)
+    );
+  }, [usedKpiGroupRows, kpiSearch, kpiFamilyFilter, kpiAggregationFilter]);
+
+  const deltaBoardMaxAbs = useMemo(() => {
+    if (deltaBoardRows.length === 0) return 1;
+    const maxValue = Math.max(...deltaBoardRows.map((row) => Math.abs(row.delta || 0)));
     return maxValue > 0 ? maxValue : 1;
-  }, [scopedKpiRows]);
+  }, [deltaBoardRows]);
+
+  const detailedTableRows = useMemo(() => {
+    const highlightedComparisonKeys = new Set(
+      coreHighlightRows
+        .map((row) => row.comparisonKey)
+        .filter((value): value is string => Boolean(value))
+    );
+    const highlightedSourceKeys = new Set<string>(CORE_CITYLEARN_KEYS);
+    const inDeltaBoardComparisonKeys = new Set(deltaBoardRows.map((row) => row.comparisonKey));
+    const inDeltaBoardMetricKeys = new Set(deltaBoardRows.map((row) => row.boardMetricKey));
+    return filteredKpiGroupRows.filter((row) => {
+      const isCoreHighlight =
+        highlightedComparisonKeys.has(row.comparisonKey) ||
+        row.sourceKeys.some((key) => highlightedSourceKeys.has(key));
+      const isCoveredByDeltaBoard =
+        inDeltaBoardComparisonKeys.has(row.comparisonKey) ||
+        inDeltaBoardMetricKeys.has(row.boardMetricKey);
+      return !isCoreHighlight && !isCoveredByDeltaBoard;
+    });
+  }, [coreHighlightRows, deltaBoardRows, filteredKpiGroupRows]);
 
   const filteredKpis = useMemo(() => {
     const query = kpiSearch.trim().toLowerCase();
@@ -1836,28 +2383,67 @@ export function JobDetailPage(): JSX.Element {
     return epoch === null ? undefined : new Date(epoch);
   }, [draftTo]);
 
-  const artifacts = useMemo(
-    () => extractArtifacts(resultQuery.data, infoQuery.data || null),
-    [infoQuery.data, resultQuery.data]
-  );
-  const simulationOutputArtifacts = useMemo(() => {
-    return (simulationIndexQuery.data?.files || []).map((file) => ({
-      name: resolveFileTitle(file.relativePath),
-      kind: file.kind,
-      pathOrUri: `results/simulation_data/${file.relativePath}`
-    }));
-  }, [simulationIndexQuery.data?.files]);
+  const infoRecord = asRecord(infoQuery.data);
+  const detailsRecord = asRecord(infoRecord?.details);
+  const deucalionOptionsRecord =
+    asRecord(infoRecord?.deucalion_options) ||
+    asRecord(detailsRecord?.deucalion_options) ||
+    null;
+
+  const overviewJobName =
+    readStringValue(infoQuery.data?.job_name) ||
+    readStringValue(infoQuery.data?.run_name) ||
+    readStringValue(infoQuery.data?.experiment_name) ||
+    jobId;
+  const experimentName =
+    readStringValue(infoQuery.data?.experiment_name) ||
+    readStringFrom(detailsRecord, ["experiment_name", "experiment"]) ||
+    "-";
+  const runName =
+    readStringValue(infoQuery.data?.run_name) ||
+    readStringFrom(detailsRecord, ["run_name", "run"]) ||
+    "-";
+  const submittedBy =
+    readStringValue(infoQuery.data?.submitted_by) ||
+    readStringFrom(detailsRecord, ["submitted_by", "submitter", "owner", "user"]) ||
+    "-";
+  const targetHost =
+    readStringValue(infoQuery.data?.target_host) ||
+    readStringFrom(detailsRecord, ["target_host", "host", "executor"]) ||
+    "auto";
+
+  const baseConfigPath =
+    readStringValue(infoQuery.data?.config_path) ||
+    readStringFrom(detailsRecord, ["config_path", "config"]) ||
+    null;
+  const resolvedConfigFile =
+    readStringValue(infoQuery.data?.resolved_config_file) ||
+    readStringFrom(detailsRecord, ["resolved_config_file", "resolved_config"]) ||
+    null;
+  const resolvedConfigAvailable =
+    Boolean(infoQuery.data?.resolved_config_available) ||
+    Boolean(resolvedConfigFile) ||
+    isCompleted;
+  const baseConfigLabel = resolveConfigLabel(baseConfigPath);
+  const resolvedConfigLabel = resolvedConfigFile || "config.resolved.yaml";
 
   const updatedAt = pickUpdatedAt(progressQuery.data, infoQuery.data);
   const runDurationSeconds =
-    typeof infoQuery.data?.run_duration_seconds === "number" ? infoQuery.data.run_duration_seconds : null;
+    typeof infoQuery.data?.run_duration_seconds === "number"
+      ? infoQuery.data.run_duration_seconds
+      : readNumberFrom(detailsRecord, ["run_duration_seconds", "run_seconds"]);
   const queueWaitSeconds =
-    typeof infoQuery.data?.queue_wait_seconds === "number" ? infoQuery.data.queue_wait_seconds : null;
+    typeof infoQuery.data?.queue_wait_seconds === "number"
+      ? infoQuery.data.queue_wait_seconds
+      : readNumberFrom(detailsRecord, ["queue_wait_seconds", "queue_seconds", "wait_seconds"]);
   const totalDurationSeconds =
-    typeof infoQuery.data?.total_duration_seconds === "number" ? infoQuery.data.total_duration_seconds : null;
-  const submittedAt = infoQuery.data?.submitted_at;
-  const startedAt = infoQuery.data?.started_at;
-  const finishedAt = infoQuery.data?.finished_at;
+    typeof infoQuery.data?.total_duration_seconds === "number"
+      ? infoQuery.data.total_duration_seconds
+      : readNumberFrom(detailsRecord, ["total_duration_seconds", "total_seconds"]);
+  const submittedAt = infoQuery.data?.submitted_at ?? readDateLikeFrom(detailsRecord, ["submitted_at", "created_at"]);
+  const startedAt = infoQuery.data?.started_at ?? readDateLikeFrom(detailsRecord, ["started_at", "slurm_start_time"]);
+  const finishedAt = infoQuery.data?.finished_at ?? readDateLikeFrom(detailsRecord, ["finished_at", "ended_at"]);
+  const queuedAt = infoQuery.data?.queued_at ?? readDateLikeFrom(detailsRecord, ["queued_at", "slurm_submit_time"]);
   const progressPercent = useMemo(() => {
     const payload = progressQuery.data as Record<string, unknown> | undefined;
     if (!payload) return null;
@@ -1883,6 +2469,58 @@ export function JobDetailPage(): JSX.Element {
     }
     return null;
   }, [progressQuery.data]);
+
+  const imageName =
+    readStringValue(infoQuery.data?.image) ||
+    readStringFrom(infoRecord, ["runtime_image", "container_image", "docker_image", "image_name"]) ||
+    readStringFrom(detailsRecord, ["image", "runtime_image", "container_image", "docker_image"]);
+  const imageTag =
+    readStringFrom(infoRecord, ["image_tag", "tag", "runtime_tag"]) ||
+    readStringFrom(detailsRecord, ["image_tag", "tag"]);
+  const runtimeImage =
+    imageName && imageTag
+      ? `${imageName}:${imageTag}`
+      : imageName || imageTag || "-";
+  const deucalionAccount =
+    readStringFrom(deucalionOptionsRecord, ["account"]) ||
+    readStringFrom(detailsRecord, ["slurm_account", "account"]);
+  const deucalionPartition =
+    readStringFrom(deucalionOptionsRecord, ["partition"]) ||
+    readStringFrom(detailsRecord, ["slurm_partition", "partition"]);
+  const deucalionCommandMode =
+    readStringFrom(deucalionOptionsRecord, ["command_mode", "commandMode"]) ||
+    readStringFrom(detailsRecord, ["command_mode"]);
+  const cpusPerTask =
+    readNumberFrom(deucalionOptionsRecord, ["cpus_per_task", "cpusPerTask"]) ||
+    readNumberFrom(detailsRecord, ["slurm_cpus", "cpus_per_task", "cpus"]);
+  const memPerTaskGb =
+    readNumberFrom(deucalionOptionsRecord, ["mem_gb", "memGb"]) ||
+    readNumberFrom(detailsRecord, ["mem_gb", "memory_gb", "slurm_mem_gb"]);
+  const gpusPerTask =
+    readNumberFrom(deucalionOptionsRecord, ["gpus", "gpu_count", "gpus_per_task"]) ||
+    readNumberFrom(detailsRecord, ["slurm_gpus", "gpus"]);
+  const computeProfile =
+    gpusPerTask && gpusPerTask > 0
+      ? "GPU"
+      : isGpuLikePartition(deucalionPartition)
+        ? "GPU"
+        : targetHost.toLowerCase() === "deucalion"
+          ? "CPU"
+          : null;
+
+  const cpusPerTaskLabel = cpusPerTask !== null ? `${Math.max(0, Math.round(cpusPerTask))}` : "-";
+  const memPerTaskLabel = memPerTaskGb !== null ? `${Math.max(0, memPerTaskGb)} GB` : "-";
+  const gpusPerTaskLabel =
+    gpusPerTask !== null
+      ? `${Math.max(0, Math.round(gpusPerTask))}`
+      : computeProfile === "CPU"
+        ? "0"
+        : "-";
+  const canOpenResolvedConfig = Boolean(jobId && resolvedConfigAvailable);
+  const availableConfigs = configsQuery.data || [];
+
+  const hasOverviewLogs = (overviewLogsQuery.data || "").trim().length > 0;
+
   const mlflowUrl = resolveMlflowRunUrl(infoQuery.data);
   const jobDescription =
     typeof infoQuery.data?.description === "string" && infoQuery.data.description.trim() !== ""
@@ -1898,6 +2536,78 @@ export function JobDetailPage(): JSX.Element {
     const params = new URLSearchParams(searchParams);
     params.set("tab", nextTab);
     setSearchParams(params, { replace: true });
+  }
+
+  function openBaseConfigPreview(configPath: string): void {
+    const normalized = configPath.split(/[\\/]/).filter(Boolean);
+    const baseName = normalized[normalized.length - 1] || configPath;
+    const resolvedName = availableConfigs.find((item) => item === configPath || item === baseName) || baseName;
+    setConfigPreviewLabel(resolveConfigLabel(configPath));
+    setConfigPreviewTarget(resolvedName);
+    setConfigPreviewMode("base");
+    setConfigPreviewJobId("");
+    setConfigPreviewOpen(true);
+  }
+
+  function openResolvedConfigPreview(): void {
+    setConfigPreviewLabel(`Resolved config · ${overviewJobName}`);
+    setConfigPreviewTarget("");
+    setConfigPreviewMode("resolved");
+    setConfigPreviewJobId(jobId);
+    setConfigPreviewOpen(true);
+  }
+
+  async function downloadDeployManifest(): Promise<void> {
+    const manifestData = deployManifestQuery.data;
+    if (!manifestData?.content) return;
+    setDeployActionError(null);
+    setDeployDownloadBusyKey("manifest");
+    try {
+      const blob = new Blob([manifestData.content], { type: "application/json;charset=utf-8" });
+      triggerBlobDownload(blob, "artifact_manifest.json");
+    } catch (error) {
+      setDeployActionError(error instanceof Error ? error.message : "Could not download manifest.");
+    } finally {
+      setDeployDownloadBusyKey(null);
+    }
+  }
+
+  async function downloadDeployModel(artifact: DeployArtifactRow): Promise<void> {
+    if (!artifact.path) return;
+    setDeployActionError(null);
+    setDeployDownloadBusyKey(`model:${artifact.path}`);
+    try {
+      let blob: Blob | null = null;
+      if (artifact.onnxUrl) {
+        const response = await fetch(artifact.onnxUrl);
+        if (!response.ok) {
+          throw new Error(`Download failed (${response.status}).`);
+        }
+        blob = await response.blob();
+      } else {
+        const source = simulationIndexQuery.data as SimulationDataSource | undefined;
+        if (source?.provider === "backend") {
+          const downloaded = await readBackendBundleFileAsBlob(
+            source.jobId,
+            source.session,
+            artifact.path,
+            deployManifestQuery.data?.backendBasePrefix || ""
+          );
+          blob = downloaded?.blob || null;
+        }
+      }
+
+      if (!blob) {
+        throw new Error("ONNX file is not available for download in the current source.");
+      }
+
+      const fileName = artifact.path.split("/").filter(Boolean).pop() || `agent_${artifact.agentIndex ?? "model"}.onnx`;
+      triggerBlobDownload(blob, fileName);
+    } catch (error) {
+      setDeployActionError(error instanceof Error ? error.message : "Could not download ONNX model.");
+    } finally {
+      setDeployDownloadBusyKey(null);
+    }
   }
 
   function isOverlayAssetKind(kind: SimulationTreeNode["kind"]): boolean {
@@ -2106,14 +2816,6 @@ export function JobDetailPage(): JSX.Element {
           ))}
         </nav>
         <div className="job-subnav-actions">
-          {mlflowUrl ? (
-            <a className="btn btn-ghost btn-md" href={mlflowUrl} target="_blank" rel="noreferrer">
-              <span className="btn-icon">
-                <ExternalLink size={14} />
-              </span>
-              <span>MLflow</span>
-            </a>
-          ) : null}
           <Button variant="ghost" iconLeft={<ArrowLeft size={14} />} onClick={() => navigate(backTarget)}>
             Back to Jobs
           </Button>
@@ -2140,109 +2842,215 @@ export function JobDetailPage(): JSX.Element {
       {!isLoading && !statusQuery.isError && !infoQuery.isError && !resultQuery.isError ? (
         <section className="job-detail-body">
           {activeTab === "overview" ? (
-            <section className="panel job-overview-panel">
-              <header className="job-overview-head">
-                <div>
-                  <h2>Overview</h2>
-                  <small className="jobs-meta">
-                    {infoQuery.data?.job_name || infoQuery.data?.run_name || infoQuery.data?.experiment_name || jobId}
-                  </small>
+            <section className="panel job-overview-shell">
+              <header className="job-overview-hero">
+                <div className="job-overview-title-block">
+                  <small className="job-overview-kicker">Training job</small>
+                  <h2>{overviewJobName}</h2>
+                  <small className="job-overview-jobid">{jobId}</small>
                 </div>
-                <StatusPill status={status} />
+                <div className="job-overview-hero-status">
+                  <StatusPill status={status} />
+                  <small className="jobs-meta">Last update: {formatDateTime(updatedAt)}</small>
+                  <div className="job-overview-hero-actions">
+                    <Button
+                      variant="secondary"
+                      iconLeft={<FileText size={14} />}
+                      onClick={() => setOverviewLogsOpen(true)}
+                    >
+                      Open Logs
+                    </Button>
+                    {mlflowUrl ? (
+                      <a className="btn btn-ghost btn-md" href={mlflowUrl} target="_blank" rel="noreferrer">
+                        <span className="btn-icon">
+                          <ExternalLink size={14} />
+                        </span>
+                        <span>MLflow</span>
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
               </header>
-              <section className="job-overview-kpis">
-                <article className="job-overview-card">
-                  <small>Progress</small>
-                  <strong>{progressPercent === null ? "-" : `${Math.round(progressPercent)}%`}</strong>
+
+              <section className="job-overview-metrics">
+                <article className="job-overview-metric">
+                  <small>Submitted by</small>
+                  <strong>{submittedBy}</strong>
+                </article>
+                <article className="job-overview-metric">
+                  <small>Target host</small>
+                  <strong>{targetHost}</strong>
+                </article>
+                <article className="job-overview-metric">
+                  <small>Run duration</small>
+                  <strong>{formatDurationSeconds(runDurationSeconds)}</strong>
+                </article>
+                <article className="job-overview-metric">
+                  <small>Queue wait</small>
+                  <strong>{formatDurationSeconds(queueWaitSeconds)}</strong>
+                </article>
+                <article className="job-overview-metric is-progress">
+                  <div className="job-overview-progress-head">
+                    <small>Progress</small>
+                    <strong>{progressPercent === null ? "-" : `${Math.round(progressPercent)}%`}</strong>
+                  </div>
                   <div className="progress-track is-thin">
                     <div className="progress-fill" style={{ width: `${progressPercent ?? 0}%` }} />
                   </div>
                 </article>
-                <article className="job-overview-card">
-                  <small>Last update</small>
-                  <strong>{formatDateTime(updatedAt)}</strong>
-                </article>
-                <article className="job-overview-card">
-                  <small>Target host</small>
-                  <strong>{infoQuery.data?.target_host || "auto"}</strong>
-                </article>
-                <article className="job-overview-card">
-                  <small>Running time</small>
-                  <strong>{formatDurationSeconds(runDurationSeconds)}</strong>
-                </article>
               </section>
-              <dl className="job-overview-grid">
-                <div>
-                  <dt>Job ID</dt>
-                  <dd>{jobId}</dd>
+
+              <section className="job-overview-columns">
+                <div className="job-overview-column">
+                  <article className="job-overview-section">
+                    <header>
+                      <h3>Identification</h3>
+                    </header>
+                    <dl className="job-overview-list">
+                      <div>
+                        <dt>Experiment name</dt>
+                        <dd>{experimentName}</dd>
+                      </div>
+                      <div>
+                        <dt>Run name</dt>
+                        <dd>{runName}</dd>
+                      </div>
+                      <div>
+                        <dt>Job ID</dt>
+                        <dd>{jobId}</dd>
+                      </div>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{status}</dd>
+                      </div>
+                    </dl>
+                  </article>
+
+                  <article className="job-overview-section">
+                    <header>
+                      <h3>Runtime & Compute</h3>
+                    </header>
+                    <dl className="job-overview-list">
+                      <div>
+                        <dt>Image</dt>
+                        <dd>{runtimeImage}</dd>
+                      </div>
+                      <div>
+                        <dt>Host</dt>
+                        <dd>{targetHost}</dd>
+                      </div>
+                      <div>
+                        <dt>Profile</dt>
+                        <dd>{computeProfile || "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Partition</dt>
+                        <dd>{deucalionPartition || "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Account</dt>
+                        <dd>{deucalionAccount || "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Command mode</dt>
+                        <dd>{deucalionCommandMode || "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>CPUs / task</dt>
+                        <dd>{cpusPerTaskLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>Memory / task</dt>
+                        <dd>{memPerTaskLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>GPUs / task</dt>
+                        <dd>{gpusPerTaskLabel}</dd>
+                      </div>
+                    </dl>
+                  </article>
                 </div>
-                <div>
-                  <dt>Experiment</dt>
-                  <dd>{infoQuery.data?.experiment_name || "-"}</dd>
+
+                <div className="job-overview-column">
+                  <article className="job-overview-section">
+                    <header>
+                      <h3>Timeline & Durations</h3>
+                    </header>
+                    <dl className="job-overview-list">
+                      <div>
+                        <dt>Submitted at</dt>
+                        <dd>{formatDateTime(submittedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Queued at</dt>
+                        <dd>{formatDateTime(queuedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Started at</dt>
+                        <dd>{formatDateTime(startedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Finished at</dt>
+                        <dd>{formatDateTime(finishedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Queue wait</dt>
+                        <dd>{formatDurationSeconds(queueWaitSeconds)}</dd>
+                      </div>
+                      <div>
+                        <dt>Total elapsed</dt>
+                        <dd>{formatDurationSeconds(totalDurationSeconds)}</dd>
+                      </div>
+                    </dl>
+                  </article>
+
+                  <article className="job-overview-section">
+                    <header>
+                      <h3>Configurations</h3>
+                    </header>
+                    <div className="jobs-config-cell job-overview-config-links">
+                      {canOpenResolvedConfig ? (
+                        <strong>
+                          <button
+                            type="button"
+                            className="btn-link jobs-config-link"
+                            onClick={() => openResolvedConfigPreview()}
+                            title="Preview resolved config"
+                          >
+                            {resolvedConfigLabel}
+                          </button>
+                        </strong>
+                      ) : null}
+                      {baseConfigPath ? (
+                        <small>
+                          {canOpenResolvedConfig ? "Based on " : ""}
+                          <button
+                            type="button"
+                            className="btn-link jobs-config-link"
+                            onClick={() => openBaseConfigPreview(baseConfigPath)}
+                            title="Preview experiment config"
+                          >
+                            {baseConfigLabel}
+                          </button>
+                        </small>
+                      ) : null}
+                      {!canOpenResolvedConfig && !baseConfigPath ? <small className="jobs-meta">-</small> : null}
+                    </div>
+                  </article>
                 </div>
-                <div>
-                  <dt>Run name</dt>
-                  <dd>{infoQuery.data?.run_name || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Config path</dt>
-                  <dd>{infoQuery.data?.config_path || "-"}</dd>
-                </div>
-                <div>
-                  <dt>Target host</dt>
-                  <dd>{infoQuery.data?.target_host || "auto"}</dd>
-                </div>
-                <div>
-                  <dt>Submitted at</dt>
-                  <dd>{formatDateTime(submittedAt)}</dd>
-                </div>
-                <div>
-                  <dt>Started at</dt>
-                  <dd>{formatDateTime(startedAt)}</dd>
-                </div>
-                <div>
-                  <dt>Finished at</dt>
-                  <dd>{formatDateTime(finishedAt)}</dd>
-                </div>
-                <div>
-                  <dt>Queue wait</dt>
-                  <dd>{formatDurationSeconds(queueWaitSeconds)}</dd>
-                </div>
-                <div>
-                  <dt>Total time</dt>
-                  <dd>{formatDurationSeconds(totalDurationSeconds)}</dd>
-                </div>
-                <div>
-                  <dt>Simulation data path</dt>
-                  <dd>{simulationDataDir || "Not available"}</dd>
-                </div>
-                <div>
-                  <dt>Simulation data bridge</dt>
-                  <dd>
-                    {simulationDataAvailable === null
-                      ? "Unknown"
-                      : simulationDataAvailable
-                        ? "Available"
-                        : "Unavailable"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Default session</dt>
-                  <dd>{simulationDataSessionDefault || "latest"}</dd>
-                </div>
-                <div>
-                  <dt>KPI source</dt>
-                  <dd>{kpiSource || "-"}</dd>
-                </div>
-              </dl>
+              </section>
+
               {jobDescription ? (
                 <article className="job-overview-description">
                   <h4>Description</h4>
                   <p>{jobDescription}</p>
                 </article>
               ) : null}
-              <h4>Raw metadata</h4>
-              <pre className="json-view compact">{JSON.stringify(infoQuery.data || {}, null, 2)}</pre>
+
+              <details className="job-overview-raw">
+                <summary>Raw metadata</summary>
+                <pre className="json-view compact">{JSON.stringify(infoQuery.data || {}, null, 2)}</pre>
+              </details>
             </section>
           ) : null}
 
@@ -2556,41 +3364,68 @@ export function JobDetailPage(): JSX.Element {
                 </section>
               ) : kpiRows.length > 0 && kpiScopes.length > 0 ? (
                 <div className="kpi-layout">
-                  <aside className="kpi-tree-panel panel">
-                    <header className="sim-tree-head">
-                      <div className="sim-tree-headline">
-                        <small>KPI Scope</small>
-                      </div>
-                    </header>
-                    <ul className="sim-tree-list">
-                      {kpiScopes.map((scope) => (
-                        <li key={scope.id}>
-                          <div className={`sim-tree-row ${selectedKpiScopeId === scope.id ? "is-selected" : ""}`}>
-                            <span className="sim-tree-toggle is-spacer" />
-                            <button
-                              type="button"
-                              className="sim-tree-label"
-                              onClick={() => setSelectedKpiScopeId(scope.id)}
-                            >
-                              <span className="sim-tree-icon">
-                                {scope.group === "community" ? (
-                                  <Factory size={14} />
-                                ) : scope.group === "building" ? (
-                                  <Building2 size={14} />
-                                ) : (
-                                  <FolderTree size={14} />
-                                )}
-                              </span>
-                              <span>{scope.label}</span>
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </aside>
+                  <TimeseriesTree
+                    root={kpiTreeRoot}
+                    communityLabel={kpiCommunityLabel}
+                    helpText="Select a KPI scope. Buildings are single-level entries with no nested entities."
+                    isCommunityActive={selectedKpiScopeId === "community"}
+                    selectedId={selectedKpiScopeId === "community" ? "__community__" : selectedKpiScopeId}
+                    selectedBuildingIds={new Set()}
+                    selectedAssetIds={new Set()}
+                    expanded={new Set()}
+                    onSelectCommunity={() => setSelectedKpiScopeId("community")}
+                    onSelect={(id) => setSelectedKpiScopeId(id)}
+                    onToggle={() => {}}
+                  />
 
                   <section className="kpi-main">
                     <section className="kpi-toolbar">
+                      <div className="kpi-filter-row">
+                        <label className="kpi-filter">
+                          <span>Family</span>
+                          <select
+                            value={kpiFamilyFilter}
+                            onChange={(event) => setKpiFamilyFilter(event.target.value as KpiFamily | "all")}
+                          >
+                            <option value="all">All families</option>
+                            {kpiFamilyOptions.map((option) => (
+                              <option key={option} value={option}>
+                                {formatKpiFamilyLabel(option)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="kpi-filter">
+                          <span>Variant</span>
+                          <select
+                            value={kpiVariantFilter}
+                            onChange={(event) => setKpiVariantFilter(event.target.value as KpiVariant | "all")}
+                          >
+                            <option value="all">All variants</option>
+                            {kpiVariantOptions.map((option) => (
+                              <option key={option} value={option}>
+                                {KPI_VARIANT_LABELS[option]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="kpi-filter">
+                          <span>Aggregation</span>
+                          <select
+                            value={kpiAggregationFilter}
+                            onChange={(event) =>
+                              setKpiAggregationFilter(event.target.value as KpiAggregation | "all")
+                            }
+                          >
+                            <option value="all">All aggregations</option>
+                            {kpiAggregationOptions.map((option) => (
+                              <option key={option} value={option}>
+                                {KPI_AGGREGATION_LABELS[option]}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                       <label className="search-inline kpi-search">
                         <input
                           value={kpiSearch}
@@ -2599,74 +3434,172 @@ export function JobDetailPage(): JSX.Element {
                         />
                       </label>
                       <small>
-                        {scopedKpiRows.length} KPI(s) · scope: {selectedKpiScope?.label || "-"}
+                        {usedKpiGroupRows.length} used KPI group(s) · {detailedTableRows.length} in detail table · scope:{" "}
+                        {selectedKpiScope?.label || "-"}
                       </small>
                     </section>
 
-                    {scopedKpiRows.length === 0 ? (
+                    <section className="kpi-core-highlights panel">
+                      <header className="kpi-section-header">
+                        <h3>Core CityLearn Highlights</h3>
+                        <small>District-first quick read. 1.0 is baseline parity for normalized KPIs.</small>
+                      </header>
+                      <div className="kpi-highlight-grid">
+                        {coreHighlightRows.map((item) => (
+                          <article key={item.key} className={`kpi-highlight-card tone-${item.tone}`}>
+                            <header>
+                              <small>{item.title}</small>
+                              <button type="button" className="kpi-help" aria-label={`${item.title} details`}>
+                                <Info size={13} />
+                                <span role="tooltip" className="kpi-help-tooltip">
+                                  <strong>{item.tooltip.shortDescription}</strong>
+                                  <small>{item.tooltip.formulaShort}</small>
+                                </span>
+                              </button>
+                            </header>
+                            <strong>{formatNumber(item.value)}</strong>
+                            <span className={`kpi-tone kpi-tone-${item.tone}`}>
+                              {item.tone === "better"
+                                ? "Better"
+                                : item.tone === "worse"
+                                  ? "Worse"
+                                  : item.tone === "neutral"
+                                    ? "Neutral"
+                                    : "Unknown"}
+                            </span>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="kpi-delta-board panel">
+                      <header className="kpi-section-header">
+                        <h3>Family Delta Board</h3>
+                        <small>Primary view: Δ = control - baseline (daily preferred, total fallback).</small>
+                      </header>
+                      {deltaBoardRows.length === 0 ? (
+                        <EmptyState
+                          title="No delta KPIs in this filter"
+                          message="Adjust family/aggregation filters or choose another scope."
+                        />
+                      ) : (
+                        <div className="kpi-delta-list">
+                          {deltaBoardRows.map((row) => {
+                            const tone = scoreKpiGroupTone(row);
+                            const magnitude = Math.max(
+                              4,
+                              Math.min(100, (Math.abs(row.delta || 0) / deltaBoardMaxAbs) * 100)
+                            );
+                            return (
+                              <article key={`delta:${row.comparisonKey}`} className="kpi-delta-row">
+                                <header>
+                                  <div className="kpi-delta-title">
+                                    <strong>{row.label}</strong>
+                                    <button type="button" className="kpi-help" aria-label={`${row.label} details`}>
+                                      <Info size={13} />
+                                      <span role="tooltip" className="kpi-help-tooltip">
+                                        <strong>{row.tooltip.shortDescription}</strong>
+                                        <small>{row.tooltip.formulaShort}</small>
+                                      </span>
+                                    </button>
+                                  </div>
+                                  <span className={`kpi-tone kpi-tone-${tone}`}>
+                                    {row.delta === null ? "-" : formatNumber(row.delta)}
+                                    {row.deltaPct === null ? "" : ` (${row.deltaPct.toFixed(2)}%)`}
+                                  </span>
+                                </header>
+                                <div className="kpi-delta-track">
+                                  <span className="kpi-delta-midline" />
+                                  <span
+                                    className={`kpi-delta-fill ${
+                                      (row.delta || 0) >= 0 ? "is-positive" : "is-negative"
+                                    }`}
+                                    style={{ width: `${magnitude}%` }}
+                                  />
+                                </div>
+                                <footer>
+                                  <small>Baseline: {formatNumber(row.baseline)}</small>
+                                  <small>Control: {formatNumber(row.control)}</small>
+                                  <small>{row.unit || "-"}</small>
+                                </footer>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+
+                    {detailedTableRows.length === 0 ? (
                       <EmptyState
-                        title="No KPIs in this scope"
-                        message="No KPI rows match this entity or search filter."
+                        title="No extra KPIs to detail"
+                        message="All active KPI groups in this filter are already shown in highlights/delta board."
                       />
                     ) : (
-                      <>
-                        <div className="kpi-insight-grid">
-                          {scopedKpiRows.map((row) => (
-                            <article key={row.key} className="kpi-insight-card">
-                              <header>
-                                <small>{row.label}</small>
-                                <strong>{formatNumber(row.value)}</strong>
-                              </header>
-                              <div className="kpi-insight-meter">
-                                <span
-                                  style={{
-                                    width: `${Math.max(4, Math.min(100, (Math.abs(row.value) / scopedKpiMaxAbs) * 100))}%`
-                                  }}
-                                />
-                              </div>
-                              <footer>
-                                <small>{row.unit || "-"}</small>
-                                <small>
-                                  {row.breakdown.length === 1
-                                    ? row.breakdown[0]!.entity
-                                    : `${row.breakdown.length} entities`}
-                                </small>
-                              </footer>
-                            </article>
-                          ))}
-                        </div>
-
-                        <div className="job-kpi-table-wrap kpi-list-wrap">
-                          <table className="table">
-                            <thead>
-                              <tr>
-                                <th>KPI</th>
-                                <th>Value</th>
-                                <th>Unit</th>
-                                <th>Entity breakdown</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {scopedKpiRows.map((row) => (
-                                <tr key={`row:${row.key}`}>
-                                  <td>{row.label}</td>
-                                  <td>{formatNumber(row.value)}</td>
+                      <div className="job-kpi-table-wrap kpi-list-wrap">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>KPI</th>
+                              <th>Delta</th>
+                              <th>Delta %</th>
+                              <th>Control</th>
+                              <th>Baseline</th>
+                              <th>Unit</th>
+                              <th>Entity breakdown</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailedTableRows.map((row) => {
+                              const tone = scoreKpiGroupTone(row);
+                              const breakdown =
+                                row.breakdown.delta.length > 0
+                                  ? row.breakdown.delta
+                                  : row.breakdown.control.length > 0
+                                    ? row.breakdown.control
+                                    : row.breakdown.baseline.length > 0
+                                      ? row.breakdown.baseline
+                                      : row.breakdown.normalized.length > 0
+                                        ? row.breakdown.normalized
+                                        : row.breakdown.absolute;
+                              return (
+                                <tr key={`row:${row.comparisonKey}`}>
+                                  <td>
+                                    <div className="kpi-row-label">
+                                      <span>{row.label}</span>
+                                      <button type="button" className="kpi-help" aria-label={`${row.label} details`}>
+                                        <Info size={12} />
+                                        <span role="tooltip" className="kpi-help-tooltip">
+                                          <strong>{row.tooltip.shortDescription}</strong>
+                                          <small>{row.tooltip.formulaShort}</small>
+                                        </span>
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
+                                    {formatNumber(row.delta)}
+                                  </td>
+                                  <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
+                                    {row.deltaPct === null ? "-" : `${row.deltaPct.toFixed(2)}%`}
+                                  </td>
+                                  <td>{formatNumber(row.control)}</td>
+                                  <td>{formatNumber(row.baseline)}</td>
                                   <td>{row.unit || "-"}</td>
                                   <td>
                                     <div className="kpi-breakdown-inline">
-                                      {row.breakdown.map((entry) => (
-                                        <span key={`${row.key}:${entry.entity}`}>
+                                      {breakdown.map((entry) => (
+                                        <span key={`${row.comparisonKey}:${entry.entity}`}>
                                           {entry.entity}: {formatNumber(entry.value)}
                                         </span>
                                       ))}
+                                      {breakdown.length === 0 ? <span>-</span> : null}
                                     </div>
                                   </td>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </section>
                 </div>
@@ -2724,55 +3657,248 @@ export function JobDetailPage(): JSX.Element {
             <section className="panel">
               <h2>Deploy</h2>
               <p className="jobs-meta">
-                Read-only preview of artifacts generated under job results. Deploy actions will be enabled in a next phase.
+                Deployment bundle view: manifest on community scope and ONNX model per building scope.
               </p>
 
-              {simulationIndexQuery.isLoading ? (
-                <section className="datasets-loader-preview">
-                  <EVChargingLoader label="Loading result artifacts..." />
-                </section>
-              ) : null}
-
-              {!simulationIndexQuery.isLoading && simulationOutputArtifacts.length > 0 ? (
-                <>
-                  <h4>Simulation outputs</h4>
-                  <div className="job-artifacts-list">
-                    {simulationOutputArtifacts.map((artifact) => (
-                      <article key={`${artifact.kind}:${artifact.pathOrUri}`} className="job-artifact-item">
-                        <strong>{artifact.name}</strong>
-                        <small>{artifact.kind}</small>
-                        <code>{artifact.pathOrUri}</code>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              ) : null}
-
-              {!simulationIndexQuery.isLoading && artifacts.length > 0 ? (
-                <>
-                  <h4>Detected model/checkpoint references</h4>
-                  <div className="job-artifacts-list">
-                    {artifacts.map((artifact) => (
-                      <article key={`detected:${artifact.kind}:${artifact.pathOrUri}`} className="job-artifact-item">
-                        <strong>{artifact.name}</strong>
-                        <small>{artifact.kind}</small>
-                        <code>{artifact.pathOrUri}</code>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              ) : null}
-
-              {!simulationIndexQuery.isLoading && simulationOutputArtifacts.length === 0 && artifacts.length === 0 ? (
+              {!isCompleted ? (
                 <EmptyState
-                  title="No artifacts detected"
-                  message="No simulation outputs or model/checkpoint references were found for this job."
+                  title="Deploy artifacts available after completion"
+                  message="This job is still running or queued."
                 />
-              ) : null}
+              ) : simulationIndexQuery.isLoading || deployManifestQuery.isLoading ? (
+                <section className="datasets-loader-preview">
+                  <EVChargingLoader label="Loading deployment bundle..." />
+                </section>
+              ) : deployBuildingScopes.length > 0 || Boolean(deployManifestQuery.data) ? (
+                <div className="deploy-layout">
+                  <TimeseriesTree
+                    root={deployTreeRoot}
+                    communityLabel={communityLabel}
+                    helpText="Select Community to inspect manifest. Select a Building to access its ONNX model."
+                    isCommunityActive={selectedDeployScopeId === "community"}
+                    selectedId={selectedDeployScopeId === "community" ? "__community__" : selectedDeployScopeId}
+                    selectedBuildingIds={
+                      selectedDeployScopeId === "community" ? new Set<string>() : new Set<string>([selectedDeployScopeId])
+                    }
+                    selectedAssetIds={new Set()}
+                    expanded={new Set()}
+                    onSelectCommunity={() => setSelectedDeployScopeId("community")}
+                    onSelect={(id) => setSelectedDeployScopeId(id)}
+                    onToggle={() => {}}
+                  />
+
+                  <section className="deploy-main">
+                    {deployActionError ? <p className="error-text">{deployActionError}</p> : null}
+
+                    {selectedDeployScopeId === "community" ? (
+                      deployManifestQuery.data ? (
+                        <article className="deploy-manifest-card panel">
+                          <header className="deploy-card-header">
+                            <div>
+                              <h3>Artifact Manifest</h3>
+                              <small>{deployManifestQuery.data.relativePath}</small>
+                            </div>
+                            <div className="deploy-card-actions">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setDeployManifestPreviewOpen(true)}
+                                iconLeft={<Eye size={14} />}
+                              >
+                                View
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  void downloadDeployManifest();
+                                }}
+                                disabled={deployDownloadBusyKey === "manifest"}
+                                iconLeft={<Download size={14} />}
+                              >
+                                {deployDownloadBusyKey === "manifest" ? "Downloading..." : "Download"}
+                              </Button>
+                            </div>
+                          </header>
+
+                          <div className="deploy-summary-grid">
+                            <article className="deploy-summary-item">
+                              <small>Generated at</small>
+                              <strong>{deployManifestSummary.generatedAt}</strong>
+                            </article>
+                            <article className="deploy-summary-item">
+                              <small>Run name</small>
+                              <strong>{deployManifestSummary.runName}</strong>
+                            </article>
+                            <article className="deploy-summary-item">
+                              <small>Algorithm</small>
+                              <strong>{deployManifestSummary.algorithmName}</strong>
+                            </article>
+                            <article className="deploy-summary-item">
+                              <small>Agent format</small>
+                              <strong>{deployManifestSummary.agentFormat}</strong>
+                            </article>
+                            <article className="deploy-summary-item">
+                              <small>ONNX models</small>
+                              <strong>{deployManifestSummary.modelCount}</strong>
+                            </article>
+                            <article className="deploy-summary-item">
+                              <small>Source</small>
+                              <strong>{deployManifestQuery.data.source}</strong>
+                            </article>
+                          </div>
+                        </article>
+                      ) : (
+                        <EmptyState
+                          title="Manifest not found"
+                          message="No artifact_manifest.json could be resolved for this job."
+                        />
+                      )
+                    ) : selectedDeployBuildingScope ? (
+                      selectedDeployOnnx ? (
+                        <article className="deploy-model-card panel">
+                          <header className="deploy-card-header">
+                            <div>
+                              <h3>{selectedDeployBuildingScope.label}</h3>
+                              <small>ONNX model assigned to this building</small>
+                            </div>
+                          </header>
+
+                          <dl className="deploy-model-list">
+                            <div>
+                              <dt>File</dt>
+                              <dd>{selectedDeployOnnx.path.split("/").filter(Boolean).pop() || selectedDeployOnnx.path}</dd>
+                            </div>
+                            <div>
+                              <dt>Bundle path</dt>
+                              <dd>
+                                <code>{selectedDeployOnnx.path}</code>
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Agent index</dt>
+                              <dd>{selectedDeployOnnx.agentIndex !== null ? selectedDeployOnnx.agentIndex : "-"}</dd>
+                            </div>
+                            <div>
+                              <dt>Format</dt>
+                              <dd>{selectedDeployOnnx.format || "onnx"}</dd>
+                            </div>
+                          </dl>
+
+                          <div className="deploy-card-actions">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => {
+                                void downloadDeployModel(selectedDeployOnnx);
+                              }}
+                              disabled={deployDownloadBusyKey === `model:${selectedDeployOnnx.path}`}
+                              iconLeft={<Download size={14} />}
+                            >
+                              {deployDownloadBusyKey === `model:${selectedDeployOnnx.path}`
+                                ? "Downloading..."
+                                : "Download ONNX"}
+                            </Button>
+                          </div>
+                        </article>
+                      ) : (
+                        <EmptyState
+                          title="No ONNX model for this building"
+                          message="The bundle manifest did not expose an ONNX artifact for the selected building."
+                        />
+                      )
+                    ) : (
+                      <EmptyState
+                        title="No building selected"
+                        message="Select a building on the left to inspect its ONNX model."
+                      />
+                    )}
+                  </section>
+                </div>
+              ) : (
+                <EmptyState
+                  title="No deploy bundle detected"
+                  message="No manifest or building-scoped model artifacts were found for this job."
+                />
+              )}
             </section>
           ) : null}
         </section>
       ) : null}
+
+      <Modal
+        title={`Artifact Manifest · ${jobId || "-"}`}
+        open={deployManifestPreviewOpen}
+        onClose={() => setDeployManifestPreviewOpen(false)}
+        width="lg"
+      >
+        {deployManifestQuery.isLoading ? (
+          <section className="datasets-loader-preview">
+            <EVChargingLoader label="Loading manifest..." />
+          </section>
+        ) : deployManifestQuery.data?.content ? (
+          <pre className="json-view compact">{deployManifestQuery.data.content}</pre>
+        ) : (
+          <p className="jobs-meta">No manifest available for this job.</p>
+        )}
+      </Modal>
+
+      <Modal
+        title={`Logs: ${jobId || "-"}`}
+        open={overviewLogsOpen}
+        onClose={() => setOverviewLogsOpen(false)}
+        width="lg"
+      >
+        <section className="job-logs-modal-content">
+          {(overviewLogsQuery.isLoading || (overviewLogsQuery.isFetching && !hasOverviewLogs)) ? (
+            <section className="datasets-loader-preview">
+              <EVChargingLoader label="Loading logs..." />
+            </section>
+          ) : null}
+          {overviewLogsQuery.isError ? <p className="error-text">Could not load logs for this job.</p> : null}
+          {!overviewLogsQuery.isLoading && !overviewLogsQuery.isError ? (
+            hasOverviewLogs ? (
+              <pre className="json-view compact">{overviewLogsQuery.data}</pre>
+            ) : (
+              <p className="jobs-meta">No logs available yet for this job.</p>
+            )
+          ) : null}
+        </section>
+      </Modal>
+
+      <Modal
+        title={`${configPreviewMode === "resolved" ? "Resolved Config" : "Experiment Config"} preview: ${configPreviewLabel || "-"}`}
+        open={configPreviewOpen}
+        onClose={() => {
+          setConfigPreviewOpen(false);
+          setConfigPreviewTarget("");
+          setConfigPreviewLabel("");
+          setConfigPreviewMode("base");
+          setConfigPreviewJobId("");
+        }}
+        width="lg"
+      >
+        {configPreviewQuery.isLoading ? (
+          <p className="jobs-meta">
+            Loading {configPreviewMode === "resolved" ? "resolved config" : "experiment config"}...
+          </p>
+        ) : null}
+        {configPreviewQuery.isError ? (
+          <p className="error-text">
+            Could not load this {configPreviewMode === "resolved" ? "resolved config" : "experiment config"} preview.
+          </p>
+        ) : null}
+        {configPreviewQuery.data ? (
+          <section className="job-config-preview-modal">
+            <pre className="json-view">{configPreviewQuery.data}</pre>
+          </section>
+        ) : null}
+        {!configPreviewQuery.isLoading && !configPreviewQuery.data ? (
+          <p className="jobs-meta">
+            No {configPreviewMode === "resolved" ? "resolved config" : "experiment config"} data available.
+          </p>
+        ) : null}
+      </Modal>
     </div>
   );
 }

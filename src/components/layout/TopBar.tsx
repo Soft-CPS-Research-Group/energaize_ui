@@ -23,6 +23,8 @@ const AI_TABS = [
   { to: "/app/ai/configs", label: "Experiment Configs" }
 ];
 
+const AI_TABS_WITH_DEPLOY = [...AI_TABS, { to: "/app/ai/deploy", label: "Deploy" }];
+
 export function TopBar(): JSX.Element {
   const { session } = useAuth();
   const { communities, activeCommunity, setActiveCommunity, unreadCount, setMobileTreeOpen } = useUI();
@@ -35,7 +37,13 @@ export function TopBar(): JSX.Element {
   const isPredictor = isPredictorRole(session?.role);
   const isKpiManager = isKpiManagerRole(session?.role);
   const showRoleMockMenu = isPredictor || isKpiManager;
-  const tabs = isTrainingManager ? AI_TABS : showRoleMockMenu ? [] : [{ to: "/app/logs", label: "Logs" }];
+  const tabs = isTrainingManager
+    ? session?.role === "training_manager"
+      ? AI_TABS_WITH_DEPLOY
+      : AI_TABS
+    : showRoleMockMenu
+      ? []
+      : [{ to: "/app/logs", label: "Logs" }];
   const brandLink = isTrainingManager
     ? "/app/ai/jobs"
     : isPredictor
