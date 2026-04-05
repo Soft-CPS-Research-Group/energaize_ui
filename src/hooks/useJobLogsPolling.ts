@@ -36,9 +36,10 @@ export function useJobLogsPolling(jobId: string, options: UseJobLogsPollingOptio
 
   const offsetRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
-  const mountedRef = useRef(true);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
