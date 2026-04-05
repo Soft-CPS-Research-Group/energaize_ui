@@ -271,6 +271,63 @@ export interface JobLogsChunkResponse {
   message?: string | null;
 }
 
+function normalizeLogsChunkResponse(
+  jobId: string,
+  payload: unknown,
+  requestedOffset?: number
+): JobLogsChunkResponse {
+  const safeOffset =
+    typeof requestedOffset === "number" && Number.isFinite(requestedOffset) && requestedOffset >= 0
+      ? Math.floor(requestedOffset)
+      : 0;
+
+  const fallbackFromText = (text: string): JobLogsChunkResponse => ({
+    job_id: jobId,
+    text,
+    next_offset: safeOffset + text.length,
+    truncated: false,
+    available: text.trim().length > 0,
+    message: text.trim().length > 0 ? null : "No logs available yet."
+  });
+
+  if (typeof payload === "string") {
+    const raw = payload.trim();
+    if (raw.startsWith("{") || raw.startsWith("[")) {
+      try {
+        return normalizeLogsChunkResponse(jobId, JSON.parse(payload), requestedOffset);
+      } catch {
+        return fallbackFromText(payload);
+      }
+    }
+    return fallbackFromText(payload);
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return fallbackFromText("");
+  }
+
+  const record = payload as Record<string, unknown>;
+  const text = typeof record.text === "string" ? record.text : "";
+  const nextOffsetRaw =
+    typeof record.next_offset === "number"
+      ? record.next_offset
+      : typeof record.nextOffset === "number"
+        ? record.nextOffset
+        : safeOffset + text.length;
+
+  return {
+    job_id: typeof record.job_id === "string" ? record.job_id : jobId,
+    text,
+    next_offset: Number.isFinite(nextOffsetRaw) ? Math.max(0, Math.floor(nextOffsetRaw)) : safeOffset + text.length,
+    truncated: Boolean(record.truncated),
+    available:
+      typeof record.available === "boolean"
+        ? record.available
+        : text.trim().length > 0,
+    message: typeof record.message === "string" ? record.message : null
+  };
+}
+
 export async function getJobLogsChunk(
   jobId: string,
   params?: { offset?: number; tailLines?: number; maxBytes?: number }
@@ -286,9 +343,10 @@ export async function getJobLogsChunk(
     query.set("max_bytes", String(Math.floor(params.maxBytes)));
   }
   const suffix = query.toString();
-  return http<JobLogsChunkResponse>(
+  const payload = await http<unknown>(
     `/logs-chunk/${encodeURIComponent(jobId)}${suffix ? `?${suffix}` : ""}`
   );
+  return normalizeLogsChunkResponse(jobId, payload, params?.offset);
 }
 
 export async function getJobResolvedConfig(jobId: string): Promise<{ yaml_content: string }> {
