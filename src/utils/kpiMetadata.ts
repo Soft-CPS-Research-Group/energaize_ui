@@ -1,20 +1,39 @@
-import type { KpiImprovementTone } from "../types";
+import type { KpiEntry, KpiImprovementTone } from "../types";
 
 export type KpiFamily =
-  | "core"
-  | "energy_cost"
-  | "ev"
+  | "legacy_normalized"
+  | "extended_core"
+  | "ev_chargers"
   | "pv"
   | "bess"
-  | "community_market"
+  | "phases_service"
+  | "community"
   | "equity"
-  | "reliability_comfort";
+  | "comfort"
+  | "other";
 
 export type KpiVariant = "normalized" | "control" | "baseline" | "delta" | "absolute";
 
 export type KpiAggregation = "total" | "daily_average" | "instant" | "ratio";
 
 export type KpiDirection = "lower_better" | "higher_better" | "neutral" | "unknown";
+
+export const KPI_FAMILY_ORDER: KpiFamily[] = [
+  "legacy_normalized",
+  "extended_core",
+  "ev_chargers",
+  "bess",
+  "pv",
+  "phases_service",
+  "community",
+  "equity",
+  "comfort",
+  "other"
+];
+
+export const KPI_VARIANT_ORDER: KpiVariant[] = ["normalized", "control", "baseline", "delta", "absolute"];
+
+export const KPI_AGGREGATION_ORDER: KpiAggregation[] = ["ratio", "daily_average", "total", "instant"];
 
 export interface KpiTooltipInfo {
   shortDescription: string;
@@ -28,6 +47,7 @@ export interface KpiMetricMeta {
   aggregation: KpiAggregation;
   direction: KpiDirection;
   tooltip: KpiTooltipInfo;
+  canonicalGroupId: string;
   comparisonKey: string;
   boardMetricKey: string;
 }
@@ -41,6 +61,7 @@ export interface KpiMetricInputRow {
 }
 
 export interface KpiMetricGroupRow {
+  canonicalGroupId: string;
   comparisonKey: string;
   boardMetricKey: string;
   label: string;
@@ -65,6 +86,25 @@ export interface KpiMetricGroupRow {
   };
 }
 
+export interface KpiCompareGroupedRow {
+  key: string;
+  canonicalGroupId: string;
+  boardMetricKey: string;
+  label: string;
+  unit?: string;
+  family: KpiFamily;
+  aggregation: KpiAggregation;
+  direction: KpiDirection;
+  entity: string;
+  leftPrimary: number | null;
+  rightPrimary: number | null;
+  leftSecondary: { baseline: number | null; delta: number | null } | null;
+  rightSecondary: { baseline: number | null; delta: number | null } | null;
+  deltaAbs: number | null;
+  deltaPct: number | null;
+  tone: KpiImprovementTone;
+}
+
 const CORE_NORMALIZED_KEYS = new Set([
   "cost_total",
   "carbon_emissions_total",
@@ -77,13 +117,15 @@ const CORE_NORMALIZED_KEYS = new Set([
   "zero_net_energy"
 ]);
 
+const EXTENDED_CORE_PREFIXES = ["cost", "carbon_emissions", "electricity_consumption", "zero_net_energy"];
+
 const EXACT_TOOLTIPS: Record<string, KpiTooltipInfo> = {
   cost_total: {
-    shortDescription: "Normalized electricity cost against the baseline. Lower than 1 means improvement.",
+    shortDescription: "Normalized electricity cost against baseline. Lower than 1 means improvement.",
     formulaShort: "cost_total = control_cost / baseline_cost"
   },
   carbon_emissions_total: {
-    shortDescription: "Normalized carbon emissions against the baseline. Lower than 1 means improvement.",
+    shortDescription: "Normalized carbon emissions against baseline. Lower than 1 means improvement.",
     formulaShort: "carbon_emissions_total = control_emissions / baseline_emissions"
   },
   electricity_consumption_total: {
@@ -125,52 +167,47 @@ const EXACT_TOOLTIPS: Record<string, KpiTooltipInfo> = {
 };
 
 const FAMILY_LABELS: Record<KpiFamily, string> = {
-  core: "Core CityLearn",
-  energy_cost: "Energy & Cost",
-  ev: "Electric Vehicles",
-  pv: "Photovoltaics",
-  bess: "Battery Storage",
-  community_market: "Community Market",
+  legacy_normalized: "Legacy Normalized",
+  extended_core: "Extended Core",
+  ev_chargers: "EV / Chargers",
+  pv: "PV",
+  bess: "BESS",
+  phases_service: "Phases & Service",
+  community: "Community",
   equity: "Equity",
-  reliability_comfort: "Reliability & Comfort"
+  comfort: "Comfort",
+  other: "Other"
 };
 
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function isExtendedCoreKey(key: string): boolean {
+  return EXTENDED_CORE_PREFIXES.some((prefix) =>
+    new RegExp(`^${prefix}_(control|baseline|delta)_`).test(key)
+  );
+}
+
 function inferFamily(key: string): KpiFamily {
-  if (
-    CORE_NORMALIZED_KEYS.has(key) ||
-    key === "daily_peak_average" ||
-    key === "all_time_peak_average" ||
-    key === "ramping_average" ||
-    key === "daily_one_minus_load_factor_average" ||
-    key === "monthly_one_minus_load_factor_average"
-  ) {
-    return "core";
-  }
-  if (
-    key.startsWith("cost_") ||
-    key.startsWith("carbon_emissions_") ||
-    key.startsWith("electricity_consumption_") ||
-    key.startsWith("zero_net_energy")
-  ) {
-    return "energy_cost";
-  }
-  if (key.startsWith("ev_")) return "ev";
+  if (CORE_NORMALIZED_KEYS.has(key)) return "legacy_normalized";
+  if (isExtendedCoreKey(key)) return "extended_core";
+  if (key.startsWith("ev_")) return "ev_chargers";
   if (key.startsWith("pv_")) return "pv";
   if (key.startsWith("bess_")) return "bess";
-  if (key.startsWith("community_")) return "community_market";
+  if (key.startsWith("community_")) return "community";
   if (key.startsWith("equity_")) return "equity";
+  if (key.startsWith("phase_") || key.startsWith("electrical_service_")) return "phases_service";
+  if (key.startsWith("discomfort_") || key.includes("unserved_energy")) return "comfort";
   if (
-    key.startsWith("discomfort_") ||
-    key.startsWith("electrical_service_") ||
-    key.includes("unserved_energy")
+    key.includes("violation") ||
+    key.includes("imbalance") ||
+    key.includes("phase_import_peak") ||
+    key.includes("phase_export_peak")
   ) {
-    return "reliability_comfort";
+    return "phases_service";
   }
-  return "core";
+  return "other";
 }
 
 function inferVariant(key: string): KpiVariant {
@@ -190,18 +227,22 @@ function inferAggregation(key: string): KpiAggregation {
   return "instant";
 }
 
-function inferDirection(key: string): KpiDirection {
+function inferDirection(key: string, family: KpiFamily): KpiDirection {
   if (CORE_NORMALIZED_KEYS.has(key)) return "lower_better";
+
   if (
     key.includes("savings") ||
     key.includes("success_rate") ||
     key.includes("self_consumption_ratio") ||
-    key.includes("local_share_of_") ||
+    key.includes("generation") ||
+    key.includes("local_share") ||
     key.includes("equity_relative_benefit_percent") ||
-    key.includes("equity_bpr")
+    key.includes("equity_bpr") ||
+    key.includes("v2g_export")
   ) {
     return "higher_better";
   }
+
   if (
     key.includes("cost") ||
     key.includes("emission") ||
@@ -216,28 +257,32 @@ function inferDirection(key: string): KpiDirection {
     key.includes("losers_percent") ||
     key.includes("gini") ||
     key.includes("cr20") ||
-    key.includes("unserved")
+    key.includes("unserved") ||
+    key.includes("import")
   ) {
     return "lower_better";
   }
+
+  if (family === "extended_core") return "lower_better";
   return "unknown";
 }
 
 function buildGenericTooltip(meta: {
-  key: string;
   family: KpiFamily;
   variant: KpiVariant;
   aggregation: KpiAggregation;
 }): KpiTooltipInfo {
   const familyHint: Record<KpiFamily, string> = {
-    core: "Core system-level KPI.",
-    energy_cost: "Energy/cost KPI derived from control and baseline trajectories.",
-    ev: "Electric-vehicle service KPI.",
+    legacy_normalized: "Legacy normalized KPI (control/baseline ratio).",
+    extended_core: "Extended core KPI with control, baseline, and delta variants.",
+    ev_chargers: "Electric vehicle and charger service KPI.",
     pv: "Photovoltaic production/export KPI.",
     bess: "Battery usage and aging KPI.",
-    community_market: "Community-market settlement KPI.",
+    phases_service: "Electrical service, phase limits, and imbalance KPI.",
+    community: "Community settlement and sharing KPI.",
     equity: "Benefit-distribution KPI across buildings.",
-    reliability_comfort: "Reliability and comfort KPI."
+    comfort: "Comfort and unserved-energy KPI.",
+    other: "KPI from exported_kpis.csv."
   };
 
   let formula = "value = exported_kpis[KPI]";
@@ -266,11 +311,37 @@ function buildBoardMetricKey(key: string): string {
 }
 
 function variantPriority(variant: KpiVariant): number {
-  if (variant === "delta") return 0;
-  if (variant === "normalized") return 1;
-  if (variant === "control") return 2;
-  if (variant === "baseline") return 3;
-  return 4;
+  const index = KPI_VARIANT_ORDER.indexOf(variant);
+  return index === -1 ? KPI_VARIANT_ORDER.length : index;
+}
+
+export function sortKpiFamilies(families: KpiFamily[]): KpiFamily[] {
+  return [...families].sort((a, b) => {
+    const left = KPI_FAMILY_ORDER.indexOf(a);
+    const right = KPI_FAMILY_ORDER.indexOf(b);
+    if (left === right) return formatKpiFamilyLabel(a).localeCompare(formatKpiFamilyLabel(b));
+    if (left === -1) return 1;
+    if (right === -1) return -1;
+    return left - right;
+  });
+}
+
+export function sortKpiVariants(variants: KpiVariant[]): KpiVariant[] {
+  return [...variants].sort((a, b) => {
+    const left = KPI_VARIANT_ORDER.indexOf(a);
+    const right = KPI_VARIANT_ORDER.indexOf(b);
+    if (left === right) return a.localeCompare(b);
+    return left - right;
+  });
+}
+
+export function sortKpiAggregations(aggregations: KpiAggregation[]): KpiAggregation[] {
+  return [...aggregations].sort((a, b) => {
+    const left = KPI_AGGREGATION_ORDER.indexOf(a);
+    const right = KPI_AGGREGATION_ORDER.indexOf(b);
+    if (left === right) return a.localeCompare(b);
+    return left - right;
+  });
 }
 
 export function formatKpiFamilyLabel(family: KpiFamily): string {
@@ -282,15 +353,9 @@ export function buildKpiMeta(keyRaw: string): KpiMetricMeta {
   const family = inferFamily(key);
   const variant = inferVariant(key);
   const aggregation = inferAggregation(key);
-  const direction = inferDirection(key);
-  const tooltip =
-    EXACT_TOOLTIPS[key] ||
-    buildGenericTooltip({
-      key,
-      family,
-      variant,
-      aggregation
-    });
+  const direction = inferDirection(key, family);
+  const tooltip = EXACT_TOOLTIPS[key] || buildGenericTooltip({ family, variant, aggregation });
+  const canonicalGroupId = stripVariant(key);
 
   return {
     key,
@@ -299,7 +364,8 @@ export function buildKpiMeta(keyRaw: string): KpiMetricMeta {
     aggregation,
     direction,
     tooltip,
-    comparisonKey: stripVariant(key),
+    canonicalGroupId,
+    comparisonKey: canonicalGroupId,
     boardMetricKey: buildBoardMetricKey(key)
   };
 }
@@ -314,12 +380,13 @@ export function groupScopedKpis(rows: KpiMetricInputRow[]): KpiMetricGroupRow[] 
 
   rows.forEach((row) => {
     const meta = buildKpiMeta(row.key);
-    const groupKey = meta.comparisonKey;
+    const groupKey = meta.canonicalGroupId;
     const existing = grouped.get(groupKey);
     const nextLabelPriority = variantPriority(meta.variant);
 
     if (!existing) {
       grouped.set(groupKey, {
+        canonicalGroupId: groupKey,
         comparisonKey: groupKey,
         boardMetricKey: meta.boardMetricKey,
         label: row.label,
@@ -356,6 +423,8 @@ export function groupScopedKpis(rows: KpiMetricInputRow[]): KpiMetricGroupRow[] 
       target.bestLabelPriority = nextLabelPriority;
       target.tooltip = meta.tooltip;
       target.direction = meta.direction;
+      target.family = meta.family;
+      target.aggregation = meta.aggregation;
     }
 
     if (!target.unit && row.unit) target.unit = row.unit;
@@ -381,11 +450,7 @@ export function groupScopedKpis(rows: KpiMetricInputRow[]): KpiMetricGroupRow[] 
   return Array.from(grouped.values())
     .map((item) => {
       const deltaFromPair =
-        item.delta !== null
-          ? item.delta
-          : item.control !== null && item.baseline !== null
-            ? item.control - item.baseline
-            : null;
+        item.delta !== null ? item.delta : item.control !== null && item.baseline !== null ? item.control - item.baseline : null;
       const deltaPct =
         deltaFromPair !== null && item.baseline !== null && Math.abs(item.baseline) > 1e-9
           ? (deltaFromPair / Math.abs(item.baseline)) * 100
@@ -397,24 +462,31 @@ export function groupScopedKpis(rows: KpiMetricInputRow[]): KpiMetricGroupRow[] 
         deltaPct
       };
     })
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => {
+      const familyOrderA = KPI_FAMILY_ORDER.indexOf(a.family);
+      const familyOrderB = KPI_FAMILY_ORDER.indexOf(b.family);
+      if (familyOrderA !== familyOrderB) return familyOrderA - familyOrderB;
+      return a.label.localeCompare(b.label);
+    });
+}
+
+export function scoreKpiDeltaTone(direction: KpiDirection, delta: number | null): KpiImprovementTone {
+  if (delta === null || Number.isNaN(delta)) return "unknown";
+  if (Math.abs(delta) < 1e-9) return "neutral";
+  if (direction === "neutral") return "neutral";
+  if (direction === "unknown") return "unknown";
+  if (direction === "lower_better") return delta < 0 ? "better" : "worse";
+  return delta > 0 ? "better" : "worse";
 }
 
 export function scoreKpiGroupTone(row: Pick<KpiMetricGroupRow, "direction" | "delta" | "normalized">): KpiImprovementTone {
-  if (row.direction === "unknown") return "unknown";
-  if (row.direction === "neutral") return "neutral";
-
-  const delta = row.delta;
-  if (delta !== null) {
-    if (Math.abs(delta) < 1e-9) return "neutral";
-    if (row.direction === "lower_better") return delta < 0 ? "better" : "worse";
-    return delta > 0 ? "better" : "worse";
-  }
+  const deltaTone = scoreKpiDeltaTone(row.direction, row.delta);
+  if (deltaTone !== "unknown") return deltaTone;
 
   if (row.normalized !== null) {
     if (Math.abs(row.normalized - 1) < 1e-9) return "neutral";
     if (row.direction === "lower_better") return row.normalized < 1 ? "better" : "worse";
-    return row.normalized > 1 ? "better" : "worse";
+    if (row.direction === "higher_better") return row.normalized > 1 ? "better" : "worse";
   }
 
   return "unknown";
@@ -428,11 +500,139 @@ export function isKpiGroupUsed(row: KpiMetricGroupRow, epsilon = 1e-9): boolean 
     (row.absolute !== null && Math.abs(row.absolute) > epsilon);
 
   if (hasNonZero) return true;
-
   if (row.normalized !== null && Math.abs(row.normalized - 1) > epsilon) return true;
 
   const hasBreakdownSignal = Object.values(row.breakdown).some((entries) =>
     entries.some((entry) => Math.abs(entry.value) > epsilon)
   );
   return hasBreakdownSignal;
+}
+
+function parseCompareEntry(entry: Pick<KpiEntry, "key" | "source">): { metricKey: string; entity: string } {
+  if (entry.source && entry.source.trim() !== "") {
+    const [metricPart] = entry.key.split("::");
+    return { metricKey: metricPart || entry.key, entity: entry.source };
+  }
+
+  const parts = entry.key.split("::");
+  if (parts.length >= 2) {
+    return { metricKey: parts[0] || entry.key, entity: parts.slice(1).join("::") || "global" };
+  }
+
+  return { metricKey: entry.key, entity: "global" };
+}
+
+function selectPrimaryForCompare(row: KpiMetricGroupRow | null): number | null {
+  if (!row) return null;
+  if (row.family === "extended_core") {
+    return row.control ?? row.absolute ?? row.normalized ?? row.delta ?? row.baseline ?? null;
+  }
+  return row.absolute ?? row.normalized ?? row.control ?? row.delta ?? row.baseline ?? null;
+}
+
+function selectSecondaryForCompare(row: KpiMetricGroupRow | null): { baseline: number | null; delta: number | null } | null {
+  if (!row || row.family !== "extended_core") return null;
+  return {
+    baseline: row.baseline,
+    delta: row.delta
+  };
+}
+
+function groupCompareSide(entries: KpiEntry[]): Map<string, Map<string, KpiMetricGroupRow>> {
+  const byEntity = new Map<string, KpiMetricInputRow[]>();
+
+  entries.forEach((entry) => {
+    const parsed = parseCompareEntry(entry);
+    const rows = byEntity.get(parsed.entity) || [];
+    rows.push({
+      key: parsed.metricKey,
+      label: entry.label,
+      unit: entry.unit,
+      value: entry.value,
+      breakdown: [{ entity: parsed.entity, value: entry.value }]
+    });
+    byEntity.set(parsed.entity, rows);
+  });
+
+  const grouped = new Map<string, Map<string, KpiMetricGroupRow>>();
+  byEntity.forEach((rows, entity) => {
+    const groupedRows = groupScopedKpis(rows);
+    grouped.set(
+      entity,
+      new Map(groupedRows.map((row) => [row.canonicalGroupId, row]))
+    );
+  });
+
+  return grouped;
+}
+
+export function buildGroupedKpiCompareRows(
+  leftEntries: KpiEntry[],
+  rightEntries: KpiEntry[],
+  options?: { showAll?: boolean }
+): KpiCompareGroupedRow[] {
+  const showAll = options?.showAll ?? false;
+  const leftGrouped = groupCompareSide(leftEntries);
+  const rightGrouped = groupCompareSide(rightEntries);
+  const entities = new Set([...leftGrouped.keys(), ...rightGrouped.keys()]);
+
+  const rows: KpiCompareGroupedRow[] = [];
+
+  entities.forEach((entity) => {
+    const leftMap = leftGrouped.get(entity) || new Map<string, KpiMetricGroupRow>();
+    const rightMap = rightGrouped.get(entity) || new Map<string, KpiMetricGroupRow>();
+    const keys = new Set<string>();
+
+    if (showAll) {
+      leftMap.forEach((_, key) => keys.add(key));
+      rightMap.forEach((_, key) => keys.add(key));
+    } else {
+      leftMap.forEach((_, key) => {
+        if (rightMap.has(key)) keys.add(key);
+      });
+    }
+
+    keys.forEach((canonicalGroupId) => {
+      const left = leftMap.get(canonicalGroupId) || null;
+      const right = rightMap.get(canonicalGroupId) || null;
+      const reference = left || right;
+      if (!reference) return;
+
+      const leftPrimary = selectPrimaryForCompare(left);
+      const rightPrimary = selectPrimaryForCompare(right);
+      const deltaAbs = leftPrimary !== null && rightPrimary !== null ? rightPrimary - leftPrimary : null;
+      const deltaPct =
+        leftPrimary !== null && rightPrimary !== null && Math.abs(leftPrimary) > 1e-9
+          ? ((rightPrimary - leftPrimary) / Math.abs(leftPrimary)) * 100
+          : null;
+
+      rows.push({
+        key: `${canonicalGroupId}::${entity}`,
+        canonicalGroupId,
+        boardMetricKey: reference.boardMetricKey,
+        label: reference.label,
+        unit: reference.unit,
+        family: reference.family,
+        aggregation: reference.aggregation,
+        direction: reference.direction,
+        entity,
+        leftPrimary,
+        rightPrimary,
+        leftSecondary: selectSecondaryForCompare(left),
+        rightSecondary: selectSecondaryForCompare(right),
+        deltaAbs,
+        deltaPct,
+        tone: scoreKpiDeltaTone(reference.direction, deltaAbs)
+      });
+    });
+  });
+
+  return rows.sort((a, b) => {
+    const familyOrderA = KPI_FAMILY_ORDER.indexOf(a.family);
+    const familyOrderB = KPI_FAMILY_ORDER.indexOf(b.family);
+    if (familyOrderA !== familyOrderB) return familyOrderA - familyOrderB;
+    const labelSort = a.label.localeCompare(b.label);
+    if (labelSort !== 0) return labelSort;
+    return a.entity.localeCompare(b.entity);
+  });
 }

@@ -3908,6 +3908,25 @@ button {
   gap: 10px;
 }
 
+.kpi-callout {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--line));
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  display: grid;
+  gap: 4px;
+}
+
+.kpi-callout strong {
+  font-size: 0.84rem;
+}
+
+.kpi-callout small {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
 .kpi-section-header {
   display: flex;
   align-items: center;
@@ -4121,6 +4140,12 @@ button {
   gap: 6px;
 }
 
+.kpi-row-meta {
+  display: block;
+  color: var(--text-soft);
+  font-size: 0.7rem;
+}
+
 .kpi-insight-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -4188,6 +4213,23 @@ button {
   font-size: 0.72rem;
   color: var(--text-soft);
   background: color-mix(in srgb, var(--bg-elev-2), transparent 6%);
+}
+
+.job-compare-family-section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.job-compare-family-section .job-compare-table-wrap {
+  border-radius: 9px;
+}
+
+.job-compare-secondary {
+  display: block;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  margin-top: 2px;
 }
 
 .timeseries-workspace {
@@ -4360,6 +4402,19 @@ button {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.timeseries-granularity-row {
+  margin-left: 2px;
+}
+
+.timeseries-granularity-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text-soft);
+  margin-right: 2px;
 }
 
 .segment-btn {
@@ -5283,7 +5338,7 @@ button {
 
 .sim-chart-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -5875,6 +5930,10 @@ button {
   .timeseries-toolbar-right {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .timeseries-granularity-row {
+    margin-left: 0;
   }
 
   .timeseries-range-trigger {

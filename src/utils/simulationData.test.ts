@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildComparedKpis,
   buildSimulationTree,
+  extractChargerStateSamples,
   extractKpisFromSimulationData,
   parseSimulationDataFile,
   scoreKpiImprovement
@@ -71,5 +72,39 @@ describe("simulationData utils", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].deltaAbs).toBe(-20);
     expect(rows[0].tone).toBe("better");
+  });
+
+  it("extracts charger state samples from charger csv", () => {
+    const csv = [
+      "Timestamp,EV Charger State,Incoming EV Name,EV Name,EV SOC-%",
+      "2026-01-01T00:00:00Z,0,,,30",
+      "2026-01-01T00:01:00Z,2,EV_ARRIVING,,31",
+      "2026-01-01T00:02:00Z,1,,EV_CONNECTED,32",
+      "2026-01-01T00:03:00Z,9,,EV_CONNECTED,33"
+    ].join("\n");
+
+    const samples = extractChargerStateSamples(csv);
+    expect(samples).toHaveLength(4);
+    expect(samples[0].chargerState).toBe(0);
+    expect(samples[1].chargerState).toBe(2);
+    expect(samples[1].incomingEvName).toBe("EV_ARRIVING");
+    expect(samples[2].chargerState).toBe(1);
+    expect(samples[2].evName).toBe("EV_CONNECTED");
+    expect(samples[3].chargerState).toBe(0);
+  });
+
+  it("falls back to Is EV Connected when charger state column is missing", () => {
+    const csv = [
+      "Timestamp,Incoming EV Name,Is EV Connected,EV Name",
+      "2026-01-01T00:00:00Z,EV_A,False,",
+      "2026-01-01T00:01:00Z,EV_A,True,EV_A",
+      "2026-01-01T00:02:00Z,,0,"
+    ].join("\n");
+
+    const samples = extractChargerStateSamples(csv);
+    expect(samples).toHaveLength(3);
+    expect(samples[0].chargerState).toBe(0);
+    expect(samples[1].chargerState).toBe(1);
+    expect(samples[2].chargerState).toBe(0);
   });
 });

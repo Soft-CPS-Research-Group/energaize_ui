@@ -9,6 +9,7 @@ import type {
   SimulationSeriesPoint,
   SimulationTreeNode
 } from "../types";
+import type { ChargerStateSample } from "./chargerActivity";
 import Papa from "papaparse";
 
 type UnknownRecord = Record<string, unknown>;
@@ -365,6 +366,75 @@ function resolveTimestampEpoch(value: unknown): number | null {
     if (!Number.isNaN(parsed)) return parsed;
   }
   return null;
+}
+
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeChargerState(value: number): 0 | 1 | 2 {
+  const rounded = Math.round(value);
+  if (rounded === 1 || rounded === 2) return rounded;
+  return 0;
+}
+
+export function extractChargerStateSamples(content: string): ChargerStateSample[] {
+  const rows = parseCsvRows(content);
+  if (rows.length === 0) return [];
+
+  const headers = Object.keys(rows[0] || {});
+  if (headers.length === 0) return [];
+
+  const timestampHeader = headers.find((header) => /timestamp|time|date/i.test(header)) || headers[0];
+  const stateHeader =
+    headers.find((header) => /ev\s*charger\s*state/i.test(header)) ||
+    headers.find((header) => /charger[_\s-]*state/i.test(header));
+  const isConnectedHeader = headers.find((header) => /is[_\s-]*ev[_\s-]*connected/i.test(header));
+  const incomingEvHeader = headers.find((header) => /incoming[_\s-]*ev[_\s-]*name/i.test(header));
+  const evNameHeader = headers.find((header) => /^ev[_\s-]*name$/i.test(header));
+
+  if (!stateHeader && !isConnectedHeader) return [];
+
+  return rows
+    .map((row, index) => {
+      let stateValue = stateHeader ? asNumber(row[stateHeader]) : null;
+      if (stateValue === null && isConnectedHeader) {
+        const rawConnected = row[isConnectedHeader];
+        if (typeof rawConnected === "boolean") {
+          stateValue = rawConnected ? 1 : 0;
+        } else if (typeof rawConnected === "string") {
+          const normalized = rawConnected.trim().toLowerCase();
+          if (normalized === "true" || normalized === "yes" || normalized === "1") {
+            stateValue = 1;
+          } else if (normalized === "false" || normalized === "no" || normalized === "0") {
+            stateValue = 0;
+          } else {
+            const asNumeric = asNumber(rawConnected);
+            stateValue = asNumeric === null ? null : asNumeric > 0 ? 1 : 0;
+          }
+        } else if (typeof rawConnected === "number") {
+          stateValue = rawConnected > 0 ? 1 : 0;
+        }
+      }
+
+      if (stateValue === null) return null;
+
+      const timestampValue = row[timestampHeader] ?? index;
+      const epochMs = resolveTimestampEpoch(timestampValue);
+      if (epochMs === null || !Number.isFinite(epochMs)) return null;
+
+      return {
+        timestamp: String(timestampValue),
+        epochMs,
+        chargerState: normalizeChargerState(stateValue),
+        incomingEvName: incomingEvHeader ? normalizeText(row[incomingEvHeader]) : null,
+        evName: evNameHeader ? normalizeText(row[evNameHeader]) : null
+      } satisfies ChargerStateSample;
+    })
+    .filter((item): item is ChargerStateSample => Boolean(item))
+    .sort((left, right) => left.epochMs - right.epochMs);
 }
 
 export function loadSimulationCsv(content: string, fileRef: string): SimulationSeries[] {

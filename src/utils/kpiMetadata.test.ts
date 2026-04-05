@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildGroupedKpiCompareRows,
   buildKpiMeta,
   groupScopedKpis,
   isKpiGroupUsed,
@@ -7,24 +8,28 @@ import {
 } from "./kpiMetadata";
 
 describe("kpiMetadata", () => {
-  it("parses family/variant/aggregation for known keys", () => {
+  it("parses V2 family/variant/aggregation and canonical ids", () => {
     const delta = buildKpiMeta("cost_delta_daily_average_eur");
-    expect(delta.family).toBe("energy_cost");
+    expect(delta.family).toBe("extended_core");
     expect(delta.variant).toBe("delta");
     expect(delta.aggregation).toBe("daily_average");
     expect(delta.direction).toBe("lower_better");
+    expect(delta.canonicalGroupId).toBe("cost_daily_average_eur");
 
     const ev = buildKpiMeta("ev_departure_success_rate");
-    expect(ev.family).toBe("ev");
+    expect(ev.family).toBe("ev_chargers");
     expect(ev.variant).toBe("absolute");
     expect(ev.aggregation).toBe("ratio");
     expect(ev.direction).toBe("higher_better");
 
-    const core = buildKpiMeta("daily_peak_average");
-    expect(core.family).toBe("core");
-    expect(core.variant).toBe("normalized");
-    expect(core.aggregation).toBe("ratio");
-    expect(core.direction).toBe("lower_better");
+    const legacy = buildKpiMeta("daily_peak_average");
+    expect(legacy.family).toBe("legacy_normalized");
+    expect(legacy.variant).toBe("normalized");
+    expect(legacy.aggregation).toBe("ratio");
+
+    expect(buildKpiMeta("phase_import_peak_kw_l1").family).toBe("phases_service");
+    expect(buildKpiMeta("discomfort_hot_delta_average").family).toBe("comfort");
+    expect(buildKpiMeta("mystery_kpi").family).toBe("other");
   });
 
   it("returns tooltip fallback when no exact mapping exists", () => {
@@ -55,6 +60,7 @@ describe("kpiMetadata", () => {
     expect(grouped[0]?.delta).toBe(2);
     expect(grouped[0]?.deltaPct).toBeCloseTo(25, 8);
     expect(grouped[0]?.comparisonKey).toBe("cost_daily_average_eur");
+    expect(grouped[0]?.canonicalGroupId).toBe("cost_daily_average_eur");
     expect(grouped[0]?.boardMetricKey).toBe("cost_eur");
   });
 
@@ -139,5 +145,52 @@ describe("kpiMetadata", () => {
     ])[0];
     expect(active).toBeTruthy();
     expect(isKpiGroupUsed(active!)).toBe(true);
+  });
+
+  it("builds grouped compare rows with extended-core primary and secondary values", () => {
+    const left = [
+      { key: "cost_control_daily_average_eur::District", label: "Cost Control Daily Average Eur - District", source: "District", value: 10, unit: "€" },
+      { key: "cost_baseline_daily_average_eur::District", label: "Cost Baseline Daily Average Eur - District", source: "District", value: 8, unit: "€" },
+      { key: "cost_delta_daily_average_eur::District", label: "Cost Delta Daily Average Eur - District", source: "District", value: 2, unit: "€" },
+      { key: "ev_departure_success_rate::District", label: "Ev Departure Success Rate - District", source: "District", value: 0.8, unit: "%" }
+    ];
+
+    const right = [
+      { key: "cost_control_daily_average_eur::District", label: "Cost Control Daily Average Eur - District", source: "District", value: 9, unit: "€" },
+      { key: "cost_baseline_daily_average_eur::District", label: "Cost Baseline Daily Average Eur - District", source: "District", value: 8, unit: "€" },
+      { key: "cost_delta_daily_average_eur::District", label: "Cost Delta Daily Average Eur - District", source: "District", value: 1, unit: "€" },
+      { key: "ev_departure_success_rate::District", label: "Ev Departure Success Rate - District", source: "District", value: 0.9, unit: "%" }
+    ];
+
+    const rows = buildGroupedKpiCompareRows(left, right);
+    const cost = rows.find((row) => row.canonicalGroupId === "cost_daily_average_eur" && row.entity === "District");
+    const ev = rows.find((row) => row.canonicalGroupId === "ev_departure_success_rate" && row.entity === "District");
+
+    expect(cost).toBeTruthy();
+    expect(cost?.family).toBe("extended_core");
+    expect(cost?.leftPrimary).toBe(10);
+    expect(cost?.rightPrimary).toBe(9);
+    expect(cost?.leftSecondary?.baseline).toBe(8);
+    expect(cost?.leftSecondary?.delta).toBe(2);
+    expect(cost?.deltaAbs).toBe(-1);
+    expect(cost?.tone).toBe("better");
+
+    expect(ev).toBeTruthy();
+    expect(ev?.family).toBe("ev_chargers");
+    expect(ev?.leftSecondary).toBeNull();
+    expect(ev?.deltaAbs).toBeCloseTo(0.1, 8);
+    expect(ev?.tone).toBe("better");
+  });
+
+  it("keeps rows with missing side when showAll=true", () => {
+    const left = [
+      { key: "community_local_import_total_kwh::District", label: "Community Local Import Total Kwh - District", source: "District", value: 120, unit: "kWh" }
+    ];
+
+    const rows = buildGroupedKpiCompareRows(left, [], { showAll: true });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.leftPrimary).toBe(120);
+    expect(rows[0]?.rightPrimary).toBeNull();
+    expect(rows[0]?.deltaAbs).toBeNull();
   });
 });

@@ -25,6 +25,8 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -64,6 +66,7 @@ import type {
   KpiEntry,
   KpiMatrixRow,
   SimulationSeries,
+  SimulationSeriesPoint,
   SimulationTreeNode
 } from "../../types";
 import { extractKpis } from "../../utils/jobResult";
@@ -73,6 +76,9 @@ import {
   formatKpiFamilyLabel,
   groupScopedKpis,
   isKpiGroupUsed,
+  sortKpiAggregations,
+  sortKpiFamilies,
+  sortKpiVariants,
   scoreKpiGroupTone,
   type KpiAggregation,
   type KpiFamily,
@@ -83,19 +89,34 @@ import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import {
   buildSimulationTree,
   extractKpisFromSimulationData,
+  extractChargerStateSamples,
   filterFileRefsByEpisode,
   flattenTreeNodes,
   latestEpisode,
   listEpisodes,
   loadSimulationCsv
 } from "../../utils/simulationData";
+import {
+  deriveChargerActivityOverlay,
+  type ChargerStateSample,
+  type ChargerTransitionEvent
+} from "../../utils/chargerActivity";
+import {
+  buildChartRowsWithGranularity,
+  inferSeriesResolutionMs,
+  resolveAvailableGranularityOptions,
+  resolveAxisTickStepMs,
+  resolveMinimumGranularityMs,
+  type GranularityMs,
+  type TimeseriesChartRow,
+  type TimeseriesPreset
+} from "../../utils/timeseriesGranularity";
 import { formatDateTime, formatDurationSeconds } from "../../utils/time";
 import { DayPicker } from "react-day-picker";
 
 const DETAIL_TABS = ["overview", "timeseries", "kpis", "deploy"] as const;
 type DetailTab = (typeof DETAIL_TABS)[number];
-
-type TimePreset = "all" | "1h" | "6h" | "24h" | "7d" | "30d";
+type TimePreset = TimeseriesPreset;
 type CustomRangeSource = "zoom" | "picker" | null;
 
 interface ZoomHistoryEntry {
@@ -111,12 +132,9 @@ interface TimeseriesBundle {
   fileRef: string;
   title: string;
   series: SimulationSeries[];
-}
-
-interface ChartRow {
-  x: string;
-  epochMs: number | null;
-  [key: string]: number | string | null;
+  chargerActivity?: {
+    samples: ChargerStateSample[];
+  };
 }
 
 interface ChartMouseState {
@@ -415,6 +433,175 @@ function isPriceSeries(entry: SimulationSeries): boolean {
   );
 }
 
+function isSocSeries(entry: Pick<SimulationSeries, "id" | "metric" | "unit">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return (
+    probe.includes("soc") ||
+    probe.includes("state_of_charge") ||
+    probe.includes("state of charge") ||
+    probe.includes("estimated_soc") ||
+    probe.includes("required_soc")
+  );
+}
+
+function shouldRenderAsLine(entry: SimulationSeries): boolean {
+  return isPriceSeries(entry) || isSocSeries(entry);
+}
+
+function isChargerFileRef(fileRef: string): boolean {
+  return /exported_data_building_\d+_charger_/i.test(fileRef);
+}
+
+function isElectricVehicleFileRef(fileRef: string): boolean {
+  return /exported_data_electric_vehicle_\d+_ep\d+\.csv$/i.test(fileRef);
+}
+
+function isChargerConsumptionSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return probe.includes("charger") && probe.includes("consumption") && !probe.includes("net");
+}
+
+function isChargerProductionSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return probe.includes("charger") && probe.includes("production") && !probe.includes("net");
+}
+
+function isChargerNetSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return probe.includes("charger_net");
+}
+
+function isChargerStateSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return (
+    probe.includes("ev charger state") ||
+    (probe.includes("charger") && probe.includes("state"))
+  );
+}
+
+function buildChargerSamplesFromStateSeries(
+  stateSeries: SimulationSeries | undefined
+): ChargerStateSample[] {
+  if (!stateSeries) return [];
+  return stateSeries.points
+    .filter((point) => Number.isFinite(point.value) && typeof point.epochMs === "number")
+    .map((point) => {
+      let chargerState: 0 | 1 | 2 = 0;
+      const rounded = Math.round(point.value);
+      if (rounded === 1 || rounded === 2) chargerState = rounded;
+      return {
+        timestamp: point.timestamp,
+        epochMs: point.epochMs as number,
+        chargerState,
+        incomingEvName: null,
+        evName: null
+      } satisfies ChargerStateSample;
+    });
+}
+
+function isChargingActionSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return probe.includes("charging action") || probe.includes("charging_action");
+}
+
+function isBatteryCapacitySeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return probe.includes("battery capacity") || probe.includes("battery_capacity");
+}
+
+function mergeChargerNetSeries(fileRef: string, series: SimulationSeries[]): SimulationSeries[] {
+  if (!isChargerFileRef(fileRef) || series.length < 2) return series;
+
+  const consumption = series.find((entry) => isChargerConsumptionSeries(entry));
+  const production = series.find((entry) => isChargerProductionSeries(entry));
+  if (!consumption || !production) return series;
+
+  type ChargerNetAccumulator = {
+    timestamp: string;
+    epochMs: number | null;
+    consumption: number;
+    production: number;
+  };
+
+  const pointsMap = new Map<string, ChargerNetAccumulator>();
+  const pointKey = (point: SimulationSeriesPoint): string =>
+    typeof point.epochMs === "number" ? `e:${point.epochMs}` : `t:${point.timestamp}`;
+  const ensureAcc = (point: SimulationSeriesPoint): ChargerNetAccumulator => {
+    const key = pointKey(point);
+    const existing = pointsMap.get(key);
+    if (existing) return existing;
+    const created: ChargerNetAccumulator = {
+      timestamp: point.timestamp,
+      epochMs: point.epochMs,
+      consumption: 0,
+      production: 0
+    };
+    pointsMap.set(key, created);
+    return created;
+  };
+
+  consumption.points.forEach((point) => {
+    if (!Number.isFinite(point.value)) return;
+    const acc = ensureAcc(point);
+    // Requirement: treat -1 in charger consumption as 0 before net calculation.
+    acc.consumption = Math.abs(point.value + 1) < 1e-9 ? 0 : point.value;
+  });
+  production.points.forEach((point) => {
+    if (!Number.isFinite(point.value)) return;
+    const acc = ensureAcc(point);
+    // Requirement: treat -1 in charger production as 0 before net calculation.
+    acc.production = Math.abs(point.value + 1) < 1e-9 ? 0 : point.value;
+  });
+
+  const mergedPoints = Array.from(pointsMap.values())
+    .map((item) => ({
+      timestamp: item.timestamp,
+      epochMs: item.epochMs,
+      value: item.consumption - item.production
+    }))
+    .sort((left, right) => {
+      const leftEpoch = typeof left.epochMs === "number" ? left.epochMs : Number.POSITIVE_INFINITY;
+      const rightEpoch = typeof right.epochMs === "number" ? right.epochMs : Number.POSITIVE_INFINITY;
+      if (leftEpoch !== rightEpoch) return leftEpoch - rightEpoch;
+      return left.timestamp.localeCompare(right.timestamp);
+    });
+
+  if (mergedPoints.length < 2) return series;
+
+  const netSeries: SimulationSeries = {
+    id: `${fileRef}::charger_net`,
+    fileRef,
+    metric: "charger_net",
+    unit: consumption.unit || production.unit,
+    points: mergedPoints
+  };
+
+  const filtered = series.filter((entry) => entry.id !== consumption.id && entry.id !== production.id);
+  return [...filtered, netSeries];
+}
+
+function breakLineGaps(
+  rows: TimeseriesChartRow[],
+  lineSeriesIds: string[],
+  _granularityMs: number
+): TimeseriesChartRow[] {
+  if (rows.length === 0 || lineSeriesIds.length === 0) return rows;
+
+  // Ensure line-series holes are explicit nulls without creating synthetic timestamps
+  // that could alter unrelated series.
+  return rows.map((row) => {
+    let changed = false;
+    const next: TimeseriesChartRow = { ...row };
+    lineSeriesIds.forEach((seriesId) => {
+      if (next[seriesId] === undefined) {
+        next[seriesId] = null;
+        changed = true;
+      }
+    });
+    return changed ? next : row;
+  });
+}
+
 function isPredictedPriceSeries(entry: SimulationSeries): boolean {
   if (!isPriceSeries(entry)) return false;
   const probe = `${entry.metric} ${entry.id}`.toLowerCase();
@@ -453,6 +640,88 @@ function isNonShiftableSeries(entry: SimulationSeries): boolean {
 
 function isCommunityFileRef(fileRef: string): boolean {
   return /exported_data_community_ep\d+\.csv$/i.test(fileRef);
+}
+
+function isEvSocSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return (
+    isSocSeries(entry) &&
+    (probe.includes("ev") || probe.includes("electric_vehicle") || probe.includes("vehicle"))
+  );
+}
+
+function isMainEvSocSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  return isEvSocSeries(entry) && !isRequiredSocSeries(entry) && !isEstimatedSocSeries(entry);
+}
+
+function isPercentLikeSocSeries(entry: Pick<SimulationSeries, "metric" | "unit">): boolean {
+  const metricKey = entry.metric.toLowerCase();
+  const unitKey = (entry.unit || "").toLowerCase();
+  return (
+    unitKey.includes("%") ||
+    unitKey.includes("percent") ||
+    metricKey.includes("%") ||
+    metricKey.includes("pct") ||
+    metricKey.includes("percent")
+  );
+}
+
+function keepPreferredEvSocSeries(series: SimulationSeries[]): SimulationSeries[] {
+  const mainEvSoc = series.filter((entry) => isMainEvSocSeries(entry));
+  if (mainEvSoc.length <= 1) return series;
+
+  const preferred =
+    mainEvSoc.find((entry) => isPercentLikeSocSeries(entry)) ||
+    mainEvSoc.find((entry) => !entry.metric.toLowerCase().includes("kwh")) ||
+    mainEvSoc[0];
+
+  return series.filter((entry) => !isMainEvSocSeries(entry) || entry.id === preferred.id);
+}
+
+function isRequiredSocSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return isSocSeries(entry) && probe.includes("required");
+}
+
+function isEstimatedSocSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
+  const probe = `${entry.metric} ${entry.id}`.toLowerCase();
+  return isSocSeries(entry) && probe.includes("estimated");
+}
+
+function sanitizeSeriesForChart(series: SimulationSeries[]): SimulationSeries[] {
+  return series.map((entry) => {
+    let points = entry.points;
+    let changed = false;
+
+    if (isRequiredSocSeries(entry) || isEstimatedSocSeries(entry)) {
+      const filteredPoints = points.filter((point) => Number.isFinite(point.value) && point.value > 0);
+      if (filteredPoints.length !== points.length) {
+        points = filteredPoints;
+        changed = true;
+      }
+    }
+
+    if (isSocSeries(entry)) {
+      const finiteValues = points
+        .map((point) => point.value)
+        .filter((value) => Number.isFinite(value));
+      if (finiteValues.length > 0) {
+        const maxValue = Math.max(...finiteValues);
+        const minValue = Math.min(...finiteValues);
+        // Normalize fractional SoC (0..1) to percentage scale (0..100).
+        if (maxValue <= 1.000001 && minValue >= 0) {
+          points = points.map((point) => ({ ...point, value: point.value * 100 }));
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) return entry;
+    return {
+      ...entry,
+      points
+    };
+  });
 }
 
 function buildYAxisTicks(domain: [number, number] | null): number[] | undefined {
@@ -545,41 +814,6 @@ function resolveActiveEpoch(state: ChartMouseState | undefined): number | null {
   return null;
 }
 
-function buildChartRows(
-  series: SimulationSeries[],
-  visibleSeriesIds: string[],
-  rangeStart: number | null,
-  rangeEnd: number | null
-): ChartRow[] {
-  const map = new Map<string, ChartRow>();
-  const visibleSet = new Set(visibleSeriesIds);
-
-  series.forEach((entry) => {
-    if (!visibleSet.has(entry.id)) return;
-
-    entry.points.forEach((point) => {
-      const epoch = point.epochMs;
-      if (epoch === null) return;
-      if (rangeStart !== null && epoch !== null && epoch < rangeStart) return;
-      if (rangeEnd !== null && epoch !== null && epoch > rangeEnd) return;
-
-      const rowKey = String(epoch);
-      const existing = map.get(rowKey) || {
-        x: point.timestamp,
-        epochMs: epoch
-      };
-      existing[entry.id] = point.value;
-      map.set(rowKey, existing);
-    });
-  });
-
-  return Array.from(map.values()).sort((a, b) => {
-    const left = typeof a.epochMs === "number" ? a.epochMs : 0;
-    const right = typeof b.epochMs === "number" ? b.epochMs : 0;
-    return left - right;
-  });
-}
-
 function alignToBoundary(epochMs: number, stepMs: number): number {
   const date = new Date(epochMs);
   if (stepMs >= DAY_MS) {
@@ -622,16 +856,6 @@ function alignPresetWindowStart(epochMs: number, preset: TimePreset): number {
 
   date.setMinutes(0, 0, 0);
   return date.getTime();
-}
-
-function resolveTickStepMs(preset: TimePreset, rangeStart: number | null, rangeEnd: number | null): number {
-  if (preset === "7d" || preset === "30d") return DAY_MS;
-  if (preset === "24h" || preset === "6h" || preset === "1h") return HOUR_MS;
-  if (rangeStart === null || rangeEnd === null) return HOUR_MS;
-  const span = rangeEnd - rangeStart;
-  if (span <= 2 * DAY_MS) return HOUR_MS;
-  if (span <= 7 * DAY_MS) return 6 * HOUR_MS;
-  return DAY_MS;
 }
 
 function buildAxisTicks(
@@ -1050,10 +1274,12 @@ function TimeInput24({
 function TimeseriesChart({
   title,
   series,
+  chargerActivitySamples,
   visibleSeriesIds,
   onToggleSeries,
   rangeStart,
   rangeEnd,
+  granularityMs,
   xTicks,
   xTickStepMs,
   onZoomCommit,
@@ -1063,10 +1289,12 @@ function TimeseriesChart({
 }: {
   title: string;
   series: SimulationSeries[];
+  chargerActivitySamples?: ChargerStateSample[];
   visibleSeriesIds: string[];
   onToggleSeries: (seriesId: string) => void;
   rangeStart: number | null;
   rangeEnd: number | null;
+  granularityMs: GranularityMs;
   xTicks: number[];
   xTickStepMs: number;
   onZoomCommit: (fromEpoch: number, toEpoch: number) => void;
@@ -1074,10 +1302,58 @@ function TimeseriesChart({
   isPrimary?: boolean;
   isWide?: boolean;
 }): JSX.Element {
-  const rows = useMemo(
-    () => buildChartRows(series, visibleSeriesIds, rangeStart, rangeEnd),
-    [rangeEnd, rangeStart, series, visibleSeriesIds]
+  const chartSeries = useMemo(() => sanitizeSeriesForChart(series), [series]);
+  const isChargerChart = useMemo(
+    () => chartSeries.some((entry) => isChargerFileRef(entry.fileRef)),
+    [chartSeries]
   );
+  const rows = useMemo<TimeseriesChartRow[]>(
+    () =>
+      buildChartRowsWithGranularity(
+        chartSeries,
+        visibleSeriesIds,
+        rangeStart,
+        rangeEnd,
+        granularityMs
+      ),
+    [chartSeries, granularityMs, rangeEnd, rangeStart, visibleSeriesIds]
+  );
+  const lineSeriesIds = useMemo(
+    () =>
+      chartSeries
+        .filter((entry) => visibleSeriesIds.includes(entry.id) && shouldRenderAsLine(entry))
+        .map((entry) => entry.id),
+    [chartSeries, visibleSeriesIds]
+  );
+  const chartRows = useMemo(
+    () => breakLineGaps(rows, lineSeriesIds, granularityMs),
+    [granularityMs, lineSeriesIds, rows]
+  );
+  const chargerOverlay = useMemo(() => {
+    if (!isChargerChart || !chargerActivitySamples || chargerActivitySamples.length === 0) {
+      return {
+        buckets: [],
+        events: [],
+        intervals: []
+      };
+    }
+
+    return deriveChargerActivityOverlay({
+      samples: chargerActivitySamples,
+      granularityMs,
+      rangeStart,
+      rangeEnd
+    });
+  }, [chargerActivitySamples, granularityMs, isChargerChart, rangeEnd, rangeStart]);
+  const chargerEventsByEpoch = useMemo(() => {
+    const grouped = new Map<number, ChargerTransitionEvent[]>();
+    chargerOverlay.events.forEach((event) => {
+      const existing = grouped.get(event.epochMs) || [];
+      existing.push(event);
+      grouped.set(event.epochMs, existing);
+    });
+    return grouped;
+  }, [chargerOverlay.events]);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [zoomDragEpoch, setZoomDragEpoch] = useState<{ start: number; end: number } | null>(null);
   const [zoomOverlayPx, setZoomOverlayPx] = useState<{
@@ -1089,14 +1365,20 @@ function TimeseriesChart({
 
   const colorBySeriesId = useMemo(() => {
     return new Map(
-      series.map((entry, index) => [entry.id, CHART_COLORS[index % CHART_COLORS.length]])
+      chartSeries.map((entry, index) => [entry.id, CHART_COLORS[index % CHART_COLORS.length]])
     );
-  }, [series]);
+  }, [chartSeries]);
 
-  const visibleSeries = series.filter((entry) => visibleSeriesIds.includes(entry.id));
+  const visibleSeries = chartSeries.filter((entry) => visibleSeriesIds.includes(entry.id));
+  type ChartTooltipPayloadRow = {
+    dataKey?: unknown;
+    color?: string;
+    value?: unknown;
+    name?: unknown;
+  };
   const unitOrder = useMemo(() => {
-    return Array.from(new Set(series.map((entry) => entry.unit || "value")));
-  }, [series]);
+    return Array.from(new Set(chartSeries.map((entry) => entry.unit || "value")));
+  }, [chartSeries]);
   const primaryUnit = unitOrder[0] || "value";
   const secondaryUnit = unitOrder[1] || null;
 
@@ -1106,15 +1388,22 @@ function TimeseriesChart({
     return "left";
   };
 
-  const computeDomain = (axisSeries: SimulationSeries[]): [number, number] | null => {
+  const shouldRenderAsBar = (entry: SimulationSeries): boolean => {
+    if (shouldRenderAsLine(entry)) return false;
+    if (isChargerChart) return isChargerNetSeries(entry) || isChargingActionSeries(entry);
+    return true;
+  };
+
+  const computeDomain = (axisSeriesIds: string[]): [number, number] | null => {
     let min = Number.POSITIVE_INFINITY;
     let max = Number.NEGATIVE_INFINITY;
 
-    axisSeries.forEach((entry) => {
-      entry.points.forEach((point) => {
-        if (!Number.isFinite(point.value)) return;
-        min = Math.min(min, point.value);
-        max = Math.max(max, point.value);
+    chartRows.forEach((row) => {
+      axisSeriesIds.forEach((seriesId) => {
+        const value = row[seriesId];
+        if (typeof value !== "number" || !Number.isFinite(value)) return;
+        min = Math.min(min, value);
+        max = Math.max(max, value);
       });
     });
 
@@ -1131,23 +1420,40 @@ function TimeseriesChart({
   const leftDomain = useMemo(
     () =>
       computeDomain(
-        series.filter(
+        chartSeries.filter(
           (entry) => visibleSeriesIds.includes(entry.id) && axisIdForSeries(entry) === "left"
-        )
+        ).map((entry) => entry.id)
       ),
-    [rangeEnd, rangeStart, secondaryUnit, series, visibleSeriesIds]
+    [chartRows, chartSeries, secondaryUnit, visibleSeriesIds]
   );
   const rightDomain = useMemo(
     () =>
       secondaryUnit
         ? computeDomain(
-            series.filter(
+            chartSeries.filter(
               (entry) => visibleSeriesIds.includes(entry.id) && axisIdForSeries(entry) === "right"
-            )
+            ).map((entry) => entry.id)
           )
         : null,
-    [rangeEnd, rangeStart, secondaryUnit, series, visibleSeriesIds]
+    [chartRows, chartSeries, secondaryUnit, visibleSeriesIds]
   );
+  const leftAxisSeries = useMemo(
+    () =>
+      chartSeries.filter(
+        (entry) => visibleSeriesIds.includes(entry.id) && axisIdForSeries(entry) === "left"
+      ),
+    [chartSeries, secondaryUnit, visibleSeriesIds]
+  );
+  const rightAxisSeries = useMemo(
+    () =>
+      chartSeries.filter(
+        (entry) => visibleSeriesIds.includes(entry.id) && axisIdForSeries(entry) === "right"
+      ),
+    [chartSeries, secondaryUnit, visibleSeriesIds]
+  );
+  const leftSocAxis = leftAxisSeries.length > 0 && leftAxisSeries.every((entry) => isSocSeries(entry));
+  const rightSocAxis = rightAxisSeries.length > 0 && rightAxisSeries.every((entry) => isSocSeries(entry));
+  const socTicks = [0, 20, 40, 60, 80, 100];
   const leftTicks = useMemo(() => buildYAxisTicks(leftDomain), [leftDomain]);
   const rightTicks = useMemo(() => buildYAxisTicks(rightDomain), [rightDomain]);
   const xDomainPaddingMs = Math.max(5 * 60_000, Math.min(60 * 60_000, Math.round(xTickStepMs * 0.12)));
@@ -1156,6 +1462,97 @@ function TimeseriesChart({
       ? [rangeStart - xDomainPaddingMs, rangeEnd + xDomainPaddingMs]
       : (["dataMin", "dataMax"] as const);
   const firstTickEpoch = xTicks.length > 0 ? xTicks[0] : undefined;
+  const renderTooltipContent = (state: {
+    active?: boolean;
+    payload?: ChartTooltipPayloadRow[];
+    label?: unknown;
+  }): JSX.Element | null => {
+    if (!state.active || !state.payload || state.payload.length === 0) return null;
+
+    const labelEpoch =
+      typeof state.label === "number" && Number.isFinite(state.label)
+        ? state.label
+        : Number(state.label);
+    const labelText = Number.isFinite(labelEpoch)
+      ? new Date(labelEpoch).toLocaleString([], {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false
+        })
+      : String(state.label ?? "");
+    const eventsAtLabel = Number.isFinite(labelEpoch)
+      ? chargerEventsByEpoch.get(labelEpoch as number) || []
+      : [];
+
+    return (
+      <div
+        style={{
+          border: "1px solid var(--line)",
+          borderRadius: 10,
+          background: "var(--bg-elev)",
+          fontSize: 12,
+          padding: "8px 10px",
+          minWidth: 170
+        }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>{labelText}</div>
+        {eventsAtLabel.map((event, index) => (
+          <div
+            key={`${event.type}-${event.epochMs}-${index}`}
+            style={{
+              marginBottom: 6,
+              fontWeight: 600,
+              color: event.type === "connect" ? "#1db97f" : "#ea5a5a"
+            }}
+          >
+            {event.type === "connect"
+              ? `Connected: ${event.evName || "-"}`
+              : `Disconnected: ${event.evName || "-"}`}
+          </div>
+        ))}
+        {state.payload
+          .filter((entry) => {
+            const numeric =
+              typeof entry.value === "number" ? entry.value : Number(entry.value);
+            return Number.isFinite(numeric);
+          })
+          .map((entry, index) => {
+            const key = typeof entry.dataKey === "string" ? entry.dataKey : String(entry.dataKey || "");
+            const matched = visibleSeries.find((item) => item.id === key);
+            const numeric =
+              typeof entry.value === "number" ? entry.value : Number(entry.value);
+            return (
+              <div
+                key={`${key}-${index}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginBottom: 2
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      background: entry.color || "var(--text-soft)"
+                    }}
+                  />
+                  <span>{matched?.metric || key}</span>
+                </span>
+                <strong>{formatNumber(Number.isFinite(numeric) ? numeric : null)}</strong>
+              </div>
+            );
+          })}
+      </div>
+    );
+  };
   const zoomOverlayStyle = useMemo(() => {
     if (!zoomOverlayPx) return null;
     const from = Math.min(zoomOverlayPx.start, zoomOverlayPx.end);
@@ -1300,7 +1697,7 @@ function TimeseriesChart({
       </header>
 
       <div className="sim-chart-legend">
-        {series.map((entry, index) => {
+        {chartSeries.map((entry, index) => {
           const active = visibleSeriesIds.includes(entry.id);
           return (
             <button
@@ -1319,14 +1716,14 @@ function TimeseriesChart({
         })}
       </div>
 
-      {rows.length === 0 || visibleSeries.length === 0 ? (
+      {chartRows.length === 0 || visibleSeries.length === 0 ? (
         <EmptyState title="No chart data" message="Adjust time window or selected metrics." />
       ) : (
         <div className="sim-chart-canvas" ref={canvasRef}>
           {zoomOverlayStyle ? <div className="sim-zoom-overlay" style={zoomOverlayStyle} /> : null}
           <ResponsiveContainer width="100%" height={TIMESERIES_CHART_HEIGHT}>
             <ComposedChart
-              data={rows}
+              data={chartRows}
               margin={{ top: 16, right: 12, left: 8, bottom: 10 }}
               barCategoryGap="24%"
               barGap={2}
@@ -1348,6 +1745,7 @@ function TimeseriesChart({
                 allowDataOverflow
                 padding={{ left: 6, right: 6 }}
                 ticks={xTicks}
+                interval={0}
                 tickFormatter={(value) => formatAxisTick(Number(value), xTickStepMs, firstTickEpoch)}
                 minTickGap={26}
                 tick={{ fontSize: 11 }}
@@ -1362,8 +1760,8 @@ function TimeseriesChart({
                 width={54}
                 tickMargin={6}
                 unit={primaryUnit !== "value" ? primaryUnit : ""}
-                domain={leftDomain || ["auto", "auto"]}
-                ticks={leftTicks}
+                domain={leftSocAxis ? [0, 100] : leftDomain || ["auto", "auto"]}
+                ticks={leftSocAxis ? socTicks : leftTicks}
               />
               <YAxis
                 yAxisId="right"
@@ -1376,37 +1774,37 @@ function TimeseriesChart({
                 width={56}
                 tickMargin={6}
                 unit={secondaryUnit && secondaryUnit !== "value" ? secondaryUnit : ""}
-                domain={secondaryUnit ? rightDomain || ["auto", "auto"] : [0, 1]}
-                ticks={secondaryUnit ? rightTicks : []}
-              />
-              <Tooltip
-                labelFormatter={(label: unknown) =>
-                  typeof label === "number"
-                    ? new Date(label).toLocaleString([], {
-                        year: "numeric",
-                        month: "short",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: false
-                      })
-                    : String(label ?? "")
+                domain={
+                  secondaryUnit
+                    ? rightSocAxis
+                      ? [0, 100]
+                      : rightDomain || ["auto", "auto"]
+                    : [0, 1]
                 }
-                formatter={(value: unknown, name: unknown) => {
-                  const key = typeof name === "string" ? name : String(name || "");
-                  const matched = visibleSeries.find((item) => item.id === key);
-                  const numeric = typeof value === "number" ? value : Number(value);
-                  return [formatNumber(Number.isFinite(numeric) ? numeric : null), matched?.metric || key];
-                }}
-                contentStyle={{
-                  border: "1px solid var(--line)",
-                  borderRadius: 10,
-                  background: "var(--bg-elev)",
-                  fontSize: 12
-                }}
+                ticks={secondaryUnit ? (rightSocAxis ? socTicks : rightTicks) : []}
+              />
+              {chargerOverlay.intervals.map((interval, index) => (
+                <ReferenceArea
+                  key={`charger-interval-${index}-${interval.startEpochMs}-${interval.endEpochMs}`}
+                  xAxisId={0}
+                  yAxisId="left"
+                  x1={interval.startEpochMs}
+                  x2={interval.endEpochMs}
+                  ifOverflow="extendDomain"
+                  fill="#1db97f"
+                  fillOpacity={0.14}
+                  strokeOpacity={0}
+                />
+              ))}
+              <Tooltip
+                content={(state) =>
+                  renderTooltipContent(
+                    state as unknown as { active?: boolean; payload?: ChartTooltipPayloadRow[]; label?: unknown }
+                  )
+                }
               />
               {visibleSeries.map((entry, index) => (
-                isPriceSeries(entry) ? (
+                !shouldRenderAsBar(entry) ? (
                   <Line
                     key={entry.id}
                     type="monotone"
@@ -1414,6 +1812,7 @@ function TimeseriesChart({
                     yAxisId={axisIdForSeries(entry)}
                     stroke={colorBySeriesId.get(entry.id) || CHART_COLORS[index % CHART_COLORS.length]}
                     strokeWidth={2.2}
+                    connectNulls={false}
                     dot={false}
                     activeDot={false}
                     isAnimationActive={false}
@@ -1423,7 +1822,7 @@ function TimeseriesChart({
                     key={entry.id}
                     dataKey={entry.id}
                     yAxisId={axisIdForSeries(entry)}
-                    barSize={10}
+                    barSize={8}
                     stroke={colorBySeriesId.get(entry.id) || CHART_COLORS[index % CHART_COLORS.length]}
                     strokeWidth={0.5}
                     fill={colorBySeriesId.get(entry.id) || CHART_COLORS[index % CHART_COLORS.length]}
@@ -1432,6 +1831,18 @@ function TimeseriesChart({
                     isAnimationActive={false}
                   />
                 )
+              ))}
+              {chargerOverlay.events.map((event, index) => (
+                <ReferenceLine
+                  key={`charger-event-${index}-${event.type}-${event.epochMs}`}
+                  xAxisId={0}
+                  yAxisId="left"
+                  x={event.epochMs}
+                  ifOverflow="extendDomain"
+                  stroke={event.type === "connect" ? "#1db97f" : "#ea5a5a"}
+                  strokeDasharray="5 4"
+                  strokeWidth={2.1}
+                />
               ))}
             </ComposedChart>
           </ResponsiveContainer>
@@ -1457,6 +1868,7 @@ export function JobDetailPage(): JSX.Element {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedEpisode, setSelectedEpisode] = useState<string | null>(null);
   const [timePreset, setTimePreset] = useState<TimePreset>("7d");
+  const [selectedGranularityMs, setSelectedGranularityMs] = useState<GranularityMs>(1 * HOUR_MS);
   const [windowStartMs, setWindowStartMs] = useState<number | null>(null);
   const [useCustomRange, setUseCustomRange] = useState(false);
   const [customRangeSource, setCustomRangeSource] = useState<CustomRangeSource>(null);
@@ -1705,12 +2117,42 @@ export function JobDetailPage(): JSX.Element {
           const parsed = loadSimulationCsv(content, fileRef).sort(
             (a, b) => rankMetric(a.metric) - rankMetric(b.metric)
           );
+          const stateSeries = parsed.find((entry) => isChargerStateSeries(entry));
+          const chargerSamples = isChargerFileRef(fileRef)
+            ? (() => {
+                const extracted = extractChargerStateSamples(content);
+                if (extracted.length > 0) return extracted;
+                return buildChargerSamplesFromStateSeries(stateSeries);
+              })()
+            : [];
+          const withoutChargerState = parsed.filter((entry) => !isChargerStateSeries(entry));
+          const withChargerNet = mergeChargerNetSeries(fileRef, withoutChargerState);
+          const mergedSeries = isChargerFileRef(fileRef)
+            ? keepPreferredEvSocSeries(withChargerNet)
+            : withChargerNet;
+          const evSeriesFiltered = isElectricVehicleFileRef(fileRef)
+            ? mergedSeries.filter((entry) => !isBatteryCapacitySeries(entry))
+            : mergedSeries;
           const isCommunityCsv = /exported_data_community_ep\d+\.csv$/i.test(fileRef);
-          const series = isCommunityCsv ? parsed.slice(0, 8) : parsed.slice(0, 6);
+          let series: SimulationSeries[] = isCommunityCsv
+            ? evSeriesFiltered.slice(0, 8)
+            : evSeriesFiltered.slice(0, 6);
+          if (isChargerFileRef(fileRef)) {
+            const preferred = [
+              evSeriesFiltered.find((entry) => entry.metric.toLowerCase().includes("charger_net")),
+              evSeriesFiltered.find((entry) => isEvSocSeries(entry)),
+              evSeriesFiltered.find((entry) => isRequiredSocSeries(entry)),
+              evSeriesFiltered.find((entry) => isEstimatedSocSeries(entry))
+            ].filter((entry): entry is SimulationSeries => Boolean(entry));
+            const preferredIds = new Set(preferred.map((entry) => entry.id));
+            const remaining = evSeriesFiltered.filter((entry) => !preferredIds.has(entry.id));
+            series = [...preferred, ...remaining].slice(0, 6);
+          }
           return {
             fileRef,
             title: resolveFileTitle(fileRef),
-            series
+            series,
+            chargerActivity: chargerSamples.length > 0 ? { samples: chargerSamples } : undefined
           };
         })
       );
@@ -2052,25 +2494,26 @@ export function JobDetailPage(): JSX.Element {
   );
 
   const kpiFamilyOptions = useMemo(
-    () =>
-      Array.from(new Set(usedKpiGroupRows.map((row) => row.family))).sort((a, b) =>
-        formatKpiFamilyLabel(a).localeCompare(formatKpiFamilyLabel(b))
-      ),
+    () => sortKpiFamilies(Array.from(new Set(usedKpiGroupRows.map((row) => row.family)))),
     [usedKpiGroupRows]
   );
 
   const kpiVariantOptions = useMemo(
     () =>
-      (["normalized", "control", "baseline", "delta", "absolute"] as KpiVariant[]).filter((variant) =>
-        usedKpiGroupRows.some((row) => row[variant] !== null)
+      sortKpiVariants(
+        (["normalized", "control", "baseline", "delta", "absolute"] as KpiVariant[]).filter((variant) =>
+          usedKpiGroupRows.some((row) => row[variant] !== null)
+        )
       ),
     [usedKpiGroupRows]
   );
 
   const kpiAggregationOptions = useMemo(
     () =>
-      (["ratio", "daily_average", "total", "instant"] as KpiAggregation[]).filter((aggregation) =>
-        usedKpiGroupRows.some((row) => row.aggregation === aggregation)
+      sortKpiAggregations(
+        (["ratio", "daily_average", "total", "instant"] as KpiAggregation[]).filter((aggregation) =>
+          usedKpiGroupRows.some((row) => row.aggregation === aggregation)
+        )
       ),
     [usedKpiGroupRows]
   );
@@ -2195,6 +2638,10 @@ export function JobDetailPage(): JSX.Element {
   }, [displayKpis, kpiSearch]);
 
   const timeseriesBundles = useMemo(() => timeseriesQuery.data || [], [timeseriesQuery.data]);
+  const sourceResolutionMs = useMemo(
+    () => inferSeriesResolutionMs(timeseriesBundles.flatMap((bundle) => bundle.series)),
+    [timeseriesBundles]
+  );
 
   useEffect(() => {
     if (timeseriesBundles.length === 0) {
@@ -2236,6 +2683,20 @@ export function JobDetailPage(): JSX.Element {
                 fallback.length > 0 ? fallback : bundle.series.slice(0, 2).map((entry) => entry.id);
             }
           } else {
+            if (isChargerFileRef(bundle.fileRef)) {
+              const preferred = [
+                bundle.series.find((entry) => entry.metric.toLowerCase().includes("charger_net")),
+                bundle.series.find((entry) => isEvSocSeries(entry)),
+                bundle.series.find((entry) => isRequiredSocSeries(entry)),
+                bundle.series.find((entry) => isEstimatedSocSeries(entry))
+              ].filter((entry): entry is SimulationSeries => Boolean(entry));
+              const preferredIds = Array.from(new Set(preferred.map((entry) => entry.id)));
+              if (preferredIds.length > 0) {
+                next[bundle.fileRef] = preferredIds.slice(0, 4);
+                return;
+              }
+            }
+
             const pricingSeries = bundle.series.filter((entry) => isPriceSeries(entry));
             if (pricingSeries.length > 0) {
               const nonPredicted = pricingSeries.filter((entry) => !isPredictedPriceSeries(entry));
@@ -2320,7 +2781,33 @@ export function JobDetailPage(): JSX.Element {
   const effectiveRangeEnd = useCustomRange ? customRangeEndForCharts : presetRangeEnd;
   const chartRangeStart = effectiveRangeStart;
   const chartRangeEnd = effectiveRangeEnd;
-  const axisTickStepMs = resolveTickStepMs(timePreset, chartRangeStart, chartRangeEnd);
+  const minimumGranularityMs = useMemo(
+    () =>
+      resolveMinimumGranularityMs({
+        timePreset,
+        useCustomRange,
+        rangeStart: chartRangeStart,
+        rangeEnd: chartRangeEnd,
+        sourceResolutionMs
+      }),
+    [chartRangeEnd, chartRangeStart, sourceResolutionMs, timePreset, useCustomRange]
+  );
+  const granularityOptions = useMemo(
+    () => resolveAvailableGranularityOptions(minimumGranularityMs),
+    [minimumGranularityMs]
+  );
+
+  useEffect(() => {
+    setSelectedGranularityMs((previous) =>
+      previous < minimumGranularityMs ? minimumGranularityMs : previous
+    );
+  }, [minimumGranularityMs]);
+
+  const axisTickStepMs = resolveAxisTickStepMs(
+    chartRangeStart,
+    chartRangeEnd,
+    selectedGranularityMs
+  );
   const axisTicks = useMemo(
     () => buildAxisTicks(chartRangeStart, chartRangeEnd, axisTickStepMs),
     [axisTickStepMs, chartRangeEnd, chartRangeStart]
@@ -3081,11 +3568,15 @@ export function JobDetailPage(): JSX.Element {
                               setTimePreset(preset);
                               setUseCustomRange(false);
                               setCustomRangeSource(null);
+                              let nextRangeStart: number | null = null;
+                              let nextRangeEnd: number | null = null;
                               if (maxEpoch !== null && minEpoch !== null) {
                                 const duration = preset === "all" ? null : TIME_PRESET_MS[preset];
                                 const baseStart =
                                   customRangeStart ?? presetRangeStart ?? alignPresetWindowStart(minEpoch, timePreset);
                                 if (duration === null) {
+                                  nextRangeStart = minEpoch;
+                                  nextRangeEnd = maxEpoch;
                                   setWindowStartMs(minEpoch);
                                   setCustomFrom(toDateTimeLocal(minEpoch));
                                   setCustomTo(toDateTimeLocal(maxEpoch));
@@ -3096,11 +3587,21 @@ export function JobDetailPage(): JSX.Element {
                                     Math.max(minEpoch, alignPresetWindowStart(baseStart, preset))
                                   );
                                   const nextEnd = Math.min(maxEpoch, nextStart + duration);
+                                  nextRangeStart = nextStart;
+                                  nextRangeEnd = nextEnd;
                                   setWindowStartMs(nextStart);
                                   setCustomFrom(toDateTimeLocal(nextStart));
                                   setCustomTo(toDateTimeLocal(nextEnd));
                                 }
                               }
+                              const nextMinGranularity = resolveMinimumGranularityMs({
+                                timePreset: preset,
+                                useCustomRange: false,
+                                rangeStart: nextRangeStart,
+                                rangeEnd: nextRangeEnd,
+                                sourceResolutionMs
+                              });
+                              setSelectedGranularityMs(nextMinGranularity);
                             }}
                           >
                             {preset === "all" ? "All" : preset}
@@ -3141,6 +3642,25 @@ export function JobDetailPage(): JSX.Element {
                           Reset Zoom
                         </button>
                       ) : null}
+                      <div className="segmented-row timeseries-granularity-row" role="group" aria-label="Granularity">
+                        <span className="timeseries-granularity-label">Granularity</span>
+                        {granularityOptions.map((option) => (
+                          <button
+                            key={option.label}
+                            type="button"
+                            className={`segment-btn${selectedGranularityMs === option.ms ? " is-active" : ""}`}
+                            disabled={!option.enabled}
+                            onClick={() => setSelectedGranularityMs(option.ms)}
+                            title={
+                              option.enabled
+                                ? `Show data with ${option.label} buckets`
+                                : `Unavailable for current range/data resolution`
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
                       <button
                         type="button"
                         className={`timeseries-range-trigger${rangePopoverOpen ? " is-open" : ""}`}
@@ -3310,10 +3830,12 @@ export function JobDetailPage(): JSX.Element {
                               key={bundle.fileRef}
                               title={bundle.title}
                               series={bundle.series}
+                              chargerActivitySamples={bundle.chargerActivity?.samples}
                               visibleSeriesIds={visibleSeries[bundle.fileRef] || []}
                               onToggleSeries={(seriesId) => toggleChartSeries(bundle.fileRef, seriesId)}
                               rangeStart={chartRangeStart}
                               rangeEnd={chartRangeEnd}
+                              granularityMs={selectedGranularityMs}
                               xTicks={axisTicks}
                               xTickStepMs={axisTickStepMs}
                               onZoomCommit={handleZoomCommit}
@@ -3431,10 +3953,18 @@ export function JobDetailPage(): JSX.Element {
                       </small>
                     </section>
 
+                    <section className="kpi-callout panel">
+                      <strong>Legacy normalized quick read</strong>
+                      <small>
+                        Legacy normalized KPIs are ratios (<code>control / baseline</code>): <code>1</code> means parity,
+                        values below <code>1</code> are better for lower-is-better metrics, and above <code>1</code> are worse.
+                      </small>
+                    </section>
+
                     <section className="kpi-core-highlights panel">
                       <header className="kpi-section-header">
-                        <h3>Core CityLearn Highlights</h3>
-                        <small>District-first quick read. 1.0 is baseline parity for normalized KPIs.</small>
+                        <h3>Curated Highlights</h3>
+                        <small>Compact KPI readout with direction-aware tone per metric.</small>
                       </header>
                       <div className="kpi-highlight-grid">
                         {coreHighlightRows.map((item) => (
@@ -3532,6 +4062,9 @@ export function JobDetailPage(): JSX.Element {
                           <thead>
                             <tr>
                               <th>KPI</th>
+                              <th>Family</th>
+                              <th>Aggregation</th>
+                              <th>Variants</th>
                               <th>Delta</th>
                               <th>Delta %</th>
                               <th>Control</th>
@@ -3543,6 +4076,16 @@ export function JobDetailPage(): JSX.Element {
                           <tbody>
                             {detailedTableRows.map((row) => {
                               const tone = scoreKpiGroupTone(row);
+                              const variants = ([
+                                row.normalized !== null ? "normalized" : null,
+                                row.control !== null ? "control" : null,
+                                row.baseline !== null ? "baseline" : null,
+                                row.delta !== null ? "delta" : null,
+                                row.absolute !== null ? "absolute" : null
+                              ] as Array<KpiVariant | null>)
+                                .filter((value): value is KpiVariant => Boolean(value))
+                                .map((variant) => KPI_VARIANT_LABELS[variant])
+                                .join(" · ");
                               const breakdown =
                                 row.breakdown.delta.length > 0
                                   ? row.breakdown.delta
@@ -3557,7 +4100,10 @@ export function JobDetailPage(): JSX.Element {
                                 <tr key={`row:${row.comparisonKey}`}>
                                   <td>
                                     <div className="kpi-row-label">
-                                      <span>{row.label}</span>
+                                      <span>
+                                        {row.label}
+                                        <small className="kpi-row-meta">{row.canonicalGroupId}</small>
+                                      </span>
                                       <button type="button" className="kpi-help" aria-label={`${row.label} details`}>
                                         <Info size={12} />
                                         <span role="tooltip" className="kpi-help-tooltip">
@@ -3567,6 +4113,9 @@ export function JobDetailPage(): JSX.Element {
                                       </button>
                                     </div>
                                   </td>
+                                  <td>{formatKpiFamilyLabel(row.family)}</td>
+                                  <td>{KPI_AGGREGATION_LABELS[row.aggregation]}</td>
+                                  <td>{variants || "-"}</td>
                                   <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
                                     {formatNumber(row.delta)}
                                   </td>
