@@ -129,9 +129,7 @@ export async function readBackendBundleManifest(
 ): Promise<BackendBundleManifestFile | null> {
   const candidates = uniqueStrings([
     "bundle/artifact_manifest.json",
-    "artifact_manifest.json",
-    "../bundle/artifact_manifest.json",
-    "../../bundle/artifact_manifest.json"
+    "artifact_manifest.json"
   ]);
 
   for (const candidate of candidates) {
@@ -159,9 +157,7 @@ export async function readBackendBundleFileAsBlob(
   const prefixes = uniqueStrings([
     preferredBasePrefix || "",
     "bundle/",
-    "",
-    "../bundle/",
-    "../../bundle/"
+    ""
   ]);
 
   const candidates = uniqueStrings(prefixes.map((prefix) => `${prefix}${normalized}`));
