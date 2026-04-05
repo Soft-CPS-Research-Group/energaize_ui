@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getJobLogsChunk } from "../api/trainingApi";
+import { getJobFileLogs, getJobLogsChunk } from "../api/trainingApi";
 
 const DEFAULT_TAIL_LINES = 200;
 const DEFAULT_MAX_BYTES = 256 * 1024;
@@ -77,20 +77,40 @@ export function useJobLogsPolling(jobId: string, options: UseJobLogsPollingOptio
           tailLines,
           maxBytes
         });
+        let textPayload = payload.text || "";
+        let nextOffset = payload.next_offset;
+
+        // Fallback: some environments may return an empty first chunk even when
+        // file logs already exist. Pull full file once so the modal is not blank.
+        if (isInitial && textPayload.trim().length === 0) {
+          try {
+            const fullLogs = await getJobFileLogs(jobId);
+            if (fullLogs.trim().length > 0) {
+              textPayload = fullLogs;
+              const encodedLen = new TextEncoder().encode(fullLogs).length;
+              if (!Number.isFinite(nextOffset) || nextOffset < encodedLen) {
+                nextOffset = encodedLen;
+              }
+            }
+          } catch {
+            // Keep original chunk payload behavior on fallback failure.
+          }
+        }
+
         if (cancelled || !mountedRef.current) return;
         setError(null);
-        setAvailable(Boolean(payload.available));
-        setMessage(typeof payload.message === "string" ? payload.message : null);
+        setAvailable(Boolean(payload.available) || textPayload.trim().length > 0);
+        setMessage(textPayload.trim().length > 0 ? null : typeof payload.message === "string" ? payload.message : null);
         if (isInitial) {
-          setText(payload.text || "");
-        } else if (payload.text) {
+          setText(textPayload);
+        } else if (textPayload) {
           setText((previous) => {
-            const merged = `${previous}${payload.text}`;
+            const merged = `${previous}${textPayload}`;
             if (merged.length <= maxChars) return merged;
             return merged.slice(merged.length - maxChars);
           });
         }
-        offsetRef.current = payload.next_offset;
+        offsetRef.current = Number.isFinite(nextOffset) ? nextOffset : payload.next_offset;
       } catch (err) {
         if (cancelled || !mountedRef.current) return;
         const nextError = err instanceof Error ? err : new Error("Could not load logs.");
