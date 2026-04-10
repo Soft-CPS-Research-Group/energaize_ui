@@ -82,7 +82,9 @@ const KPI_FAMILY_DEFS: KpiFamilyDef[] = [
     tokens: ["equity"],
     description: "Benefit distribution and fairness indicators."
   }
-].sort((left, right) => right.tokens.length - left.tokens.length);
+];
+
+KPI_FAMILY_DEFS.sort((left, right) => right.tokens.length - left.tokens.length);
 
 const SUBFAMILY_TOKENS: string[][] = [
   ["ratio", "to", "baseline"],
