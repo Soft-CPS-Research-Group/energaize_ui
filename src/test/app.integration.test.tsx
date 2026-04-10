@@ -153,8 +153,8 @@ describe("App integration", () => {
     await user.click(screen.getByRole("button", { name: /open kpi compare/i }));
 
     expect(await screen.findByRole("heading", { name: /compare jobs/i })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "job-completed-001" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "job-completed-002" })).toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader", { name: "job-completed-001" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("columnheader", { name: "job-completed-002" }).length).toBeGreaterThan(0);
   });
 
   it("returns from job detail and restores jobs filters from querystring", async () => {

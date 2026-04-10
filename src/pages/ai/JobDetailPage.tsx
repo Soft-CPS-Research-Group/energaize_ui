@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   ArrowLeft,
   BatteryCharging,
   Building2,
@@ -19,6 +20,12 @@ import {
   Gauge,
   Home,
   Info,
+  Leaf,
+  Scale,
+  Shield,
+  Sun,
+  type LucideIcon,
+  Zap
 } from "lucide-react";
 import {
   Bar,
@@ -74,16 +81,16 @@ import { isCompletedForResults } from "../../utils/jobStatus";
 import {
   buildKpiMeta,
   formatKpiFamilyLabel,
+  groupRowsByFamilySubfamily,
   groupScopedKpis,
   isKpiGroupUsed,
-  sortKpiAggregations,
   sortKpiFamilies,
-  sortKpiVariants,
+  pickPrimaryValueForGroup,
   scoreKpiGroupTone,
-  type KpiAggregation,
   type KpiFamily,
+  type KpiLevel,
   type KpiMetricGroupRow,
-  type KpiVariant
+  stripKpiLevel
 } from "../../utils/kpiMetadata";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import {
@@ -158,7 +165,7 @@ interface ScopedKpiRow {
   key: string;
   label: string;
   unit?: string;
-  value: number;
+  value: number | null;
   breakdown: Array<{ entity: string; value: number }>;
 }
 
@@ -178,38 +185,146 @@ interface DeployArtifactRow {
   onnxUrl: string | null;
 }
 
-const CORE_CITYLEARN_KEYS = [
-  "cost_total",
-  "carbon_emissions_total",
-  "electricity_consumption_total",
-  "daily_peak_average",
-  "ramping_average",
-  "daily_one_minus_load_factor_average"
-] as const;
+interface KpiHighlightConfig {
+  title: string;
+  candidates: string[];
+}
 
-const KPI_VARIANT_LABELS: Record<KpiVariant, string> = {
-  normalized: "Normalized",
-  control: "Control",
-  baseline: "Baseline",
-  delta: "Delta",
-  absolute: "Absolute"
+interface KpiHighlightRow {
+  key: string;
+  title: string;
+  metricLabel: string;
+  description: string;
+  formula: string;
+  unit?: string;
+  value: number | null;
+  control: number | null;
+  baseline: number | null;
+  delta: number | null;
+  tone: "better" | "worse" | "neutral" | "unknown";
+  hasComparable: boolean;
+}
+
+const DISTRICT_HIGHLIGHTS: KpiHighlightConfig[] = [
+  {
+    title: "Cost",
+    candidates: ["district_cost_ratio_to_baseline_total_ratio", "district_cost_total_control_eur"]
+  },
+  {
+    title: "Emissions",
+    candidates: ["district_emissions_ratio_to_baseline_total_ratio", "district_emissions_total_control_kgco2"]
+  },
+  {
+    title: "Grid Import",
+    candidates: [
+      "district_energy_grid_ratio_to_baseline_import_total_ratio",
+      "district_energy_grid_total_import_control_kwh"
+    ]
+  },
+  {
+    title: "Peak Quality",
+    candidates: [
+      "district_energy_grid_shape_quality_peak_daily_average_to_baseline_ratio",
+      "district_energy_grid_shape_quality_peak_all_time_average_to_baseline_ratio"
+    ]
+  },
+  {
+    title: "Solar Self-Consumption",
+    candidates: [
+      "district_solar_self_consumption_ratio_self_consumption_ratio",
+      "district_solar_self_consumption_community_market_import_share_ratio"
+    ]
+  },
+  {
+    title: "EV Departure Success",
+    candidates: [
+      "district_ev_performance_departure_success_ratio",
+      "district_ev_performance_departure_within_tolerance_ratio"
+    ]
+  },
+  {
+    title: "Battery Capacity Fade",
+    candidates: [
+      "district_battery_health_capacity_fade_ratio",
+      "district_battery_health_equivalent_full_cycles_count"
+    ]
+  },
+  {
+    title: "Equity Gini",
+    candidates: [
+      "district_equity_distribution_gini_benefit_ratio",
+      "district_equity_distribution_top20_benefit_ratio"
+    ]
+  }
+];
+
+const BUILDING_HIGHLIGHTS: KpiHighlightConfig[] = [
+  {
+    title: "Cost",
+    candidates: ["building_cost_ratio_to_baseline_total_ratio", "building_cost_total_control_eur"]
+  },
+  {
+    title: "Emissions",
+    candidates: ["building_emissions_ratio_to_baseline_total_ratio", "building_emissions_total_control_kgco2"]
+  },
+  {
+    title: "Grid Import",
+    candidates: [
+      "building_energy_grid_ratio_to_baseline_import_total_ratio",
+      "building_energy_grid_total_import_control_kwh"
+    ]
+  },
+  {
+    title: "Solar Self-Consumption",
+    candidates: ["building_solar_self_consumption_ratio_self_consumption_ratio", "building_solar_self_consumption_total_generation_kwh"]
+  },
+  {
+    title: "EV Departure Success",
+    candidates: ["building_ev_performance_departure_success_ratio", "building_ev_performance_departure_within_tolerance_ratio"]
+  },
+  {
+    title: "Battery Capacity Fade",
+    candidates: ["building_battery_health_capacity_fade_ratio", "building_battery_health_equivalent_full_cycles_count"]
+  },
+  {
+    title: "Equity Benefit",
+    candidates: ["building_equity_benefit_relative_percent", "building_equity_distribution_top20_benefit_ratio"]
+  },
+  {
+    title: "Discomfort",
+    candidates: [
+      "building_comfort_resilience_discomfort_overall_ratio",
+      "building_comfort_resilience_resilience_one_minus_thermal_ratio"
+    ]
+  }
+];
+
+const KPI_FAMILY_ICONS: Record<KpiFamily, LucideIcon> = {
+  cost: CircleDollarSign,
+  energy_grid: Zap,
+  emissions: Leaf,
+  solar_self_consumption: Sun,
+  ev: Car,
+  battery: BatteryCharging,
+  electrical_service_phase: Activity,
+  equity: Scale,
+  comfort_resilience: Shield,
+  other: FolderTree
 };
 
-const KPI_AGGREGATION_LABELS: Record<KpiAggregation, string> = {
-  total: "Total",
-  daily_average: "Daily Average",
-  instant: "Instant",
-  ratio: "Ratio / Percent"
-};
+function resolveFamilyIcon(family: KpiFamily): LucideIcon {
+  return KPI_FAMILY_ICONS[family] || FolderTree;
+}
 
-const CORE_HIGHLIGHT_LABELS: Record<(typeof CORE_CITYLEARN_KEYS)[number], string> = {
-  cost_total: "Cost",
-  carbon_emissions_total: "Carbon Emissions",
-  electricity_consumption_total: "Grid Electricity",
-  daily_peak_average: "Daily Peak",
-  ramping_average: "Ramping",
-  daily_one_minus_load_factor_average: "Load Factor Penalty"
-};
+function formatToneLabel(
+  tone: "better" | "worse" | "neutral" | "unknown",
+  options?: { hideUnknown?: boolean }
+): string | null {
+  if (tone === "better") return "Better";
+  if (tone === "worse") return "Worse";
+  if (tone === "neutral") return "Neutral";
+  return options?.hideUnknown ? null : "Unknown";
+}
 
 const CHART_COLORS = ["#1db97f", "#4f8cff", "#f4a340", "#ea5a5a", "#9e7bff", "#00bcd4"];
 const TIMESERIES_CHART_HEIGHT = 258;
@@ -327,6 +442,13 @@ function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
   if (Math.abs(value) >= 1000) return value.toFixed(2);
   return value.toFixed(4);
+}
+
+function formatHighlightNumber(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  const abs = Math.abs(value);
+  if (abs >= 100) return value.toFixed(2);
+  return value.toFixed(3);
 }
 
 function formatYAxisTick(value: number): string {
@@ -1035,6 +1157,76 @@ function isCommunityEntity(entity: string): boolean {
   return /(community|overall|global|rec|microgrid|district)/i.test(entity);
 }
 
+function hasComparableSignal(
+  row: Pick<KpiMetricGroupRow, "control" | "baseline" | "delta" | "normalized">
+): boolean {
+  if (typeof row.delta === "number" && Number.isFinite(row.delta)) return true;
+  if (
+    typeof row.control === "number" &&
+    Number.isFinite(row.control) &&
+    typeof row.baseline === "number" &&
+    Number.isFinite(row.baseline)
+  ) {
+    return true;
+  }
+  return typeof row.normalized === "number" && Number.isFinite(row.normalized);
+}
+
+function resolveHighlightCandidates(rows: KpiMetricGroupRow[], candidateKey: string): KpiMetricGroupRow[] {
+  const targetMeta = buildKpiMeta(candidateKey);
+  const targetCanonical = targetMeta.canonicalGroupId;
+  const targetCanonicalNoLevel = stripKpiLevel(targetCanonical);
+
+  return rows.filter((row) => {
+    if (row.canonicalGroupId === targetCanonical) return true;
+    if (stripKpiLevel(row.canonicalGroupId) === targetCanonicalNoLevel) return true;
+    return row.metricLabel.toLowerCase() === targetMeta.metricLabel.toLowerCase() && row.family === targetMeta.family;
+  });
+}
+
+function resolveScopeHighlights(rows: KpiMetricGroupRow[], level: KpiLevel | null): KpiHighlightRow[] {
+  const source = level === "district" ? DISTRICT_HIGHLIGHTS : level === "building" ? BUILDING_HIGHLIGHTS : [];
+  return source.map((item) => {
+    const rankedCandidates = item.candidates.flatMap((candidateKey, candidateIndex) =>
+      resolveHighlightCandidates(rows, candidateKey).map((row) => ({
+        row,
+        candidateIndex
+      }))
+    );
+
+    const best = rankedCandidates
+      .sort((left, right) => {
+        const leftComparable = Number(hasComparableSignal(left.row));
+        const rightComparable = Number(hasComparableSignal(right.row));
+        if (leftComparable !== rightComparable) return rightComparable - leftComparable;
+        const leftUsed = Number(isKpiGroupUsed(left.row));
+        const rightUsed = Number(isKpiGroupUsed(right.row));
+        if (leftUsed !== rightUsed) return rightUsed - leftUsed;
+        return left.candidateIndex - right.candidateIndex;
+      })
+      .map((item) => item.row)[0];
+
+    const primaryMeta = buildKpiMeta(item.candidates[0] || "legacy_kpi");
+    const hasComparable = best ? hasComparableSignal(best) : false;
+    const tone = best && hasComparable ? scoreKpiGroupTone(best) : "unknown";
+
+    return {
+      key: best?.canonicalGroupId || primaryMeta.canonicalGroupId,
+      title: item.title,
+      metricLabel: best?.label || primaryMeta.metricLabel,
+      description: best?.tooltip.shortDescription || primaryMeta.tooltip.shortDescription,
+      formula: best?.tooltip.formulaShort || primaryMeta.tooltip.formulaShort,
+      unit: best?.unit,
+      value: best ? pickPrimaryValueForGroup(best) : null,
+      control: best?.control ?? null,
+      baseline: best?.baseline ?? null,
+      delta: best?.delta ?? null,
+      tone,
+      hasComparable
+    };
+  });
+}
+
 function nodeIcon(kind: SimulationTreeNode["kind"]): JSX.Element {
   if (kind === "community") return <Factory size={14} />;
   if (kind === "building") return <Building2 size={14} />;
@@ -1181,7 +1373,7 @@ function TimeseriesTree({
           title="Show community charts"
         >
           <Home size={14} />
-          <span>{communityLabel}</span>
+          <span className="sim-tree-context-label">{communityLabel}</span>
         </button>
       </header>
       <ul className="sim-tree-list">
@@ -1884,8 +2076,7 @@ export function JobDetailPage(): JSX.Element {
   const [kpiSearch, setKpiSearch] = useState("");
   const [selectedKpiScopeId, setSelectedKpiScopeId] = useState("community");
   const [kpiFamilyFilter, setKpiFamilyFilter] = useState<KpiFamily | "all">("all");
-  const [kpiVariantFilter, setKpiVariantFilter] = useState<KpiVariant | "all">("all");
-  const [kpiAggregationFilter, setKpiAggregationFilter] = useState<KpiAggregation | "all">("all");
+  const [showKpiNa, setShowKpiNa] = useState(false);
   const [selectedDeployScopeId, setSelectedDeployScopeId] = useState("community");
   const [deployManifestPreviewOpen, setDeployManifestPreviewOpen] = useState(false);
   const [deployActionError, setDeployActionError] = useState<string | null>(null);
@@ -2463,59 +2654,41 @@ export function JobDetailPage(): JSX.Element {
     if (kpiRows.length === 0 || !selectedKpiScope) return [];
 
     const collected = kpiRows.reduce<ScopedKpiRow[]>((acc, row) => {
-        const breakdown = selectedKpiScope.entityKeys
-          .map((entity) => ({ entity, value: row.values[entity] }))
-          .filter((entry): entry is { entity: string; value: number } => typeof entry.value === "number");
+      const breakdown = selectedKpiScope.entityKeys
+        .map((entity) => ({ entity, value: row.values[entity] }))
+        .filter((entry): entry is { entity: string; value: number } => typeof entry.value === "number");
 
-        if (breakdown.length === 0) return acc;
-
-        const representative =
-          breakdown.length === 1
+      const representative =
+        breakdown.length === 0
+          ? null
+          : breakdown.length === 1
             ? breakdown[0]!.value
             : breakdown.reduce((sum, entry) => sum + entry.value, 0) / breakdown.length;
 
-        acc.push({
-          key: row.key,
-          label: row.label,
-          unit: row.unit,
-          value: representative,
-          breakdown
-        });
-        return acc;
-      }, []);
+      acc.push({
+        key: row.key,
+        label: row.label,
+        unit: row.unit,
+        value: representative,
+        breakdown
+      });
+      return acc;
+    }, []);
 
     return collected.sort((a, b) => a.label.localeCompare(b.label));
   }, [kpiRows, selectedKpiScope]);
 
   const groupedKpiRows = useMemo(() => groupScopedKpis(scopedKpiRows), [scopedKpiRows]);
-  const usedKpiGroupRows = useMemo(
-    () => groupedKpiRows.filter((row) => isKpiGroupUsed(row)),
-    [groupedKpiRows]
-  );
+  const selectedKpiLevel = useMemo<KpiLevel | null>(() => {
+    if (!selectedKpiScope) return null;
+    if (selectedKpiScope.group === "community") return "district";
+    if (selectedKpiScope.group === "building") return "building";
+    return null;
+  }, [selectedKpiScope]);
 
   const kpiFamilyOptions = useMemo(
-    () => sortKpiFamilies(Array.from(new Set(usedKpiGroupRows.map((row) => row.family)))),
-    [usedKpiGroupRows]
-  );
-
-  const kpiVariantOptions = useMemo(
-    () =>
-      sortKpiVariants(
-        (["normalized", "control", "baseline", "delta", "absolute"] as KpiVariant[]).filter((variant) =>
-          usedKpiGroupRows.some((row) => row[variant] !== null)
-        )
-      ),
-    [usedKpiGroupRows]
-  );
-
-  const kpiAggregationOptions = useMemo(
-    () =>
-      sortKpiAggregations(
-        (["ratio", "daily_average", "total", "instant"] as KpiAggregation[]).filter((aggregation) =>
-          usedKpiGroupRows.some((row) => row.aggregation === aggregation)
-        )
-      ),
-    [usedKpiGroupRows]
+    () => sortKpiFamilies(Array.from(new Set(groupedKpiRows.map((row) => row.family)))),
+    [groupedKpiRows]
   );
 
   useEffect(() => {
@@ -2524,109 +2697,32 @@ export function JobDetailPage(): JSX.Element {
     }
   }, [kpiFamilyFilter, kpiFamilyOptions]);
 
-  useEffect(() => {
-    if (kpiVariantFilter !== "all" && !kpiVariantOptions.includes(kpiVariantFilter)) {
-      setKpiVariantFilter("all");
-    }
-  }, [kpiVariantFilter, kpiVariantOptions]);
-
-  useEffect(() => {
-    if (kpiAggregationFilter !== "all" && !kpiAggregationOptions.includes(kpiAggregationFilter)) {
-      setKpiAggregationFilter("all");
-    }
-  }, [kpiAggregationFilter, kpiAggregationOptions]);
-
   const filteredKpiGroupRows = useMemo(() => {
     const query = kpiSearch.trim().toLowerCase();
-    return usedKpiGroupRows.filter((row) => {
+    return groupedKpiRows.filter((row) => {
+      if (selectedKpiLevel && row.level !== selectedKpiLevel) return false;
       if (kpiFamilyFilter !== "all" && row.family !== kpiFamilyFilter) return false;
-      if (kpiAggregationFilter !== "all" && row.aggregation !== kpiAggregationFilter) return false;
-      if (kpiVariantFilter !== "all" && row[kpiVariantFilter] === null) return false;
       if (!query) return true;
-      return `${row.label} ${row.comparisonKey} ${row.sourceKeys.join(" ")}`.toLowerCase().includes(query);
+      return `${row.label} ${row.comparisonKey} ${row.sourceKeys.join(" ")} ${row.subfamilyLabel}`
+        .toLowerCase()
+        .includes(query);
     });
-  }, [usedKpiGroupRows, kpiSearch, kpiFamilyFilter, kpiAggregationFilter, kpiVariantFilter]);
+  }, [groupedKpiRows, kpiSearch, kpiFamilyFilter, selectedKpiLevel]);
 
-  const coreHighlightRows = useMemo(() => {
-    return CORE_CITYLEARN_KEYS.map((key) => {
-      const row = usedKpiGroupRows.find(
-        (candidate) => candidate.sourceKeys.includes(key) || candidate.comparisonKey === key
-      );
-      const fallbackMeta = buildKpiMeta(key);
-      return {
-        key,
-        title: CORE_HIGHLIGHT_LABELS[key],
-        comparisonKey: row?.comparisonKey || null,
-        value:
-          row?.normalized ??
-          row?.absolute ??
-          row?.control ??
-          row?.baseline ??
-          null,
-        tone: row ? scoreKpiGroupTone(row) : "unknown",
-        tooltip: row?.tooltip || fallbackMeta.tooltip
-      };
-    });
-  }, [usedKpiGroupRows]);
+  const visibleKpiGroupRows = useMemo(() => {
+    if (showKpiNa) return filteredKpiGroupRows;
+    return filteredKpiGroupRows.filter((row) => isKpiGroupUsed(row));
+  }, [filteredKpiGroupRows, showKpiNa]);
 
-  const deltaBoardRows = useMemo<KpiMetricGroupRow[]>(() => {
-    const query = kpiSearch.trim().toLowerCase();
-    const candidates = usedKpiGroupRows.filter((row) => {
-      if (row.delta === null) return false;
-      if (kpiFamilyFilter !== "all" && row.family !== kpiFamilyFilter) return false;
-      if (kpiAggregationFilter !== "all" && row.aggregation !== kpiAggregationFilter) return false;
-      if (!query) return true;
-      return `${row.label} ${row.comparisonKey}`.toLowerCase().includes(query);
-    });
+  const kpiSemanticSections = useMemo(
+    () => groupRowsByFamilySubfamily(visibleKpiGroupRows),
+    [visibleKpiGroupRows]
+  );
 
-    const byMetric = new Map<string, KpiMetricGroupRow>();
-    const scoreAggregation = (value: KpiAggregation): number => {
-      if (value === "daily_average") return 2;
-      if (value === "total") return 1;
-      return 0;
-    };
-
-    candidates.forEach((row) => {
-      const existing = byMetric.get(row.boardMetricKey);
-      if (!existing) {
-        byMetric.set(row.boardMetricKey, row);
-        return;
-      }
-      if (scoreAggregation(row.aggregation) > scoreAggregation(existing.aggregation)) {
-        byMetric.set(row.boardMetricKey, row);
-      }
-    });
-
-    return Array.from(byMetric.values()).sort(
-      (left, right) => Math.abs(right.delta || 0) - Math.abs(left.delta || 0)
-    );
-  }, [usedKpiGroupRows, kpiSearch, kpiFamilyFilter, kpiAggregationFilter]);
-
-  const deltaBoardMaxAbs = useMemo(() => {
-    if (deltaBoardRows.length === 0) return 1;
-    const maxValue = Math.max(...deltaBoardRows.map((row) => Math.abs(row.delta || 0)));
-    return maxValue > 0 ? maxValue : 1;
-  }, [deltaBoardRows]);
-
-  const detailedTableRows = useMemo(() => {
-    const highlightedComparisonKeys = new Set(
-      coreHighlightRows
-        .map((row) => row.comparisonKey)
-        .filter((value): value is string => Boolean(value))
-    );
-    const highlightedSourceKeys = new Set<string>(CORE_CITYLEARN_KEYS);
-    const inDeltaBoardComparisonKeys = new Set(deltaBoardRows.map((row) => row.comparisonKey));
-    const inDeltaBoardMetricKeys = new Set(deltaBoardRows.map((row) => row.boardMetricKey));
-    return filteredKpiGroupRows.filter((row) => {
-      const isCoreHighlight =
-        highlightedComparisonKeys.has(row.comparisonKey) ||
-        row.sourceKeys.some((key) => highlightedSourceKeys.has(key));
-      const isCoveredByDeltaBoard =
-        inDeltaBoardComparisonKeys.has(row.comparisonKey) ||
-        inDeltaBoardMetricKeys.has(row.boardMetricKey);
-      return !isCoreHighlight && !isCoveredByDeltaBoard;
-    });
-  }, [coreHighlightRows, deltaBoardRows, filteredKpiGroupRows]);
+  const kpiHighlightRows = useMemo(
+    () => resolveScopeHighlights(filteredKpiGroupRows, selectedKpiLevel),
+    [filteredKpiGroupRows, selectedKpiLevel]
+  );
 
   const filteredKpis = useMemo(() => {
     const query = kpiSearch.trim().toLowerCase();
@@ -3893,11 +3989,11 @@ export function JobDetailPage(): JSX.Element {
                   />
 
                   <section className="kpi-main">
-                    <section className="kpi-toolbar">
-                      <div className="kpi-filter-row">
+                    <section className="kpi-toolbar panel">
+                      <div className="kpi-toolbar-main">
                         <label className="kpi-filter">
-                          <span>Family</span>
                           <select
+                            aria-label="Filter KPI family"
                             value={kpiFamilyFilter}
                             onChange={(event) => setKpiFamilyFilter(event.target.value as KpiFamily | "all")}
                           >
@@ -3909,238 +4005,185 @@ export function JobDetailPage(): JSX.Element {
                             ))}
                           </select>
                         </label>
-                        <label className="kpi-filter">
-                          <span>Variant</span>
-                          <select
-                            value={kpiVariantFilter}
-                            onChange={(event) => setKpiVariantFilter(event.target.value as KpiVariant | "all")}
-                          >
-                            <option value="all">All variants</option>
-                            {kpiVariantOptions.map((option) => (
-                              <option key={option} value={option}>
-                                {KPI_VARIANT_LABELS[option]}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="kpi-filter">
-                          <span>Aggregation</span>
-                          <select
-                            value={kpiAggregationFilter}
-                            onChange={(event) =>
-                              setKpiAggregationFilter(event.target.value as KpiAggregation | "all")
-                            }
-                          >
-                            <option value="all">All aggregations</option>
-                            {kpiAggregationOptions.map((option) => (
-                              <option key={option} value={option}>
-                                {KPI_AGGREGATION_LABELS[option]}
-                              </option>
-                            ))}
-                          </select>
+                        <label className="checkbox-inline kpi-toggle-chip">
+                          <input
+                            type="checkbox"
+                            checked={showKpiNa}
+                            onChange={(event) => setShowKpiNa(event.target.checked)}
+                          />
+                          <span>Show N/A</span>
                         </label>
                       </div>
-                      <label className="search-inline kpi-search">
-                        <input
-                          value={kpiSearch}
-                          onChange={(event) => setKpiSearch(event.target.value)}
-                          placeholder="Search KPI..."
-                        />
-                      </label>
-                      <small>
-                        {usedKpiGroupRows.length} used KPI group(s) · {detailedTableRows.length} in detail table · scope:{" "}
-                        {selectedKpiScope?.label || "-"}
-                      </small>
-                    </section>
-
-                    <section className="kpi-callout panel">
-                      <strong>Legacy normalized quick read</strong>
-                      <small>
-                        Legacy normalized KPIs are ratios (<code>control / baseline</code>): <code>1</code> means parity,
-                        values below <code>1</code> are better for lower-is-better metrics, and above <code>1</code> are worse.
-                      </small>
-                    </section>
-
-                    <section className="kpi-core-highlights panel">
-                      <header className="kpi-section-header">
-                        <h3>Curated Highlights</h3>
-                        <small>Compact KPI readout with direction-aware tone per metric.</small>
-                      </header>
-                      <div className="kpi-highlight-grid">
-                        {coreHighlightRows.map((item) => (
-                          <article key={item.key} className={`kpi-highlight-card tone-${item.tone}`}>
-                            <header>
-                              <small>{item.title}</small>
-                              <button type="button" className="kpi-help" aria-label={`${item.title} details`}>
-                                <Info size={13} />
-                                <span role="tooltip" className="kpi-help-tooltip">
-                                  <strong>{item.tooltip.shortDescription}</strong>
-                                  <small>{item.tooltip.formulaShort}</small>
-                                </span>
-                              </button>
-                            </header>
-                            <strong>{formatNumber(item.value)}</strong>
-                            <span className={`kpi-tone kpi-tone-${item.tone}`}>
-                              {item.tone === "better"
-                                ? "Better"
-                                : item.tone === "worse"
-                                  ? "Worse"
-                                  : item.tone === "neutral"
-                                    ? "Neutral"
-                                    : "Unknown"}
-                            </span>
-                          </article>
-                        ))}
+                      <div className="kpi-toolbar-main kpi-toolbar-main--stretch">
+                        <label className="search-inline kpi-search">
+                          <input
+                            value={kpiSearch}
+                            onChange={(event) => setKpiSearch(event.target.value)}
+                            placeholder="Search KPI..."
+                          />
+                        </label>
                       </div>
                     </section>
 
-                    <section className="kpi-delta-board panel">
-                      <header className="kpi-section-header">
-                        <h3>Family Delta Board</h3>
-                        <small>Primary view: Δ = control - baseline (daily preferred, total fallback).</small>
-                      </header>
-                      {deltaBoardRows.length === 0 ? (
-                        <EmptyState
-                          title="No delta KPIs in this filter"
-                          message="Adjust family/aggregation filters or choose another scope."
-                        />
-                      ) : (
-                        <div className="kpi-delta-list">
-                          {deltaBoardRows.map((row) => {
-                            const tone = scoreKpiGroupTone(row);
-                            const magnitude = Math.max(
-                              4,
-                              Math.min(100, (Math.abs(row.delta || 0) / deltaBoardMaxAbs) * 100)
-                            );
-                            return (
-                              <article key={`delta:${row.comparisonKey}`} className="kpi-delta-row">
-                                <header>
-                                  <div className="kpi-delta-title">
-                                    <strong>{row.label}</strong>
-                                    <button type="button" className="kpi-help" aria-label={`${row.label} details`}>
-                                      <Info size={13} />
-                                      <span role="tooltip" className="kpi-help-tooltip">
-                                        <strong>{row.tooltip.shortDescription}</strong>
-                                        <small>{row.tooltip.formulaShort}</small>
-                                      </span>
-                                    </button>
-                                  </div>
-                                  <span className={`kpi-tone kpi-tone-${tone}`}>
-                                    {row.delta === null ? "-" : formatNumber(row.delta)}
-                                    {row.deltaPct === null ? "" : ` (${row.deltaPct.toFixed(2)}%)`}
-                                  </span>
-                                </header>
-                                <div className="kpi-delta-track">
-                                  <span className="kpi-delta-midline" />
-                                  <span
-                                    className={`kpi-delta-fill ${
-                                      (row.delta || 0) >= 0 ? "is-positive" : "is-negative"
-                                    }`}
-                                    style={{ width: `${magnitude}%` }}
-                                  />
+                    {kpiHighlightRows.length > 0 ? (
+                      <section className="kpi-highlights-strip panel">
+                        <header className="kpi-section-header">
+                          <h3>Curated Highlights</h3>
+                          <small>Fixed KPI bar for quick checks in this scope.</small>
+                        </header>
+                        <div className="kpi-highlight-grid">
+                          {kpiHighlightRows.map((item) => (
+                            <article key={item.key} className={`kpi-highlight-card tone-${item.tone} ${item.hasComparable ? "" : "is-static"}`}>
+                              <header>
+                                <div className="kpi-highlight-title">
+                                  <small>{item.title}</small>
+                                  <button type="button" className="kpi-help" aria-label={`About ${item.metricLabel}`}>
+                                    <Info size={12} />
+                                    <span role="tooltip" className="kpi-help-tooltip">
+                                      <strong>{item.metricLabel}</strong>
+                                      <small>{item.description}</small>
+                                      <small>{item.formula}</small>
+                                    </span>
+                                  </button>
                                 </div>
-                                <footer>
-                                  <small>Baseline: {formatNumber(row.baseline)}</small>
-                                  <small>Control: {formatNumber(row.control)}</small>
-                                  <small>{row.unit || "-"}</small>
-                                </footer>
-                              </article>
-                            );
-                          })}
+                                {formatToneLabel(item.tone, { hideUnknown: true }) ? (
+                                  <span className={`kpi-tone kpi-tone-${item.tone}`}>
+                                    {formatToneLabel(item.tone, { hideUnknown: true })}
+                                  </span>
+                                ) : null}
+                              </header>
+                              <strong>{formatHighlightNumber(item.value)}</strong>
+                              <footer>
+                                <small>{item.hasComparable ? `Δ ${formatHighlightNumber(item.delta)}` : "No baseline comparison"}</small>
+                                <small>{item.unit || "-"}</small>
+                              </footer>
+                            </article>
+                          ))}
                         </div>
-                      )}
-                    </section>
+                      </section>
+                    ) : null}
 
-                    {detailedTableRows.length === 0 ? (
+                    {visibleKpiGroupRows.length === 0 ? (
                       <EmptyState
-                        title="No extra KPIs to detail"
-                        message="All active KPI groups in this filter are already shown in highlights/delta board."
+                        title="No KPIs in selected scope"
+                        message="Try another scope, family filter, search term, or enable Show N/A."
                       />
                     ) : (
-                      <div className="job-kpi-table-wrap kpi-list-wrap">
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>KPI</th>
-                              <th>Family</th>
-                              <th>Aggregation</th>
-                              <th>Variants</th>
-                              <th>Delta</th>
-                              <th>Delta %</th>
-                              <th>Control</th>
-                              <th>Baseline</th>
-                              <th>Unit</th>
-                              <th>Entity breakdown</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {detailedTableRows.map((row) => {
-                              const tone = scoreKpiGroupTone(row);
-                              const variants = ([
-                                row.normalized !== null ? "normalized" : null,
-                                row.control !== null ? "control" : null,
-                                row.baseline !== null ? "baseline" : null,
-                                row.delta !== null ? "delta" : null,
-                                row.absolute !== null ? "absolute" : null
-                              ] as Array<KpiVariant | null>)
-                                .filter((value): value is KpiVariant => Boolean(value))
-                                .map((variant) => KPI_VARIANT_LABELS[variant])
-                                .join(" · ");
-                              const breakdown =
-                                row.breakdown.delta.length > 0
-                                  ? row.breakdown.delta
-                                  : row.breakdown.control.length > 0
-                                    ? row.breakdown.control
-                                    : row.breakdown.baseline.length > 0
-                                      ? row.breakdown.baseline
-                                      : row.breakdown.normalized.length > 0
-                                        ? row.breakdown.normalized
-                                        : row.breakdown.absolute;
-                              return (
-                                <tr key={`row:${row.comparisonKey}`}>
-                                  <td>
-                                    <div className="kpi-row-label">
-                                      <span>
-                                        {row.label}
-                                        <small className="kpi-row-meta">{row.canonicalGroupId}</small>
-                                      </span>
-                                      <button type="button" className="kpi-help" aria-label={`${row.label} details`}>
-                                        <Info size={12} />
-                                        <span role="tooltip" className="kpi-help-tooltip">
-                                          <strong>{row.tooltip.shortDescription}</strong>
-                                          <small>{row.tooltip.formulaShort}</small>
-                                        </span>
-                                      </button>
-                                    </div>
-                                  </td>
-                                  <td>{formatKpiFamilyLabel(row.family)}</td>
-                                  <td>{KPI_AGGREGATION_LABELS[row.aggregation]}</td>
-                                  <td>{variants || "-"}</td>
-                                  <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
-                                    {formatNumber(row.delta)}
-                                  </td>
-                                  <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
-                                    {row.deltaPct === null ? "-" : `${row.deltaPct.toFixed(2)}%`}
-                                  </td>
-                                  <td>{formatNumber(row.control)}</td>
-                                  <td>{formatNumber(row.baseline)}</td>
-                                  <td>{row.unit || "-"}</td>
-                                  <td>
-                                    <div className="kpi-breakdown-inline">
-                                      {breakdown.map((entry) => (
-                                        <span key={`${row.comparisonKey}:${entry.entity}`}>
-                                          {entry.entity}: {formatNumber(entry.value)}
-                                        </span>
-                                      ))}
-                                      {breakdown.length === 0 ? <span>-</span> : null}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                      kpiSemanticSections.map((familySection) => {
+                        const FamilyIcon = resolveFamilyIcon(familySection.family);
+                        return (
+                        <details key={familySection.family} className="panel kpi-family-panel">
+                          <summary className="kpi-family-summary">
+                            <span className="kpi-family-heading">
+                              <span className={`kpi-family-icon family-${familySection.family}`}>
+                                <FamilyIcon size={14} />
+                              </span>
+                              <span>
+                                <strong>{familySection.familyLabel}</strong>
+                                <small>{familySection.subfamilies.length} subfamily group(s)</small>
+                              </span>
+                            </span>
+                            <span className="kpi-family-pill">{familySection.subfamilies.length} groups</span>
+                          </summary>
+
+                          <div className="kpi-family-body">
+                            <div className="kpi-subfamily-stack">
+                              {familySection.subfamilies.map((subfamily) => (
+                                <details key={`${familySection.family}:${subfamily.subfamilyKey}`} className="kpi-subfamily-accordion">
+                                  <summary>
+                                    <strong>{subfamily.subfamilyLabel}</strong>
+                                    <small>{subfamily.rows.length} KPI(s)</small>
+                                  </summary>
+                                  <div className="job-kpi-table-wrap kpi-list-wrap">
+                                    <table className="table">
+                                      <thead>
+                                        <tr>
+                                          <th>KPI</th>
+                                          <th>Control</th>
+                                          <th>Baseline</th>
+                                          <th>Delta</th>
+                                          <th>Delta %</th>
+                                          <th>Primary</th>
+                                          <th>Tone</th>
+                                          <th>Unit</th>
+                                          <th>Entity breakdown</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {subfamily.rows.map((row) => {
+                                          const tone = scoreKpiGroupTone(row);
+                                          const toneLabel = formatToneLabel(tone, { hideUnknown: true });
+                                          const primary = pickPrimaryValueForGroup(row);
+                                          const isNa = !isKpiGroupUsed(row);
+                                          const breakdown =
+                                            row.breakdown.control.length > 0
+                                              ? row.breakdown.control
+                                              : row.breakdown.absolute.length > 0
+                                                ? row.breakdown.absolute
+                                                : row.breakdown.baseline.length > 0
+                                                  ? row.breakdown.baseline
+                                                  : row.breakdown.delta.length > 0
+                                                    ? row.breakdown.delta
+                                                    : row.breakdown.normalized;
+                                          return (
+                                            <tr key={`row:${row.comparisonKey}`} className={isNa ? "kpi-row-na" : ""}>
+                                              <td>
+                                                <div className="kpi-row-label">
+                                                  <span>
+                                                    {row.label}
+                                                    <small className="kpi-row-meta">{row.canonicalGroupId}</small>
+                                                  </span>
+                                                  <button type="button" className="kpi-help" aria-label={`About ${row.label}`}>
+                                                    <Info size={12} />
+                                                    <span role="tooltip" className="kpi-help-tooltip">
+                                                      <strong>{row.label}</strong>
+                                                      <small>{row.tooltip.shortDescription}</small>
+                                                      <small>{row.tooltip.formulaShort}</small>
+                                                    </span>
+                                                  </button>
+                                                </div>
+                                              </td>
+                                              <td>{formatNumber(row.control)}</td>
+                                              <td>{formatNumber(row.baseline)}</td>
+                                              <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
+                                                {formatNumber(row.delta)}
+                                              </td>
+                                              <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
+                                                {row.deltaPct === null ? "N/A" : `${row.deltaPct.toFixed(2)}%`}
+                                              </td>
+                                              <td>{formatNumber(primary)}</td>
+                                              <td>
+                                                {toneLabel ? (
+                                                  <span className={`kpi-tone kpi-tone-${tone}`}>{toneLabel}</span>
+                                                ) : (
+                                                  <span className="kpi-tone-empty">-</span>
+                                                )}
+                                                {isNa ? <span className="kpi-na-pill">N/A</span> : null}
+                                              </td>
+                                              <td>{row.unit || "-"}</td>
+                                              <td>
+                                                <div className="kpi-breakdown-inline">
+                                                  {breakdown.map((entry) => (
+                                                    <span key={`${row.comparisonKey}:${entry.entity}`}>
+                                                      {entry.entity}: {formatNumber(entry.value)}
+                                                    </span>
+                                                  ))}
+                                                  {breakdown.length === 0 ? <span>N/A</span> : null}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              ))}
+                            </div>
+                          </div>
+                        </details>
+                        );
+                      })
                     )}
                   </section>
                 </div>

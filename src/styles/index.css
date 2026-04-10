@@ -3821,11 +3821,22 @@ button {
 
 .kpi-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
+  padding: 0;
+}
+
+.kpi-toolbar.panel {
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--brand) 7%, transparent), transparent 62%),
+    color-mix(in srgb, var(--bg-elev), var(--bg) 8%);
+  box-shadow: 0 1px 2px rgba(20, 32, 28, 0.03);
+  border-radius: 10px;
+  padding: 10px 12px;
 }
 
 .kpi-toolbar small {
@@ -3833,8 +3844,38 @@ button {
   font-size: 0.82rem;
 }
 
+.kpi-toolbar-main {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.kpi-toolbar-main--stretch {
+  margin-left: auto;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
 .kpi-search {
-  min-width: min(420px, 100%);
+  min-width: min(380px, 100%);
+}
+
+.kpi-search.search-inline {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-width: min(380px, 100%);
+}
+
+.kpi-search.search-inline input {
+  width: 100%;
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 4%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+  padding: 0 11px;
 }
 
 .kpi-layout {
@@ -3859,6 +3900,8 @@ button {
   display: grid;
   gap: 10px;
   align-content: start;
+  position: relative;
+  z-index: 2;
 }
 
 .job-detail-page .kpi-main {
@@ -3879,7 +3922,7 @@ button {
 .kpi-filter {
   display: grid;
   gap: 3px;
-  min-width: 150px;
+  min-width: 172px;
 }
 
 .kpi-filter span {
@@ -3890,12 +3933,25 @@ button {
 }
 
 .kpi-filter select {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg-elev-2);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 4%);
   color: var(--text);
-  min-height: 34px;
-  padding: 0 9px;
+  min-height: 38px;
+  padding: 0 11px;
+}
+
+.kpi-toggle-chip {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 4%);
+}
+
+.kpi-toggle-chip span {
+  font-size: 0.8rem;
+  color: var(--text-soft);
 }
 
 .kpi-core-highlights,
@@ -3904,6 +3960,17 @@ button {
   border-radius: 10px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-elev-2), transparent 8%);
+  display: grid;
+  gap: 10px;
+}
+
+.kpi-highlights-strip {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--brand) 8%, transparent), transparent 65%),
+    color-mix(in srgb, var(--bg-elev-2), transparent 8%);
   display: grid;
   gap: 10px;
 }
@@ -3967,6 +4034,12 @@ button {
   gap: 8px;
 }
 
+.kpi-highlight-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .kpi-highlight-card small {
   color: var(--text-soft);
   font-size: 0.74rem;
@@ -3975,6 +4048,35 @@ button {
 .kpi-highlight-card > strong {
   font-family: var(--font-heading);
   font-size: 1rem;
+}
+
+.kpi-highlight-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.kpi-highlight-card.is-static {
+  border-style: dashed;
+}
+
+.kpi-compare-highlight-values {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.kpi-compare-highlight-values > strong {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+}
+
+.kpi-compare-highlight-values > small {
+  color: var(--text-soft);
+  font-size: 0.7rem;
 }
 
 .kpi-help {
@@ -3993,9 +4095,9 @@ button {
 
 .kpi-help-tooltip {
   position: absolute;
-  right: -4px;
+  left: 50%;
   top: calc(100% + 7px);
-  width: min(270px, 54vw);
+  width: min(230px, 46vw);
   padding: 8px 9px;
   border-radius: 8px;
   border: 1px solid var(--line);
@@ -4004,10 +4106,10 @@ button {
   display: grid;
   gap: 4px;
   opacity: 0;
-  transform: translateY(-2px);
+  transform: translate(-50%, -2px);
   pointer-events: none;
   transition: opacity 120ms ease, transform 120ms ease;
-  z-index: 16;
+  z-index: 60;
 }
 
 .kpi-help-tooltip strong {
@@ -4025,7 +4127,7 @@ button {
 .kpi-help:hover .kpi-help-tooltip,
 .kpi-help:focus-visible .kpi-help-tooltip {
   opacity: 1;
-  transform: translateY(0);
+  transform: translate(-50%, 0);
 }
 
 .kpi-tone {
@@ -4060,6 +4162,11 @@ button {
 
 .kpi-tone-unknown {
   color: color-mix(in srgb, var(--text-soft) 88%, transparent);
+}
+
+.kpi-tone-empty {
+  color: var(--text-soft);
+  font-size: 0.78rem;
 }
 
 .kpi-delta-list {
@@ -4219,6 +4326,225 @@ button {
   display: grid;
   gap: 8px;
   padding: 10px;
+}
+
+.kpi-family-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.kpi-family-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 42px 10px 12px;
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 8%);
+  position: relative;
+}
+
+.kpi-family-summary::-webkit-details-marker {
+  display: none;
+}
+
+.kpi-family-panel[open] > .kpi-family-summary {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.kpi-family-summary::after {
+  content: "›";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  color: var(--text-soft);
+  font-size: 1rem;
+  transform: translateY(-50%) rotate(90deg);
+  transition: transform 140ms ease;
+  pointer-events: none;
+}
+
+.kpi-family-panel[open] > .kpi-family-summary::after {
+  transform: translateY(-50%) rotate(-90deg);
+}
+
+.kpi-family-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kpi-family-heading strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.kpi-family-heading small {
+  display: block;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.kpi-family-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--brand) 34%, var(--line));
+  color: color-mix(in srgb, var(--brand) 78%, var(--text));
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.kpi-family-icon.family-cost {
+  color: #2dbf78;
+  border-color: color-mix(in srgb, #2dbf78 46%, var(--line));
+  background: color-mix(in srgb, #2dbf78 16%, transparent);
+}
+
+.kpi-family-icon.family-energy_grid {
+  color: #f4a340;
+  border-color: color-mix(in srgb, #f4a340 44%, var(--line));
+  background: color-mix(in srgb, #f4a340 14%, transparent);
+}
+
+.kpi-family-icon.family-emissions {
+  color: #4cb26b;
+  border-color: color-mix(in srgb, #4cb26b 40%, var(--line));
+  background: color-mix(in srgb, #4cb26b 14%, transparent);
+}
+
+.kpi-family-icon.family-solar_self_consumption {
+  color: #f2b741;
+  border-color: color-mix(in srgb, #f2b741 42%, var(--line));
+  background: color-mix(in srgb, #f2b741 13%, transparent);
+}
+
+.kpi-family-icon.family-ev {
+  color: #4f8cff;
+  border-color: color-mix(in srgb, #4f8cff 44%, var(--line));
+  background: color-mix(in srgb, #4f8cff 13%, transparent);
+}
+
+.kpi-family-icon.family-battery {
+  color: #7f9bff;
+  border-color: color-mix(in srgb, #7f9bff 42%, var(--line));
+  background: color-mix(in srgb, #7f9bff 14%, transparent);
+}
+
+.kpi-family-icon.family-electrical_service_phase {
+  color: #f07b57;
+  border-color: color-mix(in srgb, #f07b57 44%, var(--line));
+  background: color-mix(in srgb, #f07b57 14%, transparent);
+}
+
+.kpi-family-icon.family-equity {
+  color: #9f7aea;
+  border-color: color-mix(in srgb, #9f7aea 44%, var(--line));
+  background: color-mix(in srgb, #9f7aea 14%, transparent);
+}
+
+.kpi-family-icon.family-comfort_resilience {
+  color: #16a6a1;
+  border-color: color-mix(in srgb, #16a6a1 44%, var(--line));
+  background: color-mix(in srgb, #16a6a1 14%, transparent);
+}
+
+.kpi-family-pill {
+  margin-left: auto;
+  margin-right: 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--bg-elev), transparent 6%);
+  white-space: nowrap;
+}
+
+.kpi-family-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.kpi-subfamily-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.kpi-subfamily-accordion {
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elev), transparent 6%);
+  overflow: hidden;
+}
+
+.kpi-subfamily-accordion > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid transparent;
+  position: relative;
+  padding-right: 28px;
+}
+
+.kpi-subfamily-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kpi-subfamily-accordion[open] > summary {
+  border-bottom-color: color-mix(in srgb, var(--line) 84%, transparent);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+}
+
+.kpi-subfamily-accordion > summary::after {
+  content: "›";
+  position: absolute;
+  right: 10px;
+  color: var(--text-soft);
+  transform: rotate(90deg);
+  transition: transform 140ms ease;
+}
+
+.kpi-subfamily-accordion[open] > summary::after {
+  transform: rotate(-90deg);
+}
+
+.kpi-subfamily-accordion > summary strong {
+  font-size: 0.84rem;
+}
+
+.kpi-subfamily-accordion > summary small {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+}
+
+.kpi-na-pill {
+  display: inline-flex;
+  margin-left: 8px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, var(--text-soft));
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 8%);
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.kpi-row-na {
+  opacity: 0.82;
+}
+
+.kpi-row-na td {
+  background: color-mix(in srgb, var(--bg-elev-2) 68%, transparent);
 }
 
 .job-compare-family-section .job-compare-table-wrap {
@@ -4624,6 +4950,8 @@ button {
   overflow: auto;
   padding-bottom: 4px;
   scroll-padding-bottom: 4px;
+  position: relative;
+  z-index: 1;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--brand) 8%, transparent), transparent 48%),
     color-mix(in srgb, var(--bg-elev), var(--bg) 5%);
@@ -4696,12 +5024,13 @@ button {
   color: var(--text);
   padding: 8px 10px;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   width: 100%;
   text-align: left;
   font-family: var(--font-heading);
   font-size: 0.98rem;
+  line-height: 1.28;
   cursor: pointer;
 }
 
@@ -4712,6 +5041,16 @@ button {
 
 .sim-tree-context-btn svg {
   color: color-mix(in srgb, var(--brand) 75%, var(--text-soft));
+  margin-top: 1px;
+  flex: 0 0 auto;
+}
+
+.sim-tree-context-label {
+  display: block;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .sim-tree-list {
@@ -5788,6 +6127,12 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .kpi-toolbar-main--stretch {
+    margin-left: 0;
+    justify-content: flex-start;
+    flex: 1 1 100%;
+  }
+
   .deploy-layout {
     grid-template-columns: 1fr;
   }
@@ -5857,6 +6202,35 @@ button {
 
   .job-overview-hero-actions {
     justify-content: flex-start;
+  }
+
+  .kpi-toolbar {
+    padding: 0;
+  }
+
+  .kpi-toolbar-main {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .kpi-filter {
+    min-width: 100%;
+  }
+
+  .kpi-search {
+    min-width: 100%;
+  }
+
+  .kpi-highlight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-family-summary {
+    padding: 9px 10px;
+  }
+
+  .kpi-family-pill {
+    display: none;
   }
 
   .table {
