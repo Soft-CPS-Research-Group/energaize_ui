@@ -27,6 +27,19 @@ export interface DatasetCreatePayload {
   until_ts?: string;
 }
 
+export interface DatasetSiteItem {
+  site_id: string;
+  buildings: string[];
+}
+
+export interface DatasetCreateResponse {
+  message: string;
+  name: string;
+  description?: string;
+  warnings?: string[];
+  validation?: Record<string, unknown>;
+}
+
 export interface RunSimulationPayload {
   config?: Record<string, unknown>;
   config_path?: string;
@@ -75,8 +88,12 @@ export async function listDatasets(): Promise<DatasetItem[]> {
   return http<DatasetItem[]>("/datasets");
 }
 
-export async function createDataset(payload: DatasetCreatePayload): Promise<{ message: string }> {
-  return http<{ message: string }>("/dataset", {
+export async function listDatasetSites(): Promise<{ sites: DatasetSiteItem[] }> {
+  return http<{ sites: DatasetSiteItem[] }>("/dataset/sites");
+}
+
+export async function createDataset(payload: DatasetCreatePayload): Promise<DatasetCreateResponse> {
+  return http<DatasetCreateResponse>("/dataset", {
     method: "POST",
     body: JSON.stringify(payload)
   });

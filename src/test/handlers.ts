@@ -105,6 +105,27 @@ resetMockState();
 
 export const handlers = [
   http.get(endpoint("/datasets"), () => HttpResponse.json([])),
+  http.get(endpoint("/dataset/sites"), () =>
+    HttpResponse.json({
+      sites: [
+        { site_id: "living_lab", buildings: ["R-H-01", "R-H-02"] },
+        { site_id: "i-charging_headquarters_3Phase", buildings: ["i-charging_headquarters_3Phase"] }
+      ]
+    })
+  ),
+  http.post(endpoint("/dataset"), async ({ request }) => {
+    const body = (await request.json()) as { name?: string; description?: string };
+    return HttpResponse.json({
+      message: "Dataset created",
+      name: body.name || "dataset_generated",
+      description: body.description || "",
+      warnings: [],
+      validation: {
+        static: { ok: true, errors: [] },
+        smoke_check: { requested: false, executed: false, ok: null, error: null }
+      }
+    });
+  }),
   http.post(endpoint("/dataset/upload"), () =>
     HttpResponse.json({ message: "Dataset uploaded", name: "uploaded_dataset" })
   ),
