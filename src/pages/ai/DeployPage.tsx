@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pause, Play, Upload, ArrowRightLeft, RefreshCcw, Trash2 } from "lucide-react";
+import { Eye, Pause, Play, Upload, ArrowRightLeft, RefreshCcw, Trash2, CalendarDays, ChevronDown } from "lucide-react";
+import { DayPicker } from "react-day-picker";
 import {
   deleteDeployBundle,
+  getDeployLogsHistoryChunk,
   getDeployInferenceHealth,
   listDeployBundleFiles,
   listDeployBundles,
@@ -12,6 +14,7 @@ import {
   switchDeployInferenceBundle,
   uploadDeployBundleFolder,
   type DeployBundleRecord,
+  type DeployLogsHistoryChunkResponse,
   type DeployInferenceHealth,
   type DeployInferenceTarget
 } from "../../api/deployApi";
@@ -27,6 +30,12 @@ const TARGETS_POLL_MS = 15000;
 const BUNDLES_POLL_MS = 10000;
 const DEFAULT_LOG_TAIL = 200;
 const LOG_BUFFER_MAX_CHARS = 200000;
+const HISTORY_LIMIT_LINES = 500;
+const HISTORY_DEFAULT_HOURS = 6;
+
+type DeployLogsMode = "live" | "history";
+type DeployHistoryQuickRange = "1h" | "6h" | "24h" | "custom";
+type DeployHistoryDateField = "since" | "until";
 
 function extractBundleIdFromManifestPath(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -88,6 +97,192 @@ function isHealthNoiseLogLine(line: string): boolean {
   return false;
 }
 
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function toDateTimeLocalInput(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
+    date.getMinutes()
+  )}`;
+}
+
+function parseDateTimeLocalInput(value: string): Date | null {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  const date = new Date(normalized);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date;
+}
+
+function historyWindowLabelFromRange(
+  range: DeployHistoryQuickRange,
+  sinceInput: string,
+  untilInput: string
+): string {
+  if (range === "1h") return "Window: Last 1h";
+  if (range === "6h") return "Window: Last 6h";
+  if (range === "24h") return "Window: Last 24h";
+  return `Window: ${sinceInput || "-"} → ${untilInput || "-"}`;
+}
+
+function formatHistoryLineTs(value: string | null): string {
+  if (!value) return "No timestamp";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
+function formatHistoryRangeSummary(sinceInput: string, untilInput: string): string {
+  const since = parseDateTimeLocalInput(sinceInput);
+  const until = parseDateTimeLocalInput(untilInput);
+  if (!since || !until) return "Select window";
+  const start = since.toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  const end = until.toLocaleString([], {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  return `${start} → ${end}`;
+}
+
+function parseTimeInput(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+
+  const colonMatch = value.match(/^(\d{1,2})\s*:\s*(\d{1,2})$/);
+  if (colonMatch) {
+    const hours = Number(colonMatch[1]);
+    const minutes = Number(colonMatch[2]);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+    return null;
+  }
+
+  const compactMatch = value.match(/^(\d{3,4})$/);
+  if (!compactMatch) return null;
+  const digits = compactMatch[1].padStart(4, "0");
+  const hours = Number(digits.slice(0, 2));
+  const minutes = Number(digits.slice(2, 4));
+  if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+    return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+  }
+  return null;
+}
+
+function offsetTimeValue(time: string, minutesDelta: number): string {
+  const parsed = parseTimeInput(time) || "00:00";
+  const [hoursPart, minutesPart] = parsed.split(":");
+  const initialMinutes = Number(hoursPart) * 60 + Number(minutesPart);
+  const next = ((initialMinutes + minutesDelta) % (24 * 60) + 24 * 60) % (24 * 60);
+  const hours = Math.floor(next / 60);
+  const minutes = next % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function extractTimePart(local: string, fallback = "00:00"): string {
+  const parsed = parseDateTimeLocalInput(local);
+  if (!parsed) return fallback;
+  return `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+function applyDateAndTime(date: Date, time: string): string {
+  const [hoursPart, minutesPart] = time.split(":");
+  const hours = Number(hoursPart);
+  const minutes = Number(minutesPart);
+  const next = new Date(date);
+  next.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+  return toDateTimeLocalInput(next);
+}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function formatPickerDay(date: Date): string {
+  return date.toLocaleDateString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+}
+
+function TimeInput24({
+  value,
+  onChange,
+  ariaLabel
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  ariaLabel: string;
+}): JSX.Element {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  function commit(nextRaw: string): void {
+    const normalized = parseTimeInput(nextRaw) || parseTimeInput(value) || "00:00";
+    setDraft(normalized);
+    onChange(normalized);
+  }
+
+  return (
+    <div className="timeseries-time-picker" role="group" aria-label={ariaLabel}>
+      <button
+        type="button"
+        className="timeseries-time-step"
+        onClick={() => {
+          const next = offsetTimeValue(draft || value || "00:00", -15);
+          setDraft(next);
+          onChange(next);
+        }}
+        title="Minus 15 minutes"
+      >
+        -15m
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        className="timeseries-time-text"
+        value={draft}
+        placeholder="HH:mm"
+        aria-label={ariaLabel}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => commit(draft)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit(draft);
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="timeseries-time-step"
+        onClick={() => {
+          const next = offsetTimeValue(draft || value || "00:00", 15);
+          setDraft(next);
+          onChange(next);
+        }}
+        title="Plus 15 minutes"
+      >
+        +15m
+      </button>
+    </div>
+  );
+}
+
 function formatLogsForDisplay(
   raw: string,
   options: { hideHealthNoise: boolean; markInferenceCycles: boolean }
@@ -122,12 +317,34 @@ export function DeployPage(): JSX.Element {
 
   const [logsOpen, setLogsOpen] = useState(false);
   const [logsTarget, setLogsTarget] = useState<DeployInferenceTarget | null>(null);
+  const [logsMode, setLogsMode] = useState<DeployLogsMode>("live");
   const [logsText, setLogsText] = useState("");
   const [logsStreaming, setLogsStreaming] = useState(false);
   const [logsPaused, setLogsPaused] = useState(false);
   const [logsAutoScroll, setLogsAutoScroll] = useState(true);
   const [logsHideHealthNoise, setLogsHideHealthNoise] = useState(true);
   const [logsMarkInferenceCycles, setLogsMarkInferenceCycles] = useState(true);
+  const [logsHistoryQuickRange, setLogsHistoryQuickRange] = useState<DeployHistoryQuickRange>("6h");
+  const [logsHistorySinceInput, setLogsHistorySinceInput] = useState(() =>
+    toDateTimeLocalInput(new Date(Date.now() - HISTORY_DEFAULT_HOURS * 60 * 60 * 1000))
+  );
+  const [logsHistoryUntilInput, setLogsHistoryUntilInput] = useState(() => toDateTimeLocalInput(new Date()));
+  const [logsHistoryRangePopoverOpen, setLogsHistoryRangePopoverOpen] = useState(false);
+  const [logsHistoryActiveDateField, setLogsHistoryActiveDateField] = useState<DeployHistoryDateField | null>(null);
+  const [logsHistoryCalendarMonth, setLogsHistoryCalendarMonth] = useState<Date | undefined>(undefined);
+  const [logsHistoryDraftSinceInput, setLogsHistoryDraftSinceInput] = useState(() =>
+    toDateTimeLocalInput(new Date(Date.now() - HISTORY_DEFAULT_HOURS * 60 * 60 * 1000))
+  );
+  const [logsHistoryDraftUntilInput, setLogsHistoryDraftUntilInput] = useState(() => toDateTimeLocalInput(new Date()));
+  const [logsHistorySearch, setLogsHistorySearch] = useState("");
+  const [logsHistoryLoading, setLogsHistoryLoading] = useState(false);
+  const [logsHistoryChunk, setLogsHistoryChunk] = useState<DeployLogsHistoryChunkResponse | null>(null);
+  const [logsHistoryAppliedQuery, setLogsHistoryAppliedQuery] = useState<{
+    sinceTs: string;
+    untilTs: string;
+    search: string;
+  } | null>(null);
+  const [logsHistoryAppliedWindowLabel, setLogsHistoryAppliedWindowLabel] = useState("Window: Last 6h");
   const [refreshingVisual, setRefreshingVisual] = useState(false);
 
   const [switchTarget, setSwitchTarget] = useState<DeployInferenceTarget | null>(null);
@@ -238,8 +455,43 @@ export function DeployPage(): JSX.Element {
       }),
     [logsText, logsHideHealthNoise, logsMarkInferenceCycles]
   );
+  const renderedLogsHistoryText = useMemo(() => {
+    if (!logsHistoryChunk) return "";
+    return logsHistoryChunk.lines
+      .map((line) => `[${formatHistoryLineTs(line.ts)}] (${line.source}) ${line.text}`)
+      .join("\n");
+  }, [logsHistoryChunk]);
   const logsStatusLabel = logsStreaming ? "Live" : logsPaused ? "Paused" : "Idle";
   const logsStatusClass = logsStreaming ? "is-live" : logsPaused ? "is-paused" : "is-idle";
+  const historyHasPaging = Boolean(logsHistoryChunk?.has_more_before || logsHistoryChunk?.has_more_after);
+  const logsHistoryCurrentWindowLabel = useMemo(
+    () => historyWindowLabelFromRange(logsHistoryQuickRange, logsHistorySinceInput, logsHistoryUntilInput),
+    [logsHistoryQuickRange, logsHistorySinceInput, logsHistoryUntilInput]
+  );
+  const logsHistoryHasPendingChanges = useMemo(() => {
+    if (!logsHistoryAppliedQuery) return false;
+    return (
+      logsHistoryAppliedWindowLabel !== logsHistoryCurrentWindowLabel ||
+      logsHistoryAppliedQuery.search !== logsHistorySearch
+    );
+  }, [
+    logsHistoryAppliedQuery,
+    logsHistoryAppliedWindowLabel,
+    logsHistoryCurrentWindowLabel,
+    logsHistorySearch
+  ]);
+  const logsHistoryRangeSummary = useMemo(
+    () => formatHistoryRangeSummary(logsHistorySinceInput, logsHistoryUntilInput),
+    [logsHistorySinceInput, logsHistoryUntilInput]
+  );
+  const logsHistoryDraftSinceDate = useMemo(
+    () => parseDateTimeLocalInput(logsHistoryDraftSinceInput),
+    [logsHistoryDraftSinceInput]
+  );
+  const logsHistoryDraftUntilDate = useMemo(
+    () => parseDateTimeLocalInput(logsHistoryDraftUntilInput),
+    [logsHistoryDraftUntilInput]
+  );
 
   useEffect(() => {
     if (!fileInputRef.current) return;
@@ -248,11 +500,11 @@ export function DeployPage(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    if (!logsOpen || !logsAutoScroll) return;
+    if (!logsOpen || logsMode !== "live" || !logsAutoScroll) return;
     const pre = logsPreRef.current;
     if (!pre) return;
     pre.scrollTop = pre.scrollHeight;
-  }, [renderedLogsText, logsOpen, logsAutoScroll]);
+  }, [renderedLogsText, logsOpen, logsAutoScroll, logsMode]);
 
   useEffect(() => {
     return () => {
@@ -307,19 +559,209 @@ export function DeployPage(): JSX.Element {
     }
   }
 
+  function resetLogsHistoryDraft(hours: number): void {
+    const now = new Date();
+    const since = new Date(now.getTime() - hours * 60 * 60 * 1000);
+    const sinceInput = toDateTimeLocalInput(since);
+    const untilInput = toDateTimeLocalInput(now);
+    setLogsHistorySinceInput(sinceInput);
+    setLogsHistoryUntilInput(untilInput);
+    setLogsHistoryDraftSinceInput(sinceInput);
+    setLogsHistoryDraftUntilInput(untilInput);
+  }
+
+  function onSelectHistoryQuickRange(range: DeployHistoryQuickRange): void {
+    setLogsHistoryQuickRange(range);
+    setLogsHistoryRangePopoverOpen(false);
+    setLogsHistoryActiveDateField(null);
+    if (range === "1h") resetLogsHistoryDraft(1);
+    if (range === "6h") resetLogsHistoryDraft(6);
+    if (range === "24h") resetLogsHistoryDraft(24);
+  }
+
+  function toggleLogsHistoryRangePopover(): void {
+    setLogsHistoryRangePopoverOpen((previous) => {
+      const next = !previous;
+      if (next) {
+        setLogsHistoryDraftSinceInput(logsHistorySinceInput);
+        setLogsHistoryDraftUntilInput(logsHistoryUntilInput);
+        const sinceDate = parseDateTimeLocalInput(logsHistorySinceInput);
+        if (sinceDate) {
+          setLogsHistoryCalendarMonth(new Date(sinceDate.getFullYear(), sinceDate.getMonth(), 1));
+        }
+        if (logsHistoryActiveDateField === null) {
+          setLogsHistoryActiveDateField("since");
+        }
+      } else {
+        setLogsHistoryActiveDateField(null);
+      }
+      return next;
+    });
+  }
+
+  function setLogsHistoryDraftDate(field: DeployHistoryDateField, date: Date | undefined): void {
+    if (!date) return;
+    if (field === "since") {
+      const nextSince = applyDateAndTime(startOfDay(date), extractTimePart(logsHistoryDraftSinceInput, "00:00"));
+      setLogsHistoryDraftSinceInput(nextSince);
+      const untilDate = parseDateTimeLocalInput(logsHistoryDraftUntilInput);
+      const sinceDate = parseDateTimeLocalInput(nextSince);
+      if (!untilDate || (sinceDate && untilDate.getTime() < sinceDate.getTime())) {
+        setLogsHistoryDraftUntilInput(nextSince);
+      }
+      setLogsHistoryActiveDateField("until");
+      setLogsHistoryCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+      return;
+    }
+
+    const nextUntil = applyDateAndTime(startOfDay(date), extractTimePart(logsHistoryDraftUntilInput, "00:00"));
+    setLogsHistoryDraftUntilInput(nextUntil);
+    setLogsHistoryCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+  }
+
+  function applyLogsHistoryDraftRange(): void {
+    const sinceDate = parseDateTimeLocalInput(logsHistoryDraftSinceInput);
+    const untilDate = parseDateTimeLocalInput(logsHistoryDraftUntilInput);
+    if (!sinceDate || !untilDate || sinceDate.getTime() > untilDate.getTime()) {
+      notifyError("Invalid history time window", new Error("Start time must be before end time."));
+      return;
+    }
+    setLogsHistorySinceInput(logsHistoryDraftSinceInput);
+    setLogsHistoryUntilInput(logsHistoryDraftUntilInput);
+    setLogsHistoryQuickRange("custom");
+    setLogsHistoryRangePopoverOpen(false);
+    setLogsHistoryActiveDateField(null);
+  }
+
+  function switchLogsMode(mode: DeployLogsMode): void {
+    if (mode === logsMode) return;
+    setLogsMode(mode);
+
+    if (mode === "history") {
+      logsAbortRef.current?.abort();
+      logsAbortRef.current = null;
+      setLogsStreaming(false);
+      setLogsPaused(false);
+      if (logsTarget) {
+        setLogsHistoryChunk(null);
+        void loadLogsHistoryChunk();
+      }
+      return;
+    }
+
+    if (logsTarget) {
+      setLogsHistoryRangePopoverOpen(false);
+      setLogsHistoryActiveDateField(null);
+      setLogsPaused(false);
+      void startLogsStream(logsTarget);
+    }
+  }
+
+  async function loadLogsHistoryChunk(cursor?: string, useAppliedQuery = false): Promise<void> {
+    if (!logsTarget) return;
+
+    let sinceTs: string;
+    let untilTs: string;
+    let searchValue: string;
+
+    if (useAppliedQuery && logsHistoryAppliedQuery) {
+      sinceTs = logsHistoryAppliedQuery.sinceTs;
+      untilTs = logsHistoryAppliedQuery.untilTs;
+      searchValue = logsHistoryAppliedQuery.search;
+    } else {
+      const sinceDate = parseDateTimeLocalInput(logsHistorySinceInput);
+      const untilDate = parseDateTimeLocalInput(logsHistoryUntilInput);
+
+      if (!sinceDate || !untilDate) {
+        notifyError("Invalid history time window", new Error("Please provide valid start and end timestamps."));
+        return;
+      }
+      if (sinceDate.getTime() > untilDate.getTime()) {
+        notifyError("Invalid history time window", new Error("Start time must be before end time."));
+        return;
+      }
+
+      sinceTs = sinceDate.toISOString();
+      untilTs = untilDate.toISOString();
+      searchValue = logsHistorySearch;
+      setLogsHistoryAppliedQuery({
+        sinceTs,
+        untilTs,
+        search: searchValue
+      });
+      setLogsHistoryAppliedWindowLabel(
+        historyWindowLabelFromRange(logsHistoryQuickRange, logsHistorySinceInput, logsHistoryUntilInput)
+      );
+    }
+
+    setLogsHistoryLoading(true);
+    try {
+      const payload = await getDeployLogsHistoryChunk(logsTarget.id, {
+        sinceTs,
+        untilTs,
+        cursor,
+        limitLines: HISTORY_LIMIT_LINES,
+        search: searchValue
+      });
+      setLogsHistoryChunk(payload);
+    } catch (error) {
+      notifyError("Could not load log history", error);
+    } finally {
+      setLogsHistoryLoading(false);
+    }
+  }
+
+  function applyLogsHistoryFilters(): void {
+    setLogsHistoryRangePopoverOpen(false);
+    setLogsHistoryActiveDateField(null);
+    void loadLogsHistoryChunk();
+  }
+
+  function loadOlderLogsHistory(): void {
+    const cursor = logsHistoryChunk?.next_cursor;
+    if (!cursor || logsHistoryLoading) return;
+    void loadLogsHistoryChunk(cursor, true);
+  }
+
+  function loadNewerLogsHistory(): void {
+    const cursor = logsHistoryChunk?.prev_cursor;
+    if (!cursor || logsHistoryLoading) return;
+    void loadLogsHistoryChunk(cursor, true);
+  }
+
   function closeLogsModal(): void {
     logsAbortRef.current?.abort();
     logsAbortRef.current = null;
     setLogsOpen(false);
     setLogsTarget(null);
+    setLogsMode("live");
     setLogsStreaming(false);
     setLogsPaused(false);
+    setLogsHistoryChunk(null);
+    setLogsHistoryAppliedQuery(null);
+    setLogsHistorySearch("");
+    setLogsHistoryRangePopoverOpen(false);
+    setLogsHistoryActiveDateField(null);
+    setLogsHistoryCalendarMonth(undefined);
+    setLogsHistoryQuickRange("6h");
+    resetLogsHistoryDraft(HISTORY_DEFAULT_HOURS);
+    setLogsHistoryAppliedWindowLabel("Window: Last 6h");
   }
 
   function openLogsForTarget(target: DeployInferenceTarget): void {
     setLogsTarget(target);
+    setLogsMode("live");
     setLogsText("");
     setLogsPaused(false);
+    setLogsHistoryChunk(null);
+    setLogsHistoryAppliedQuery(null);
+    setLogsHistorySearch("");
+    setLogsHistoryRangePopoverOpen(false);
+    setLogsHistoryActiveDateField(null);
+    setLogsHistoryCalendarMonth(undefined);
+    setLogsHistoryQuickRange("6h");
+    resetLogsHistoryDraft(HISTORY_DEFAULT_HOURS);
+    setLogsHistoryAppliedWindowLabel("Window: Last 6h");
     setLogsOpen(true);
     void startLogsStream(target);
   }
@@ -725,58 +1167,278 @@ export function DeployPage(): JSX.Element {
         width="lg"
       >
         <section className="deploy-logs-modal-content">
-          <div className="deploy-logs-toolbar">
-            <div className="deploy-logs-toolbar-main">
-              <div className="deploy-logs-actions">
+          <div className="deploy-logs-mode-switch" role="tablist" aria-label="Log mode">
+            <button
+              type="button"
+              className={`deploy-logs-mode-btn${logsMode === "live" ? " is-active" : ""}`}
+              onClick={() => switchLogsMode("live")}
+              aria-pressed={logsMode === "live"}
+            >
+              Live
+            </button>
+            <button
+              type="button"
+              className={`deploy-logs-mode-btn${logsMode === "history" ? " is-active" : ""}`}
+              onClick={() => switchLogsMode("history")}
+              aria-pressed={logsMode === "history"}
+            >
+              History
+            </button>
+          </div>
+
+          {logsMode === "live" ? (
+            <>
+              <div className="deploy-logs-toolbar">
+                <div className="deploy-logs-toolbar-main">
+                  <div className="deploy-logs-actions">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      iconLeft={logsPaused ? <Play size={13} /> : <Pause size={13} />}
+                      onClick={toggleLogsPauseResume}
+                      disabled={!logsTarget}
+                    >
+                      {logsPaused ? "Resume" : "Pause"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setLogsText("")}>
+                      Clear
+                    </Button>
+                  </div>
+                  <div className={`deploy-logs-status ${logsStatusClass}`}>
+                    <span className="deploy-logs-status-dot" aria-hidden="true" />
+                    <span>{logsStatusLabel}</span>
+                  </div>
+                </div>
+                <div className="deploy-logs-toolbar-toggles">
+                  <label className="deploy-logs-toggle">
+                    <input
+                      type="checkbox"
+                      checked={logsAutoScroll}
+                      onChange={(event) => setLogsAutoScroll(event.target.checked)}
+                    />
+                    Auto-scroll
+                  </label>
+                  <label className="deploy-logs-toggle">
+                    <input
+                      type="checkbox"
+                      checked={logsHideHealthNoise}
+                      onChange={(event) => setLogsHideHealthNoise(event.target.checked)}
+                    />
+                    Hide health logs
+                  </label>
+                  <label className="deploy-logs-toggle">
+                    <input
+                      type="checkbox"
+                      checked={logsMarkInferenceCycles}
+                      onChange={(event) => setLogsMarkInferenceCycles(event.target.checked)}
+                    />
+                    Mark inference cycles
+                  </label>
+                </div>
+              </div>
+
+              <pre ref={logsPreRef} className="json-view deploy-logs-view" role="log" aria-live="polite">
+                {renderedLogsText || "No logs received yet."}
+              </pre>
+            </>
+          ) : (
+            <>
+              <div className="deploy-logs-history-toolbar timeseries-toolbar">
+                <div className="timeseries-toolbar-left">
+                  <div className="segmented-row" role="group" aria-label="History quick range">
+                    <button
+                      type="button"
+                      className={`segment-btn${logsHistoryQuickRange === "1h" ? " is-active" : ""}`}
+                      onClick={() => onSelectHistoryQuickRange("1h")}
+                    >
+                      Last 1h
+                    </button>
+                    <button
+                      type="button"
+                      className={`segment-btn${logsHistoryQuickRange === "6h" ? " is-active" : ""}`}
+                      onClick={() => onSelectHistoryQuickRange("6h")}
+                    >
+                      Last 6h
+                    </button>
+                    <button
+                      type="button"
+                      className={`segment-btn${logsHistoryQuickRange === "24h" ? " is-active" : ""}`}
+                      onClick={() => onSelectHistoryQuickRange("24h")}
+                    >
+                      Last 24h
+                    </button>
+                    <button
+                      type="button"
+                      className={`segment-btn${logsHistoryQuickRange === "custom" ? " is-active" : ""}`}
+                      onClick={() => onSelectHistoryQuickRange("custom")}
+                    >
+                      Custom
+                    </button>
+                  </div>
+                  <label className="timeseries-time-field deploy-logs-history-search">
+                    <span>Search</span>
+                    <input
+                      type="search"
+                      placeholder="Substring search..."
+                      value={logsHistorySearch}
+                      onChange={(event) => setLogsHistorySearch(event.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="timeseries-toolbar-right deploy-logs-history-right">
+                  <button
+                    type="button"
+                    className={`timeseries-range-trigger${logsHistoryRangePopoverOpen ? " is-open" : ""}`}
+                    onClick={toggleLogsHistoryRangePopover}
+                    title="Adjust history range"
+                  >
+                    <CalendarDays size={15} />
+                    <span className="timeseries-range-trigger-copy">
+                      <small>History range</small>
+                      <strong>{logsHistoryRangeSummary}</strong>
+                    </span>
+                    <ChevronDown size={14} />
+                  </button>
+
+                  {logsHistoryRangePopoverOpen ? (
+                    <div className="timeseries-range-popover panel">
+                      <div className="timeseries-range-head">
+                        <div>
+                          <strong>Select history window</strong>
+                          <small>Choose start/end date and time in local timezone.</small>
+                        </div>
+                        <span className="timeseries-range-hint">
+                          <span className="timeseries-range-hint-dot" />
+                          Local time
+                        </span>
+                      </div>
+                      <div className="timeseries-date-row">
+                        <div className="timeseries-date-field">
+                          <span>Since</span>
+                          <button
+                            type="button"
+                            className={`timeseries-date-trigger${logsHistoryActiveDateField === "since" ? " is-active" : ""}`}
+                            onClick={() =>
+                              setLogsHistoryActiveDateField((previous) => (previous === "since" ? null : "since"))
+                            }
+                          >
+                            {logsHistoryDraftSinceDate ? formatPickerDay(logsHistoryDraftSinceDate) : "Select date"}
+                          </button>
+                          <TimeInput24
+                            value={extractTimePart(logsHistoryDraftSinceInput)}
+                            ariaLabel="Since time"
+                            onChange={(nextTime) => {
+                              const base = logsHistoryDraftSinceDate ?? new Date();
+                              setLogsHistoryDraftSinceInput(applyDateAndTime(base, nextTime));
+                            }}
+                          />
+                        </div>
+                        <div className="timeseries-date-field">
+                          <span>Until</span>
+                          <button
+                            type="button"
+                            className={`timeseries-date-trigger${logsHistoryActiveDateField === "until" ? " is-active" : ""}`}
+                            onClick={() =>
+                              setLogsHistoryActiveDateField((previous) => (previous === "until" ? null : "until"))
+                            }
+                          >
+                            {logsHistoryDraftUntilDate ? formatPickerDay(logsHistoryDraftUntilDate) : "Select date"}
+                          </button>
+                          <TimeInput24
+                            value={extractTimePart(logsHistoryDraftUntilInput)}
+                            ariaLabel="Until time"
+                            onChange={(nextTime) => {
+                              const base = logsHistoryDraftUntilDate ?? logsHistoryDraftSinceDate ?? new Date();
+                              setLogsHistoryDraftUntilInput(applyDateAndTime(base, nextTime));
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {logsHistoryActiveDateField ? (
+                        <div className="timeseries-mini-calendar">
+                          <DayPicker
+                            className="timeseries-daypicker"
+                            mode="single"
+                            numberOfMonths={1}
+                            showOutsideDays
+                            month={logsHistoryCalendarMonth}
+                            onMonthChange={setLogsHistoryCalendarMonth}
+                            selected={
+                              logsHistoryActiveDateField === "since" ? logsHistoryDraftSinceDate || undefined : logsHistoryDraftUntilDate || undefined
+                            }
+                            onSelect={(date) => setLogsHistoryDraftDate(logsHistoryActiveDateField, date)}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="timeseries-range-actions">
+                        <button
+                          type="button"
+                          className="segment-btn"
+                          onClick={() => {
+                            setLogsHistoryRangePopoverOpen(false);
+                            setLogsHistoryActiveDateField(null);
+                            setLogsHistoryDraftSinceInput(logsHistorySinceInput);
+                            setLogsHistoryDraftUntilInput(logsHistoryUntilInput);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button type="button" className="segment-btn is-primary" onClick={applyLogsHistoryDraftRange}>
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="segment-btn is-primary"
+                    onClick={applyLogsHistoryFilters}
+                    disabled={logsHistoryLoading}
+                  >
+                    {logsHistoryLoading ? "Loading..." : "Apply"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="deploy-logs-history-meta">
+                <span className="deploy-logs-chip">
+                  {logsHistoryAppliedQuery ? `Applied: ${logsHistoryAppliedWindowLabel}` : logsHistoryCurrentWindowLabel}
+                </span>
+                {logsHistoryHasPendingChanges ? <span className="deploy-logs-chip">Pending changes</span> : null}
+                {historyHasPaging ? <span className="deploy-logs-chip is-accent">Paged history</span> : null}
+                {logsHistoryChunk && !logsHistoryChunk.available ? (
+                  <span className="deploy-logs-chip is-warning">Unavailable</span>
+                ) : null}
+              </div>
+
+              <div className="deploy-logs-history-nav">
                 <Button
                   size="sm"
                   variant="secondary"
-                  iconLeft={logsPaused ? <Play size={13} /> : <Pause size={13} />}
-                  onClick={toggleLogsPauseResume}
-                  disabled={!logsTarget}
+                  onClick={loadOlderLogsHistory}
+                  disabled={!logsHistoryChunk?.next_cursor || logsHistoryLoading || logsHistoryHasPendingChanges}
                 >
-                  {logsPaused ? "Resume" : "Pause"}
+                  Older
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setLogsText("")}>
-                  Clear
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={loadNewerLogsHistory}
+                  disabled={!logsHistoryChunk?.prev_cursor || logsHistoryLoading || logsHistoryHasPendingChanges}
+                >
+                  Newer
                 </Button>
               </div>
-              <div className={`deploy-logs-status ${logsStatusClass}`}>
-                <span className="deploy-logs-status-dot" aria-hidden="true" />
-                <span>{logsStatusLabel}</span>
-              </div>
-            </div>
-            <div className="deploy-logs-toolbar-toggles">
-              <label className="deploy-logs-toggle">
-                <input
-                  type="checkbox"
-                  checked={logsAutoScroll}
-                  onChange={(event) => setLogsAutoScroll(event.target.checked)}
-                />
-                Auto-scroll
-              </label>
-              <label className="deploy-logs-toggle">
-                <input
-                  type="checkbox"
-                  checked={logsHideHealthNoise}
-                  onChange={(event) => setLogsHideHealthNoise(event.target.checked)}
-                />
-                Hide health logs
-              </label>
-              <label className="deploy-logs-toggle">
-                <input
-                  type="checkbox"
-                  checked={logsMarkInferenceCycles}
-                  onChange={(event) => setLogsMarkInferenceCycles(event.target.checked)}
-                />
-                Mark inference cycles
-              </label>
-            </div>
-          </div>
 
-          <pre ref={logsPreRef} className="json-view deploy-logs-view" role="log" aria-live="polite">
-            {renderedLogsText || "No logs received yet."}
-          </pre>
+              <pre className="json-view deploy-logs-view" role="log" aria-live="polite">
+                {logsHistoryLoading && !logsHistoryChunk
+                  ? "Loading history..."
+                  : renderedLogsHistoryText ||
+                    logsHistoryChunk?.message ||
+                    "Select a time window and press Apply to load historical logs."}
+              </pre>
+            </>
+          )}
         </section>
       </Modal>
     </div>

@@ -5383,6 +5383,89 @@ button {
   min-height: 66vh;
 }
 
+.deploy-logs-mode-switch {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px;
+  background: color-mix(in srgb, var(--bg-elev) 94%, var(--bg));
+}
+
+.deploy-logs-mode-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.deploy-logs-mode-btn.is-active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--brand) 14%, var(--bg-elev));
+}
+
+.deploy-logs-history-toolbar {
+  position: relative;
+}
+
+.deploy-logs-history-toolbar .timeseries-toolbar-left {
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.deploy-logs-history-search {
+  min-width: 230px;
+}
+
+.deploy-logs-history-right {
+  margin-left: auto;
+}
+
+.deploy-logs-history-right .segment-btn.is-primary {
+  min-width: 84px;
+  justify-content: center;
+}
+
+.deploy-logs-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.deploy-logs-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.74rem;
+  color: var(--text-soft);
+  background: var(--bg-elev);
+}
+
+.deploy-logs-chip.is-accent {
+  border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
+  color: color-mix(in srgb, var(--brand) 75%, var(--text));
+  background: color-mix(in srgb, var(--brand) 11%, var(--bg-elev));
+}
+
+.deploy-logs-chip.is-warning {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-elev));
+}
+
+.deploy-logs-history-nav {
+  display: inline-flex;
+  gap: 6px;
+  align-self: flex-end;
+}
+
 .deploy-active-bundle-link {
   text-decoration: none;
   font-weight: 600;
@@ -5672,6 +5755,24 @@ button {
 
   .deploy-logs-toolbar-main {
     flex-wrap: wrap;
+  }
+
+  .deploy-logs-history-toolbar .timeseries-toolbar-left,
+  .deploy-logs-history-toolbar .timeseries-toolbar-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .deploy-logs-history-search {
+    min-width: 0;
+    width: 100%;
+    flex: 1;
+  }
+
+  .deploy-logs-history-right .timeseries-range-popover {
+    left: 0;
+    right: auto;
+    width: min(460px, calc(100vw - 42px));
   }
 }
 

@@ -68,6 +68,25 @@ export interface DeploySwitchResponse {
   health: DeployInferenceHealth;
 }
 
+export interface DeployLogsHistoryLine {
+  ts: string | null;
+  text: string;
+  source: string;
+}
+
+export interface DeployLogsHistoryChunkResponse {
+  target_id: string;
+  since_ts: string;
+  until_ts: string;
+  lines: DeployLogsHistoryLine[];
+  next_cursor: string | null;
+  prev_cursor: string | null;
+  has_more_before: boolean;
+  has_more_after: boolean;
+  available: boolean;
+  message: string | null;
+}
+
 export async function listDeployInferences(): Promise<DeployInferenceTarget[]> {
   return http<DeployInferenceTarget[]>("/deploy/inferences");
 }
@@ -145,4 +164,30 @@ export async function openDeployLogsStream(
     throw new ApiError(message, response.status);
   }
   return response;
+}
+
+export async function getDeployLogsHistoryChunk(
+  targetId: string,
+  params: {
+    sinceTs: string;
+    untilTs?: string;
+    cursor?: string;
+    limitLines?: number;
+    search?: string;
+  }
+): Promise<DeployLogsHistoryChunkResponse> {
+  const query = new URLSearchParams();
+  query.set("since_ts", params.sinceTs);
+  if (params.untilTs) query.set("until_ts", params.untilTs);
+  if (params.cursor) query.set("cursor", params.cursor);
+  if (typeof params.limitLines === "number") {
+    query.set("limit_lines", String(params.limitLines));
+  }
+  if (params.search && params.search.trim()) {
+    query.set("search", params.search.trim());
+  }
+
+  return http<DeployLogsHistoryChunkResponse>(
+    `/deploy/inferences/${encodeURIComponent(targetId)}/logs/history/chunk?${query.toString()}`
+  );
 }

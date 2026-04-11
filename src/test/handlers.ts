@@ -205,6 +205,64 @@ export const handlers = [
   http.get(endpoint("/deploy/inferences/:targetId/logs/stream"), ({ params }) =>
     HttpResponse.text(`[${params.targetId}] inference logs\\nline 2\\n`)
   ),
+  http.get(endpoint("/deploy/inferences/:targetId/logs/history/chunk"), ({ params, request }) => {
+    const url = new URL(request.url);
+    const sinceTs = url.searchParams.get("since_ts");
+    const untilTs = url.searchParams.get("until_ts") || new Date().toISOString();
+    const cursorRaw = url.searchParams.get("cursor");
+    const limitRaw = Number(url.searchParams.get("limit_lines") || "500");
+    const limitLines = Number.isFinite(limitRaw) ? Math.max(1, Math.min(2000, Math.floor(limitRaw))) : 500;
+    const search = (url.searchParams.get("search") || "").toLowerCase();
+
+    if (!sinceTs) {
+      return HttpResponse.json({ detail: "Missing required query param 'since_ts'" }, { status: 400 });
+    }
+
+    const allLines = [
+      {
+        ts: "2026-04-10T09:00:00Z",
+        text: `[${params.targetId}] startup complete`,
+        source: `docker:inference_${String(params.targetId || "")}`
+      },
+      {
+        ts: "2026-04-10T09:20:00Z",
+        text: `[${params.targetId}] GET /health 200`,
+        source: `docker:inference_${String(params.targetId || "")}`
+      },
+      {
+        ts: "2026-04-10T09:45:00Z",
+        text: `[${params.targetId}] inference request request_id=abc`,
+        source: `docker:inference_${String(params.targetId || "")}`
+      },
+      {
+        ts: "2026-04-10T10:10:00Z",
+        text: `[${params.targetId}] inference done request_id=abc`,
+        source: `docker:inference_${String(params.targetId || "")}`
+      }
+    ];
+
+    const filtered = allLines.filter((line) => !search || line.text.toLowerCase().includes(search));
+    const total = filtered.length;
+    const start = cursorRaw ? Number(cursorRaw) : Math.max(0, total - limitLines);
+    const safeStart = Number.isFinite(start) ? Math.max(0, Math.min(Math.floor(start), Math.max(0, total - 1))) : 0;
+    const end = Math.min(total, safeStart + limitLines);
+    const page = filtered.slice(safeStart, end);
+    const hasMoreBefore = safeStart > 0;
+    const hasMoreAfter = end < total;
+
+    return HttpResponse.json({
+      target_id: params.targetId,
+      since_ts: sinceTs,
+      until_ts: untilTs,
+      lines: page,
+      next_cursor: hasMoreBefore ? String(Math.max(0, safeStart - limitLines)) : null,
+      prev_cursor: hasMoreAfter ? String(end) : null,
+      has_more_before: hasMoreBefore,
+      has_more_after: hasMoreAfter,
+      available: true,
+      message: page.length === 0 ? "No logs found in this window." : null
+    });
+  }),
   http.get(endpoint("/deploy/bundles"), () => HttpResponse.json(deployBundles)),
   http.get(endpoint("/deploy/bundles/:bundleId/files"), ({ params }) => {
     const bundleId = String(params.bundleId || "");
