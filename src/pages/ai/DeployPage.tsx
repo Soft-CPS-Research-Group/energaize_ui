@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pause, Play, Upload, ArrowRightLeft, RefreshCcw, Trash2, CalendarDays, ChevronDown } from "lucide-react";
+import {
+  Eye,
+  Pause,
+  Play,
+  Upload,
+  ArrowRightLeft,
+  RefreshCcw,
+  Trash2,
+  CalendarDays,
+  ChevronDown,
+  BarChart3,
+  Info,
+  AlertTriangle
+} from "lucide-react";
 import { DayPicker } from "react-day-picker";
+import { useNavigate } from "react-router-dom";
 import {
   deleteDeployBundle,
   getDeployLogsHistoryChunk,
@@ -15,6 +29,7 @@ import {
   uploadDeployBundleFolder,
   type DeployBundleRecord,
   type DeployLogsHistoryChunkResponse,
+  type DeployLogsHistoryLine,
   type DeployInferenceHealth,
   type DeployInferenceTarget
 } from "../../api/deployApi";
@@ -24,6 +39,14 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { Modal } from "../../components/ui/Modal";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import {
+  buildRolling24hWindow,
+  computeDeployInvestorKpis,
+  type DeployInvestorSummary,
+  type DeployInvestorTargetInput,
+  type DeployInvestorTargetSnapshot
+} from "../../utils/deployInvestorKpis";
+import { parseDeployLogSamples } from "../../utils/deployLogCharts";
 
 const HEALTH_POLL_MS = 5000;
 const TARGETS_POLL_MS = 15000;
@@ -32,6 +55,13 @@ const DEFAULT_LOG_TAIL = 200;
 const LOG_BUFFER_MAX_CHARS = 200000;
 const HISTORY_LIMIT_LINES = 500;
 const HISTORY_DEFAULT_HOURS = 6;
+const INVESTOR_REFETCH_MS = 300_000;
+const INVESTOR_HISTORY_LIMIT_LINES = 2000;
+const INVESTOR_HISTORY_MAX_PAGES = 8;
+const INVESTOR_HISTORY_SEARCH_TERMS = ["Inputs:", "Prices", "Community:", "connected=", "Community battery"] as const;
+const INVESTOR_HISTORY_FALLBACK_LIMIT_LINES = 2000;
+const INVESTOR_CLOCK_TICK_MS = 300_000;
+const INVESTOR_KPI_INIT_DELAY_MS = 250;
 
 type DeployLogsMode = "live" | "history";
 type DeployHistoryQuickRange = "1h" | "6h" | "24h" | "custom";
@@ -152,6 +182,334 @@ function formatHistoryRangeSummary(sinceInput: string, untilInput: string): stri
     hour12: false
   });
   return `${start} → ${end}`;
+}
+
+function parseIsoEpoch(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function inferHistoryOrder(lines: DeployLogsHistoryLine[]): "asc" | "desc" {
+  let firstEpoch: number | null = null;
+  let lastEpoch: number | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const epoch = parseIsoEpoch(lines[index].ts);
+    if (epoch !== null) {
+      firstEpoch = epoch;
+      break;
+    }
+  }
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const epoch = parseIsoEpoch(lines[index].ts);
+    if (epoch !== null) {
+      lastEpoch = epoch;
+      break;
+    }
+  }
+
+  if (firstEpoch !== null && lastEpoch !== null) {
+    return firstEpoch <= lastEpoch ? "asc" : "desc";
+  }
+
+  return "desc";
+}
+
+function isSameHistoryLine(left: DeployLogsHistoryLine, right: DeployLogsHistoryLine): boolean {
+  return left.ts === right.ts && left.source === right.source && left.text === right.text;
+}
+
+function mergeHistoryLines(
+  base: DeployLogsHistoryLine[],
+  incoming: DeployLogsHistoryLine[]
+): DeployLogsHistoryLine[] {
+  if (base.length === 0) return [...incoming];
+  if (incoming.length === 0) return [...base];
+
+  const result = [...base];
+  let incomingStart = 0;
+  const baseLast = result[result.length - 1];
+
+  while (incomingStart < incoming.length && isSameHistoryLine(baseLast, incoming[incomingStart])) {
+    incomingStart += 1;
+  }
+
+  return [...result, ...incoming.slice(incomingStart)];
+}
+
+function sortHistoryLines(lines: DeployLogsHistoryLine[]): DeployLogsHistoryLine[] {
+  return [...lines].sort((left, right) => {
+    const leftEpoch = parseIsoEpoch(left.ts);
+    const rightEpoch = parseIsoEpoch(right.ts);
+    if (leftEpoch !== null && rightEpoch !== null && leftEpoch !== rightEpoch) {
+      return leftEpoch - rightEpoch;
+    }
+    if (leftEpoch !== null && rightEpoch === null) return -1;
+    if (leftEpoch === null && rightEpoch !== null) return 1;
+    const leftKey = `${left.ts || ""}|${left.source}|${left.text}`;
+    const rightKey = `${right.ts || ""}|${right.source}|${right.text}`;
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function uniqHistoryLines(lines: DeployLogsHistoryLine[]): DeployLogsHistoryLine[] {
+  const seen = new Set<string>();
+  const result: DeployLogsHistoryLine[] = [];
+  lines.forEach((line) => {
+    const key = `${line.ts || ""}|${line.source}|${line.text}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(line);
+  });
+  return result;
+}
+
+function joinDistinctMessages(messages: Array<string | null | undefined>): string | null {
+  const merged = Array.from(
+    new Set(
+      messages
+        .map((message) => String(message || "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (merged.length === 0) return null;
+
+  const noMatchMessages = merged.filter((message) => /no log lines matched/i.test(message));
+  const otherMessages = merged.filter((message) => !/no log lines matched/i.test(message));
+
+  if (otherMessages.length === 0) {
+    return null;
+  }
+
+  if (noMatchMessages.length > 0) {
+    return `${otherMessages.join(" ")} Some KPI fields are unavailable in this window.`;
+  }
+
+  return otherMessages.join(" ");
+}
+
+function hasInvestorKpiSamples(lines: DeployLogsHistoryLine[]): boolean {
+  if (!lines.length) return false;
+  const parsed = parseDeployLogSamples(lines);
+  return parsed.some((sample) =>
+    sample.metricKey.startsWith("price_") ||
+    sample.metricKey === "meter_in" ||
+    sample.metricKey === "meter_out" ||
+    sample.metricKey === "grid_meter_in" ||
+    sample.metricKey === "grid_meter_out" ||
+    sample.metricKey === "community_in" ||
+    sample.metricKey === "community_out" ||
+    sample.metricKey === "community_net" ||
+    sample.metricKey === "action_kw" ||
+    sample.metricKey === "connected_total" ||
+    sample.metricKey === "solar"
+  );
+}
+
+function needsInvestorDemandBackfill(lines: DeployLogsHistoryLine[]): boolean {
+  if (!lines.length) return false;
+  const parsed = parseDeployLogSamples(lines);
+  const hasCommunity = parsed.some((sample) => sample.metricKey === "community_in" || sample.metricKey === "community_net");
+  const hasDemand = parsed.some(
+    (sample) =>
+      sample.metricKey === "meter_in" ||
+      sample.metricKey === "grid_meter_in" ||
+      sample.metricKey === "action_kw" ||
+      sample.metricKey === "connected_total"
+  );
+  return hasCommunity && !hasDemand;
+}
+
+async function loadHistorySegmentForTarget(params: {
+  targetId: string;
+  sinceTs: string;
+  untilTs: string;
+  search?: string;
+  limitLines?: number;
+}): Promise<DeployLogsHistoryChunkResponse> {
+  const initial = await getDeployLogsHistoryChunk(params.targetId, {
+    sinceTs: params.sinceTs,
+    untilTs: params.untilTs,
+    search: params.search,
+    limitLines: params.limitLines ?? INVESTOR_HISTORY_LIMIT_LINES
+  });
+
+  let mergedChunk: DeployLogsHistoryChunkResponse = {
+    ...initial,
+    lines: initial.lines || []
+  };
+
+  const order = inferHistoryOrder(mergedChunk.lines);
+  const visitedCursors = new Set<string>();
+  let pages = 0;
+  let nextCursor = initial.next_cursor;
+  let prevCursor = initial.prev_cursor;
+
+  while (nextCursor && pages < INVESTOR_HISTORY_MAX_PAGES && !visitedCursors.has(`next:${nextCursor}`)) {
+    visitedCursors.add(`next:${nextCursor}`);
+    const older = await getDeployLogsHistoryChunk(params.targetId, {
+      sinceTs: params.sinceTs,
+      untilTs: params.untilTs,
+      search: params.search,
+      cursor: nextCursor,
+      limitLines: params.limitLines ?? INVESTOR_HISTORY_LIMIT_LINES
+    });
+
+    pages += 1;
+    const olderLines = older.lines || [];
+    const nextLines =
+      order === "asc"
+        ? mergeHistoryLines(olderLines, mergedChunk.lines || [])
+        : mergeHistoryLines(mergedChunk.lines || [], olderLines);
+    mergedChunk = {
+      ...mergedChunk,
+      lines: nextLines,
+      next_cursor: older.next_cursor,
+      has_more_before: older.has_more_before
+    };
+    nextCursor = older.next_cursor;
+  }
+
+  while (prevCursor && pages < INVESTOR_HISTORY_MAX_PAGES && !visitedCursors.has(`prev:${prevCursor}`)) {
+    visitedCursors.add(`prev:${prevCursor}`);
+    const newer = await getDeployLogsHistoryChunk(params.targetId, {
+      sinceTs: params.sinceTs,
+      untilTs: params.untilTs,
+      search: params.search,
+      cursor: prevCursor,
+      limitLines: params.limitLines ?? INVESTOR_HISTORY_LIMIT_LINES
+    });
+
+    pages += 1;
+    const newerLines = newer.lines || [];
+    const nextLines =
+      order === "asc"
+        ? mergeHistoryLines(mergedChunk.lines || [], newerLines)
+        : mergeHistoryLines(newerLines, mergedChunk.lines || []);
+    mergedChunk = {
+      ...mergedChunk,
+      lines: nextLines,
+      prev_cursor: newer.prev_cursor,
+      has_more_after: newer.has_more_after
+    };
+    prevCursor = newer.prev_cursor;
+  }
+
+  if ((nextCursor || prevCursor) && !mergedChunk.message) {
+    mergedChunk = {
+      ...mergedChunk,
+      message: "Partial window loaded. Narrow the range for complete detail."
+    };
+  }
+
+  return mergedChunk;
+}
+
+async function loadFullHistoryWindowForTarget(params: {
+  targetId: string;
+  sinceTs: string;
+  untilTs: string;
+}): Promise<DeployLogsHistoryChunkResponse> {
+  const segments: DeployLogsHistoryChunkResponse[] = [];
+  for (const search of INVESTOR_HISTORY_SEARCH_TERMS) {
+    // Run segments sequentially to avoid bursting many concurrent history requests per page load.
+    // This keeps the Deploy page more responsive while KPI snapshots are being prepared.
+    // eslint-disable-next-line no-await-in-loop
+    const segment = await loadHistorySegmentForTarget({
+      targetId: params.targetId,
+      sinceTs: params.sinceTs,
+      untilTs: params.untilTs,
+      search
+    });
+    segments.push(segment);
+  }
+
+  let combinedLines = sortHistoryLines(
+    uniqHistoryLines(segments.flatMap((segment) => segment.lines || []))
+  );
+
+  let fallbackSegment: DeployLogsHistoryChunkResponse | null = null;
+  if (combinedLines.length === 0 || !hasInvestorKpiSamples(combinedLines) || needsInvestorDemandBackfill(combinedLines)) {
+    fallbackSegment = await loadHistorySegmentForTarget({
+      targetId: params.targetId,
+      sinceTs: params.sinceTs,
+      untilTs: params.untilTs,
+      limitLines: INVESTOR_HISTORY_FALLBACK_LIMIT_LINES
+    });
+    combinedLines = sortHistoryLines(uniqHistoryLines(fallbackSegment.lines || []));
+  }
+
+  const available =
+    segments.some((segment) => segment.available !== false) ||
+    (fallbackSegment ? fallbackSegment.available !== false : false);
+
+  const message = joinDistinctMessages([
+    ...segments.map((segment) => segment.message),
+    fallbackSegment?.message
+  ]);
+
+  const hasMoreBefore = segments.some((segment) => segment.has_more_before) || Boolean(fallbackSegment?.has_more_before);
+  const hasMoreAfter = segments.some((segment) => segment.has_more_after) || Boolean(fallbackSegment?.has_more_after);
+
+  return {
+    target_id: params.targetId,
+    since_ts: params.sinceTs,
+    until_ts: params.untilTs,
+    lines: combinedLines,
+    next_cursor: null,
+    prev_cursor: null,
+    has_more_before: hasMoreBefore,
+    has_more_after: hasMoreAfter,
+    available,
+    message: message || (combinedLines.length === 0 ? "No KPI logs found in this window." : null)
+  };
+}
+
+function formatInvestorCurrency(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "N/A";
+  if (Math.abs(value) > 0 && Math.abs(value) < 0.01) {
+    return value > 0 ? "<€0.01" : ">-€0.01";
+  }
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
+function formatInvestorPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "N/A";
+  return `${value.toFixed(1)}%`;
+}
+
+function formatInvestorSignedPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "N/A";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function formatInvestorSavedPercent(value: number | null, savedEur: number | null): string {
+  if (savedEur !== null && Number.isFinite(savedEur) && Math.abs(savedEur) < 0.01) return "N/A";
+  return formatInvestorSignedPercent(value);
+}
+
+function formatInvestorCoverage(snapshot: {
+  coveragePct: number;
+  coverageSlotsPresent: number;
+  coverageSlotsExpected: number;
+}): string {
+  if (!Number.isFinite(snapshot.coveragePct)) return "0% data";
+  const pct = `${snapshot.coveragePct.toFixed(1)}% data`;
+  if (!snapshot.coverageSlotsExpected) return pct;
+  return `${pct} (${snapshot.coverageSlotsPresent}/${snapshot.coverageSlotsExpected})`;
+}
+
+function investorCoverageClass(coveragePct: number): string {
+  if (coveragePct >= 80) return "is-good";
+  if (coveragePct >= 55) return "is-warn";
+  return "is-bad";
 }
 
 function parseTimeInput(raw: string): string | null {
@@ -312,6 +670,7 @@ function formatLogsForDisplay(
 }
 
 export function DeployPage(): JSX.Element {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { notifyError, notifyInfo, notifySuccess } = useApiFeedback();
 
@@ -346,6 +705,8 @@ export function DeployPage(): JSX.Element {
   } | null>(null);
   const [logsHistoryAppliedWindowLabel, setLogsHistoryAppliedWindowLabel] = useState("Window: Last 6h");
   const [refreshingVisual, setRefreshingVisual] = useState(false);
+  const [investorClock, setInvestorClock] = useState(() => Date.now());
+  const [investorKpisEnabled, setInvestorKpisEnabled] = useState(false);
 
   const [switchTarget, setSwitchTarget] = useState<DeployInferenceTarget | null>(null);
   const [switchBundleId, setSwitchBundleId] = useState("");
@@ -369,13 +730,37 @@ export function DeployPage(): JSX.Element {
     queryFn: listDeployBundles,
     refetchInterval: BUNDLES_POLL_MS
   });
+  const targets = targetsQuery.data || [];
+  const bundles = bundlesQuery.data || [];
 
   const healthQueries = useQueries({
-    queries: (targetsQuery.data || []).map((target) => ({
+    queries: targets.map((target) => ({
       queryKey: ["deploy-health", target.id],
       queryFn: () => getDeployInferenceHealth(target.id),
       enabled: Boolean(targetsQuery.data),
       refetchInterval: HEALTH_POLL_MS
+    }))
+  });
+
+  const investorDayWindow = useMemo(
+    () => buildRolling24hWindow(new Date(investorClock)),
+    [investorClock]
+  );
+
+  const investorLogsQueries = useQueries({
+    queries: targets.map((target) => ({
+      queryKey: ["deploy-investor-logs", target.id, "rolling-24h"],
+      queryFn: () =>
+        loadFullHistoryWindowForTarget({
+          targetId: target.id,
+          sinceTs: investorDayWindow.sinceTs,
+          untilTs: investorDayWindow.untilTs
+        }),
+      enabled: investorKpisEnabled && Boolean(targetsQuery.data),
+      staleTime: Math.max(15_000, Math.floor(INVESTOR_REFETCH_MS / 2)),
+      refetchInterval: INVESTOR_REFETCH_MS,
+      refetchIntervalInBackground: true,
+      placeholderData: (previousData: DeployLogsHistoryChunkResponse | undefined) => previousData
     }))
   });
 
@@ -393,11 +778,82 @@ export function DeployPage(): JSX.Element {
 
   const healthByTargetId = useMemo(() => {
     const next = new Map<string, DeployInferenceHealth | null>();
-    (targetsQuery.data || []).forEach((target, index) => {
+    targets.forEach((target, index) => {
       next.set(target.id, (healthQueries[index]?.data as DeployInferenceHealth | undefined) || null);
     });
     return next;
-  }, [targetsQuery.data, healthQueries]);
+  }, [targets, healthQueries]);
+
+  const investorDataVersion = useMemo(
+    () =>
+      investorLogsQueries
+        .map((query) => {
+          const chunk = query.data as DeployLogsHistoryChunkResponse | undefined;
+          return `${query.dataUpdatedAt || 0}:${chunk?.lines?.length || 0}:${query.status}`;
+        })
+        .join("|"),
+    [investorLogsQueries]
+  );
+
+  const investorInputs = useMemo<DeployInvestorTargetInput[]>(
+    () =>
+      targets.map((target, index) => {
+        const query = investorLogsQueries[index];
+        const chunk = query?.data as DeployLogsHistoryChunkResponse | undefined;
+        return {
+          targetId: target.id,
+          targetName: target.name,
+          lines: chunk?.lines || [],
+          available: chunk?.available,
+          message: chunk?.message
+        };
+      }),
+    [targets, investorDataVersion]
+  );
+
+  const investorSummary = useMemo<DeployInvestorSummary>(
+    () =>
+      computeDeployInvestorKpis(investorInputs, {
+        windowStartEpochMs: investorDayWindow.sinceEpochMs,
+        windowEndEpochMs: investorDayWindow.untilEpochMs
+      }),
+    [investorInputs, investorDayWindow.sinceEpochMs, investorDayWindow.untilEpochMs]
+  );
+
+  const investorByTargetId = useMemo(() => {
+    const next = new Map<string, DeployInvestorTargetSnapshot>();
+    investorSummary.targets.forEach((entry) => {
+      next.set(entry.targetId, entry);
+    });
+    return next;
+  }, [investorSummary.targets]);
+
+  const investorIsLoading = investorLogsQueries.some(
+    (query) => (query.isLoading || query.isFetching) && !query.data
+  );
+  const investorHasLoadedData = investorLogsQueries.some((query) => Boolean(query.data));
+
+  const investorHasErrors = investorLogsQueries.some((query) => query.isError);
+  const investorIsRefreshing = investorLogsQueries.some((query) => query.isFetching);
+  const investorWindowLabel = useMemo(() => {
+    const since = new Date(investorDayWindow.sinceTs);
+    const until = new Date(investorDayWindow.untilTs);
+    const start = since.toLocaleString([], {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
+    const end = until.toLocaleString([], {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
+    return `${start} → ${end}`;
+  }, [investorDayWindow.sinceTs, investorDayWindow.untilTs]);
 
   const switchMutation = useMutation({
     mutationFn: async (payload: { targetId: string; bundleId: string }) =>
@@ -440,8 +896,6 @@ export function DeployPage(): JSX.Element {
     onError: (error) => notifyError("Failed to delete bundle", error)
   });
 
-  const targets = targetsQuery.data || [];
-  const bundles = bundlesQuery.data || [];
   const selectedSwitchBundle = bundles.find((bundle) => bundle.bundle_id === switchBundleId) || null;
   const visibleBundleFiles = useMemo(
     () => (bundleDetailsFilesQuery.data?.files || []).filter((file) => isBundlePreviewFile(file.path)),
@@ -498,6 +952,21 @@ export function DeployPage(): JSX.Element {
     fileInputRef.current.setAttribute("webkitdirectory", "");
     fileInputRef.current.setAttribute("directory", "");
   }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setInvestorKpisEnabled(true);
+    }, INVESTOR_KPI_INIT_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!investorKpisEnabled) return;
+    const timer = window.setInterval(() => {
+      setInvestorClock(Date.now());
+    }, INVESTOR_CLOCK_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [investorKpisEnabled]);
 
   useEffect(() => {
     if (!logsOpen || logsMode !== "live" || !logsAutoScroll) return;
@@ -839,11 +1308,13 @@ export function DeployPage(): JSX.Element {
   async function refreshWithPreview(): Promise<void> {
     if (refreshingVisual) return;
     setRefreshingVisual(true);
+    setInvestorClock(Date.now());
     try {
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["deploy-targets"], type: "active" }),
         queryClient.refetchQueries({ queryKey: ["deploy-bundles"], type: "active" }),
-        queryClient.refetchQueries({ queryKey: ["deploy-health"], type: "active" })
+        queryClient.refetchQueries({ queryKey: ["deploy-health"], type: "active" }),
+        queryClient.refetchQueries({ queryKey: ["deploy-investor-logs"], type: "active" })
       ]);
     } finally {
       setRefreshingVisual(false);
@@ -883,6 +1354,83 @@ export function DeployPage(): JSX.Element {
         </div>
       </header>
 
+      <section className="panel deploy-investor-strip">
+        <header className="deploy-investor-head">
+          <div>
+            <h2>KPIs (Last 24h)</h2>
+            <small>
+              Rolling 24h window: {investorWindowLabel}
+              {investorSummary.global.sourceTargetName
+                ? ` · Global source: ${investorSummary.global.sourceTargetName}`
+                : ""}
+            </small>
+          </div>
+          {investorIsLoading || investorIsRefreshing ? (
+            <div className="deploy-investor-loading" role="status" aria-live="polite">
+              <EVChargingLoader compact label={investorIsLoading ? "Loading KPIs..." : "Updating KPIs..."} />
+            </div>
+          ) : null}
+        </header>
+
+        <div className="deploy-investor-global-grid">
+          <article className="deploy-investor-global-card">
+            <header>
+              <span>Saved (24h)</span>
+              <span className="deploy-investor-help" tabIndex={0}>
+                <Info size={13} />
+                <span className="deploy-investor-help-tooltip">
+                  Estimated from logs: community discount savings + energy export revenue (community + grid).
+                </span>
+              </span>
+            </header>
+            <strong>{formatInvestorCurrency(investorSummary.global.savedEur)}</strong>
+            <small className="deploy-investor-card-meta">
+              {investorSummary.global.savedPct !== null
+                ? `${formatInvestorSavedPercent(investorSummary.global.savedPct, investorSummary.global.savedEur)} vs gross demand cost`
+                : "No baseline cost"}
+            </small>
+          </article>
+
+          <article className="deploy-investor-global-card">
+            <header>
+              <span>Community Energy Share</span>
+              <span className="deploy-investor-help" tabIndex={0}>
+                <Info size={13} />
+                <span className="deploy-investor-help-tooltip">
+                  Share of demand covered by community transfer (timestamp proportional allocation). RH01 uses real meter; HQ/SM use virtual meters.
+                </span>
+              </span>
+            </header>
+            <strong>{formatInvestorPercent(investorSummary.global.communitySharePct)}</strong>
+          </article>
+
+          <article className="deploy-investor-global-card">
+            <header>
+              <span>Solar Self-Consumption</span>
+              <span className="deploy-investor-help" tabIndex={0}>
+                <Info size={13} />
+                <span className="deploy-investor-help-tooltip">
+                  Solar effectively used by the community: local self-consumption + exported solar consumed by other members.
+                </span>
+              </span>
+            </header>
+            <strong>{formatInvestorPercent(investorSummary.global.solarSelfConsumptionPct)}</strong>
+          </article>
+        </div>
+
+        <div className="deploy-investor-footnote">
+          {!investorKpisEnabled ? "Preparing KPI snapshot..." : null}
+          {investorIsLoading && !investorHasLoadedData ? "Loading investor KPIs..." : null}
+          {!investorIsLoading && investorIsRefreshing ? "Updating in background..." : null}
+          {!investorIsLoading && !investorIsRefreshing && investorHasErrors
+            ? "Some targets could not be loaded. Values may be partial."
+            : null}
+          {!investorIsLoading && !investorIsRefreshing && !investorHasErrors && investorSummary.global.message
+            ? investorSummary.global.message
+            : null}
+        </div>
+      </section>
+
       <section className="deploy-manager-layout">
         <article className="panel deploy-manager-main">
           <header className="deploy-manager-panel-head">
@@ -899,16 +1447,22 @@ export function DeployPage(): JSX.Element {
                   <tr>
                     <th>Target</th>
                     <th>Health</th>
-                    <th>Active Bundle</th>
+                    <th className="deploy-active-bundle-header">Active Bundle</th>
+                    <th>24h Snapshot</th>
+                    <th className="deploy-data-header">Data</th>
                     <th className="deploy-actions-header">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {targets.map((target) => {
+                  {targets.map((target, index) => {
                     const health = healthByTargetId.get(target.id) || null;
                     const summary = summarizeHealth(health);
                     const activeBundleId = extractBundleIdFromManifestPath(health?.active_manifest_path);
                     const activeBundle = findBundleByManifestKey(bundles, activeBundleId);
+                    const activeBundleLabel = bundleDisplayName(activeBundle || undefined);
+                    const investorQuery = investorLogsQueries[index];
+                    const investorSnapshot = investorByTargetId.get(target.id) || null;
+                    const hasInvestorData = Boolean(investorQuery?.data);
 
                     return (
                       <tr key={target.id}>
@@ -920,18 +1474,89 @@ export function DeployPage(): JSX.Element {
                         <td>
                           <span className={`deploy-health-pill ${summary.cssClass}`}>{summary.label}</span>
                         </td>
-                        <td>
+                        <td className="deploy-active-bundle-col">
                           {activeBundleId ? (
                             <button
                               type="button"
                               className="btn-link deploy-active-bundle-link"
                               onClick={() => openBundleDetailsById(activeBundleId)}
-                              title={`See bundle details: ${activeBundleId}`}
+                              title={`See bundle details: ${activeBundleLabel}${
+                                activeBundleId !== activeBundleLabel ? ` (${activeBundleId})` : ""
+                              }`}
                             >
-                              {bundleDisplayName(activeBundle || undefined)}
+                              {activeBundleLabel}
                             </button>
                           ) : (
                             <span>-</span>
+                          )}
+                        </td>
+                        <td className="deploy-investor-target-cell">
+                          {investorSnapshot && hasInvestorData ? (
+                            <div className="deploy-investor-target-grid">
+                              <article className="deploy-investor-mini-card" title="Saved in this rolling 24h window">
+                                <small>Saved</small>
+                                <strong className="deploy-investor-mini-value">
+                                  {formatInvestorCurrency(investorSnapshot.savedEur)}
+                                </strong>
+                                <span className="deploy-investor-mini-meta">
+                                  {investorSnapshot.savedPct !== null
+                                    ? formatInvestorSavedPercent(investorSnapshot.savedPct, investorSnapshot.savedEur)
+                                    : "N/A"}
+                                </span>
+                              </article>
+                              <article className="deploy-investor-mini-card" title="Community share of demand">
+                                <small>Community</small>
+                                <strong className="deploy-investor-mini-value">
+                                  {formatInvestorPercent(investorSnapshot.communitySharePct)}
+                                </strong>
+                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                              </article>
+                              <article className="deploy-investor-mini-card" title="Estimated local solar self-consumption">
+                                <small>Solar</small>
+                                <strong className="deploy-investor-mini-value">
+                                  {formatInvestorPercent(investorSnapshot.solarSelfConsumptionPct)}
+                                </strong>
+                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                              </article>
+                            </div>
+                          ) : (
+                            <div className="deploy-investor-target-grid is-loading">
+                              <article className="deploy-investor-mini-card is-skeleton">
+                                <small>Saved</small>
+                                <strong className="deploy-investor-mini-value">--</strong>
+                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                              </article>
+                              <article className="deploy-investor-mini-card is-skeleton">
+                                <small>Community</small>
+                                <strong className="deploy-investor-mini-value">--</strong>
+                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                              </article>
+                              <article className="deploy-investor-mini-card is-skeleton">
+                                <small>Solar</small>
+                                <strong className="deploy-investor-mini-value">--</strong>
+                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                              </article>
+                            </div>
+                          )}
+                        </td>
+                        <td className="deploy-data-cell">
+                          {investorSnapshot && hasInvestorData ? (
+                            <div className="deploy-data-cell-content">
+                              {investorSnapshot.message ? (
+                                <span className="deploy-data-warning" title={investorSnapshot.message} aria-label="Data warning">
+                                  <AlertTriangle size={12} />
+                                </span>
+                              ) : null}
+                              <span
+                                className={`deploy-investor-coverage-badge ${investorCoverageClass(
+                                  investorSnapshot.coveragePct
+                                )}`}
+                              >
+                                {formatInvestorCoverage(investorSnapshot)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="deploy-data-placeholder">--</span>
                           )}
                         </td>
                         <td className="deploy-actions-cell">
@@ -940,19 +1565,30 @@ export function DeployPage(): JSX.Element {
                               size="sm"
                               variant="secondary"
                               iconLeft={<ArrowRightLeft size={13} />}
+                              iconOnly
+                              title="Switch bundle"
+                              aria-label="Switch bundle"
                               onClick={() => openSwitchModal(target, activeBundleId)}
                               disabled={switchMutation.isPending || bundles.length === 0}
-                            >
-                              Switch
-                            </Button>
+                            />
                             <Button
                               size="sm"
                               variant="ghost"
                               iconLeft={<Eye size={13} />}
+                              iconOnly
+                              title="Open logs"
+                              aria-label="Open logs"
                               onClick={() => openLogsForTarget(target)}
-                            >
-                              Logs
-                            </Button>
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              iconLeft={<BarChart3 size={13} />}
+                              iconOnly
+                              title="Open charts"
+                              aria-label="Open charts"
+                              onClick={() => navigate(`/app/ai/deploy/${encodeURIComponent(target.id)}/charts`)}
+                            />
                           </div>
                         </td>
                       </tr>

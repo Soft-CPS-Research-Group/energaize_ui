@@ -2,11 +2,13 @@ import type { SimulationSeries } from "../types";
 
 export type TimeseriesPreset = "all" | "1h" | "6h" | "24h" | "7d" | "30d";
 
+export const SECOND_MS = 1000;
 export const MINUTE_MS = 60 * 1000;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 
 export const GRANULARITY_OPTIONS = [
+  { label: "15s", ms: 15 * SECOND_MS },
   { label: "1m", ms: 1 * MINUTE_MS },
   { label: "5m", ms: 5 * MINUTE_MS },
   { label: "15m", ms: 15 * MINUTE_MS },
@@ -24,7 +26,7 @@ export interface TimeseriesChartRow {
 
 const PRESET_MIN_GRANULARITY_MS: Record<TimeseriesPreset, GranularityMs> = {
   "1h": 1 * MINUTE_MS,
-  "6h": 5 * MINUTE_MS,
+  "6h": 1 * MINUTE_MS,
   "24h": 15 * MINUTE_MS,
   "7d": 1 * HOUR_MS,
   "30d": 1 * HOUR_MS,
@@ -32,6 +34,10 @@ const PRESET_MIN_GRANULARITY_MS: Record<TimeseriesPreset, GranularityMs> = {
 };
 
 function alignToBoundary(epochMs: number, stepMs: number): number {
+  if (stepMs < MINUTE_MS) {
+    return Math.floor(epochMs / stepMs) * stepMs;
+  }
+
   const date = new Date(epochMs);
   if (stepMs >= DAY_MS) {
     date.setHours(0, 0, 0, 0);
@@ -55,8 +61,9 @@ function alignToBoundary(epochMs: number, stepMs: number): number {
 }
 
 function minGranularityFromCustomSpan(spanMs: number): GranularityMs {
+  if (spanMs <= 30 * MINUTE_MS) return 15 * SECOND_MS;
   if (spanMs <= 1 * HOUR_MS) return 1 * MINUTE_MS;
-  if (spanMs <= 6 * HOUR_MS) return 5 * MINUTE_MS;
+  if (spanMs <= 6 * HOUR_MS) return 1 * MINUTE_MS;
   if (spanMs <= 24 * HOUR_MS) return 15 * MINUTE_MS;
   return 1 * HOUR_MS;
 }
@@ -246,6 +253,8 @@ export function resolveAxisTickStepMs(
 
   const span = rangeEnd - rangeStart;
   const candidates = [
+    15 * SECOND_MS,
+    30 * SECOND_MS,
     1 * MINUTE_MS,
     5 * MINUTE_MS,
     15 * MINUTE_MS,

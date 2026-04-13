@@ -8,6 +8,7 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
   iconLeft?: ReactNode;
   iconRight?: ReactNode;
+  iconOnly?: boolean;
 }
 
 export function Button({
@@ -16,16 +17,17 @@ export function Button({
   size = "md",
   iconLeft,
   iconRight,
+  iconOnly = false,
   className,
   ...rest
 }: Props): JSX.Element {
   return (
     <button
-      className={`btn btn-${variant} btn-${size}${className ? ` ${className}` : ""}`}
+      className={`btn btn-${variant} btn-${size}${iconOnly ? " btn-icon-only" : ""}${className ? ` ${className}` : ""}`}
       {...rest}
     >
       {iconLeft ? <span className="btn-icon">{iconLeft}</span> : null}
-      <span>{children}</span>
+      {iconOnly ? null : <span>{children}</span>}
       {iconRight ? <span className="btn-icon">{iconRight}</span> : null}
     </button>
   );

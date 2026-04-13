@@ -5,6 +5,7 @@ import {
   GRANULARITY_OPTIONS,
   HOUR_MS,
   MINUTE_MS,
+  SECOND_MS,
   inferSeriesResolutionMs,
   normalizeResolutionToSupportedGranularity,
   resolveAvailableGranularityOptions,
@@ -53,7 +54,7 @@ describe("timeseriesGranularity utils", () => {
         rangeStart: 0,
         rangeEnd: 6 * HOUR_MS
       })
-    ).toBe(5 * MINUTE_MS);
+    ).toBe(1 * MINUTE_MS);
 
     expect(
       resolveContextMinGranularityMs({
@@ -62,7 +63,7 @@ describe("timeseriesGranularity utils", () => {
         rangeStart: 0,
         rangeEnd: 70 * MINUTE_MS
       })
-    ).toBe(5 * MINUTE_MS);
+    ).toBe(1 * MINUTE_MS);
   });
 
   it("infers source resolution and normalizes to supported levels", () => {
@@ -76,6 +77,7 @@ describe("timeseriesGranularity utils", () => {
     const resolution = inferSeriesResolutionMs(series);
     expect(resolution).toBe(5 * MINUTE_MS);
     expect(normalizeResolutionToSupportedGranularity(resolution)).toBe(5 * MINUTE_MS);
+    expect(normalizeResolutionToSupportedGranularity(15 * SECOND_MS)).toBe(15 * SECOND_MS);
     expect(normalizeResolutionToSupportedGranularity(9 * MINUTE_MS)).toBe(15 * MINUTE_MS);
     expect(normalizeResolutionToSupportedGranularity(4 * HOUR_MS)).toBe(1 * HOUR_MS);
   });
@@ -97,11 +99,12 @@ describe("timeseriesGranularity utils", () => {
       rangeEnd: null,
       sourceResolutionMs: 1 * MINUTE_MS
     });
-    expect(minFor6h).toBe(5 * MINUTE_MS);
+    expect(minFor6h).toBe(1 * MINUTE_MS);
   });
 
   it("returns enabled/disabled granularity options", () => {
     const options = resolveAvailableGranularityOptions(15 * MINUTE_MS);
+    expect(options.find((entry) => entry.ms === 15 * SECOND_MS)?.enabled).toBe(false);
     expect(options.find((entry) => entry.ms === 1 * MINUTE_MS)?.enabled).toBe(false);
     expect(options.find((entry) => entry.ms === 5 * MINUTE_MS)?.enabled).toBe(false);
     expect(options.find((entry) => entry.ms === 15 * MINUTE_MS)?.enabled).toBe(true);
@@ -144,4 +147,3 @@ describe("timeseriesGranularity utils", () => {
     expect(row[soc.id]).toBeCloseTo(0.5, 6);
   });
 });
-

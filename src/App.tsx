@@ -10,6 +10,7 @@ import { PredictorWorkspacePage } from "./pages/PredictorWorkspacePage";
 import { RoleWorkspacePage } from "./pages/RoleWorkspacePage";
 import { ConfigsPage } from "./pages/ai/ConfigsPage";
 import { DatasetsPage } from "./pages/ai/DatasetsPage";
+import { DeployChartsPage } from "./pages/ai/DeployChartsPage";
 import { DeployPage } from "./pages/ai/DeployPage";
 import { JobDetailPage } from "./pages/ai/JobDetailPage";
 import { JobKpiComparePage } from "./pages/ai/JobKpiComparePage";
@@ -43,6 +44,7 @@ export default function App(): JSX.Element {
               <Route path="configs" element={<ConfigsPage />} />
               <Route element={<RoleGuard allowed={["training_manager"]} />}>
                 <Route path="deploy" element={<DeployPage />} />
+                <Route path="deploy/:targetId/charts" element={<DeployChartsPage />} />
               </Route>
             </Route>
           </Route>
