@@ -23,16 +23,6 @@ export function LogsView() {
     setAutoScroll(isAtBottom);
   };
 
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case "INFO": return "info";
-      case "WARN": return "warning";
-      case "ERROR": return "danger";
-      case "DEBUG": return "neutral";
-      default: return "neutral";
-    }
-  };
-
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 200px)", padding: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px", borderBottom: "1px solid var(--border)", backgroundColor: "var(--bg-subtle)", flexShrink: 0 }}>

@@ -5,13 +5,14 @@ function parseLogString(line: string): LogEntry {
   const parts = line.split(" | ");
   if (parts.length >= 5) {
     return {
+      raw: line,
       time: parts[0].replace(",", "."),
       level: parts[1].trim(),
       logger: parts[3].trim(),
       message: parts.slice(4).join(" | ").trim(),
     };
   }
-  return { time: new Date().toISOString(), level: "INFO", logger: "Sys", message: line };
+  return { raw: line, time: new Date().toISOString(), level: "INFO", logger: "Sys", message: line };
 }
 
 export function usePredictorLogs(filter: string = "", limit: number = 300) {
