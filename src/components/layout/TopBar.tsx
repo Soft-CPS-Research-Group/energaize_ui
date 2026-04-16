@@ -25,6 +25,12 @@ const AI_TABS = [
 
 const AI_TABS_WITH_DEPLOY = [...AI_TABS, { to: "/app/ai/deploy", label: "Deploy" }];
 
+const PREDICTOR_TABS = [
+  { to: "/app/predictor", label: "Predict" },
+  { to: "/app/predictor/train", label: "Train" },
+  { to: "/app/predictor/logs", label: "Logs" }
+];
+
 export function TopBar(): JSX.Element {
   const { session } = useAuth();
   const { communities, activeCommunity, setActiveCommunity, unreadCount, setMobileTreeOpen } = useUI();
@@ -36,14 +42,16 @@ export function TopBar(): JSX.Element {
   const isTrainingManager = isTrainingManagerRole(session?.role);
   const isPredictor = isPredictorRole(session?.role);
   const isKpiManager = isKpiManagerRole(session?.role);
-  const showRoleMockMenu = isPredictor || isKpiManager;
+  const showRoleMockMenu = isKpiManager;
   const tabs = isTrainingManager
     ? session?.role === "training_manager"
       ? AI_TABS_WITH_DEPLOY
       : AI_TABS
-    : showRoleMockMenu
-      ? []
-      : [{ to: "/app/logs", label: "Logs" }];
+    : isPredictor
+      ? PREDICTOR_TABS
+      : showRoleMockMenu
+        ? []
+        : [{ to: "/app/logs", label: "Logs" }];
   const brandLink = isTrainingManager
     ? "/app/ai/jobs"
     : isPredictor
@@ -103,6 +111,7 @@ export function TopBar(): JSX.Element {
             <NavLink
               key={tab.to}
               to={tab.to}
+              end={tab.to === "/app/predictor"}
               className={({ isActive }) => `top-tab${isActive ? " is-active" : ""}`}
             >
               {tab.label}

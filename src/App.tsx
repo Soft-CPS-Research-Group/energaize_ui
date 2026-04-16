@@ -50,7 +50,7 @@ export default function App(): JSX.Element {
           </Route>
 
           <Route element={<RoleGuard allowed={["predictor"]} />}>
-            <Route path="predictor" element={<PredictorWorkspacePage />} />
+            <Route path="predictor/*" element={<PredictorWorkspacePage />} />
           </Route>
 
           <Route element={<RoleGuard allowed={["kpi_manager"]} />}>

@@ -1,0 +1,75 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  getStats,
+  getHouses,
+  getHistory,
+  getPredictions,
+  getTrainingProgress,
+  executeCommand,
+  cancelJob,
+  PredictorCommandPayload,
+} from "../api/predictorApi";
+
+export function usePredictorStats() {
+  return useQuery({
+    queryKey: ["predictor", "stats"],
+    queryFn: getStats,
+    refetchInterval: 15000,
+  });
+}
+
+export function usePredictorHouses() {
+  return useQuery({
+    queryKey: ["predictor", "houses_v2"],
+    queryFn: getHouses,
+    staleTime: 60000,
+  });
+}
+
+export function usePredictorHistory(houseId: string | null, days: number = 3) {
+  return useQuery({
+    queryKey: ["predictor", "history_v2", houseId, days],
+    queryFn: () => getHistory(houseId!, days),
+    enabled: !!houseId,
+    refetchInterval: 60000,
+  });
+}
+
+export function usePredictorPredictions(houseId: string | null) {
+  return useQuery({
+    queryKey: ["predictor", "predictions_v2", houseId],
+    queryFn: () => getPredictions(houseId!),
+    enabled: !!houseId,
+    refetchInterval: 60000, // Every minute
+  });
+}
+
+export function usePredictorTrainingProgress() {
+  return useQuery({
+    queryKey: ["predictor", "training-progress_v2"],
+    queryFn: getTrainingProgress,
+    refetchInterval: 5000, // Poll every 5s for training progress
+  });
+}
+
+export function usePredictorCommand() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: PredictorCommandPayload) => executeCommand(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["predictor", "training-progress"] });
+    },
+  });
+}
+
+export function useCancelTrainingJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: string) => cancelJob(jobId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["predictor", "training-progress"] });
+    },
+  });
+}

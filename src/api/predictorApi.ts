@@ -1,0 +1,145 @@
+import { http } from "./client";
+
+export const PREDICTOR_API_URL = import.meta.env.VITE_PREDICTOR_API_URL?.replace(/\/$/, "") || "http://localhost:8080";
+
+function buildPredictorUrl(path: string): string {
+  return `${PREDICTOR_API_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export interface PredictorStats {
+  total_houses: number;
+  predictions_available: number;
+  active_houses?: number;
+  next_consumption_cycle_minutes?: number;
+  next_production_cycle_minutes?: number;
+  version?: string;
+}
+
+export interface PredictorHistoryDataPoint {
+  timestamp: string; // ISO 8601
+  value: number;
+}
+
+export interface PredictorHistoryResponse {
+  consumption: PredictorHistoryDataPoint[];
+  production: PredictorHistoryDataPoint[];
+}
+
+export interface PredictorPredictionsResponse {
+  consumption: number[];
+  production: number[];
+}
+
+export interface TrainingJob {
+  job_id: string;
+  house_id: string;
+  lane: string;
+  status: string; // "PENDING" | "FETCHING" | "RUNNING" | "ACCEPTED" | "REJECTED" | "CANCELED" | "FAILED"
+  progress: number;
+  total: number;
+  eta_seconds: number | null;
+  age_seconds: number;
+  submitted_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  prev_mae: number | null;
+  new_mae: number | null;
+}
+
+export interface PredictorCommandPayload {
+  command: "train" | "train-cold" | "predict" | "flex";
+  house_id?: string;
+  lane?: "consumption" | "production" | "both";
+}
+
+export async function getStats(): Promise<PredictorStats> {
+  return http<PredictorStats>(buildPredictorUrl("/api/stats"));
+}
+
+export async function getHouses(): Promise<string[]> {
+  const res = await http<any>(buildPredictorUrl("/api/houses"));
+  return Array.isArray(res) ? res : (res?.houses || []);
+}
+
+export async function getHistory(houseId: string, days: number = 3): Promise<PredictorHistoryResponse> {
+  const [consumption, production] = await Promise.all([
+    http<{data: PredictorHistoryDataPoint[]}>(buildPredictorUrl(`/api/houses/${houseId}/history?days=${days}&lane=consumption`)),
+    http<{data: PredictorHistoryDataPoint[]}>(buildPredictorUrl(`/api/houses/${houseId}/history?days=${days}&lane=production`))
+  ]);
+  
+  return {
+    consumption: consumption.data || [],
+    production: production.data || []
+  };
+}
+
+export async function getPredictions(houseId: string): Promise<PredictorPredictionsResponse> {
+  return http<PredictorPredictionsResponse>(buildPredictorUrl(`/api/houses/${houseId}/predictions`));
+}
+
+export async function getTrainingProgress(): Promise<TrainingJob[]> {
+  const res = await http<any>(buildPredictorUrl("/api/training-progress"));
+  const jobsRaw = Array.isArray(res) ? res : (res?.jobs || []);
+  
+  return jobsRaw.map((job: any): TrainingJob => {
+    // If the backend returns the actual TrainingJob format, use it as is
+    if (job.status && job.job_id) {
+      return job;
+    }
+    
+    // Otherwise, parse the `{ key, curr, tot, pct, eta }` payload
+    const parts = (job.key || "").split("_");
+    const house_id = parts[0] || "Unknown";
+    const lane = parts[1] || "both";
+    
+    const isCompleted = job.pct >= 100;
+    
+    return {
+      job_id: job.key || `job-${Math.random().toString(36).substr(2,9)}`,
+      house_id,
+      lane,
+      status: isCompleted ? "COMPLETED" : "RUNNING",
+      progress: job.curr || 0,
+      total: job.tot || 100,
+      eta_seconds: 0,
+      age_seconds: 0,
+      submitted_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      finished_at: isCompleted ? new Date().toISOString() : null,
+      prev_mae: null,
+      new_mae: null,
+    };
+  });
+}
+
+export async function executeCommand(payload: PredictorCommandPayload): Promise<{ message: string, job_id?: string }> {
+  return http<{ message: string, job_id?: string }>(buildPredictorUrl("/api/command"), {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function cancelJob(jobId: string): Promise<{ message: string }> {
+  return http<{ message: string }>(buildPredictorUrl(`/api/jobs/${jobId}/cancel`), {
+    method: "POST"
+  });
+}
+
+// Initial logs fetch
+export interface LogEntry {
+  raw: string;
+  time: string;
+  level: string;
+  logger: string;
+  message: string;
+  job_id?: string | null;
+}
+
+export async function getLogs(filter?: string, limit: number = 300): Promise<LogEntry[]> {
+  const url = new URL(buildPredictorUrl("/api/logs"));
+  url.searchParams.append("limit", limit.toString());
+  if (filter) {
+    url.searchParams.append("filter", filter);
+  }
+  return http<LogEntry[]>(url.toString());
+}
