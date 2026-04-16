@@ -1,0 +1,38 @@
+networks:
+  opeva_network:
+    external: true
+
+services:
+  energaize_ui:
+    image: calof/energaize_ui:latest
+    # To build locally instead:
+    # build: .
+    container_name: energaize_ui
+    labels:
+      - "com.centurylinklabs.watchtower.scope=opeva_energaize_ui"
+      - "com.centurylinklabs.watchtower.enable=true"
+    ports:
+      - "${WEB_SERVER_PORT:-3000}:80"
+    restart: always
+    networks:
+      - opeva_network
+    environment:
+      # UI Endpoints
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      VITE_SIMULATION_DATA_PROVIDER: ${VITE_SIMULATION_DATA_PROVIDER:-backend}
+      VITE_PREDICTOR_API_URL: ${VITE_PREDICTOR_API_URL:-http://localhost:8006}
+      VITE_MLFLOW_UI_BASE_URL: ${VITE_MLFLOW_UI_BASE_URL:-http://localhost:5000}
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower_energaize_ui
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=86400
+      - WATCHTOWER_LABEL_ENABLE=true
+    command: --scope opeva_energaize_ui
+    restart: always
+    networks:
+      - opeva_network
