@@ -31,6 +31,14 @@ const PREDICTOR_TABS = [
   { to: "/app/predictor/logs", label: "Logs" }
 ];
 
+const KPI_TABS = [
+  { to: "/app/kpi-manager/dashboard", label: "Dashboard" },
+  { to: "/app/kpi-manager/explorer", label: "Explorer" },
+  { to: "/app/kpi-manager/compare", label: "Compare" },
+  { to: "/app/kpi-manager/scheduler", label: "Scheduler" },
+  { to: "/app/kpi-manager/library", label: "Library" }
+];
+
 export function TopBar(): JSX.Element {
   const { session } = useAuth();
   const { communities, activeCommunity, setActiveCommunity, unreadCount, setMobileTreeOpen } = useUI();
@@ -42,15 +50,15 @@ export function TopBar(): JSX.Element {
   const isTrainingManager = isTrainingManagerRole(session?.role);
   const isPredictor = isPredictorRole(session?.role);
   const isKpiManager = isKpiManagerRole(session?.role);
-  const showRoleMockMenu = isKpiManager;
+
   const tabs = isTrainingManager
     ? session?.role === "training_manager"
       ? AI_TABS_WITH_DEPLOY
       : AI_TABS
     : isPredictor
       ? PREDICTOR_TABS
-      : showRoleMockMenu
-        ? []
+    : isKpiManager
+      ? KPI_TABS
         : [{ to: "/app/logs", label: "Logs" }];
   const brandLink = isTrainingManager
     ? "/app/ai/jobs"
@@ -77,7 +85,7 @@ export function TopBar(): JSX.Element {
           />
         </Link>
 
-        {!isTrainingManager && !showRoleMockMenu ? (
+        {!isTrainingManager && !isKpiManager ? (
           <div className="community-switcher">
             <button className="icon-btn mobile-only" type="button" onClick={() => setMobileTreeOpen(true)}>
               <Menu size={16} />
@@ -111,7 +119,7 @@ export function TopBar(): JSX.Element {
             <NavLink
               key={tab.to}
               to={tab.to}
-              end={tab.to === "/app/predictor"}
+              end={tab.to === "/app/predictor" || tab.to === "/app/kpi-manager/dashboard"}
               className={({ isActive }) => `top-tab${isActive ? " is-active" : ""}`}
             >
               {tab.label}
@@ -149,7 +157,7 @@ export function TopBar(): JSX.Element {
           </>
         ) : null}
 
-        {!showRoleMockMenu ? (
+        {!isKpiManager ? (
           <Link className={`icon-btn${location.pathname === "/app/logs" ? " is-active" : ""}`} to="/app/logs" title="Logs">
             <FileText size={16} />
           </Link>
