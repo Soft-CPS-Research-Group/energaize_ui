@@ -2,7 +2,11 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { AccountPage } from "./pages/AccountPage";
 import { CommunitiesPage } from "./pages/CommunitiesPage";
-import { KpiManagerWorkspacePage } from "./pages/KpiManagerWorkspacePage";
+import { Dashboard } from "./pages/kpi-manager/Dashboard";
+import { KpiExplorer } from "./pages/kpi-manager/KpiExplorer";
+import { ComparePage } from "./pages/kpi-manager/ComparePage";
+import { SchedulerPage } from "./pages/kpi-manager/SchedulerPage";
+import { KpiLibraryPage } from "./pages/kpi-manager/KpiLibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { LogsPage } from "./pages/LogsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -54,7 +58,14 @@ export default function App(): JSX.Element {
           </Route>
 
           <Route element={<RoleGuard allowed={["kpi_manager"]} />}>
-            <Route path="kpi-manager" element={<KpiManagerWorkspacePage />} />
+            <Route path="kpi-manager">
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="explorer" element={<KpiExplorer />} />
+              <Route path="compare" element={<ComparePage />} />
+              <Route path="scheduler" element={<SchedulerPage />} />
+              <Route path="library" element={<KpiLibraryPage />} />
+            </Route>
           </Route>
         </Route>
       </Route>

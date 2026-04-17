@@ -22,6 +22,7 @@ services:
       VITE_SIMULATION_DATA_PROVIDER: ${VITE_SIMULATION_DATA_PROVIDER:-backend}
       VITE_PREDICTOR_API_URL: ${VITE_PREDICTOR_API_URL:-http://localhost:8006}
       VITE_MLFLOW_UI_BASE_URL: ${VITE_MLFLOW_UI_BASE_URL:-http://localhost:5000}
+      VITE_KPI_API_URL: ${VITE_KPI_API_URL:-http://localhost:8007}
 
   watchtower:
     image: containrrr/watchtower

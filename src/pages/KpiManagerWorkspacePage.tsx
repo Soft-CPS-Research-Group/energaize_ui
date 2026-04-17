@@ -1,12 +1,11 @@
-import { PageHeader } from "../components/ui/PageHeader";
+import { Outlet } from "react-router-dom";
 
 export function KpiManagerWorkspacePage(): JSX.Element {
   return (
-    <div className="page role-blank-page">
-      <PageHeader title="KPI Manager Workspace" subtitle="Menu mock disponível. Conteúdo será integrado em breve." />
-      <section className="panel role-blank-panel">
-        <p />
-      </section>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, overflow: "auto", position: "relative" }}>
+        <Outlet />
+      </div>
     </div>
   );
 }
