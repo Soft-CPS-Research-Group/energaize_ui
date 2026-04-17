@@ -24,7 +24,13 @@ export function useCommunities(): UseCommunitiesResult {
 
   useEffect(() => {
     axios.get<{ status: string; data: CommunitiesMap }>("/api/v1/communities")
-      .then((res: any) => setCommunities(res.data.data))
+      .then((res: any) => {
+        if (res?.data?.data && typeof res.data.data === "object") {
+          setCommunities(res.data.data);
+        } else {
+          console.warn("Unexpected communities data:", res.data);
+        }
+      })
       .catch((err: any) => setError(err?.message || "Failed to load communities"))
       .finally(() => setLoading(false));
   }, []);
