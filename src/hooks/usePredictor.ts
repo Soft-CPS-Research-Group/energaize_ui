@@ -4,6 +4,7 @@ import {
   getHouses,
   getHistory,
   getPredictions,
+  getPredictionHistory,
   getTrainingProgress,
   executeCommand,
   cancelJob,
@@ -42,6 +43,22 @@ export function usePredictorPredictions(houseId: string | null) {
     enabled: !!houseId,
     refetchInterval: 60000, // Every minute
   });
+}
+
+export function usePredictorPredictionHistory(houseId: string | null) {
+  const consumption = useQuery({
+    queryKey: ["predictor", "prediction-history", houseId, "consumption"],
+    queryFn: () => getPredictionHistory(houseId!, "consumption"),
+    enabled: !!houseId,
+    refetchInterval: 60000,
+  });
+  const production = useQuery({
+    queryKey: ["predictor", "prediction-history", houseId, "production"],
+    queryFn: () => getPredictionHistory(houseId!, "production"),
+    enabled: !!houseId,
+    refetchInterval: 60000,
+  });
+  return { consumption, production };
 }
 
 export function usePredictorTrainingProgress() {
