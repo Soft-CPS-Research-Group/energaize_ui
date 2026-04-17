@@ -7,9 +7,11 @@ import { format, parseISO } from "date-fns";
 
 const SPECTRUM_LIMIT = 12;
 
-/** Strip milliseconds so map keys are consistent. */
+/** Normalize any ISO timestamp to a UTC ISO key, treating bare ISO (no tz) as UTC. */
 function normalizeTs(ts: string): string {
-  return new Date(ts).toISOString().replace(/\.\d{3}Z$/, "Z");
+  // If there's no timezone indicator, treat as UTC (append Z) to avoid local-time misinterpretation
+  const utc = /Z$|[+-]\d{2}:?\d{2}$/.test(ts) ? ts : ts + "Z";
+  return new Date(utc).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 /**
@@ -120,11 +122,11 @@ export function buildPredictorTimeline(
         })();
 
     predictions.consumption?.forEach((val, i) => {
-      const t = normalizeTs(new Date(anchor.getTime() + (i + 1) * 15 * 60_000).toISOString());
+      const t = normalizeTs(new Date(anchor.getTime() + i * 15 * 60_000).toISOString());
       getOrCreate(t).predictedConsumption = val;
     });
     predictions.production?.forEach((val, i) => {
-      const t = normalizeTs(new Date(anchor.getTime() + (i + 1) * 15 * 60_000).toISOString());
+      const t = normalizeTs(new Date(anchor.getTime() + i * 15 * 60_000).toISOString());
       getOrCreate(t).predictedProduction = val;
     });
   }
@@ -140,9 +142,17 @@ export function buildPredictorTimeline(
     }
   }
 
-  const data = Array.from(map.values()).sort(
-    (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()
-  );
+  // Only keep slots that have actual or predicted data — spec-only slots create
+  // visual gaps in the chart for periods with no readings or forecasts.
+  const data = Array.from(map.values())
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+    .filter(
+      (pt) =>
+        pt.actualConsumption    != null ||
+        pt.actualProduction     != null ||
+        pt.predictedConsumption != null ||
+        pt.predictedProduction  != null
+    );
 
   return { data, spectrumMeta };
 }

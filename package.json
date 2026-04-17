@@ -21,6 +21,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.0",
     "recharts": "^3.2.1",
+    "simpleheat": "^0.4.0",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
