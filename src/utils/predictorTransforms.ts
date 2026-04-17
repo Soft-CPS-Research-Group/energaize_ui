@@ -5,7 +5,16 @@ import {
 } from "../api/predictorApi";
 import { format, parseISO } from "date-fns";
 
-const SPECTRUM_LIMIT = 12;
+const BAND_LIMIT = 24; // use up to the last 24 history runs for the confidence bands
+
+/** Linear interpolation percentile on a pre-sorted array (p in 0–100). */
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
 
 /** Normalize any ISO timestamp to a UTC ISO key, treating bare ISO (no tz) as UTC. */
 function normalizeTs(ts: string): string {
@@ -30,6 +39,15 @@ export interface ChartDataPoint {
   actualProduction: number | null;
   predictedConsumption: number | null;
   predictedProduction: number | null;
+  // Confidence bands stored as (base, height) pairs for Recharts stacked <Area>
+  cBandLo: number | null;   // min across history forecasts (consumption)
+  cBandHi: number | null;   // max − min (consumption outer band height)
+  cBandQ1Lo: number | null; // p25 (consumption inner band base)
+  cBandQ1Hi: number | null; // p75 − p25 (consumption inner band height)
+  pBandLo: number | null;
+  pBandHi: number | null;
+  pBandQ1Lo: number | null;
+  pBandQ1Hi: number | null;
   [key: string]: string | number | null;
 }
 
@@ -52,34 +70,49 @@ function makePoint(timeIso: string): ChartDataPoint {
     actualProduction: null,
     predictedConsumption: null,
     predictedProduction: null,
+    cBandLo: null, cBandHi: null, cBandQ1Lo: null, cBandQ1Hi: null,
+    pBandLo: null, pBandHi: null, pBandQ1Lo: null, pBandQ1Hi: null,
   };
 }
 
-function embedSpectrum(
+/** Compute min/max/IQR confidence bands from prediction history and write into the chart map. */
+function embedBands(
   entries: PredictionHistoryEntry[],
   lane: "consumption" | "production",
   map: Map<string, ChartDataPoint>
-): SpectrumSeriesMeta[] {
-  const limited = entries.slice(-SPECTRUM_LIMIT);
-  const meta: SpectrumSeriesMeta[] = [];
+): void {
+  const limited = entries.slice(-BAND_LIMIT);
+  if (limited.length === 0) return;
 
-  limited.forEach((entry, idx) => {
-    const key = `spec_${lane}_${idx}`;
-    // Age-based opacity: oldest ≈ 0.06, newest ≈ 0.32
-    const opacity = 0.06 + (idx / Math.max(1, limited.length - 1)) * 0.26;
-    meta.push({ key, opacity, lane });
-
+  // Accumulate all prediction values per 15-min slot across all history runs
+  const slotValues = new Map<string, number[]>();
+  for (const entry of limited) {
     const anchor = snap15(new Date(entry.target_time));
     entry.prediction.forEach((val, step) => {
-      const stepTime = normalizeTs(new Date(anchor.getTime() + step * 15 * 60_000).toISOString());
-      if (!map.has(stepTime)) {
-        map.set(stepTime, makePoint(stepTime));
-      }
-      (map.get(stepTime) as ChartDataPoint)[key] = val;
+      const slotKey = normalizeTs(new Date(anchor.getTime() + step * 15 * 60_000).toISOString());
+      if (!slotValues.has(slotKey)) slotValues.set(slotKey, []);
+      slotValues.get(slotKey)!.push(val);
     });
-  });
+  }
 
-  return meta;
+  // Derive stats per slot and write into the chart map
+  for (const [slotKey, vals] of slotValues) {
+    if (vals.length === 0) continue;
+    const sorted = [...vals].sort((a, b) => a - b);
+    const lo = sorted[0];
+    const hi = sorted[sorted.length - 1];
+    const q1 = percentile(sorted, 25);
+    const q3 = percentile(sorted, 75);
+    if (!map.has(slotKey)) map.set(slotKey, makePoint(slotKey));
+    const pt = map.get(slotKey)!;
+    if (lane === "consumption") {
+      pt.cBandLo = lo;  pt.cBandHi = hi - lo;
+      pt.cBandQ1Lo = q1;  pt.cBandQ1Hi = q3 - q1;
+    } else {
+      pt.pBandLo = lo;  pt.pBandHi = hi - lo;
+      pt.pBandQ1Lo = q1;  pt.pBandQ1Hi = q3 - q1;
+    }
+  }
 }
 
 export function buildPredictorTimeline(
@@ -131,19 +164,17 @@ export function buildPredictorTimeline(
     });
   }
 
-  // Add prediction history spectrum
-  const spectrumMeta: SpectrumSeriesMeta[] = [];
+  // Compute confidence bands from prediction history
   if (predictionHistory) {
     if (predictionHistory.consumption?.length) {
-      spectrumMeta.push(...embedSpectrum(predictionHistory.consumption, "consumption", map));
+      embedBands(predictionHistory.consumption, "consumption", map);
     }
     if (predictionHistory.production?.length) {
-      spectrumMeta.push(...embedSpectrum(predictionHistory.production, "production", map));
+      embedBands(predictionHistory.production, "production", map);
     }
   }
 
-  // Only keep slots that have actual or predicted data — spec-only slots create
-  // visual gaps in the chart for periods with no readings or forecasts.
+  // Keep slots that have actual, predicted, or band data
   const data = Array.from(map.values())
     .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
     .filter(
@@ -151,8 +182,10 @@ export function buildPredictorTimeline(
         pt.actualConsumption    != null ||
         pt.actualProduction     != null ||
         pt.predictedConsumption != null ||
-        pt.predictedProduction  != null
+        pt.predictedProduction  != null ||
+        pt.cBandLo              != null ||
+        pt.pBandLo              != null
     );
 
-  return { data, spectrumMeta };
+  return { data, spectrumMeta: [] };
 }

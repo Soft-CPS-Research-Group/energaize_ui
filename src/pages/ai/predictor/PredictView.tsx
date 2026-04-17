@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import {
   usePredictorStats,
   usePredictorHistory,
@@ -14,6 +14,7 @@ import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { buildPredictorTimeline } from "../../../utils/predictorTransforms";
 import {
   ComposedChart,
+  Area,
   Line,
   XAxis,
   YAxis,
@@ -42,9 +43,10 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const TooltipContent = ({ active, payload, label }: any) => {
     if (!active || !payload || payload.length === 0) return null;
+    const BAND_KEYS = new Set(["cBandLo","cBandHi","cBandQ1Lo","cBandQ1Hi","pBandLo","pBandHi","pBandQ1Lo","pBandQ1Hi"]);
     const relevant = payload.filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (p: any) => !String(p.dataKey).startsWith("spec_") && p.value != null
+      (p: any) => !BAND_KEYS.has(String(p.dataKey)) && !String(p.dataKey).startsWith("spec_") && p.value != null
     );
     if (relevant.length === 0) return null;
     const dateStr = new Date(label as string).toLocaleString([], {
@@ -84,136 +86,28 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
 
   const { data: chartData } = buildPredictorTimeline(history, predictions, predHistory);
 
-  // Refs for simpleheat canvas elements and chart width measurement
-  const chartWrapRef = useRef<HTMLDivElement>(null);
-  const heatConsRef  = useRef<HTMLCanvasElement>(null);
-  const heatProdRef  = useRef<HTMLCanvasElement>(null);
-  const [chartContainerWidth, setChartContainerWidth] = useState(0);
-
-  useEffect(() => {
-    const el = chartWrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => setChartContainerWidth(Math.floor(e.contentRect.width)));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   const isConsumption = activeLane === "consumption" || activeLane === "both";
   const isProduction  = activeLane === "production"  || activeLane === "both";
 
-  // Chart geometry constants — must match ComposedChart margin + axis dimensions exactly
-  const CHART_H  = 380;
-  const LEGEND_H = 32;   // <Legend verticalAlign="top" height={32}>
-  const PLOT_L   = 78;   // margin-left(8) + yAxisWidth(70)
-  const PLOT_T   = 6 + LEGEND_H; // margin-top(6) + legend
-  const plotH    = CHART_H - PLOT_T - 26; // margin-bottom(6) + xAxisHeight(20)
-
-  // yMax is shared between the YAxis domain and heatmap pixel math so coordinates align
   let _yMax = 0.001;
   for (const pt of chartData) {
-    for (const k of Object.keys(pt)) {
-      if (pt[k] == null || typeof pt[k] !== "number") continue;
-      if (
-        (isConsumption && (k === "actualConsumption" || k === "predictedConsumption" || k.startsWith("spec_consumption_")))
-        || (isProduction && (k === "actualProduction" || k === "predictedProduction" || k.startsWith("spec_production_")))
-      ) {
-        if ((pt[k] as number) > _yMax) _yMax = pt[k] as number;
-      }
+    const candidates: (number | null)[] = [
+      isConsumption ? pt.actualConsumption : null,
+      isConsumption ? pt.predictedConsumption : null,
+      isConsumption && pt.cBandLo != null && pt.cBandHi != null
+        ? (pt.cBandLo as number) + (pt.cBandHi as number) : null,
+      isProduction ? pt.actualProduction : null,
+      isProduction ? pt.predictedProduction : null,
+      isProduction && pt.pBandLo != null && pt.pBandHi != null
+        ? (pt.pBandLo as number) + (pt.pBandHi as number) : null,
+    ];
+    for (const v of candidates) {
+      if (v != null && v > _yMax) _yMax = v;
     }
   }
   const yMax = _yMax * 1.08;
 
-  // Rebuild heatmap canvas whenever chart data, lane, container width, or scale changes.
-  // IMPORTANT: we measure width from the DOM directly inside the effect as a fallback so the
-  // heatmap still renders when chartData arrives before the ResizeObserver fires (page load race).
-  useEffect(() => {
-    const wrapEl = chartWrapRef.current;
-    // Use state width if available, otherwise fall back to the live DOM measurement
-    const effectWidth = chartContainerWidth > 0 ? chartContainerWidth : (wrapEl?.offsetWidth ?? 0);
-    const effectPlotW = Math.max(0, effectWidth - PLOT_L - 20);
-    const effectSlotW = chartData.length > 0 ? effectPlotW / chartData.length : 0;
 
-    const lanes = [
-      { lane: "consumption" as const, ref: heatConsRef },
-      { lane: "production"  as const, ref: heatProdRef },
-    ];
-
-    for (const { lane, ref } of lanes) {
-      const canvas = ref.current;
-      if (!canvas) continue;
-      canvas.width  = Math.max(effectWidth, 1);
-      canvas.height = CHART_H;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) continue;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (effectWidth <= 0 || effectSlotW <= 0) continue;
-
-      // Clip to the plot area so strokes don’t bleed over the legend, axes, or margins
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(PLOT_L, PLOT_T, effectPlotW, plotH);
-      ctx.clip();
-
-      // Scan ALL points — spec_ keys only appear on future-slot points, not historical ones
-      const specKeys: string[] = [];
-      for (const pt of chartData) {
-        for (const k of Object.keys(pt)) {
-          if (k.startsWith(`spec_${lane}_`) && !specKeys.includes(k)) specKeys.push(k);
-        }
-      }
-      if (specKeys.length === 0) { ctx.restore(); continue; }
-
-      // Sort spec keys by their numeric index so oldest (0) → newest (N-1)
-      specKeys.sort((a, b) => {
-        const ai = parseInt(a.split("_").pop() ?? "0", 10);
-        const bi = parseInt(b.split("_").pop() ?? "0", 10);
-        return ai - bi;
-      });
-      const total = specKeys.length;
-
-      // Colour interpolation: same hue, older = pale tint → newer = full saturated lane colour.
-      // Oldest drawn first, newest drawn last (on top) — loop order guarantees this.
-      // Consumption: pale blue (#bfdbfe) → #3b82f6
-      // Production:  pale violet (#ede9fe) → #a78bfa
-      const OLD_COLOR = lane === "consumption" ? [191, 219, 254] : [237, 233, 254];
-      const NEW_COLOR = lane === "consumption" ? [ 59, 130, 246] : [167, 139, 250];
-
-      ctx.lineWidth = 7;
-      ctx.lineJoin  = "round";
-      ctx.lineCap   = "round";
-
-      for (let ki = 0; ki < specKeys.length; ki++) {
-        const key = specKeys[ki];
-        const t  = total > 1 ? ki / (total - 1) : 1; // 0 = oldest, 1 = newest
-        const rv = Math.round(OLD_COLOR[0] + t * (NEW_COLOR[0] - OLD_COLOR[0]));
-        const gv = Math.round(OLD_COLOR[1] + t * (NEW_COLOR[1] - OLD_COLOR[1]));
-        const bv = Math.round(OLD_COLOR[2] + t * (NEW_COLOR[2] - OLD_COLOR[2]));
-        const alpha = 0.10 + t * 0.20;
-        ctx.strokeStyle = `rgba(${rv},${gv},${bv},${alpha.toFixed(2)})`;
-        const pts: [number, number][] = [];
-        for (let xi = 0; xi < chartData.length; xi++) {
-          const val = chartData[xi][key];
-          if (val == null) continue;
-          const px = PLOT_L + (xi + 0.5) * effectSlotW;
-          const py = PLOT_T + plotH * (1 - Math.min(Math.max(val as number, 0), yMax) / yMax);
-          pts.push([px, py]);
-        }
-        if (pts.length < 2) continue;
-        ctx.beginPath();
-        ctx.moveTo(pts[0][0], pts[0][1]);
-        for (let i = 1; i < pts.length - 1; i++) {
-          const mx = (pts[i][0] + pts[i + 1][0]) / 2;
-          const my = (pts[i][1] + pts[i + 1][1]) / 2;
-          ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
-        }
-        ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartData, activeLane, chartContainerWidth, yMax]);
 
   const futureStart = chartData.find((pt) => {
     if (isConsumption && pt.actualConsumption === null && pt.predictedConsumption !== null) return true;
@@ -292,7 +186,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
             <h3>Energy Forecast — {selectedHouseId}</h3>
             {(predHistory.consumption.length > 0 || predHistory.production.length > 0) && (
               <span className="predictor-spectrum-hint">
-                prediction history heatmap
+                forecast uncertainty bands
               </span>
             )}
           </div>
@@ -328,30 +222,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
           </div>
         </div>
 
-        <div ref={chartWrapRef} style={{ position: "relative" }}>
-          {/* Heatmap canvases — above chart (zIndex:3), pointer-events:none so interactions pass through.
-              CSS blur turns the overlapping semi-transparent strokes into a smooth density field. */}
-          <canvas
-            ref={heatConsRef}
-            style={{
-              position: "absolute", top: 0, left: 0,
-              pointerEvents: "none", zIndex: 3,
-              opacity: isConsumption ? 0.55 : 0,
-              filter: "blur(4px)",
-              transition: "opacity 0.2s",
-            }}
-          />
-          <canvas
-            ref={heatProdRef}
-            style={{
-              position: "absolute", top: 0, left: 0,
-              pointerEvents: "none", zIndex: 3,
-              opacity: isProduction ? 0.55 : 0,
-              filter: "blur(4px)",
-              transition: "opacity 0.2s",
-            }}
-          />
-          <ResponsiveContainer width="100%" height={CHART_H} style={{ position: "relative", zIndex: 2 }}>
+        <ResponsiveContainer width="100%" height={380}>
           <ComposedChart data={chartData} margin={{ top: 6, right: 20, left: 8, bottom: 6 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.15} vertical={false} />
             <XAxis
@@ -387,6 +258,48 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 strokeDasharray="4 4"
                 label={{ value: "Now", fill: "var(--text-soft)", fontSize: 10, position: "insideTopRight" }}
               />
+            )}
+
+            {/* Forecast confidence bands — outer (min–max) then inner (IQR), rendered below the lines */}
+            {isConsumption && (
+              <>
+                <Area yAxisId="left" type="monotone" dataKey="cBandLo"
+                  stroke="none" fill="none" fillOpacity={0}
+                  stackId="cOuter" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+                <Area yAxisId="left" type="monotone" dataKey="cBandHi"
+                  stroke="none" fill={LANE_COLORS.consumption.predicted} fillOpacity={0.12}
+                  stackId="cOuter" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+                <Area yAxisId="left" type="monotone" dataKey="cBandQ1Lo"
+                  stroke="none" fill="none" fillOpacity={0}
+                  stackId="cInner" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+                <Area yAxisId="left" type="monotone" dataKey="cBandQ1Hi"
+                  stroke="none" fill={LANE_COLORS.consumption.predicted} fillOpacity={0.25}
+                  stackId="cInner" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+              </>
+            )}
+            {isProduction && (
+              <>
+                <Area yAxisId="left" type="monotone" dataKey="pBandLo"
+                  stroke="none" fill="none" fillOpacity={0}
+                  stackId="pOuter" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+                <Area yAxisId="left" type="monotone" dataKey="pBandHi"
+                  stroke="none" fill={LANE_COLORS.production.predicted} fillOpacity={0.12}
+                  stackId="pOuter" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+                <Area yAxisId="left" type="monotone" dataKey="pBandQ1Lo"
+                  stroke="none" fill="none" fillOpacity={0}
+                  stackId="pInner" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+                <Area yAxisId="left" type="monotone" dataKey="pBandQ1Hi"
+                  stroke="none" fill={LANE_COLORS.production.predicted} fillOpacity={0.25}
+                  stackId="pInner" legendType="none" dot={false}
+                  isAnimationActive={false} connectNulls={false} />
+              </>
             )}
 
             {/* Actual & predicted lines */}
@@ -446,7 +359,6 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
             )}
           </ComposedChart>
           </ResponsiveContainer>
-        </div>
       </div>
 
       <ConfirmDialog
