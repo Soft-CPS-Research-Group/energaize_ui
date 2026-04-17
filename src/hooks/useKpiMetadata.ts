@@ -30,7 +30,14 @@ export function useKpiMetadata(): UseKpiMetadataResult {
 
   useEffect(() => {
     axios.get<{ status: string; data: KpiMeta[] }>("/api/v1/kpis/metadata")
-      .then((res: any) => setKpis(res.data.data))
+      .then((res: any) => {
+        if (res?.data?.data && Array.isArray(res.data.data)) {
+          setKpis(res.data.data);
+        } else {
+          console.warn("Unexpected KPI metadata format:", res.data);
+          setKpis([]);
+        }
+      })
       .catch((err: any) => setError(err?.message || "Failed to load KPI metadata"))
       .finally(() => setLoading(false));
   }, []);

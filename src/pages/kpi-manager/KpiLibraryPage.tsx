@@ -45,14 +45,21 @@ export function KpiLibraryPage() {
 
   useEffect(() => {
     axios.get<{ status: string; data: KpiEntry[] }>("/api/v1/kpis/metadata")
-      .then((res: any) => setKpis(res.data.data))
+      .then((res: any) => {
+        if (res?.data?.data && Array.isArray(res.data.data)) {
+          setKpis(res.data.data);
+        } else {
+          console.warn("Unexpected metadata format in Library:", res.data);
+          setKpis([]);
+        }
+      })
       .catch((err: any) => setError(err?.message || "Failed to load KPI metadata"))
       .finally(() => setLoading(false));
   }, []);
 
-  const categories = Array.from(new Set(kpis.map((k: any) => k.category)));
+  const categories = Array.from(new Set(kpis?.map((k: any) => k.category) || []));
 
-  const filtered = kpis.filter(kpi => {
+  const filtered = (kpis || []).filter(kpi => {
     const matchSearch = kpi.name.toLowerCase().includes(search.toLowerCase()) ||
                         kpi.description.toLowerCase().includes(search.toLowerCase());
     const matchCategory = filterCategory === "all" || kpi.category === filterCategory;

@@ -63,7 +63,11 @@ export function SchedulerPage() {
     try {
       setError(null);
       const res = await axios.get<{ status: string; data: SchedulerStatus }>("/api/v1/scheduler/status");
-      setStatus(res.data.data);
+      if (res?.data?.data && typeof res.data.data === "object") {
+        setStatus(res.data.data);
+      } else {
+        console.warn("Unexpected scheduler status format:", res.data);
+      }
     } catch (err: any) {
       if (err?.response?.status === 404) {
         setError("Scheduler API not available yet. The backend endpoint GET /api/v1/scheduler/status needs to be implemented.");
