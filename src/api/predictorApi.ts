@@ -24,6 +24,7 @@ export interface PredictorHistoryResponse {
 }
 
 export interface PredictorPredictionsResponse {
+  target_time: string;
   consumption: number[];
   production: number[];
 }
