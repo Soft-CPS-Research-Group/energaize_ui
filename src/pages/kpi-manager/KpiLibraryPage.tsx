@@ -44,7 +44,7 @@ export function KpiLibraryPage() {
   const [filterStatus, setFilterStatus] = useState<"all" | "available" | "pending">("all");
 
   useEffect(() => {
-    axios.get<{ status: string; data: KpiEntry[] }>("/api/v1/kpis/metadata")
+    axios.get<{ status: string; data: KpiEntry[] }>("api/v1/kpis/metadata")
       .then((res: any) => {
         if (res?.data?.data && Array.isArray(res.data.data)) {
           setKpis(res.data.data);

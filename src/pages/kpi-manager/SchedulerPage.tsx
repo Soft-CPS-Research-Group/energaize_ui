@@ -62,7 +62,7 @@ export function SchedulerPage() {
   const fetchStatus = useCallback(async () => {
     try {
       setError(null);
-      const res = await axios.get<{ status: string; data: SchedulerStatus }>("/api/v1/scheduler/status");
+      const res = await axios.get<{ status: string; data: SchedulerStatus }>("api/v1/scheduler/status");
       if (res?.data?.data && typeof res.data.data === "object") {
         setStatus(res.data.data);
       } else {

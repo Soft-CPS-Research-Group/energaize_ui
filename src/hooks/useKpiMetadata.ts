@@ -29,7 +29,7 @@ export function useKpiMetadata(): UseKpiMetadataResult {
   const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    axios.get<{ status: string; data: KpiMeta[] }>("/api/v1/kpis/metadata")
+    axios.get<{ status: string; data: KpiMeta[] }>("api/v1/kpis/metadata")
       .then((res: any) => {
         if (res?.data?.data && Array.isArray(res.data.data)) {
           setKpis(res.data.data);

@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-export const KPI_API_BASE_URL = import.meta.env.VITE_KPI_API_URL || '/kpi-api';
+export const KPI_API_BASE_URL = import.meta.env.VITE_KPI_API_URL?.replace(/\/$/, "") || 'http://193.136.62.78:8007';
 
-export const api = axios.create({ baseURL: KPI_API_BASE_URL });
+export const api = axios.create({ baseURL: `${KPI_API_BASE_URL}/` });
 import type { ApiResponse } from "../types/kpi";
 
 interface FetchKpisParams {
@@ -41,7 +41,7 @@ export const fetchKpis = async ({
     windowOverride.forEach(w => params.append("window_override", w));
   }
 
-  const response = await api.get<ApiResponse>(`/api/v1/kpis/${community}?${params.toString()}`);
+  const response = await api.get<ApiResponse>(`api/v1/kpis/${community}?${params.toString()}`);
   return response.data;
 };
 
@@ -67,7 +67,7 @@ export const fetchKpiHistory = async ({
   let urlGroup = community || "default";
 
   const response = await api.get<any>(
-    `/api/v1/kpis/${urlGroup}/history?${params.toString()}`
+    `api/v1/kpis/${urlGroup}/history?${params.toString()}`
   );
   return response.data;
 };
@@ -122,7 +122,7 @@ export const fetchKpiComparison = async ({
   kpis?.forEach(k => params.append("kpis", k));
 
   const response = await api.get<CompareResponse>(
-    `/api/v1/kpis/${community}/compare?${params.toString()}`
+    `api/v1/kpis/${community}/compare?${params.toString()}`
   );
   return response.data;
 };

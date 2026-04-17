@@ -23,7 +23,7 @@ export function useCommunities(): UseCommunitiesResult {
   const [error, setError]             = useState<string | null>(null);
 
   useEffect(() => {
-    axios.get<{ status: string; data: CommunitiesMap }>("/api/v1/communities")
+    axios.get<{ status: string; data: CommunitiesMap }>("api/v1/communities")
       .then((res: any) => {
         if (res?.data?.data && typeof res.data.data === "object") {
           setCommunities(res.data.data);
