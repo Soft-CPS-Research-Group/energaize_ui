@@ -9,10 +9,8 @@ function buildPredictorUrl(path: string): string {
 export interface PredictorStats {
   total_houses: number;
   predictions_available: number;
-  active_houses?: number;
-  next_consumption_cycle_minutes?: number;
-  next_production_cycle_minutes?: number;
-  version?: string;
+  total_cycles: number;
+  next_cycle_at: string; // ISO timestamp of the next 15-min boundary
 }
 
 export interface PredictorHistoryDataPoint {
@@ -75,6 +73,26 @@ export async function getHistory(houseId: string, days: number = 3): Promise<Pre
 
 export async function getPredictions(houseId: string): Promise<PredictorPredictionsResponse> {
   return http<PredictorPredictionsResponse>(buildPredictorUrl(`/api/houses/${houseId}/predictions`));
+}
+
+export interface PredictionHistoryEntry {
+  target_time: string;
+  prediction: number[];
+}
+
+export interface PredictionHistoryPayload {
+  house_id: string;
+  lane: string;
+  history: PredictionHistoryEntry[];
+}
+
+export async function getPredictionHistory(
+  houseId: string,
+  lane: "consumption" | "production" = "consumption"
+): Promise<PredictionHistoryPayload> {
+  return http<PredictionHistoryPayload>(
+    buildPredictorUrl(`/api/houses/${houseId}/prediction-history?lane=${lane}`)
+  );
 }
 
 export async function getTrainingProgress(): Promise<TrainingJob[]> {

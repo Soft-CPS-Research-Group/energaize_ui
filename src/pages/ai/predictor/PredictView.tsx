@@ -1,5 +1,13 @@
-import { usePredictorStats, usePredictorHistory, usePredictorPredictions, usePredictorCommand } from "../../../hooks/usePredictor";
+import { useState } from "react";
+import {
+  usePredictorStats,
+  usePredictorHistory,
+  usePredictorPredictions,
+  usePredictorCommand,
+  usePredictorPredictionHistory,
+} from "../../../hooks/usePredictor";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
+import { EmptyState } from "../../../components/ui/EmptyState";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
@@ -13,150 +21,323 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ReferenceLine
+  ReferenceLine,
 } from "recharts";
-import { useState } from "react";
+import { Zap, TrendingUp, Layers } from "lucide-react";
 
 interface PredictViewProps {
   selectedHouseId: string | null;
   timezone: string;
 }
 
+type Lane = "consumption" | "production" | "both";
+
+const LANE_COLORS: Record<"consumption" | "production", { actual: string; predicted: string; spectrum: string }> = {
+  consumption: { actual: "#ea5a5a", predicted: "#3b82f6", spectrum: "#3b82f6" },
+  production:  { actual: "#22c55e", predicted: "#a78bfa", spectrum: "#a78bfa" },
+};
+
 export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
+  // Tooltip renderer as a closure to capture `timezone`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const TooltipContent = ({ active, payload, label }: any) => {
+    if (!active || !payload || payload.length === 0) return null;
+    const relevant = payload.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (p: any) => !String(p.dataKey).startsWith("spec_") && p.value != null
+    );
+    if (relevant.length === 0) return null;
+    const dateStr = new Date(label as string).toLocaleString([], {
+      timeZone: timezone,
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+    return (
+      <div style={{ background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 12px", fontSize: "0.8rem" }}>
+        <p style={{ margin: "0 0 6px", color: "var(--text-soft)", fontWeight: 500 }}>{dateStr}</p>
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        {relevant.map((p: any) => (
+          <p key={String(p.dataKey)} style={{ margin: "2px 0", color: p.color }}>
+            {p.name}: <strong>{Number(p.value).toFixed(3)} kWh</strong>
+          </p>
+        ))}
+      </div>
+    );
+  };
   const { notifySuccess, notifyError } = useApiFeedback();
+  const [activeLane, setActiveLane] = useState<Lane>("consumption");
   const [showForecastDialog, setShowForecastDialog] = useState(false);
   const [showFlexDialog, setShowFlexDialog] = useState(false);
 
-  const { data: stats, isLoading: statsLoading } = usePredictorStats();
+  const { data: stats } = usePredictorStats();
   const { data: history, isLoading: historyLoading } = usePredictorHistory(selectedHouseId);
   const { data: predictions, isLoading: predictionsLoading } = usePredictorPredictions(selectedHouseId);
-  
+  const { consumption: histC, production: histP } = usePredictorPredictionHistory(selectedHouseId);
+
   const commandMutation = usePredictorCommand();
+  const isLoading = historyLoading || predictionsLoading;
 
-  const isLoading = statsLoading || historyLoading || predictionsLoading;
+  const predHistory = {
+    consumption: histC.data?.history ?? [],
+    production: histP.data?.history ?? [],
+  };
 
-  const chartData = buildPredictorTimeline(history, predictions);
-  
-  // Find where predictions start to draw a reference line
-  // Assumes any entry with predictions but null actuals is the future
-  const futureStart = chartData.find(
-    (pt) => (pt.actualConsumption === null) && (pt.predictedConsumption !== null)
-  );
+  const { data: chartData, spectrumMeta } = buildPredictorTimeline(history, predictions, predHistory);
 
-  const handleForecastCommand = (lane: "consumption" | "production" | "both") => {
+  const isConsumption = activeLane === "consumption" || activeLane === "both";
+  const isProduction  = activeLane === "production"  || activeLane === "both";
+  const activeSpectrum = activeLane === "both"
+    ? spectrumMeta
+    : spectrumMeta.filter((m) => m.lane === activeLane);
+
+  const futureStart = chartData.find((pt) => {
+    if (isConsumption && pt.actualConsumption === null && pt.predictedConsumption !== null) return true;
+    if (isProduction  && pt.actualProduction  === null && pt.predictedProduction  !== null) return true;
+    return false;
+  });
+
+  const handleForecast = () => {
     if (!selectedHouseId) return;
     commandMutation.mutate(
-      { command: "predict", house_id: selectedHouseId, lane },
+      { command: "predict", house_id: selectedHouseId, lane: "both" },
       {
-        onSuccess: (res) => {
-          notifySuccess("Forecast Queued", res.message);
-          setShowForecastDialog(false);
-        },
+        onSuccess: (res) => { notifySuccess("Forecast Queued", res.message); setShowForecastDialog(false); },
         onError: (err) => notifyError("Forecast Error", err),
       }
     );
   };
 
-  const handleFlexCommand = () => {
+  const handleFlex = () => {
     if (!selectedHouseId) return;
     commandMutation.mutate(
       { command: "flex", house_id: selectedHouseId },
       {
-        onSuccess: (res) => {
-          notifySuccess("Flexibility Job", res.message);
-          setShowFlexDialog(false);
-        },
+        onSuccess: (res) => { notifySuccess("Flexibility Job", res.message); setShowFlexDialog(false); },
         onError: (err) => notifyError("Flexibility Error", err),
       }
     );
   };
 
-  if (isLoading && chartData.length === 0) {
-    return <EVChargingLoader label="Loading predictor data..." />;
+  if (!selectedHouseId) {
+    return (
+      <EmptyState
+        title="No House Selected"
+        message="Select a house from the dropdown above to view its forecast data."
+      />
+    );
   }
 
+  if (isLoading && chartData.length === 0) {
+    return <EVChargingLoader label="Loading predictor data…" />;
+  }
+
+  const formatXAxis = (t: string) =>
+    new Date(t).toLocaleTimeString([], { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-      {/* KPI Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "14px" }}>
-        <KPICard title="Total Houses" value={stats?.total_houses ?? "-"} />
-        <KPICard title="Houses w/ Predictions" value={stats?.predictions_available ?? "-"} />
-        <KPICard title="Next Consumption (min)" value={stats?.next_consumption_cycle_minutes ?? "-"} />
-        <KPICard title="Next Production (min)" value={stats?.next_production_cycle_minutes ?? "-"} />
+    <div className="predictor-predict-view">
+      {/* KPI strip */}
+      <div className="kpi-grid predictor-kpi-grid">
+        <div className="kpi">
+          <span>Total Houses</span>
+          <strong>{stats?.total_houses ?? "—"}</strong>
+        </div>
+        <div className="kpi">
+          <span>Houses w/ Predictions</span>
+          <strong>{stats?.predictions_available ?? "—"}</strong>
+        </div>
+        <div className="kpi">
+          <span>Next Compute Cycle</span>
+          <strong>
+            {stats?.next_cycle_at
+              ? new Date(stats.next_cycle_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "—"}
+          </strong>
+        </div>
+        <div className="kpi">
+          <span>Cycles Completed</span>
+          <strong>{stats?.total_cycles ?? "—"}</strong>
+        </div>
       </div>
 
-      {/* Chart Section */}
-      <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0 }}>Energy Forecast - {selectedHouseId || "No House Selected"}</h3>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <Button size="sm" onClick={() => setShowForecastDialog(true)} disabled={!selectedHouseId || commandMutation.isPending}>
+      {/* Forecast chart */}
+      <div className="panel predictor-chart-panel">
+        <div className="predictor-chart-header">
+          <div className="predictor-chart-title">
+            <h3>Energy Forecast — {selectedHouseId}</h3>
+            {activeSpectrum.length > 0 && (
+              <span className="predictor-spectrum-hint">
+                {activeSpectrum.length} prediction history layers
+              </span>
+            )}
+          </div>
+
+          <div className="predictor-chart-controls">
+            <div className="predictor-lane-toggle">
+              <button
+                className={`predictor-lane-btn${activeLane === "consumption" ? " is-active" : ""}`}
+                onClick={() => setActiveLane("consumption")}
+              >
+                <Zap size={12} /> Consumption
+              </button>
+              <button
+                className={`predictor-lane-btn${activeLane === "production" ? " is-active" : ""}`}
+                onClick={() => setActiveLane("production")}
+              >
+                <TrendingUp size={12} /> Production
+              </button>
+              <button
+                className={`predictor-lane-btn${activeLane === "both" ? " is-active" : ""}`}
+                onClick={() => setActiveLane("both")}
+              >
+                <Layers size={12} /> Both
+              </button>
+            </div>
+
+            <Button size="sm" variant="primary" onClick={() => setShowForecastDialog(true)} disabled={commandMutation.isPending}>
               Run Forecast
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => setShowFlexDialog(true)} disabled={!selectedHouseId || commandMutation.isPending}>
+            <Button size="sm" variant="secondary" onClick={() => setShowFlexDialog(true)} disabled={commandMutation.isPending}>
               Run Flex Job
             </Button>
           </div>
         </div>
 
-        <div style={{ width: "100%", height: "400px", minHeight: "400px", minWidth: "10px", position: "relative", marginLeft: "-16px" }}>
-          <ResponsiveContainer width="99%" height={400}>
-            <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
-              <XAxis dataKey="time" tickFormatter={(t) => new Date(t).toLocaleTimeString([], {timeZone: timezone, hour: "2-digit", minute:"2-digit"})} />
-              <YAxis yAxisId="left" tickFormatter={(v) => `${v} kWh`} width={80} />
-              <Tooltip labelFormatter={(l) => new Date(l).toLocaleString([], {timeZone: timezone})} />
-              <Legend verticalAlign="top" height={36} />
+        <ResponsiveContainer width="100%" height={380}>
+          <ComposedChart data={chartData} margin={{ top: 6, right: 20, left: 8, bottom: 6 }}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.15} vertical={false} />
+            <XAxis
+              dataKey="time"
+              tickFormatter={formatXAxis}
+              tick={{ fontSize: 11, fill: "var(--text-soft)" }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              yAxisId="left"
+              tickFormatter={(v) => `${v} kWh`}
+              width={70}
+              tick={{ fontSize: 11, fill: "var(--text-soft)" }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip content={TooltipContent} />
+            <Legend
+              verticalAlign="top"
+              height={32}
+              wrapperStyle={{ fontSize: "0.78rem" }}
+              formatter={(value) => value.startsWith("spec_") ? null : value}
+            />
 
-              {/* Reference line for Future */}
-              {futureStart && (
-                <ReferenceLine x={futureStart.time} stroke="var(--border)" strokeDasharray="3 3" label="Now" yAxisId="left" />
-              )}
+            {futureStart && (
+              <ReferenceLine
+                x={futureStart.time}
+                yAxisId="left"
+                stroke="var(--line-strong)"
+                strokeDasharray="4 4"
+                label={{ value: "Now", fill: "var(--text-soft)", fontSize: 10, position: "insideTopRight" }}
+              />
+            )}
 
-              {/* Actual Data (Line) matching TUI colors */}
-              <Line yAxisId="left" type="monotone" dataKey="actualConsumption" fill="#ea5a5a" stroke="#ea5a5a" strokeWidth={2} name="Actual Consumption" dot={false} isAnimationActive={false} />
-              <Line yAxisId="left" type="monotone" dataKey="actualProduction" fill="#1db97f" stroke="#1db97f" strokeWidth={2} name="Actual Production" dot={false} isAnimationActive={false} />
+            {/* Spectrum: faint history layers rendered first (underneath) */}
+            {activeSpectrum.map((meta) => (
+              <Line
+                key={meta.key}
+                yAxisId="left"
+                type="monotone"
+                dataKey={meta.key}
+                stroke={LANE_COLORS[meta.lane].spectrum}
+                strokeWidth={1}
+                strokeOpacity={meta.opacity}
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+                name={meta.key}
+                connectNulls={false}
+              />
+            ))}
 
-              {/* Predicted Data (Line) matching TUI colors */}
-              <Line yAxisId="left" type="monotone" dataKey="predictedConsumption" stroke="#56d364" strokeWidth={2} dot={false} strokeDasharray="4 4" name="Predicted Consumption" isAnimationActive={false} />
-              <Line yAxisId="left" type="monotone" dataKey="predictedProduction" stroke="#388bfd" strokeWidth={2} dot={false} strokeDasharray="4 4" name="Predicted Production" isAnimationActive={false} />
-
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+            {/* Actual & predicted lines */}
+            {isConsumption && (
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="actualConsumption"
+                stroke={LANE_COLORS.consumption.actual}
+                strokeWidth={2}
+                name="Actual Consumption"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            )}
+            {isConsumption && (
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="predictedConsumption"
+                stroke={LANE_COLORS.consumption.predicted}
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                name="Predicted Consumption"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            )}
+            {isProduction && (
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="actualProduction"
+                stroke={LANE_COLORS.production.actual}
+                strokeWidth={2}
+                name="Actual Production"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            )}
+            {isProduction && (
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="predictedProduction"
+                stroke={LANE_COLORS.production.predicted}
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                name="Predicted Production"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
 
-      {/* Forecast Dialog */}
       <ConfirmDialog
         open={showForecastDialog}
         title="Run Energy Forecast"
-        message={`Do you want to run the prediction pipeline for ${selectedHouseId} right now?`}
+        message={`Run the prediction pipeline for ${selectedHouseId} now? Both consumption and production lanes will be queued.`}
         confirmLabel="Run Both Lanes"
         confirmVariant="primary"
         pending={commandMutation.isPending}
-        onConfirm={() => handleForecastCommand("both")}
+        onConfirm={handleForecast}
         onCancel={() => setShowForecastDialog(false)}
       />
 
-       <ConfirmDialog
+      <ConfirmDialog
         open={showFlexDialog}
         title="Run Flexibility Pipeline"
         message={`This will compute EV flexibility charging models for ${selectedHouseId}.`}
         confirmLabel="Run Flex"
         confirmVariant="primary"
         pending={commandMutation.isPending}
-        onConfirm={handleFlexCommand}
+        onConfirm={handleFlex}
         onCancel={() => setShowFlexDialog(false)}
       />
-    </div>
-  );
-}
-
-function KPICard({ title, value }: { title: string; value: string | number }) {
-  return (
-    <div className="panel" style={{ padding: "16px", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", height: "112px", border: "1px solid var(--border)" }}>
-      <div style={{ fontSize: "0.875rem", opacity: 0.7, marginBottom: "4px" }}>{title}</div>
-      <div style={{ fontSize: "1.875rem", fontWeight: "bold", color: "var(--brand)" }}>{value}</div>
     </div>
   );
 }
