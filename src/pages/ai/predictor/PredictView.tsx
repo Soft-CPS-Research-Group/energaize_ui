@@ -100,11 +100,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
     ];
     const predCandidates: (number | null)[] = [
       isConsumption ? pt.predictedConsumption : null,
-      isConsumption && pt.cBandLo != null && pt.cBandHi != null
-        ? (pt.cBandLo as number) + (pt.cBandHi as number) : null,
       isProduction ? pt.predictedProduction : null,
-      isProduction && pt.pBandLo != null && pt.pBandHi != null
-        ? (pt.pBandLo as number) + (pt.pBandHi as number) : null,
     ];
     for (const v of actualCandidates) {
       if (v != null && v > _yMaxActual) _yMaxActual = v;
@@ -280,6 +276,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               tickLine={false}
               axisLine={false}
               domain={[0, yMax]}
+              allowDataOverflow={true}
             />
             <Tooltip content={TooltipContent} />
             <Legend
