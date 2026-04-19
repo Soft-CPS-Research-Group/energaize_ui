@@ -32,6 +32,7 @@ interface PredictViewProps {
 }
 
 type Lane = "consumption" | "production" | "both";
+type ScaleMode = "auto" | "actual" | "prediction";
 
 const LANE_COLORS: Record<"consumption" | "production", { actual: string; predicted: string; spectrum: string }> = {
   consumption: { actual: "#ea5a5a", predicted: "#3b82f6", spectrum: "#3b82f6" },
@@ -68,6 +69,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   };
   const { notifySuccess, notifyError } = useApiFeedback();
   const [activeLane, setActiveLane] = useState<Lane>("consumption");
+  const [scaleMode, setScaleMode] = useState<ScaleMode>("auto");
   const [showForecastDialog, setShowForecastDialog] = useState(false);
   const [showFlexDialog, setShowFlexDialog] = useState(false);
 
@@ -89,23 +91,35 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   const isConsumption = activeLane === "consumption" || activeLane === "both";
   const isProduction  = activeLane === "production"  || activeLane === "both";
 
-  let _yMax = 0.001;
+  let _yMaxActual = 0.001;
+  let _yMaxPrediction = 0.001;
   for (const pt of chartData) {
-    const candidates: (number | null)[] = [
+    const actualCandidates: (number | null)[] = [
       isConsumption ? pt.actualConsumption : null,
+      isProduction ? pt.actualProduction : null,
+    ];
+    const predCandidates: (number | null)[] = [
       isConsumption ? pt.predictedConsumption : null,
       isConsumption && pt.cBandLo != null && pt.cBandHi != null
         ? (pt.cBandLo as number) + (pt.cBandHi as number) : null,
-      isProduction ? pt.actualProduction : null,
       isProduction ? pt.predictedProduction : null,
       isProduction && pt.pBandLo != null && pt.pBandHi != null
         ? (pt.pBandLo as number) + (pt.pBandHi as number) : null,
     ];
-    for (const v of candidates) {
-      if (v != null && v > _yMax) _yMax = v;
+    for (const v of actualCandidates) {
+      if (v != null && v > _yMaxActual) _yMaxActual = v;
+    }
+    for (const v of predCandidates) {
+      if (v != null && v > _yMaxPrediction) _yMaxPrediction = v;
     }
   }
-  const yMax = _yMax * 1.08;
+  const yMax = (
+    scaleMode === "actual"
+      ? _yMaxActual
+      : scaleMode === "prediction"
+        ? _yMaxPrediction
+        : Math.max(_yMaxActual, _yMaxPrediction)
+  ) * 1.08;
 
 
 
@@ -210,6 +224,30 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 onClick={() => setActiveLane("both")}
               >
                 <Layers size={12} /> Both
+              </button>
+            </div>
+
+            <div className="predictor-lane-toggle">
+              <button
+                className={`predictor-lane-btn${scaleMode === "auto" ? " is-active" : ""}`}
+                onClick={() => setScaleMode("auto")}
+                title="Scale to the largest of actual or predicted data"
+              >
+                Auto
+              </button>
+              <button
+                className={`predictor-lane-btn${scaleMode === "actual" ? " is-active" : ""}`}
+                onClick={() => setScaleMode("actual")}
+                title="Scale to actual (measured) data"
+              >
+                Actual
+              </button>
+              <button
+                className={`predictor-lane-btn${scaleMode === "prediction" ? " is-active" : ""}`}
+                onClick={() => setScaleMode("prediction")}
+                title="Scale to forecast data"
+              >
+                Forecast
               </button>
             </div>
 
