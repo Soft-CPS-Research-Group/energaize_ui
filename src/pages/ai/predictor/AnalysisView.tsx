@@ -127,6 +127,25 @@ function useJobPoller(jobId: string | null, onDone: (job: AnalysisJob) => void) 
 
 function JobProgressBar({ job, onCancel }: { job: AnalysisJob; onCancel: () => void }) {
   const pct = job.progress ?? 0;
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [msgLog, setMsgLog] = useState<string[]>([]);
+  const lastMsgRef = useRef<string | null>(null);
+  const logEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Accumulate distinct progress_msg values as they arrive from the poller
+  useEffect(() => {
+    const msg = job.progress_msg;
+    if (msg && msg !== lastMsgRef.current) {
+      lastMsgRef.current = msg;
+      setMsgLog((prev) => [...prev, msg]);
+    }
+  }, [job.progress_msg]);
+
+  // Auto-scroll log pane to bottom when new messages arrive
+  useEffect(() => {
+    if (logsOpen) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgLog, logsOpen]);
+
   return (
     <div className="analysis-progress">
       <div className="analysis-progress-bar-wrap">
@@ -135,10 +154,24 @@ function JobProgressBar({ job, onCancel }: { job: AnalysisJob; onCancel: () => v
       <div className="analysis-progress-meta">
         <span className="is-muted" style={{ fontSize: "0.82rem" }}>{job.progress_msg || job.status}</span>
         <span className="is-muted" style={{ fontSize: "0.82rem" }}>{pct}%</span>
+        {msgLog.length > 0 && (
+          <button className="analysis-progress-logs-toggle" onClick={() => setLogsOpen((v) => !v)}>
+            {logsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            Logs
+          </button>
+        )}
         {(job.status === "PENDING" || job.status === "RUNNING") && (
           <Button variant="ghost" size="sm" iconLeft={<X size={13} />} onClick={onCancel}>Cancel</Button>
         )}
       </div>
+      {logsOpen && msgLog.length > 0 && (
+        <div className="analysis-progress-log-pane">
+          {msgLog.map((line, i) => (
+            <div key={i} className="analysis-progress-log-line">{line}</div>
+          ))}
+          <div ref={logEndRef} />
+        </div>
+      )}
     </div>
   );
 }

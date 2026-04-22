@@ -7809,6 +7809,49 @@ button {
   flex-wrap: wrap;
 }
 
+.analysis-progress-logs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.analysis-progress-logs-toggle:hover {
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  color: var(--text);
+}
+
+.analysis-progress-log-pane {
+  max-height: 140px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: monospace;
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.analysis-progress-log-line {
+  color: var(--text-soft);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.analysis-progress-log-line:last-child {
+  color: var(--text);
+}
+
 /* ── Metric chips ── */
 .analysis-metrics-row {
   display: flex;
