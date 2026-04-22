@@ -367,7 +367,7 @@ function FeatureImportanceTab({ initialModelKey }: { initialModelKey?: string })
 
 // ─── Tab 3: Compare Models ────────────────────────────────────────────────────
 
-function CompareModelsTab() {
+function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
   const [houseId, setHouseId] = useState("");
@@ -378,6 +378,10 @@ function CompareModelsTab() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<CompareResult | null>(null);
   const [segOpen, setSegOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialJob?.result) setResult(initialJob.result as CompareResult);
+  }, [initialJob?.job_id]);
 
   const { job, reset } = useJobPoller(jobId, (j) => {
     if (j.status === "DONE") setResult(j.result as CompareResult);
@@ -512,7 +516,7 @@ function CompareModelsTab() {
 
 const SEGMENT_OPTIONS = ["weekday_weekend", "season", "hour_of_day"] as const;
 
-function SegmentAnalysisTab() {
+function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
   const [modelKey, setModelKey] = useState("");
@@ -520,6 +524,10 @@ function SegmentAnalysisTab() {
   const [segments, setSegments] = useState<string[]>(["weekday_weekend"]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<SegmentAnalysisResult | null>(null);
+
+  useEffect(() => {
+    if (initialJob?.result) setResult(initialJob.result as SegmentAnalysisResult);
+  }, [initialJob?.job_id]);
 
   const selectedModel = models?.find((m) => m.model_key === modelKey);
 
@@ -616,7 +624,7 @@ function SegmentAnalysisTab() {
 const GAP_RATE_OPTIONS = [0.05, 0.1, 0.2, 0.4];
 const GAP_TYPE_OPTIONS = ["random", "consecutive"];
 
-function MissingDataTab() {
+function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
   const warmModels = (models ?? []).filter((m) => m.model_type === "warm" && m.house_id != null);
@@ -627,6 +635,10 @@ function MissingDataTab() {
   const [testDays, setTestDays] = useState(30);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<MissingDataResult | null>(null);
+
+  useEffect(() => {
+    if (initialJob?.result) setResult(initialJob.result as MissingDataResult);
+  }, [initialJob?.job_id]);
 
   const selectedModel = models?.find((m) => m.model_key === modelKey);
 
@@ -761,7 +773,7 @@ type HpParam = typeof HP_PARAMS[number];
 
 interface ParamRow { id: number; param: HpParam; specType: "choice" | "range"; choiceRaw: string; low: string; high: string; step: string; }
 
-function HpTuningTab() {
+function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
   const [modelKey, setModelKey] = useState("");
@@ -775,6 +787,10 @@ function HpTuningTab() {
   const [nextId, setNextId] = useState(4);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<HpTuneResult | null>(null);
+
+  useEffect(() => {
+    if (initialJob?.result) setResult(initialJob.result as HpTuneResult);
+  }, [initialJob?.job_id]);
 
   const selectedModel = models?.find((m) => m.model_key === modelKey);
 
@@ -999,29 +1015,39 @@ const TABS = ["Models", "Feature Importance", "Compare", "Segments", "Missing Da
 
 export function AnalysisView() {
   const [activeTab, setActiveTab] = useState(0);
+  const [mountedTabs, setMountedTabs] = useState<Set<number>>(new Set([0]));
   const [fiModelKey, setFiModelKey] = useState<string | undefined>(undefined);
+  const [loadedJobs, setLoadedJobs] = useState<Record<number, AnalysisJob>>({});
 
-  const handleOpenFI = (key: string) => { setFiModelKey(key); setActiveTab(1); };
+  const switchTab = (i: number) => {
+    setMountedTabs((prev) => { const next = new Set(prev); next.add(i); return next; });
+    setActiveTab(i);
+  };
 
-  const handleLoadJob = (_job: AnalysisJob, tabIndex: number) => { setActiveTab(tabIndex); };
+  const handleOpenFI = (key: string) => { setFiModelKey(key); switchTab(1); };
+
+  const handleLoadJob = (job: AnalysisJob, tabIndex: number) => {
+    setLoadedJobs((prev) => ({ ...prev, [tabIndex]: job }));
+    switchTab(tabIndex);
+  };
 
   return (
     <div className="analysis-view">
       <div className="analysis-tabs-bar">
         {TABS.map((t, i) => (
-          <button key={t} className={`predictor-tab${activeTab === i ? " is-active" : ""}`} onClick={() => setActiveTab(i)}>
+          <button key={t} className={`predictor-tab${activeTab === i ? " is-active" : ""}`} onClick={() => switchTab(i)}>
             {t}
           </button>
         ))}
       </div>
 
-      <div key={activeTab} className="analysis-tab-content">
-        {activeTab === 0 && <ModelBrowserTab onOpenFeatureImportance={handleOpenFI} />}
-        {activeTab === 1 && <FeatureImportanceTab initialModelKey={fiModelKey} />}
-        {activeTab === 2 && <CompareModelsTab />}
-        {activeTab === 3 && <SegmentAnalysisTab />}
-        {activeTab === 4 && <MissingDataTab />}
-        {activeTab === 5 && <HpTuningTab />}
+      <div className="analysis-tab-content">
+        {mountedTabs.has(0) && <div className={activeTab === 0 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><ModelBrowserTab onOpenFeatureImportance={handleOpenFI} /></div>}
+        {mountedTabs.has(1) && <div className={activeTab === 1 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><FeatureImportanceTab initialModelKey={fiModelKey} /></div>}
+        {mountedTabs.has(2) && <div className={activeTab === 2 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><CompareModelsTab initialJob={loadedJobs[2]} /></div>}
+        {mountedTabs.has(3) && <div className={activeTab === 3 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><SegmentAnalysisTab initialJob={loadedJobs[3]} /></div>}
+        {mountedTabs.has(4) && <div className={activeTab === 4 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><MissingDataTab initialJob={loadedJobs[4]} /></div>}
+        {mountedTabs.has(5) && <div className={activeTab === 5 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><HpTuningTab initialJob={loadedJobs[5]} /></div>}
       </div>
 
       <JobHistoryPanel onLoadJob={handleLoadJob} />

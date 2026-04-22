@@ -7523,6 +7523,15 @@ button {
 /* Tab content wrapper — animates on switch */
 .analysis-tab-content {
   min-height: 200px;
+}
+
+/* Each tab pane: hidden by default, visible + animated when active */
+.analysis-tab-pane {
+  display: none;
+}
+
+.analysis-tab-pane.is-active {
+  display: block;
   animation: analysis-tab-slide 0.22s ease both;
 }
 
