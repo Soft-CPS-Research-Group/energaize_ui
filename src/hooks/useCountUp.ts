@@ -58,10 +58,8 @@ export function useCountUp(
     function tick(now: number) {
       const elapsed = now - t0;
       const t = Math.min(elapsed / duration, 1);
-      // Symmetric ease-in-out cubic (smoothstep cubic)
-      const eased = t < 0.5
-        ? 4 * t * t * t
-        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      // Ease-out cubic — starts fast, decelerates to a smooth stop
+      const eased = 1 - Math.pow(1 - t, 3);
 
       const v = start + delta * eased;
       currentValRef.current = v;
