@@ -170,10 +170,14 @@ function MetricsRow({ m }: { m: ReturnType<typeof Object.values>[0] & { mae: num
 
 // ─── HorizonChart ─────────────────────────────────────────────────────────────
 
-function HorizonChart({ series }: { series: { name: string; color: string; data: { step: number; mae: number }[] }[] }) {
+function HorizonChart({ series }: { series: { name: string; color: string; data: { step: number; mae: number; rmse?: number }[] }[] }) {
+  const hasRmse = series.some((s) => s.data.some((d) => d.rmse != null));
   const chartData = Array.from({ length: 96 }, (_, i) => {
     const row: Record<string, unknown> = { label: HORIZON_LABELS[i] };
-    for (const s of series) row[s.name] = s.data[i]?.mae ?? null;
+    for (const s of series) {
+      row[s.name] = s.data[i]?.mae ?? null;
+      if (hasRmse) row[`${s.name}_rmse`] = s.data[i]?.rmse ?? null;
+    }
     return row;
   });
   return (
@@ -185,9 +189,14 @@ function HorizonChart({ series }: { series: { name: string; color: string; data:
         <YAxis tick={{ fontSize: 10, fill: "var(--text-soft)" }} width={48} />
         <Tooltip contentStyle={{ background: "var(--bg-elev)", border: "1px solid var(--line)", fontSize: "0.8rem" }} />
         <Legend wrapperStyle={{ fontSize: "0.8rem" }} />
-        {series.map((s) => (
-          <Line key={s.name} type="monotone" dataKey={s.name} stroke={s.color} dot={false} strokeWidth={2} />
-        ))}
+        {series.flatMap((s) => [
+          <Line key={s.name} type="monotone" dataKey={s.name} stroke={s.color} dot={false} strokeWidth={2}
+            name={hasRmse ? `${s.name} (MAE)` : s.name} />,
+          ...(hasRmse ? [
+            <Line key={`${s.name}_rmse`} type="monotone" dataKey={`${s.name}_rmse`} stroke={s.color}
+              dot={false} strokeWidth={1.5} strokeDasharray="4 2" name={`${s.name} (RMSE)`} />
+          ] : []),
+        ])}
       </LineChart>
     </ResponsiveContainer>
   );
@@ -399,8 +408,18 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
     setSelectedKeys((prev) => prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
 
   const houseModels = (models ?? []).filter((m) => m.house_id === (houseId || undefined) && m.lane === lane);
-  const compareBarData = result ? ["mae", "rmse", "nmae_pct"].map((metric) => {
-    const row: Record<string, unknown> = { metric };
+  const modelKeys = result ? Object.keys(result.evaluation) : [];
+
+  // Absolute error metrics (kWh) — MAE and RMSE share one scale
+  const kwhData = result ? ["mae", "rmse"].map((metric) => {
+    const row: Record<string, unknown> = { metric: metric.toUpperCase() };
+    for (const [mk, ev] of Object.entries(result.evaluation)) row[mk] = (ev as unknown as Record<string, number>)[metric];
+    return row;
+  }) : [];
+
+  // Relative/percentage metrics — NMAE% and MAPE% share one scale
+  const pctData = result ? (["nmae_pct", "mape_pct"] as const).map((metric) => {
+    const row: Record<string, unknown> = { metric: metric === "nmae_pct" ? "NMAE%" : "MAPE%" };
     for (const [mk, ev] of Object.entries(result.evaluation)) row[mk] = (ev as unknown as Record<string, number>)[metric];
     return row;
   }) : [];
@@ -455,25 +474,40 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
       {result && (
         <>
           <div className="panel">
-            <h4>Metric Comparison</h4>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={compareBarData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
+            <h4>Absolute Errors — MAE &amp; RMSE (kWh)</h4>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={kwhData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
                 <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "var(--text-soft)" }} />
-                <YAxis tick={{ fontSize: 10, fill: "var(--text-soft)" }} width={48} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--text-soft)" }} width={56} />
                 <Tooltip contentStyle={{ background: "var(--bg-elev)", border: "1px solid var(--line)", fontSize: "0.8rem" }} />
                 <Legend wrapperStyle={{ fontSize: "0.8rem" }} />
-                {Object.keys(result.evaluation).map((mk, i) => (
+                {modelKeys.map((mk, i) => (
                   <Bar key={mk} dataKey={mk} fill={BAR_PALETTE[i % BAR_PALETTE.length]} radius={[3, 3, 0, 0]} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="panel">
-            <h4>MAE by Forecast Horizon</h4>
+            <h4>Relative Errors — NMAE% &amp; MAPE%</h4>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={pctData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
+                <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "var(--text-soft)" }} />
+                <YAxis tick={{ fontSize: 10, fill: "var(--text-soft)" }} width={56} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                <Tooltip contentStyle={{ background: "var(--bg-elev)", border: "1px solid var(--line)", fontSize: "0.8rem" }} formatter={(v) => typeof v === "number" ? `${v.toFixed(1)}%` : v} />
+                <Legend wrapperStyle={{ fontSize: "0.8rem" }} />
+                {modelKeys.map((mk, i) => (
+                  <Bar key={mk} dataKey={mk} fill={BAR_PALETTE[i % BAR_PALETTE.length]} radius={[3, 3, 0, 0]} />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="panel">
+            <h4>MAE &amp; RMSE by Forecast Horizon</h4>
             <HorizonChart series={Object.entries(result.horizon).map(([mk, data], i) => ({
               name: mk, color: BAR_PALETTE[i % BAR_PALETTE.length],
-              data: data.map((d) => ({ step: d.step, mae: d.mae })),
+              data: data.map((d) => ({ step: d.step, mae: d.mae, rmse: d.rmse })),
             }))} />
           </div>
           {result.segments && includeSegments && (
@@ -481,29 +515,35 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
               <button className="analysis-collapsible-btn" onClick={() => setSegOpen((v) => !v)}>
                 {segOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Segment Breakdown
               </button>
-              {segOpen && (
-                <div style={{ overflowX: "auto", marginTop: 8 }}>
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Segment</th><th>Group</th>
-                        {Object.keys(result.evaluation).map((mk) => <th key={mk}>{mk} MAE</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(result.segments).flatMap(([mk, segs]) =>
-                        segs.map((s) => (
-                          <tr key={`${mk}-${s.segment_name}-${s.segment_value}`}>
+              {segOpen && (() => {
+                const segModelKeys = Object.keys(result.segments!);
+                // Use first model's rows as the canonical list of segment rows
+                const segRows = result.segments![segModelKeys[0]] ?? [];
+                return (
+                  <div style={{ overflowX: "auto", marginTop: 8 }}>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Segment</th><th>Group</th>
+                          {segModelKeys.map((mk) => <th key={mk} title={mk}>{mk.length > 28 ? `…${mk.slice(-26)}` : mk} MAE</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {segRows.map((s) => (
+                          <tr key={`${s.segment_name}-${s.segment_value}`}>
                             <td className="is-muted">{s.segment_name}</td>
                             <td>{s.segment_value}</td>
-                            <td>{fmt(s.metrics.mae)} kWh</td>
+                            {segModelKeys.map((mk) => {
+                              const seg = result.segments![mk]?.find((x) => x.segment_name === s.segment_name && x.segment_value === s.segment_value);
+                              return <td key={mk}>{seg ? `${fmt(seg.metrics.mae)} kWh` : "—"}</td>;
+                            })}
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </>
