@@ -187,8 +187,10 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
           <span>Cycles Completed</span>
           <strong>{stats?.total_cycles ?? "—"}</strong>
         </div>
+      </div>
 
-        {/* Row 2: forecast accuracy (last 24 h, inverse-recency-weighted) */}
+      {/* KPI strip — row 2: forecast accuracy (last 24 h, inverse-recency-weighted) */}
+      <div className="kpi-grid predictor-kpi-grid predictor-kpi-grid--accuracy">
         <div className="kpi">
           <span>Cons. MAE · 24 h ↓</span>
           <strong style={{ color: "var(--brand)" }}>
@@ -206,6 +208,14 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
           </strong>
         </div>
         <div className="kpi">
+          <span>Cons. MAPE · 24 h ↓</span>
+          <strong style={{ color: "var(--brand)" }}>
+            {errors.consumption.mape != null
+              ? `${errors.consumption.mape.toFixed(1)} %`
+              : "—"}
+          </strong>
+        </div>
+        <div className="kpi">
           <span>Prod. MAE · 24 h ↓</span>
           <strong style={{ color: "#a78bfa" }}>
             {errors.production.mae != null
@@ -218,6 +228,14 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
           <strong style={{ color: "#a78bfa" }}>
             {errors.production.rmse != null
               ? `${errors.production.rmse.toFixed(3)} kWh`
+              : "—"}
+          </strong>
+        </div>
+        <div className="kpi">
+          <span>Prod. MAPE · 24 h ↓</span>
+          <strong style={{ color: "#a78bfa" }}>
+            {errors.production.mape != null
+              ? `${errors.production.mape.toFixed(1)} %`
               : "—"}
           </strong>
         </div>

@@ -65,6 +65,8 @@ export interface ForecastErrors {
   mae: number | null;
   /** Weighted Root Mean Squared Error in kWh */
   rmse: number | null;
+  /** Weighted Mean Absolute Percentage Error (0–100). Only counts slots where actual > 0. */
+  mape: number | null;
   /** Number of (prediction, actual) pairs that could be matched */
   n: number;
 }
@@ -128,16 +130,16 @@ function computeWeightedErrors(
         new Date(normalizeTs(b.target_time)).getTime()
       ); // ascending = oldest first
 
-    if (recent.length === 0) return { mae: null, rmse: null, n: 0 };
+    if (recent.length === 0) return { mae: null, rmse: null, mape: null, n: 0 };
 
     const N = recent.length;
-    let wSumAbs = 0, wSumSq = 0, wTotal = 0, totalMatched = 0;
+    let wSumAbs = 0, wSumSq = 0, wSumPct = 0, wTotal = 0, wTotalPct = 0, totalMatched = 0;
 
     recent.forEach((entry, idx) => {
       const w = N - idx; // oldest → N, newest → 1
       const anchor = snap15(new Date(normalizeTs(entry.target_time)));
 
-      let localAbs = 0, localSq = 0, matched = 0;
+      let localAbs = 0, localSq = 0, localPct = 0, matched = 0, matchedPct = 0;
       entry.prediction.forEach((val, step) => {
         const slotKey = normalizeTs(
           new Date(anchor.getTime() + step * 15 * 60_000).toISOString()
@@ -148,20 +150,29 @@ function computeWeightedErrors(
         localAbs += Math.abs(err);
         localSq  += err * err;
         matched++;
+        // MAPE: skip slots where actual is zero to avoid division by zero
+        if (actual !== 0) {
+          localPct += Math.abs(err / actual);
+          matchedPct++;
+        }
       });
 
       if (matched === 0) return;
-      // Per-run average, then weight the run
-      wSumAbs    += w * (localAbs / matched);
-      wSumSq     += w * (localSq  / matched);
-      wTotal     += w;
+      wSumAbs  += w * (localAbs / matched);
+      wSumSq   += w * (localSq  / matched);
+      wTotal   += w;
+      if (matchedPct > 0) {
+        wSumPct    += w * (localPct / matchedPct);
+        wTotalPct  += w;
+      }
       totalMatched += matched;
     });
 
-    if (wTotal === 0) return { mae: null, rmse: null, n: 0 };
+    if (wTotal === 0) return { mae: null, rmse: null, mape: null, n: 0 };
     return {
       mae:  wSumAbs / wTotal,
       rmse: Math.sqrt(wSumSq / wTotal),
+      mape: wTotalPct > 0 ? (wSumPct / wTotalPct) * 100 : null,
       n:    totalMatched,
     };
   }
