@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Route, Routes, useLocation, Navigate } from "react-router-dom";
-import { PageHeader } from "../components/ui/PageHeader";
 import { usePredictorHouses } from "../hooks/usePredictor";
 import { PredictView } from "./ai/predictor/PredictView";
 import { TrainView } from "./ai/predictor/TrainView";
@@ -10,11 +9,21 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Button } from "../components/ui/Button";
 import { Settings } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
+import { readStorage, writeStorage, STORAGE_KEYS } from "../utils/storage";
 
 export function PredictorWorkspacePage(): JSX.Element {
   const location = useLocation();
-  const isLogsTab = location.pathname.endsWith("/logs");
-  const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
+  const isLogsTab  = location.pathname.endsWith("/logs");
+  const isTrainTab = location.pathname.endsWith("/train");
+  const heroTitle  = isLogsTab ? "Logs" : isTrainTab ? "Train" : "Predict";
+  const [selectedHouse, setSelectedHouseState] = useState<string | null>(
+    () => readStorage<string | null>(STORAGE_KEYS.predictorHouse, null)
+  );
+
+  function setSelectedHouse(house: string | null) {
+    setSelectedHouseState(house);
+    if (house) writeStorage(STORAGE_KEYS.predictorHouse, house);
+  }
   const [timezone, setTimezone] = useState<string>("Europe/Lisbon");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -22,10 +31,11 @@ export function PredictorWorkspacePage(): JSX.Element {
   const houses = Array.isArray(housesData) ? housesData : (housesData as any)?.houses || [];
 
   useEffect(() => {
-    if (houses && houses.length > 0 && !selectedHouse) {
-      setSelectedHouse(houses[0]);
-    }
-  }, [houses, selectedHouse]);
+    if (!houses || houses.length === 0) return;
+    // If stored house is still valid, keep it; otherwise default to first
+    if (selectedHouse && houses.includes(selectedHouse)) return;
+    setSelectedHouse(houses[0]);
+  }, [houses]);
 
   if (housesLoading) {
     return (
@@ -49,13 +59,12 @@ export function PredictorWorkspacePage(): JSX.Element {
 
   return (
     <div className="page predictor-workspace">
-      <PageHeader
-        title="Consumption Predictor"
-        subtitle="Manage energy consumption & production forecasting models and predictions."
-      />
+      <header className="jobs-hero">
+        <div>
+          <h1>{heroTitle}</h1>
+        </div>
 
-      <div className="predictor-toolbar">
-        <div className="predictor-toolbar-end">
+        <div className="page-actions">
           {!isLogsTab && (
             <select
               value={selectedHouse || ""}
@@ -78,7 +87,7 @@ export function PredictorWorkspacePage(): JSX.Element {
             Settings
           </Button>
         </div>
-      </div>
+      </header>
 
       <div className="predictor-content">
         <Routes>

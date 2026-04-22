@@ -85,7 +85,7 @@ export function TopBar(): JSX.Element {
           />
         </Link>
 
-        {!isTrainingManager && !isKpiManager ? (
+        {!isTrainingManager && !isKpiManager && !isPredictor ? (
           <div className="community-switcher">
             <button className="icon-btn mobile-only" type="button" onClick={() => setMobileTreeOpen(true)}>
               <Menu size={16} />

@@ -1,7 +1,8 @@
 export const STORAGE_KEYS = {
   session: "energaize_session",
   theme: "energaize_theme",
-  communityId: "energaize_active_community"
+  communityId: "energaize_active_community",
+  predictorHouse: "energaize_predictor_house",
 } as const;
 
 export function readStorage<T>(key: string, fallback: T): T {
