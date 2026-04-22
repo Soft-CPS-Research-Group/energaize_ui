@@ -105,15 +105,15 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   const { data: chartData, errors } = buildPredictorTimeline(history, predictions, predHistory);
 
   // Animated count-up values — must be called before any conditional returns
-  const cMae   = useCountUp(errors.consumption.mae);
-  const cRmse  = useCountUp(errors.consumption.rmse);
-  const cMape  = useCountUp(errors.consumption.mape);
-  const pMae   = useCountUp(errors.production.mae);
-  const pRmse  = useCountUp(errors.production.rmse);
-  const pMape  = useCountUp(errors.production.mape);
-  const statHouses     = useCountUp(stats?.total_houses     ?? null, 900);
-  const statPredAvail  = useCountUp(stats?.predictions_available ?? null, 900);
-  const statCycles     = useCountUp(stats?.total_cycles     ?? null, 900);
+  const { ref: cMaeRef,  dir: cMaeDir  } = useCountUp(errors.consumption.mae,  v => `${v.toFixed(3)} kWh`);
+  const { ref: cRmseRef, dir: cRmseDir } = useCountUp(errors.consumption.rmse, v => `${v.toFixed(3)} kWh`);
+  const { ref: cMapeRef, dir: cMapeDir } = useCountUp(errors.consumption.mape, v => `${v.toFixed(1)} %`);
+  const { ref: pMaeRef,  dir: pMaeDir  } = useCountUp(errors.production.mae,   v => `${v.toFixed(3)} kWh`);
+  const { ref: pRmseRef, dir: pRmseDir } = useCountUp(errors.production.rmse,  v => `${v.toFixed(3)} kWh`);
+  const { ref: pMapeRef, dir: pMapeDir } = useCountUp(errors.production.mape,  v => `${v.toFixed(1)} %`);
+  const { ref: statHousesRef    } = useCountUp(stats?.total_houses          ?? null, v => String(Math.round(v)), 900);
+  const { ref: statPredAvailRef } = useCountUp(stats?.predictions_available ?? null, v => String(Math.round(v)), 900);
+  const { ref: statCyclesRef    } = useCountUp(stats?.total_cycles          ?? null, v => String(Math.round(v)), 900);
 
   const isConsumption = activeLane === "consumption" || activeLane === "both";
   const isProduction  = activeLane === "production"  || activeLane === "both";
@@ -200,11 +200,11 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
       <div className="kpi-grid predictor-kpi-grid">
         <div className="kpi">
           <span>Total Houses</span>
-          <strong>{statHouses != null ? Math.round(statHouses) : "—"}</strong>
+          <strong><span ref={statHousesRef}>—</span></strong>
         </div>
         <div className="kpi">
           <span>Houses w/ Predictions</span>
-          <strong>{statPredAvail != null ? Math.round(statPredAvail) : "—"}</strong>
+          <strong><span ref={statPredAvailRef}>—</span></strong>
         </div>
         <div className="kpi">
           <span>Next Compute Cycle</span>
@@ -216,51 +216,51 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         </div>
         <div className="kpi">
           <span>Cycles Completed</span>
-          <strong>{statCycles != null ? Math.round(statCycles) : "—"}</strong>
+          <strong><span ref={statCyclesRef}>—</span></strong>
         </div>
       </div>
 
       {/* KPI strip — row 2: forecast accuracy (last 24 h, inverse-recency-weighted) */}
       <div className="kpi-grid predictor-kpi-grid predictor-kpi-grid--accuracy">
-        <div className="kpi">
+        <div className={`kpi${cMaeDir !== "idle" ? ` kpi--animating-${cMaeDir}` : ""}`}>
           <span>Cons. MAE · 24 h ↓</span>
-          <strong style={{ color: "var(--brand)" }}>
-            {cMae != null ? `${cMae.toFixed(3)} kWh` : "—"}
+          <strong style={{ color: "#60a5fa" }}>
+            <span ref={cMaeRef}>—</span>
             <DeltaChip delta={errors.consumption.maeDelta} />
           </strong>
         </div>
-        <div className="kpi">
+        <div className={`kpi${cRmseDir !== "idle" ? ` kpi--animating-${cRmseDir}` : ""}`}>
           <span>Cons. RMSE · 24 h ↓</span>
-          <strong style={{ color: "var(--brand)" }}>
-            {cRmse != null ? `${cRmse.toFixed(3)} kWh` : "—"}
+          <strong style={{ color: "#60a5fa" }}>
+            <span ref={cRmseRef}>—</span>
             <DeltaChip delta={errors.consumption.rmseDelta} />
           </strong>
         </div>
-        <div className="kpi">
+        <div className={`kpi${cMapeDir !== "idle" ? ` kpi--animating-${cMapeDir}` : ""}`}>
           <span>Cons. MAPE · 24 h ↓</span>
-          <strong style={{ color: "var(--brand)" }}>
-            {cMape != null ? `${cMape.toFixed(1)} %` : "—"}
+          <strong style={{ color: "#60a5fa" }}>
+            <span ref={cMapeRef}>—</span>
             <DeltaChip delta={errors.consumption.mapeDelta} isPercent />
           </strong>
         </div>
-        <div className="kpi">
+        <div className={`kpi${pMaeDir !== "idle" ? ` kpi--animating-${pMaeDir}` : ""}`}>
           <span>Prod. MAE · 24 h ↓</span>
           <strong style={{ color: "#a78bfa" }}>
-            {pMae != null ? `${pMae.toFixed(3)} kWh` : "—"}
+            <span ref={pMaeRef}>—</span>
             <DeltaChip delta={errors.production.maeDelta} />
           </strong>
         </div>
-        <div className="kpi">
+        <div className={`kpi${pRmseDir !== "idle" ? ` kpi--animating-${pRmseDir}` : ""}`}>
           <span>Prod. RMSE · 24 h ↓</span>
           <strong style={{ color: "#a78bfa" }}>
-            {pRmse != null ? `${pRmse.toFixed(3)} kWh` : "—"}
+            <span ref={pRmseRef}>—</span>
             <DeltaChip delta={errors.production.rmseDelta} />
           </strong>
         </div>
-        <div className="kpi">
+        <div className={`kpi${pMapeDir !== "idle" ? ` kpi--animating-${pMapeDir}` : ""}`}>
           <span>Prod. MAPE · 24 h ↓</span>
           <strong style={{ color: "#a78bfa" }}>
-            {pMape != null ? `${pMape.toFixed(1)} %` : "—"}
+            <span ref={pMapeRef}>—</span>
             <DeltaChip delta={errors.production.mapeDelta} isPercent />
           </strong>
         </div>

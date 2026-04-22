@@ -1504,7 +1504,7 @@ button {
   gap: 6px;
 }
 
-.kpi span {
+.kpi > span {
   color: var(--text-soft);
   font-size: 0.86rem;
 }
@@ -6234,6 +6234,35 @@ button {
 .predictor-delta.neutral {
   background: color-mix(in srgb, var(--text-soft) 10%, transparent);
   color: var(--text-soft);
+}
+
+/* KPI card pulse while count-up is animating.
+   Uses ::before so the .kpi `animation` property (entrance) is NEVER overridden,
+   which prevents the entrance animation from replaying when the pulse class is removed. */
+@keyframes predictor-kpi-overlay-fade {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.predictor-kpi-grid .kpi,
+.predictor-kpi-grid--accuracy .kpi {
+  position: relative;
+}
+
+.kpi.kpi--animating-up::before,
+.kpi.kpi--animating-down::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: predictor-kpi-overlay-fade 1.5s ease-out forwards;
+}
+.kpi.kpi--animating-up::before {
+  background: color-mix(in srgb, #ef4444 14%, transparent);
+}
+.kpi.kpi--animating-down::before {
+  background: color-mix(in srgb, #22c55e 14%, transparent);
 }
 
 /* Train view */
