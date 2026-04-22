@@ -12,6 +12,7 @@ import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { buildPredictorTimeline } from "../../../utils/predictorTransforms";
+import { useCountUp } from "../../../hooks/useCountUp";
 import {
   ComposedChart,
   Area,
@@ -24,7 +25,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { Zap, TrendingUp, Layers } from "lucide-react";
+import { Zap, TrendingUp, Layers, Eye, EyeOff } from "lucide-react";
 
 interface PredictViewProps {
   selectedHouseId: string | null;
@@ -38,6 +39,19 @@ const LANE_COLORS: Record<"consumption" | "production", { actual: string; predic
   consumption: { actual: "#ea5a5a", predicted: "#3b82f6", spectrum: "#3b82f6" },
   production:  { actual: "#22c55e", predicted: "#a78bfa", spectrum: "#a78bfa" },
 };
+
+// Error metric trend chip — lower error = improved (green)
+function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPercent?: boolean }) {
+  if (delta == null || Math.abs(delta) < (isPercent ? 0.05 : 0.0001)) return null;
+  const improved = delta < 0;
+  const abs = Math.abs(delta);
+  const label = isPercent ? abs.toFixed(1) + "%" : abs.toFixed(3) + " kWh";
+  return (
+    <span className={`predictor-delta ${improved ? "improved" : "worsened"}`}>
+      {improved ? "\u2193" : "\u2191"} {label}
+    </span>
+  );
+}
 
 export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   // Tooltip renderer as a closure to capture `timezone`
@@ -70,16 +84,18 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   const { notifySuccess, notifyError } = useApiFeedback();
   const [activeLane, setActiveLane] = useState<Lane>("consumption");
   const [scaleMode, setScaleMode] = useState<ScaleMode>("auto");
+  const [bandsOnly, setBandsOnly] = useState(false);
   const [showForecastDialog, setShowForecastDialog] = useState(false);
   const [showFlexDialog, setShowFlexDialog] = useState(false);
 
   const { data: stats } = usePredictorStats();
-  const { data: history, isLoading: historyLoading } = usePredictorHistory(selectedHouseId);
-  const { data: predictions, isLoading: predictionsLoading } = usePredictorPredictions(selectedHouseId);
+  const { data: history, isLoading: historyLoading, isFetching: historyFetching } = usePredictorHistory(selectedHouseId);
+  const { data: predictions, isLoading: predictionsLoading, isFetching: predFetching } = usePredictorPredictions(selectedHouseId);
   const { consumption: histC, production: histP } = usePredictorPredictionHistory(selectedHouseId);
 
   const commandMutation = usePredictorCommand();
   const isLoading = historyLoading || predictionsLoading;
+  const isRefetching = !isLoading && (historyFetching || predFetching || histC.isFetching || histP.isFetching);
 
   const predHistory = {
     consumption: histC.data?.history ?? [],
@@ -88,11 +104,23 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
 
   const { data: chartData, errors } = buildPredictorTimeline(history, predictions, predHistory);
 
+  // Animated count-up values — must be called before any conditional returns
+  const cMae   = useCountUp(errors.consumption.mae);
+  const cRmse  = useCountUp(errors.consumption.rmse);
+  const cMape  = useCountUp(errors.consumption.mape);
+  const pMae   = useCountUp(errors.production.mae);
+  const pRmse  = useCountUp(errors.production.rmse);
+  const pMape  = useCountUp(errors.production.mape);
+  const statHouses     = useCountUp(stats?.total_houses     ?? null, 900);
+  const statPredAvail  = useCountUp(stats?.predictions_available ?? null, 900);
+  const statCycles     = useCountUp(stats?.total_cycles     ?? null, 900);
+
   const isConsumption = activeLane === "consumption" || activeLane === "both";
   const isProduction  = activeLane === "production"  || activeLane === "both";
 
   let _yMaxActual = 0.001;
   let _yMaxPrediction = 0.001;
+  let _yMaxBands = 0.001;
   for (const pt of chartData) {
     const actualCandidates: (number | null)[] = [
       isConsumption ? pt.actualConsumption : null,
@@ -102,19 +130,22 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
       isConsumption ? pt.predictedConsumption : null,
       isProduction ? pt.predictedProduction : null,
     ];
-    for (const v of actualCandidates) {
-      if (v != null && v > _yMaxActual) _yMaxActual = v;
-    }
-    for (const v of predCandidates) {
-      if (v != null && v > _yMaxPrediction) _yMaxPrediction = v;
-    }
+    const bandCandidates: (number | null)[] = [
+      isConsumption && pt.cBandLo != null && pt.cBandHi != null ? (pt.cBandLo as number) + (pt.cBandHi as number) : null,
+      isProduction  && pt.pBandLo != null && pt.pBandHi != null ? (pt.pBandLo as number) + (pt.pBandHi as number) : null,
+    ];
+    for (const v of actualCandidates) { if (v != null && v > _yMaxActual) _yMaxActual = v; }
+    for (const v of predCandidates)  { if (v != null && v > _yMaxPrediction) _yMaxPrediction = v; }
+    for (const v of bandCandidates)  { if (v != null && v > _yMaxBands) _yMaxBands = v; }
   }
   const yMax = (
-    scaleMode === "actual"
-      ? _yMaxActual
-      : scaleMode === "prediction"
-        ? _yMaxPrediction
-        : Math.max(_yMaxActual, _yMaxPrediction)
+    bandsOnly
+      ? _yMaxBands
+      : scaleMode === "actual"
+        ? _yMaxActual
+        : scaleMode === "prediction"
+          ? _yMaxPrediction
+          : Math.max(_yMaxActual, _yMaxPrediction)
   ) * 1.08;
 
 
@@ -169,11 +200,11 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
       <div className="kpi-grid predictor-kpi-grid">
         <div className="kpi">
           <span>Total Houses</span>
-          <strong>{stats?.total_houses ?? "—"}</strong>
+          <strong>{statHouses != null ? Math.round(statHouses) : "—"}</strong>
         </div>
         <div className="kpi">
           <span>Houses w/ Predictions</span>
-          <strong>{stats?.predictions_available ?? "—"}</strong>
+          <strong>{statPredAvail != null ? Math.round(statPredAvail) : "—"}</strong>
         </div>
         <div className="kpi">
           <span>Next Compute Cycle</span>
@@ -185,7 +216,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         </div>
         <div className="kpi">
           <span>Cycles Completed</span>
-          <strong>{stats?.total_cycles ?? "—"}</strong>
+          <strong>{statCycles != null ? Math.round(statCycles) : "—"}</strong>
         </div>
       </div>
 
@@ -194,58 +225,55 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         <div className="kpi">
           <span>Cons. MAE · 24 h ↓</span>
           <strong style={{ color: "var(--brand)" }}>
-            {errors.consumption.mae != null
-              ? `${errors.consumption.mae.toFixed(3)} kWh`
-              : "—"}
+            {cMae != null ? `${cMae.toFixed(3)} kWh` : "—"}
+            <DeltaChip delta={errors.consumption.maeDelta} />
           </strong>
         </div>
         <div className="kpi">
           <span>Cons. RMSE · 24 h ↓</span>
           <strong style={{ color: "var(--brand)" }}>
-            {errors.consumption.rmse != null
-              ? `${errors.consumption.rmse.toFixed(3)} kWh`
-              : "—"}
+            {cRmse != null ? `${cRmse.toFixed(3)} kWh` : "—"}
+            <DeltaChip delta={errors.consumption.rmseDelta} />
           </strong>
         </div>
         <div className="kpi">
           <span>Cons. MAPE · 24 h ↓</span>
           <strong style={{ color: "var(--brand)" }}>
-            {errors.consumption.mape != null
-              ? `${errors.consumption.mape.toFixed(1)} %`
-              : "—"}
+            {cMape != null ? `${cMape.toFixed(1)} %` : "—"}
+            <DeltaChip delta={errors.consumption.mapeDelta} isPercent />
           </strong>
         </div>
         <div className="kpi">
           <span>Prod. MAE · 24 h ↓</span>
           <strong style={{ color: "#a78bfa" }}>
-            {errors.production.mae != null
-              ? `${errors.production.mae.toFixed(3)} kWh`
-              : "—"}
+            {pMae != null ? `${pMae.toFixed(3)} kWh` : "—"}
+            <DeltaChip delta={errors.production.maeDelta} />
           </strong>
         </div>
         <div className="kpi">
           <span>Prod. RMSE · 24 h ↓</span>
           <strong style={{ color: "#a78bfa" }}>
-            {errors.production.rmse != null
-              ? `${errors.production.rmse.toFixed(3)} kWh`
-              : "—"}
+            {pRmse != null ? `${pRmse.toFixed(3)} kWh` : "—"}
+            <DeltaChip delta={errors.production.rmseDelta} />
           </strong>
         </div>
         <div className="kpi">
           <span>Prod. MAPE · 24 h ↓</span>
           <strong style={{ color: "#a78bfa" }}>
-            {errors.production.mape != null
-              ? `${errors.production.mape.toFixed(1)} %`
-              : "—"}
+            {pMape != null ? `${pMape.toFixed(1)} %` : "—"}
+            <DeltaChip delta={errors.production.mapeDelta} isPercent />
           </strong>
         </div>
       </div>
 
       {/* Forecast chart */}
-      <div className="panel predictor-chart-panel">
+      <div className={`panel predictor-chart-panel${isRefetching ? " is-refetching" : ""}`}>
         <div className="predictor-chart-header">
           <div className="predictor-chart-title">
-            <h3>Energy Forecast — {selectedHouseId}</h3>
+            <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="predictor-live-dot" title="Auto-refreshing" />
+              Energy Forecast — {selectedHouseId}
+            </h3>
             {(predHistory.consumption.length > 0 || predHistory.production.length > 0) && (
               <span className="predictor-spectrum-hint">
                 forecast uncertainty bands
@@ -299,6 +327,18 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               </button>
             </div>
 
+            {(predHistory.consumption.length > 0 || predHistory.production.length > 0) && (
+              <button
+                className={`predictor-lane-btn${bandsOnly ? " is-active" : ""}`}
+                onClick={() => setBandsOnly((v) => !v)}
+                title={bandsOnly ? "Show all data" : "Show forecast bands only"}
+                style={{ display: "flex", alignItems: "center", gap: 4 }}
+              >
+                {bandsOnly ? <Eye size={12} /> : <EyeOff size={12} />}
+                Bands only
+              </button>
+            )}
+
             <Button size="sm" variant="primary" onClick={() => setShowForecastDialog(true)} disabled={commandMutation.isPending}>
               Run Forecast
             </Button>
@@ -337,7 +377,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               wrapperStyle={{ fontSize: "0.78rem" }}
             />
 
-            {futureStart && (
+            {futureStart && !bandsOnly && (
               <ReferenceLine
                 x={futureStart.time}
                 yAxisId="left"
@@ -389,8 +429,8 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               </>
             )}
 
-            {/* Actual & predicted lines */}
-            {isConsumption && (
+            {/* Actual & predicted lines — hidden in bands-only mode */}
+            {isConsumption && !bandsOnly && (
               <Line
                 yAxisId="left"
                 type="monotone"
@@ -403,7 +443,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 connectNulls={false}
               />
             )}
-            {isConsumption && (
+            {isConsumption && !bandsOnly && (
               <Line
                 yAxisId="left"
                 type="monotone"
@@ -417,7 +457,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 connectNulls={false}
               />
             )}
-            {isProduction && (
+            {isProduction && !bandsOnly && (
               <Line
                 yAxisId="left"
                 type="monotone"
@@ -430,7 +470,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 connectNulls={false}
               />
             )}
-            {isProduction && (
+            {isProduction && !bandsOnly && (
               <Line
                 yAxisId="left"
                 type="monotone"

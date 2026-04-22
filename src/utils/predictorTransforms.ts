@@ -69,6 +69,13 @@ export interface ForecastErrors {
   mape: number | null;
   /** Number of (prediction, actual) pairs that could be matched */
   n: number;
+  /**
+   * Delta vs the preceding 24 h window (current − previous).
+   * Negative = improved (error went down), positive = worsened, null = no previous data.
+   */
+  maeDelta:  number | null;
+  rmseDelta: number | null;
+  mapeDelta: number | null;
 }
 
 export interface WeightedErrorResult {
@@ -112,59 +119,53 @@ function computeWeightedErrors(
   history: PredictorHistoryResponse | undefined,
   windowHours = 24
 ): WeightedErrorResult {
-  const cutoff = Date.now() - windowHours * 3_600_000;
+  const now = Date.now();
+  const cutoff     = now - windowHours * 3_600_000;
+  const prevCutoff = now - windowHours * 2 * 3_600_000;
 
-  function computeLane(
+  function computeLaneWindow(
     entries: PredictionHistoryEntry[],
-    actuals: PredictorHistoryDataPoint[]
-  ): ForecastErrors {
-    // Build O(1) lookup: normalised timestamp → actual value
+    actuals: PredictorHistoryDataPoint[],
+    from: number,
+    to: number
+  ): Omit<ForecastErrors, "maeDelta" | "rmseDelta" | "mapeDelta"> {
     const lookup = new Map<string, number>();
     for (const pt of actuals) lookup.set(normalizeTs(pt.timestamp), pt.value);
 
-    // Keep only runs whose target_time falls in the last windowHours
-    const recent = entries
-      .filter((e) => new Date(normalizeTs(e.target_time)).getTime() >= cutoff)
+    const window = entries
+      .filter((e) => {
+        const t = new Date(normalizeTs(e.target_time)).getTime();
+        return t >= from && t < to;
+      })
       .sort((a, b) =>
         new Date(normalizeTs(a.target_time)).getTime() -
         new Date(normalizeTs(b.target_time)).getTime()
-      ); // ascending = oldest first
+      );
 
-    if (recent.length === 0) return { mae: null, rmse: null, mape: null, n: 0 };
+    if (window.length === 0) return { mae: null, rmse: null, mape: null, n: 0 };
 
-    const N = recent.length;
+    const N = window.length;
     let wSumAbs = 0, wSumSq = 0, wSumPct = 0, wTotal = 0, wTotalPct = 0, totalMatched = 0;
 
-    recent.forEach((entry, idx) => {
-      const w = N - idx; // oldest → N, newest → 1
+    window.forEach((entry, idx) => {
+      const w = N - idx;
       const anchor = snap15(new Date(normalizeTs(entry.target_time)));
-
       let localAbs = 0, localSq = 0, localPct = 0, matched = 0, matchedPct = 0;
       entry.prediction.forEach((val, step) => {
-        const slotKey = normalizeTs(
-          new Date(anchor.getTime() + step * 15 * 60_000).toISOString()
-        );
+        const slotKey = normalizeTs(new Date(anchor.getTime() + step * 15 * 60_000).toISOString());
         const actual = lookup.get(slotKey);
         if (actual == null) return;
         const err = actual - val;
         localAbs += Math.abs(err);
         localSq  += err * err;
         matched++;
-        // MAPE: skip slots where actual is zero to avoid division by zero
-        if (actual !== 0) {
-          localPct += Math.abs(err / actual);
-          matchedPct++;
-        }
+        if (actual !== 0) { localPct += Math.abs(err / actual); matchedPct++; }
       });
-
       if (matched === 0) return;
-      wSumAbs  += w * (localAbs / matched);
-      wSumSq   += w * (localSq  / matched);
-      wTotal   += w;
-      if (matchedPct > 0) {
-        wSumPct    += w * (localPct / matchedPct);
-        wTotalPct  += w;
-      }
+      wSumAbs += w * (localAbs / matched);
+      wSumSq  += w * (localSq  / matched);
+      wTotal  += w;
+      if (matchedPct > 0) { wSumPct += w * (localPct / matchedPct); wTotalPct += w; }
       totalMatched += matched;
     });
 
@@ -174,6 +175,20 @@ function computeWeightedErrors(
       rmse: Math.sqrt(wSumSq / wTotal),
       mape: wTotalPct > 0 ? (wSumPct / wTotalPct) * 100 : null,
       n:    totalMatched,
+    };
+  }
+
+  function computeLane(
+    entries: PredictionHistoryEntry[],
+    actuals: PredictorHistoryDataPoint[]
+  ): ForecastErrors {
+    const curr = computeLaneWindow(entries, actuals, cutoff, now);
+    const prev = computeLaneWindow(entries, actuals, prevCutoff, cutoff);
+    return {
+      ...curr,
+      maeDelta:  curr.mae  != null && prev.mae  != null ? curr.mae  - prev.mae  : null,
+      rmseDelta: curr.rmse != null && prev.rmse != null ? curr.rmse - prev.rmse : null,
+      mapeDelta: curr.mape != null && prev.mape != null ? curr.mape - prev.mape : null,
     };
   }
 
