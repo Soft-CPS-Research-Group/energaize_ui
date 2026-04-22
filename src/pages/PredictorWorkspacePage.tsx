@@ -4,6 +4,7 @@ import { usePredictorHouses } from "../hooks/usePredictor";
 import { PredictView } from "./ai/predictor/PredictView";
 import { TrainView } from "./ai/predictor/TrainView";
 import { LogsView } from "./ai/predictor/LogsView";
+import { AnalysisView } from "./ai/predictor/AnalysisView";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Button } from "../components/ui/Button";
@@ -13,9 +14,10 @@ import { readStorage, writeStorage, STORAGE_KEYS } from "../utils/storage";
 
 export function PredictorWorkspacePage(): JSX.Element {
   const location = useLocation();
-  const isLogsTab  = location.pathname.endsWith("/logs");
-  const isTrainTab = location.pathname.endsWith("/train");
-  const heroTitle  = isLogsTab ? "Logs" : isTrainTab ? "Train" : "Predict";
+  const isLogsTab     = location.pathname.endsWith("/logs");
+  const isTrainTab    = location.pathname.endsWith("/train");
+  const isAnalysisTab = location.pathname.endsWith("/analysis");
+  const heroTitle     = isLogsTab ? "Logs" : isTrainTab ? "Train" : isAnalysisTab ? "Analysis" : "Predict";
   const [selectedHouse, setSelectedHouseState] = useState<string | null>(
     () => readStorage<string | null>(STORAGE_KEYS.predictorHouse, null)
   );
@@ -65,7 +67,7 @@ export function PredictorWorkspacePage(): JSX.Element {
         </div>
 
         <div className="page-actions">
-          {!isLogsTab && (
+          {!isLogsTab && !isAnalysisTab && (
             <select
               value={selectedHouse || ""}
               onChange={(e) => setSelectedHouse(e.target.value)}
@@ -94,6 +96,7 @@ export function PredictorWorkspacePage(): JSX.Element {
           <Route path="/" element={<PredictView selectedHouseId={selectedHouse} timezone={timezone} />} />
           <Route path="/train" element={<TrainView selectedHouseId={selectedHouse} />} />
           <Route path="/logs" element={<LogsView />} />
+          <Route path="/analysis" element={<AnalysisView />} />
           <Route path="*" element={<Navigate to="/app/predictor" replace />} />
         </Routes>
       </div>

@@ -7463,3 +7463,585 @@ button {
   }
 
 }
+
+/* ── Analysis View ─────────────────────────────────────────────────────────── */
+
+/* ── Keyframes ── */
+@keyframes analysis-fadein {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes analysis-tab-slide {
+  from { opacity: 0; transform: translateX(6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes analysis-drawer-slide {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes analysis-banner-drop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes analysis-progress-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes analysis-chip-in {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes analysis-panel-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Root layout ── */
+.analysis-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 0;
+}
+
+/* ── Tabs bar ── */
+.analysis-tabs-bar {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 2px;
+  margin-bottom: 2px;
+}
+
+/* Tab content wrapper — animates on switch */
+.analysis-tab-content {
+  min-height: 200px;
+  animation: analysis-tab-slide 0.22s ease both;
+}
+
+/* Tab body — vertical stack */
+.analysis-tab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Stagger child panels */
+.analysis-tab-body > .panel {
+  animation: analysis-panel-in 0.28s ease both;
+}
+.analysis-tab-body > .panel:nth-child(2) { animation-delay: 0.06s; }
+.analysis-tab-body > .panel:nth-child(3) { animation-delay: 0.12s; }
+.analysis-tab-body > .panel:nth-child(4) { animation-delay: 0.18s; }
+
+/* ── Toolbar rows ── */
+.analysis-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ── Form layout ── */
+.analysis-form-grid {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--bg-elev-2, var(--bg-elev)) 70%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  animation: analysis-fadein 0.22s ease both;
+}
+
+.analysis-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.85rem;
+  color: var(--text);
+  min-width: 140px;
+}
+
+.analysis-form-field > span {
+  font-size: 0.74rem;
+  color: var(--text-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.analysis-checkbox-field {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 4px;
+}
+
+/* Helper: button placed at bottom of form grid row */
+.analysis-form-field--btn {
+  min-width: auto;
+  justify-content: flex-end;
+}
+
+/* Force lane toggle buttons to fill their half in analysis view */
+.analysis-view .predictor-lane-toggle .predictor-lane-btn {
+  flex: 1;
+  justify-content: center;
+  text-align: center;
+}
+
+/* ── Info tooltip (?) ── */
+.analysis-infotip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  color: var(--text-soft);
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: default;
+  margin-left: 4px;
+  vertical-align: middle;
+  flex-shrink: 0;
+  transition: color 0.15s;
+  user-select: none;
+}
+
+.analysis-infotip:hover {
+  color: var(--brand);
+}
+
+/* Tooltip popup — rendered via React portal with position:fixed (always on top, never clipped) */
+.analysis-infotip-popup {
+  position: fixed;
+  z-index: 99999;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-align: left;
+  pointer-events: none;
+  white-space: normal;
+  line-height: 1.5;
+  animation: analysis-fadein 0.12s ease both;
+}
+
+/* ── Scoped select override inside .analysis-view ── */
+/* Targets both predictor-house-select and any native select used in analysis */
+.analysis-view .predictor-house-select,
+.analysis-view select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 36px;
+  padding: 0 34px 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background-color: var(--bg-elev);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  color: var(--text);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+  width: 100%;
+}
+
+.analysis-view .predictor-house-select:hover,
+.analysis-view select:hover {
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--line));
+  background-color: color-mix(in srgb, var(--bg-elev) 92%, var(--brand));
+}
+
+.analysis-view .predictor-house-select:focus,
+.analysis-view select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
+}
+
+/* ── Text inputs ── */
+.analysis-text-input {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 0.875rem;
+  min-width: 0;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.analysis-text-input::placeholder {
+  color: var(--text-soft);
+  opacity: 0.7;
+}
+
+.analysis-text-input:hover {
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--line));
+}
+
+.analysis-text-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
+}
+
+.analysis-text-input--sm {
+  width: 72px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+/* ── Checkbox styling ── */
+.analysis-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+
+.analysis-check-row:hover {
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+}
+
+.analysis-check-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Model checklist ── */
+.analysis-model-checklist {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 4px;
+  background: var(--bg);
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 4px;
+  scrollbar-width: thin;
+}
+
+.analysis-model-checklist .analysis-check-row {
+  padding: 5px 8px;
+  border-radius: 5px;
+}
+
+/* ── Progress bar ── */
+.analysis-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev) 90%, var(--brand));
+  border: 1px solid color-mix(in srgb, var(--brand) 25%, var(--line));
+  animation: analysis-fadein 0.2s ease both;
+}
+
+.analysis-progress-bar-wrap {
+  height: 8px;
+  background: color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.analysis-progress-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--brand) 0%,
+    color-mix(in srgb, var(--brand) 70%, #fff) 50%,
+    var(--brand) 100%
+  );
+  background-size: 200% 100%;
+  border-radius: 4px;
+  transition: width 0.35s ease;
+  animation: analysis-progress-shimmer 2s linear infinite;
+}
+
+.analysis-progress-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Metric chips ── */
+.analysis-metrics-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.analysis-metric-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  min-width: 90px;
+  transition: transform 0.15s, box-shadow 0.15s;
+  animation: analysis-chip-in 0.25s ease both;
+}
+
+.analysis-metric-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--brand) 15%, transparent);
+}
+
+.analysis-metric-label {
+  font-size: 0.68rem;
+  color: var(--text-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.analysis-metric-value {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ── Best result card ── */
+.analysis-best-card {
+  border: 1px solid var(--brand);
+  background: color-mix(in srgb, var(--brand) 7%, var(--bg-elev));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 15%, transparent),
+              inset 0 1px 0 color-mix(in srgb, var(--brand) 20%, transparent);
+}
+
+/* ── Error / info banners ── */
+.analysis-error {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #ef4444 10%, var(--bg-elev));
+  color: #ef4444;
+  border: 1px solid color-mix(in srgb, #ef4444 28%, transparent);
+  font-size: 0.85rem;
+  animation: analysis-banner-drop 0.2s ease both;
+}
+
+.analysis-info {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brand) 10%, var(--bg-elev));
+  color: var(--brand);
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
+  font-size: 0.85rem;
+  animation: analysis-banner-drop 0.2s ease both;
+}
+
+/* ── Collapsible ── */
+.analysis-collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analysis-collapsible-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  padding: 4px 2px;
+  flex: 1;
+  text-align: left;
+  border-radius: 5px;
+  transition: color 0.12s;
+}
+
+.analysis-collapsible-btn:hover {
+  color: var(--brand);
+}
+
+.analysis-collapsible-btn svg {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+/* ── Model detail drawer ── */
+.analysis-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  backdrop-filter: blur(2px);
+}
+
+.analysis-drawer {
+  width: min(480px, 95vw);
+  height: 100%;
+  background: var(--bg-elev);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3);
+  animation: analysis-drawer-slide 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.analysis-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev) 92%, var(--brand));
+}
+
+.analysis-drawer-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.analysis-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+}
+
+.analysis-drawer-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev) 94%, var(--line));
+}
+
+.analysis-kv-row {
+  display: flex;
+  gap: 12px;
+  font-size: 0.84rem;
+  padding: 6px 8px;
+  border-radius: 5px;
+  transition: background 0.12s;
+}
+
+.analysis-kv-row:hover {
+  background: color-mix(in srgb, var(--line) 40%, transparent);
+}
+
+.analysis-kv-key {
+  color: var(--text-soft);
+  min-width: 120px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.analysis-kv-val {
+  color: var(--text);
+  font-family: monospace;
+  word-break: break-all;
+  font-size: 0.84rem;
+}
+
+/* ── Hyperparameter param row ── */
+.analysis-param-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 6px;
+  border-radius: 6px;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.12s;
+}
+
+.analysis-param-row:last-child {
+  border-bottom: none;
+}
+
+.analysis-param-row:hover {
+  background: color-mix(in srgb, var(--bg-elev-2, var(--bg)) 60%, transparent);
+}
+
+/* ── History panel ── */
+.analysis-history-panel {
+  margin-top: 4px;
+}
+
+/* ── Icon button ── */
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  background: var(--line);
+}
+
+.icon-btn--remove:hover {
+  color: #f87171;
+  background: color-mix(in srgb, #f87171 12%, transparent);
+}
+
+/* ── Clickable table rows ── */
+tr.is-clickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+tr.is-clickable:hover {
+  background: color-mix(in srgb, var(--brand) 7%, var(--bg-elev));
+}

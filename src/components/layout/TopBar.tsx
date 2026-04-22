@@ -28,7 +28,8 @@ const AI_TABS_WITH_DEPLOY = [...AI_TABS, { to: "/app/ai/deploy", label: "Deploy"
 const PREDICTOR_TABS = [
   { to: "/app/predictor", label: "Predict" },
   { to: "/app/predictor/train", label: "Train" },
-  { to: "/app/predictor/logs", label: "Logs" }
+  { to: "/app/predictor/logs", label: "Logs" },
+  { to: "/app/predictor/analysis", label: "Analysis" },
 ];
 
 const KPI_TABS = [
