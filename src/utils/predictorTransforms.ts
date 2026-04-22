@@ -5,7 +5,9 @@ import {
 } from "../api/predictorApi";
 import { format, parseISO } from "date-fns";
 
-const BAND_LIMIT = 24; // use up to the last 24 history runs for the confidence bands
+// No hard cap — use all available history runs so the band covers the full historical range.
+// The computation is O(N×M) but runs in a single synchronous pass so it stays fast in practice.
+const BAND_LIMIT = Infinity;
 
 /** Linear interpolation percentile on a pre-sorted array (p in 0–100). */
 function percentile(sorted: number[], p: number): number {
@@ -81,13 +83,15 @@ function embedBands(
   lane: "consumption" | "production",
   map: Map<string, ChartDataPoint>
 ): void {
-  const limited = entries.slice(-BAND_LIMIT);
-  if (limited.length === 0) return;
+  if (entries.length === 0) return;
+  // Apply limit only if it is finite (currently unlimited)
+  const limited = isFinite(BAND_LIMIT) ? entries.slice(-BAND_LIMIT) : entries;
 
   // Accumulate all prediction values per 15-min slot across all history runs
   const slotValues = new Map<string, number[]>();
   for (const entry of limited) {
-    const anchor = snap15(new Date(entry.target_time));
+    // normalizeTs treats bare ISO (no tz suffix) as UTC — must be consistent with actual history slots
+    const anchor = snap15(new Date(normalizeTs(entry.target_time)));
     entry.prediction.forEach((val, step) => {
       const slotKey = normalizeTs(new Date(anchor.getTime() + step * 15 * 60_000).toISOString());
       if (!slotValues.has(slotKey)) slotValues.set(slotKey, []);
