@@ -1,5 +1,6 @@
 import {
   PredictorHistoryResponse,
+  PredictorHistoryDataPoint,
   PredictorPredictionsResponse,
   PredictionHistoryEntry,
 } from "../api/predictorApi";
@@ -59,9 +60,25 @@ export interface SpectrumSeriesMeta {
   lane: "consumption" | "production";
 }
 
+export interface ForecastErrors {
+  /** Weighted Mean Absolute Error in kWh */
+  mae: number | null;
+  /** Weighted Root Mean Squared Error in kWh */
+  rmse: number | null;
+  /** Number of (prediction, actual) pairs that could be matched */
+  n: number;
+}
+
+export interface WeightedErrorResult {
+  consumption: ForecastErrors;
+  production: ForecastErrors;
+}
+
 export interface ChartBuildResult {
   data: ChartDataPoint[];
   spectrumMeta: SpectrumSeriesMeta[];
+  /** Per-lane weighted MAE/RMSE over the last 24 h of prediction history. */
+  errors: WeightedErrorResult;
 }
 
 function makePoint(timeIso: string): ChartDataPoint {
@@ -74,6 +91,84 @@ function makePoint(timeIso: string): ChartDataPoint {
     predictedProduction: null,
     cBandLo: null, cBandHi: null, cBandQ1Lo: null, cBandQ1Hi: null,
     pBandLo: null, pBandHi: null, pBandQ1Lo: null, pBandQ1Hi: null,
+  };
+}
+
+/**
+ * Compute inverse-recency-weighted MAE and RMSE from the last `windowHours` of prediction runs.
+ *
+ * Weighting rationale: recent runs benefit from lag features in the input data (recent actuals
+ * fed as model inputs), making them artificially accurate. Older runs had less overlap with
+ * the actuals they were compared against and represent "true" predictive skill, so they receive
+ * a proportionally higher weight.
+ *
+ * Weight for run i (0 = oldest, N-1 = newest): w_i = N − i
+ * (oldest run gets weight N, newest gets weight 1)
+ */
+function computeWeightedErrors(
+  predHistory: { consumption: PredictionHistoryEntry[]; production: PredictionHistoryEntry[] },
+  history: PredictorHistoryResponse | undefined,
+  windowHours = 24
+): WeightedErrorResult {
+  const cutoff = Date.now() - windowHours * 3_600_000;
+
+  function computeLane(
+    entries: PredictionHistoryEntry[],
+    actuals: PredictorHistoryDataPoint[]
+  ): ForecastErrors {
+    // Build O(1) lookup: normalised timestamp → actual value
+    const lookup = new Map<string, number>();
+    for (const pt of actuals) lookup.set(normalizeTs(pt.timestamp), pt.value);
+
+    // Keep only runs whose target_time falls in the last windowHours
+    const recent = entries
+      .filter((e) => new Date(normalizeTs(e.target_time)).getTime() >= cutoff)
+      .sort((a, b) =>
+        new Date(normalizeTs(a.target_time)).getTime() -
+        new Date(normalizeTs(b.target_time)).getTime()
+      ); // ascending = oldest first
+
+    if (recent.length === 0) return { mae: null, rmse: null, n: 0 };
+
+    const N = recent.length;
+    let wSumAbs = 0, wSumSq = 0, wTotal = 0, totalMatched = 0;
+
+    recent.forEach((entry, idx) => {
+      const w = N - idx; // oldest → N, newest → 1
+      const anchor = snap15(new Date(normalizeTs(entry.target_time)));
+
+      let localAbs = 0, localSq = 0, matched = 0;
+      entry.prediction.forEach((val, step) => {
+        const slotKey = normalizeTs(
+          new Date(anchor.getTime() + step * 15 * 60_000).toISOString()
+        );
+        const actual = lookup.get(slotKey);
+        if (actual == null) return;
+        const err = actual - val;
+        localAbs += Math.abs(err);
+        localSq  += err * err;
+        matched++;
+      });
+
+      if (matched === 0) return;
+      // Per-run average, then weight the run
+      wSumAbs    += w * (localAbs / matched);
+      wSumSq     += w * (localSq  / matched);
+      wTotal     += w;
+      totalMatched += matched;
+    });
+
+    if (wTotal === 0) return { mae: null, rmse: null, n: 0 };
+    return {
+      mae:  wSumAbs / wTotal,
+      rmse: Math.sqrt(wSumSq / wTotal),
+      n:    totalMatched,
+    };
+  }
+
+  return {
+    consumption: computeLane(predHistory.consumption, history?.consumption ?? []),
+    production:  computeLane(predHistory.production,  history?.production  ?? []),
   };
 }
 
@@ -178,6 +273,12 @@ export function buildPredictorTimeline(
     }
   }
 
+  // Weighted error metrics (independent of the chart map)
+  const errors = computeWeightedErrors(
+    predictionHistory ?? { consumption: [], production: [] },
+    history
+  );
+
   // Keep slots that have actual, predicted, or band data
   const data = Array.from(map.values())
     .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
@@ -191,5 +292,5 @@ export function buildPredictorTimeline(
         pt.pBandLo              != null
     );
 
-  return { data, spectrumMeta: [] };
+  return { data, spectrumMeta: [], errors };
 }

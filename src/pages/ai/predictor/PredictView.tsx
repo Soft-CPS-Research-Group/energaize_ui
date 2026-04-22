@@ -86,7 +86,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
     production: histP.data?.history ?? [],
   };
 
-  const { data: chartData } = buildPredictorTimeline(history, predictions, predHistory);
+  const { data: chartData, errors } = buildPredictorTimeline(history, predictions, predHistory);
 
   const isConsumption = activeLane === "consumption" || activeLane === "both";
   const isProduction  = activeLane === "production"  || activeLane === "both";
@@ -165,7 +165,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
 
   return (
     <div className="predictor-predict-view">
-      {/* KPI strip */}
+      {/* KPI strip — row 1: global stats */}
       <div className="kpi-grid predictor-kpi-grid">
         <div className="kpi">
           <span>Total Houses</span>
@@ -186,6 +186,40 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         <div className="kpi">
           <span>Cycles Completed</span>
           <strong>{stats?.total_cycles ?? "—"}</strong>
+        </div>
+
+        {/* Row 2: forecast accuracy (last 24 h, inverse-recency-weighted) */}
+        <div className="kpi">
+          <span>Cons. MAE · 24 h ↓</span>
+          <strong style={{ color: "var(--brand)" }}>
+            {errors.consumption.mae != null
+              ? `${errors.consumption.mae.toFixed(3)} kWh`
+              : "—"}
+          </strong>
+        </div>
+        <div className="kpi">
+          <span>Cons. RMSE · 24 h ↓</span>
+          <strong style={{ color: "var(--brand)" }}>
+            {errors.consumption.rmse != null
+              ? `${errors.consumption.rmse.toFixed(3)} kWh`
+              : "—"}
+          </strong>
+        </div>
+        <div className="kpi">
+          <span>Prod. MAE · 24 h ↓</span>
+          <strong style={{ color: "#a78bfa" }}>
+            {errors.production.mae != null
+              ? `${errors.production.mae.toFixed(3)} kWh`
+              : "—"}
+          </strong>
+        </div>
+        <div className="kpi">
+          <span>Prod. RMSE · 24 h ↓</span>
+          <strong style={{ color: "#a78bfa" }}>
+            {errors.production.rmse != null
+              ? `${errors.production.rmse.toFixed(3)} kWh`
+              : "—"}
+          </strong>
         </div>
       </div>
 
