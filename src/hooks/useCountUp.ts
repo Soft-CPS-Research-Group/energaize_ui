@@ -8,16 +8,32 @@ import { useEffect, useRef, useState } from "react";
  * @param duration Animation duration in ms (default 600)
  */
 export function useCountUp(target: number | null, duration = 600): number | null {
-  const [display, setDisplay] = useState<number | null>(target);
-  const prevRef  = useRef<number | null>(target);
+  // displayRef tracks the current rendered value so animations start from
+  // wherever the number currently sits (not the last *target*).
+  const displayRef = useRef<number | null>(null);
+  const [display, setDisplayState] = useState<number | null>(null);
   const frameRef = useRef<number>(0);
 
-  useEffect(() => {
-    if (target == null) { setDisplay(null); prevRef.current = null; return; }
+  const setDisplay = (v: number | null) => {
+    displayRef.current = v;
+    setDisplayState(v);
+  };
 
-    const start = prevRef.current ?? target;
+  useEffect(() => {
+    if (target == null) {
+      cancelAnimationFrame(frameRef.current);
+      setDisplay(null);
+      return;
+    }
+
+    // Animate from current displayed value (or 0 on first load)
+    const start = displayRef.current ?? 0;
     const delta = target - start;
-    if (delta === 0) return;
+
+    if (Math.abs(delta) < Number.EPSILON) {
+      setDisplay(target);
+      return;
+    }
 
     const startTime = performance.now();
 
@@ -31,7 +47,6 @@ export function useCountUp(target: number | null, duration = 600): number | null
         frameRef.current = requestAnimationFrame(tick);
       } else {
         setDisplay(target);
-        prevRef.current = target;
       }
     }
 
