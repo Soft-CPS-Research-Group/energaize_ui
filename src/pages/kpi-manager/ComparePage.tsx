@@ -56,11 +56,15 @@ function DeltaChip({ absolute, relative_pct, lowerIsBetter = false }: {
   );
 }
 
-// KPIs where a lower value = better outcome (costs, emissions, losses)
+// KPIs where a lower value = better outcome.
+// Names must match the class names registered in kpi_factory.py._SCHEDULED_KPI_REGISTRY.
 const LOWER_IS_BETTER = new Set([
-  "EnergyCostKPI", "AutoconsumoKPI", "IndicadorNaoPrejuizoKPI",
-  "GiniBeneficiosKPI", "ConcentracaoBeneficiosCR20KPI",
-  "DailyLoadFactorKPI", "RampingKPI",
+  "EnergyCostKPI",             // lower cost = better
+  "DailyLoadFactorKPI",        // lower inefficiency = better (0 = flat profile)
+  "RampingKPI",                // lower ramping = smoother grid
+  "NoHarmIndicatorKPI",        // 0% = no member is worse off
+  "GiniBenefitsKPI",           // 0 = perfect equality
+  "BenefitConcentrationCR20KPI", // ~0.2 = proportional distribution
 ]);
 
 function getSummaryValue(summary: Record<string, number>): number | null {

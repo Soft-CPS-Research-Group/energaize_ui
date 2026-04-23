@@ -11,6 +11,29 @@ import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { MultiSelect } from "../../components/ui/MultiSelect";
 import type { ProcessResponse } from "../../workers/dataProcessor.worker";
 
+// ── Chart data types produced by the data-processor worker ─────────────────
+
+interface StreamingChartState {
+  series: Array<Record<string, number | string>>;
+  categories: string[];
+  buildings: string[];
+}
+
+interface ScheduledStatItem {
+  scope: string;
+  kpiName: string;
+  summary: Record<string, number> | null;
+  timeseries: Array<{ value: number; period_start: string; period_end: string; [key: string]: any }>;
+  isStreaming?: boolean;
+}
+
+interface ScheduledChartState {
+  seriesByKpi: Record<string, Array<Record<string, number | string>>>;
+  categories: string[];
+  scopes: string[];
+  stats: ScheduledStatItem[];
+}
+
 const QUICK_PRESETS = [
   { label: "Today", days: 0 },
   { label: "Last 7 Days", days: 7 },
@@ -60,8 +83,8 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
   const [data, setData] = useState<KpiDataPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [chartData, setChartData] = useState<any>({ series: [], categories: [], buildings: [] });
-  const [scheduledChartData, setScheduledChartData] = useState<any>({ seriesByKpi: {}, categories: [], scopes: [], stats: [] });
+  const [chartData, setChartData] = useState<StreamingChartState>({ series: [], categories: [], buildings: [] });
+  const [scheduledChartData, setScheduledChartData] = useState<ScheduledChartState>({ seriesByKpi: {}, categories: [], scopes: [], stats: [] });
 
   const workerRef = useRef<Worker | null>(null);
 
@@ -71,9 +94,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
     });
 
     workerRef.current.onmessage = (event: MessageEvent<ProcessResponse>) => {
-      const { streamingChartData: chartData, scheduledChartData } = event.data as any;
-      setChartData(chartData);
-      setScheduledChartData(scheduledChartData);
+      const { streamingChartData: streamChartData, scheduledChartData: schedChartData } = event.data as any;
+      setChartData(streamChartData ?? { series: [], categories: [], buildings: [] });
+      setScheduledChartData(schedChartData ?? { seriesByKpi: {}, categories: [], scopes: [], stats: [] });
       setProcessing(false);
     };
 
