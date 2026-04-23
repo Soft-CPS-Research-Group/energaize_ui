@@ -487,6 +487,8 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
                   title={`${kpiName} (${scope})`}
                   value={val != null && !isNaN(Number(val)) ? Number(val).toFixed(2) : "N/A"}
                   description={desc}
+                  highVariability={summary?.high_variability === true}
+                  cv={typeof summary?.cv === "number" ? summary.cv : undefined}
                 />
               );
             })}
