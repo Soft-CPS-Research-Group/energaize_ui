@@ -28,7 +28,7 @@ const DOCK_LOGOS: DockLogo[] = [
     href: "https://www.isep.ipp.pt/",
     label: "ISEP",
     lightSrc: "/assets/logos/ISEP-light.png",
-    darkSrc: "/assets/logos/isep-dark.png",
+    darkSrc: "/assets/logos/logoISEP.png",
     className: "dock-logo-isep"
   },
   {
@@ -43,8 +43,7 @@ const DOCK_LOGOS: DockLogo[] = [
     id: "chips",
     href: "https://cleanwattsdigital.com/",
     label: "Cleanwatts Digital",
-    lightSrc: "/assets/logos/cw_light.png",
-    darkSrc: "/assets/logos/cw_dark.png",
+    src: "/assets/logos/CWD.svg",
     className: "dock-logo-cw"
   },
   {

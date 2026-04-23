@@ -112,6 +112,72 @@ function findBundleByManifestKey(bundles: DeployBundleRecord[], key: string | nu
   return bundles.find((bundle) => bundle.bundle_id === key || bundleStorageKey(bundle) === key) || null;
 }
 
+function normalizeSearchText(value: string): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveTargetBundleKeywords(target: DeployInferenceTarget | null): string[] {
+  if (!target) return [];
+  const probe = normalizeSearchText(`${target.id} ${target.name}`).replace(/[^a-z0-9]+/g, " ");
+  const keywords: string[] = [];
+
+  if (/\b(hq|boavista)\b/.test(probe)) {
+    keywords.push("boavista", "hq");
+  }
+
+  if (/(sao[\s_-]*mamede|saomamede)\b/.test(probe)) {
+    keywords.push("sao mamede", "sao_mamede", "sao-mamede", "saomamede");
+  }
+
+  const rhMatch = probe.match(/\br[\s_-]*h[\s_-]*0*(\d{1,2})\b|\brh0*(\d{1,2})\b/);
+  const rhRaw = rhMatch?.[1] || rhMatch?.[2];
+  if (rhRaw) {
+    const rhCompact = String(Number(rhRaw));
+    const rhPadded = rhRaw.padStart(2, "0");
+    keywords.push(
+      `rh${rhCompact}`,
+      `r-h-${rhCompact}`,
+      `r_h_${rhCompact}`,
+      `r h ${rhCompact}`,
+      `rh${rhPadded}`,
+      `r-h-${rhPadded}`,
+      `r_h_${rhPadded}`,
+      `r h ${rhPadded}`
+    );
+  }
+
+  if (keywords.length === 0) {
+    const fallback = normalizeSearchText(target.id).replace(/[^a-z0-9]+/g, " ").trim();
+    if (fallback) keywords.push(fallback);
+  }
+
+  return Array.from(new Set(keywords));
+}
+
+function bundleSearchText(bundle: DeployBundleRecord): string {
+  return normalizeSearchText(
+    [bundleDisplayName(bundle), bundle.bundle_id, bundle.storage_dir_name || ""].join(" | ")
+  );
+}
+
+function filterBundlesForTarget(
+  bundles: DeployBundleRecord[],
+  target: DeployInferenceTarget | null
+): DeployBundleRecord[] {
+  const keywords = resolveTargetBundleKeywords(target);
+  if (!target || keywords.length === 0) return bundles;
+
+  return bundles.filter((bundle) => {
+    const blob = bundleSearchText(bundle);
+    return keywords.some((keyword) => blob.includes(normalizeSearchText(keyword)));
+  });
+}
+
 function formatBytes(sizeBytes: number): string {
   if (!Number.isFinite(sizeBytes) || sizeBytes < 0) return "-";
   if (sizeBytes < 1024) return `${sizeBytes} B`;
@@ -490,8 +556,8 @@ function formatInvestorSignedPercent(value: number | null): string {
   return `${sign}${value.toFixed(1)}%`;
 }
 
-function formatInvestorSavedPercent(value: number | null, savedEur: number | null): string {
-  if (savedEur !== null && Number.isFinite(savedEur) && Math.abs(savedEur) < 0.01) return "N/A";
+function formatInvestorSavedPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "N/A";
   return formatInvestorSignedPercent(value);
 }
 
@@ -896,7 +962,11 @@ export function DeployPage(): JSX.Element {
     onError: (error) => notifyError("Failed to delete bundle", error)
   });
 
-  const selectedSwitchBundle = bundles.find((bundle) => bundle.bundle_id === switchBundleId) || null;
+  const switchTargetBundles = useMemo(
+    () => filterBundlesForTarget(bundles, switchTarget),
+    [bundles, switchTarget]
+  );
+  const selectedSwitchBundle = switchTargetBundles.find((bundle) => bundle.bundle_id === switchBundleId) || null;
   const visibleBundleFiles = useMemo(
     () => (bundleDetailsFilesQuery.data?.files || []).filter((file) => isBundlePreviewFile(file.path)),
     [bundleDetailsFilesQuery.data]
@@ -996,6 +1066,17 @@ export function DeployPage(): JSX.Element {
       setSelectedBundleFilePath(files[0].path);
     }
   }, [visibleBundleFiles, selectedBundleFilePath]);
+
+  useEffect(() => {
+    if (!switchTarget) return;
+    if (switchTargetBundles.length === 0) {
+      setSwitchBundleId("");
+      return;
+    }
+    if (!switchTargetBundles.some((bundle) => bundle.bundle_id === switchBundleId)) {
+      setSwitchBundleId(switchTargetBundles[0].bundle_id);
+    }
+  }, [switchBundleId, switchTarget, switchTargetBundles]);
 
   async function startLogsStream(target: DeployInferenceTarget): Promise<void> {
     logsAbortRef.current?.abort();
@@ -1279,8 +1360,13 @@ export function DeployPage(): JSX.Element {
       notifyInfo("No bundles available", "Upload at least one bundle before switching.");
       return;
     }
-    const activeBundle = findBundleByManifestKey(bundles, activeBundleId);
-    const preferred = activeBundle?.bundle_id || bundles[0].bundle_id;
+    const filtered = filterBundlesForTarget(bundles, target);
+    if (filtered.length === 0) {
+      notifyInfo("No matching bundles", `No bundle names matched ${target.name}.`);
+      return;
+    }
+    const activeBundle = findBundleByManifestKey(filtered, activeBundleId);
+    const preferred = activeBundle?.bundle_id || filtered[0].bundle_id;
     setSwitchTarget(target);
     setSwitchBundleId(preferred);
   }
@@ -1379,15 +1465,16 @@ export function DeployPage(): JSX.Element {
               <span className="deploy-investor-help" tabIndex={0}>
                 <Info size={13} />
                 <span className="deploy-investor-help-tooltip">
-                  Estimated from logs: community discount savings + energy export revenue (community + grid).
+                  Estimated from logs using RH01 tariff snapshots. Community imports are charged at 70% of price and
+                  exports are credited at 70% of price.
                 </span>
               </span>
             </header>
             <strong>{formatInvestorCurrency(investorSummary.global.savedEur)}</strong>
             <small className="deploy-investor-card-meta">
               {investorSummary.global.savedPct !== null
-                ? `${formatInvestorSavedPercent(investorSummary.global.savedPct, investorSummary.global.savedEur)} vs gross demand cost`
-                : "No baseline cost"}
+                ? `${formatInvestorSavedPercent(investorSummary.global.savedPct)} vs grid baseline`
+                : "No baseline"}
             </small>
           </article>
 
@@ -1397,7 +1484,7 @@ export function DeployPage(): JSX.Element {
               <span className="deploy-investor-help" tabIndex={0}>
                 <Info size={13} />
                 <span className="deploy-investor-help-tooltip">
-                  Share of demand covered by community transfer (timestamp proportional allocation). RH01 uses real meter; HQ/SM use virtual meters.
+                  Share of demand covered by community sources, excluding this target's own solar.
                 </span>
               </span>
             </header>
@@ -1410,7 +1497,8 @@ export function DeployPage(): JSX.Element {
               <span className="deploy-investor-help" tabIndex={0}>
                 <Info size={13} />
                 <span className="deploy-investor-help-tooltip">
-                  Solar effectively used by the community: local self-consumption + exported solar consumed by other members.
+                  Average of target-level rates for own solar consumed locally (local demand including EV and battery
+                  charging).
                 </span>
               </span>
             </header>
@@ -1500,18 +1588,18 @@ export function DeployPage(): JSX.Element {
                                 </strong>
                                 <span className="deploy-investor-mini-meta">
                                   {investorSnapshot.savedPct !== null
-                                    ? formatInvestorSavedPercent(investorSnapshot.savedPct, investorSnapshot.savedEur)
+                                    ? formatInvestorSavedPercent(investorSnapshot.savedPct)
                                     : "N/A"}
                                 </span>
                               </article>
-                              <article className="deploy-investor-mini-card" title="Community share of demand">
+                              <article className="deploy-investor-mini-card" title="Community energy share">
                                 <small>Community</small>
                                 <strong className="deploy-investor-mini-value">
                                   {formatInvestorPercent(investorSnapshot.communitySharePct)}
                                 </strong>
                                 <span className="deploy-investor-mini-meta is-placeholder">-</span>
                               </article>
-                              <article className="deploy-investor-mini-card" title="Estimated local solar self-consumption">
+                              <article className="deploy-investor-mini-card" title="Own solar self-consumption">
                                 <small>Solar</small>
                                 <strong className="deploy-investor-mini-value">
                                   {formatInvestorPercent(investorSnapshot.solarSelfConsumptionPct)}
@@ -1673,7 +1761,7 @@ export function DeployPage(): JSX.Element {
           <label className="deploy-switch-field">
             <span>Bundle</span>
             <select value={switchBundleId} onChange={(event) => setSwitchBundleId(event.target.value)}>
-              {bundles.map((bundle) => (
+              {switchTargetBundles.map((bundle) => (
                 <option key={bundle.bundle_id} value={bundle.bundle_id}>
                   {bundleDisplayName(bundle)}
                 </option>
@@ -1692,7 +1780,7 @@ export function DeployPage(): JSX.Element {
             <Button
               variant="primary"
               onClick={confirmSwitchBundle}
-              disabled={!switchBundleId || switchMutation.isPending}
+              disabled={!switchBundleId || switchMutation.isPending || switchTargetBundles.length === 0}
             >
               {switchMutation.isPending ? "Switching..." : "Confirm Switch"}
             </Button>

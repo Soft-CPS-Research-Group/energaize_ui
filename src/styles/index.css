@@ -6488,6 +6488,9 @@ button {
   padding: 9px 10px;
   background: var(--bg-elev-2);
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .deploy-switch-selected {
@@ -6497,6 +6500,7 @@ button {
   background: color-mix(in srgb, var(--bg-elev) 90%, var(--bg));
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .deploy-switch-selected small {
@@ -6505,12 +6509,22 @@ button {
 }
 
 .deploy-switch-selected strong {
+  display: block;
   line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .deploy-switch-selected code {
+  display: block;
   color: var(--text-soft);
   font-size: 0.78rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .deploy-switch-actions {
@@ -7098,6 +7112,10 @@ button {
 .dock-logo-isep {
   height: 21px;
   max-width: 108px;
+}
+
+:root[data-theme="light"] .dock-logo-isep {
+  height: 23px;
 }
 
 .dock-logo-icharging {

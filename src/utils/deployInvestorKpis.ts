@@ -1,12 +1,12 @@
 import type { DeployLogsHistoryLine } from "../api/deployApi";
 import { parseDeployLogSamples, type ParsedLogSample } from "./deployLogCharts";
 
-const COMMUNITY_PRICE_FACTOR = 0.8;
+const COMMUNITY_PRICE_FACTOR = 0.7;
 const DEFAULT_STEP_MS = 15_000;
 const MIN_STEP_MS = 5_000;
 const MAX_STEP_MS = 15 * 60 * 1000;
 const MIN_SOLAR_KWH_FOR_RATIO = 0.02;
-const RH01_TARGET_ALIASES = new Set(["rh01", "rh_01", "r_h_01", "r_h01"]);
+const RH01_TARGET_ALIASES = new Set(["rh01", "rh1", "rh_01", "rh_1", "r_h_01", "r_h_1", "r_h01", "r_h1"]);
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANSI_ESCAPE_RE = /\u001b\[[0-9;]*m/g;
 
@@ -44,6 +44,7 @@ interface ParsedTargetContext {
     meterOut: MetricPoint[];
     chargerDemand: MetricPoint[];
     batteryDispatch: MetricPoint[];
+    nonShiftableLoad: MetricPoint[];
     connectedTotal: MetricPoint[];
     solar: MetricPoint[];
     price: MetricPoint[];
@@ -53,8 +54,10 @@ interface ParsedTargetContext {
 
 interface SlotState {
   epochMs: number;
-  baseImportKwh: number;
-  baseExportKwh: number;
+  gridImportKwh: number;
+  gridExportKwh: number;
+  communityInKwh: number;
+  communityOutKwh: number;
   localLoadKwh: number;
   localGenerationKwh: number;
   solarGeneratedKwh: number;
@@ -94,7 +97,7 @@ export interface DeployInvestorTargetSnapshot {
   communityInKwh24: number;
   communityOutKwh24: number;
   solarGeneratedKwh24: number;
-  solarUsedKwh24: number;
+  solarSelfUsedKwh24: number;
   gridImportKwh24: number;
   gridExportKwh24: number;
   coveragePct: number;
@@ -282,31 +285,34 @@ function collectBatteryDispatchPoints(samples: ParsedLogSample[]): MetricPoint[]
 }
 
 function collectPricePoints(samples: ParsedLogSample[]): MetricPoint[] {
-  const preferred = collectPreferredMetricPoints(samples, [
+  const preferredKeys = [
     "price_now",
     "price_h1",
     "price_h2",
     "price_h6",
     "price_h12",
     "price_h24",
-    "price_avg_24h"
-  ]);
+    "price_avg_24h",
+  ];
+  const preferredKeySet = new Set(preferredKeys);
 
-  if (preferred.length > 0) return preferred;
+  const positiveCandidates = samples.filter((sample) => {
+    if (!preferredKeySet.has(sample.metricKey)) return false;
+    const numeric = finiteNumber(sample.value);
+    return numeric !== null && numeric > 0;
+  });
 
-  const fallbackSamples = samples.filter(
-    (sample) => sample.metricKey.startsWith("price_") && finiteNumber(sample.value) !== null
-  );
+  const preferredPositive = collectPreferredMetricPoints(positiveCandidates, preferredKeys);
+  if (preferredPositive.length > 0) return preferredPositive;
+
+  const fallbackSamples = samples.filter((sample) => {
+    if (!preferredKeySet.has(sample.metricKey)) return false;
+    return finiteNumber(sample.value) !== null;
+  });
 
   if (fallbackSamples.length === 0) return [];
 
-  return fallbackSamples
-    .map((sample) => ({
-      epochMs: sample.epochMs,
-      value: Number(sample.value),
-      unit: sample.unit
-    }))
-    .sort((left, right) => left.epochMs - right.epochMs);
+  return collectPreferredMetricPoints(fallbackSamples, preferredKeys);
 }
 
 function inferStepMsFromEpochs(epochs: number[]): number {
@@ -351,6 +357,9 @@ function computeCoverageFromSamples(
       "grid_meter_out",
       "solar",
       "action_kw",
+      "non_shiftable",
+      "nsl",
+      "unmanaged",
       "battery_dispatch",
       "connected_total"
     ].includes(sample.metricKey);
@@ -475,6 +484,18 @@ function isRh01TargetId(targetId: string): boolean {
   return RH01_TARGET_ALIASES.has(normalizeTargetId(targetId));
 }
 
+type SiteKind = "hq" | "sao_mamede" | "rh01" | "other";
+
+function resolveSiteKind(targetId: string): SiteKind {
+  const normalized = normalizeTargetId(targetId);
+  if (normalized === "hq" || normalized === "boavista") return "hq";
+  if (["sm", "sao_mamede", "sao_mamed", "saomamede", "sao_mamede_inference"].includes(normalized)) {
+    return "sao_mamede";
+  }
+  if (isRh01TargetId(normalized)) return "rh01";
+  return "other";
+}
+
 export function buildLocalDayWindow(referenceDate = new Date()): DeployInvestorWindow {
   const reference = new Date(referenceDate);
   const startLocal = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate(), 0, 0, 0, 0);
@@ -561,6 +582,7 @@ function buildTargetContext(
       meterOut: collectPreferredMetricPoints(samples, ["meter_out", "grid_meter_out"]),
       chargerDemand: collectChargerDemandPoints(samples),
       batteryDispatch: collectBatteryDispatchPoints(samples),
+      nonShiftableLoad: collectPreferredMetricPoints(samples, ["non_shiftable", "nsl", "unmanaged"]),
       connectedTotal: collectPreferredMetricPoints(samples, ["connected_total", "dispatch_connected_total"]),
       solar: collectPreferredMetricPoints(samples, ["solar", "solar_generation_kwh", "solar_generation_kw"]),
       price: collectPricePoints(samples)
@@ -572,6 +594,7 @@ function buildTargetContext(
 function buildTargetSlotModel(context: ParsedTargetContext): TargetSlotModel {
   const stepMs = context.coverage.stepMs || DEFAULT_STEP_MS;
   const localPriceLookup = buildPriceLookup(context.metrics.price);
+  const siteKind = resolveSiteKind(context.targetId);
 
   const communityInPoints =
     context.metrics.communityIn.length > 0
@@ -590,6 +613,7 @@ function buildTargetSlotModel(context: ParsedTargetContext): TargetSlotModel {
   const rawCommunityOut = energyByEpoch(toEnergySamples(communityOutPoints, stepMs));
   const solarByEpoch = energyByEpoch(toEnergySamples(context.metrics.solar, stepMs));
   const chargerByEpoch = energyByEpoch(toEnergySamples(context.metrics.chargerDemand, stepMs));
+  const nonShiftableByEpoch = energyByEpoch(toEnergySamples(context.metrics.nonShiftableLoad, stepMs));
   const connectedByEpoch = energyByEpoch(toEnergySamples(context.metrics.connectedTotal, stepMs));
   const batteryDispatchByEpoch = energyByEpoch(
     toEnergySamples(context.metrics.batteryDispatch, stepMs, { allowNegative: true })
@@ -597,12 +621,10 @@ function buildTargetSlotModel(context: ParsedTargetContext): TargetSlotModel {
   const meterInByEpoch = energyByEpoch(toEnergySamples(context.metrics.meterIn, stepMs));
   const meterOutByEpoch = energyByEpoch(toEnergySamples(context.metrics.meterOut, stepMs));
 
-  const preferRealMeter =
-    isRh01TargetId(context.targetId) && (meterInByEpoch.size > 0 || meterOutByEpoch.size > 0);
-
   const epochs = new Set<number>([
     ...Array.from(solarByEpoch.keys()),
     ...Array.from(chargerByEpoch.keys()),
+    ...Array.from(nonShiftableByEpoch.keys()),
     ...Array.from(connectedByEpoch.keys()),
     ...Array.from(batteryDispatchByEpoch.keys()),
     ...Array.from(meterInByEpoch.keys()),
@@ -618,34 +640,49 @@ function buildTargetSlotModel(context: ParsedTargetContext): TargetSlotModel {
       const chargerDemandKwh = chargerByEpoch.has(epochMs)
         ? Math.max(0, chargerByEpoch.get(epochMs) || 0)
         : Math.max(0, connectedByEpoch.get(epochMs) || 0);
+      const nonShiftableKwh = Math.max(0, nonShiftableByEpoch.get(epochMs) || 0);
       const batteryDispatchKwh = batteryDispatchByEpoch.get(epochMs) || 0;
       const batteryChargeKwh = Math.max(0, batteryDispatchKwh);
       const batteryDischargeKwh = Math.max(0, -batteryDispatchKwh);
       const solarGeneratedKwh = Math.max(0, solarByEpoch.get(epochMs) || 0);
 
-      const localLoadKwh = Math.max(0, chargerDemandKwh + batteryChargeKwh);
+      const localLoadKwh = Math.max(0, chargerDemandKwh + nonShiftableKwh + batteryChargeKwh);
       const localGenerationKwh = Math.max(0, solarGeneratedKwh + batteryDischargeKwh);
+      const simulatedImportKwh = Math.max(0, localLoadKwh - localGenerationKwh);
+      const simulatedExportKwh = Math.max(0, localGenerationKwh - localLoadKwh);
 
-      let baseImportKwh = 0;
-      let baseExportKwh = 0;
+      const hasMeterIn = meterInByEpoch.has(epochMs);
+      const hasMeterOut = meterOutByEpoch.has(epochMs);
+      const meterInKwh = Math.max(0, meterInByEpoch.get(epochMs) || 0);
+      const meterOutKwh = Math.max(0, meterOutByEpoch.get(epochMs) || 0);
 
-      if (preferRealMeter) {
-        baseImportKwh = Math.max(0, meterInByEpoch.get(epochMs) || 0);
-        baseExportKwh = Math.max(0, meterOutByEpoch.get(epochMs) || 0);
+      let gridImportKwh = simulatedImportKwh;
+      let gridExportKwh = simulatedExportKwh;
+
+      if (siteKind === "rh01") {
+        gridImportKwh = hasMeterIn ? meterInKwh : simulatedImportKwh;
+        gridExportKwh = hasMeterOut ? meterOutKwh : simulatedExportKwh;
+      } else if (siteKind === "sao_mamede") {
+        // Sao Mamede meter_out is not reliable; keep import from meter_in and export from local balance.
+        gridImportKwh = hasMeterIn ? meterInKwh : simulatedImportKwh;
+        gridExportKwh = simulatedExportKwh;
+      } else if (siteKind === "hq") {
+        gridImportKwh = simulatedImportKwh;
+        gridExportKwh = simulatedExportKwh;
       } else {
-        baseImportKwh = Math.max(0, localLoadKwh - localGenerationKwh);
-        baseExportKwh = Math.max(0, localGenerationKwh - localLoadKwh);
+        gridImportKwh = hasMeterIn ? meterInKwh : simulatedImportKwh;
+        gridExportKwh = hasMeterOut ? meterOutKwh : simulatedExportKwh;
       }
 
-      const rawIn = Math.max(0, rawCommunityIn.get(epochMs) || 0);
-      const rawOut = Math.max(0, rawCommunityOut.get(epochMs) || 0);
-      if (baseImportKwh === 0 && rawIn > 0) baseImportKwh = rawIn;
-      if (baseExportKwh === 0 && rawOut > 0) baseExportKwh = rawOut;
+      const communityInKwh = Math.max(0, rawCommunityIn.get(epochMs) || 0);
+      const communityOutKwh = Math.max(0, rawCommunityOut.get(epochMs) || 0);
 
       slotsByEpoch.set(epochMs, {
         epochMs,
-        baseImportKwh,
-        baseExportKwh,
+        gridImportKwh,
+        gridExportKwh,
+        communityInKwh,
+        communityOutKwh,
         localLoadKwh,
         localGenerationKwh,
         solarGeneratedKwh
@@ -664,6 +701,7 @@ function resolvePriceForEpoch(params: {
   epochMs: number;
   canonicalPriceLookup: ((epochMs: number) => number | null) | null;
   localPriceLookup: (epochMs: number) => number | null;
+  allowLocalFallback: boolean;
 }): {
   price: number | null;
   usedCanonical: boolean;
@@ -674,9 +712,11 @@ function resolvePriceForEpoch(params: {
     return { price: canonical, usedCanonical: true, usedLocal: false };
   }
 
-  const local = params.localPriceLookup(params.epochMs);
-  if (local !== null && Number.isFinite(local)) {
-    return { price: local, usedCanonical: false, usedLocal: true };
+  if (params.allowLocalFallback) {
+    const local = params.localPriceLookup(params.epochMs);
+    if (local !== null && Number.isFinite(local)) {
+      return { price: local, usedCanonical: false, usedLocal: true };
+    }
   }
 
   return { price: null, usedCanonical: false, usedLocal: false };
@@ -708,11 +748,11 @@ export function computeDeployInvestorKpis(
     communityInKwh24: number;
     communityOutKwh24: number;
     solarGeneratedKwh24: number;
-    solarUsedKwh24: number;
+    solarSelfUsedKwh24: number;
     gridImportKwh24: number;
     gridExportKwh24: number;
-    baselineCostEur24: number;
     actualCostEur24: number;
+    tariffBaselineCostEur24: number;
     pricedSlots: number;
     usedCanonicalPrice: boolean;
     usedLocalPrice: boolean;
@@ -725,11 +765,11 @@ export function computeDeployInvestorKpis(
       communityInKwh24: 0,
       communityOutKwh24: 0,
       solarGeneratedKwh24: 0,
-      solarUsedKwh24: 0,
+      solarSelfUsedKwh24: 0,
       gridImportKwh24: 0,
       gridExportKwh24: 0,
-      baselineCostEur24: 0,
       actualCostEur24: 0,
+      tariffBaselineCostEur24: 0,
       pricedSlots: 0,
       usedCanonicalPrice: false,
       usedLocalPrice: false
@@ -754,46 +794,30 @@ export function computeDeployInvestorKpis(
 
     if (rows.length === 0) return;
 
-    const totalImportNeed = rows.reduce((sum, row) => sum + row.slot.baseImportKwh, 0);
-    const totalExportAvail = rows.reduce((sum, row) => sum + row.slot.baseExportKwh, 0);
-    const transferKwh = Math.min(totalImportNeed, totalExportAvail);
-
     rows.forEach((row) => {
       const acc = accumulators.get(row.model.context.targetId);
       if (!acc) return;
 
-      const communityInKwh =
-        totalImportNeed > 0 ? transferKwh * (row.slot.baseImportKwh / totalImportNeed) : 0;
-      const communityOutKwh =
-        totalExportAvail > 0 ? transferKwh * (row.slot.baseExportKwh / totalExportAvail) : 0;
-
-      const gridImportKwh = Math.max(0, row.slot.baseImportKwh - communityInKwh);
-      const gridExportKwh = Math.max(0, row.slot.baseExportKwh - communityOutKwh);
-      const demandKwh = gridImportKwh + communityInKwh;
-
-      const localSolarUsedKwh = Math.min(row.slot.solarGeneratedKwh, row.slot.localLoadKwh);
-      const solarExportComponentKwh =
-        row.slot.baseExportKwh > 0 && row.slot.localGenerationKwh > 0
-          ? row.slot.baseExportKwh * (row.slot.solarGeneratedKwh / Math.max(row.slot.localGenerationKwh, 1e-9))
-          : 0;
-      const solarSharedUsedKwh = Math.min(solarExportComponentKwh, communityOutKwh);
-      const solarUsedKwh = Math.min(
-        row.slot.solarGeneratedKwh,
-        Math.max(0, localSolarUsedKwh + solarSharedUsedKwh)
-      );
+      const communityInKwh = Math.max(0, row.slot.communityInKwh);
+      const communityOutKwh = Math.max(0, row.slot.communityOutKwh);
+      const gridImportKwh = Math.max(0, row.slot.gridImportKwh);
+      const gridExportKwh = Math.max(0, row.slot.gridExportKwh);
+      const demandKwh = Math.max(0, row.slot.localLoadKwh, gridImportKwh + communityInKwh);
+      const solarSelfUsedKwh = Math.max(0, Math.min(row.slot.solarGeneratedKwh, demandKwh));
 
       acc.demandKwh24 += demandKwh;
       acc.communityInKwh24 += communityInKwh;
       acc.communityOutKwh24 += communityOutKwh;
       acc.solarGeneratedKwh24 += row.slot.solarGeneratedKwh;
-      acc.solarUsedKwh24 += solarUsedKwh;
+      acc.solarSelfUsedKwh24 += solarSelfUsedKwh;
       acc.gridImportKwh24 += gridImportKwh;
       acc.gridExportKwh24 += gridExportKwh;
 
       const priceResolution = resolvePriceForEpoch({
         epochMs,
         canonicalPriceLookup,
-        localPriceLookup: row.model.localPriceLookup
+        localPriceLookup: row.model.localPriceLookup,
+        allowLocalFallback: canonicalContext === null
       });
 
       if (priceResolution.price !== null && Number.isFinite(priceResolution.price)) {
@@ -805,10 +829,9 @@ export function computeDeployInvestorKpis(
         const actual =
           gridImportKwh * priceResolution.price +
           communityInKwh * priceResolution.price * COMMUNITY_PRICE_FACTOR -
-          gridExportKwh * priceResolution.price -
-          communityOutKwh * priceResolution.price * COMMUNITY_PRICE_FACTOR;
+          (gridExportKwh + communityOutKwh) * priceResolution.price * COMMUNITY_PRICE_FACTOR;
 
-        acc.baselineCostEur24 += baseline;
+        acc.tariffBaselineCostEur24 += baseline;
         acc.actualCostEur24 += actual;
       }
     });
@@ -830,7 +853,7 @@ export function computeDeployInvestorKpis(
         communityInKwh24: 0,
         communityOutKwh24: 0,
         solarGeneratedKwh24: 0,
-        solarUsedKwh24: 0,
+        solarSelfUsedKwh24: 0,
         gridImportKwh24: 0,
         gridExportKwh24: 0,
         coveragePct: model.context.coverage.coveragePct,
@@ -843,14 +866,17 @@ export function computeDeployInvestorKpis(
     }
 
     const savedEur =
-      acc.pricedSlots > 0 ? acc.baselineCostEur24 - acc.actualCostEur24 : null;
+      acc.pricedSlots > 0 ? acc.tariffBaselineCostEur24 - acc.actualCostEur24 : null;
     const savedPct =
-      savedEur !== null && acc.baselineCostEur24 > 0 ? (savedEur / acc.baselineCostEur24) * 100 : null;
+      savedEur !== null && acc.tariffBaselineCostEur24 > 0
+        ? (savedEur / acc.tariffBaselineCostEur24) * 100
+        : null;
     const communitySharePct =
       acc.demandKwh24 > 0 ? clampPercent((acc.communityInKwh24 / acc.demandKwh24) * 100) : null;
+    const solarSelfUsedKwh24 = Math.max(0, Math.min(acc.solarGeneratedKwh24, acc.solarSelfUsedKwh24));
     const solarSelfConsumptionPct =
       acc.solarGeneratedKwh24 >= MIN_SOLAR_KWH_FOR_RATIO
-        ? clampPercent((acc.solarUsedKwh24 / acc.solarGeneratedKwh24) * 100)
+        ? clampPercent((solarSelfUsedKwh24 / acc.solarGeneratedKwh24) * 100)
         : null;
 
     const priceSource = priceSourceFromFlags({
@@ -879,7 +905,7 @@ export function computeDeployInvestorKpis(
       communityInKwh24: acc.communityInKwh24,
       communityOutKwh24: acc.communityOutKwh24,
       solarGeneratedKwh24: acc.solarGeneratedKwh24,
-      solarUsedKwh24: acc.solarUsedKwh24,
+      solarSelfUsedKwh24,
       gridImportKwh24: acc.gridImportKwh24,
       gridExportKwh24: acc.gridExportKwh24,
       coveragePct: model.context.coverage.coveragePct,
@@ -897,11 +923,12 @@ export function computeDeployInvestorKpis(
 
   const totalDemandKwh = targets.reduce((sum, target) => sum + target.demandKwh24, 0);
   const totalCommunityInKwh = targets.reduce((sum, target) => sum + target.communityInKwh24, 0);
-  const totalSolarGeneratedKwh = targets.reduce((sum, target) => sum + target.solarGeneratedKwh24, 0);
-  const totalSolarUsedKwh = targets.reduce((sum, target) => sum + target.solarUsedKwh24, 0);
+  const solarSelfConsumptionValues = targets
+    .map((target) => target.solarSelfConsumptionPct)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
 
   const baselineCostTotal = Array.from(accumulators.values()).reduce(
-    (sum, entry) => sum + entry.baselineCostEur24,
+    (sum, entry) => sum + entry.tariffBaselineCostEur24,
     0
   );
   const actualCostTotal = Array.from(accumulators.values()).reduce(
@@ -916,8 +943,11 @@ export function computeDeployInvestorKpis(
   const communitySharePct =
     totalDemandKwh > 0 ? clampPercent((totalCommunityInKwh / totalDemandKwh) * 100) : null;
   const solarSelfConsumptionPct =
-    totalSolarGeneratedKwh >= MIN_SOLAR_KWH_FOR_RATIO
-      ? clampPercent((totalSolarUsedKwh / totalSolarGeneratedKwh) * 100)
+    solarSelfConsumptionValues.length > 0
+      ? clampPercent(
+          solarSelfConsumptionValues.reduce((sum, value) => sum + value, 0) /
+            solarSelfConsumptionValues.length
+        )
       : null;
 
   const missingRh01Message = canonicalContext

@@ -32,6 +32,47 @@ function toTitle(input: string): string {
     .replace(/\b\w/g, (chunk) => chunk.toUpperCase());
 }
 
+function normalizeToken(input: string): string {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeSiteId(input: string): string {
+  return normalizeToken(input);
+}
+
+function isLikelyElectricVehicleEntity(entity: string): boolean {
+  const normalized = normalizeToken(entity);
+  if (!normalized) return false;
+  return (
+    normalized.startsWith("electric_vehicle_") ||
+    normalized.startsWith("ev_") ||
+    normalized.startsWith("vehicle_")
+  );
+}
+
+function toVehicleId(entity: string): string {
+  const normalized = normalizeToken(entity);
+  return (
+    normalized
+      .replace(/^electric_vehicle_/, "")
+      .replace(/^ev_/, "")
+      .replace(/^vehicle_/, "") || normalized
+  );
+}
+
+function isKnownNamedSite(entity: string): boolean {
+  const normalized = normalizeSiteId(entity);
+  if (!normalized) return false;
+  if (normalized === "hq" || normalized === "boavista") return true;
+  if (normalized === "sao_mamede" || normalized === "saomamede") return true;
+  if (/^r_h_\d+$/i.test(normalized) || /^rh\d+$/i.test(normalized)) return true;
+  return false;
+}
+
 export function inferMetricUnit(metric: string): string | undefined {
   const key = metric.toLowerCase();
   if (key.includes("kg_co2") || key.includes("co2")) return "kgCO2";
@@ -77,6 +118,8 @@ export function parseSimulationDataFile(relativePath: string): SimulationDataFil
     const buildingBatteryMatch = entity.match(/^building_(\d+)_battery$/i);
     const buildingMatch = entity.match(/^building_(\d+)$/i);
     const evMatch = entity.match(/^electric_vehicle_(\d+)$/i);
+    const siteChargerMatch = entity.match(/^(.+?)_charger_(.+)$/i);
+    const siteBatteryMatch = entity.match(/^(.+?)_battery$/i);
 
     if (buildingChargerMatch) {
       kind = "charger";
@@ -88,9 +131,22 @@ export function parseSimulationDataFile(relativePath: string): SimulationDataFil
     } else if (buildingMatch) {
       kind = "building";
       buildingId = buildingMatch[1];
+    } else if (siteChargerMatch) {
+      kind = "charger";
+      buildingId = normalizeSiteId(siteChargerMatch[1]);
+      chargerId = normalizeToken(siteChargerMatch[2]);
+    } else if (siteBatteryMatch) {
+      kind = "battery";
+      buildingId = normalizeSiteId(siteBatteryMatch[1]);
     } else if (evMatch) {
       kind = "electric_vehicle";
       vehicleId = evMatch[1];
+    } else if (isLikelyElectricVehicleEntity(entity)) {
+      kind = "electric_vehicle";
+      vehicleId = toVehicleId(entity);
+    } else if (isKnownNamedSite(entity)) {
+      kind = "building";
+      buildingId = normalizeSiteId(entity);
     } else if (/^pricing$/i.test(entity)) {
       kind = "pricing";
     }
@@ -122,6 +178,32 @@ function sortByLeadingNumber<T extends { label: string }>(items: T[]): T[] {
     }
     return a.label.localeCompare(b.label);
   });
+}
+
+function formatBuildingLabel(buildingId: string): string {
+  const normalized = normalizeSiteId(buildingId);
+  if (!normalized || normalized === "unknown") return "Building";
+
+  if (/^\d+$/.test(normalized)) {
+    return `Building ${Number(normalized)}`;
+  }
+
+  if (normalized === "hq" || normalized === "boavista") return "Boavista (HQ)";
+  if (normalized === "sao_mamede" || normalized === "saomamede") return "Sao Mamede";
+
+  const rhMatch = normalized.match(/^r_h_(\d+)$/i) || normalized.match(/^rh(\d+)$/i);
+  if (rhMatch) {
+    return `R-H-${rhMatch[1]!.padStart(2, "0")}`;
+  }
+
+  return toTitle(buildingId);
+}
+
+function formatChargerLabel(chargerId: string | undefined): string {
+  if (!chargerId) return "Charger";
+  if (/^\d+_\d+$/.test(chargerId)) return `Charger ${chargerId}`;
+  const titled = toTitle(chargerId).replace(/\bHq\b/g, "HQ");
+  return `Charger ${titled}`;
 }
 
 function leafNode(
@@ -192,7 +274,7 @@ export function buildSimulationTree(files: SimulationDataFileEntry[]): Simulatio
     }
 
     if (file.kind === "electric_vehicle") {
-      const label = file.vehicleId ? `EV ${file.vehicleId}` : toTitle(file.fileName);
+      const label = file.vehicleId ? `EV ${toTitle(file.vehicleId)}` : toTitle(file.fileName);
       evLeaves.push(leafNode(`leaf:${file.relativePath}`, label, "electric_vehicle", file.relativePath));
       return;
     }
@@ -208,7 +290,7 @@ export function buildSimulationTree(files: SimulationDataFileEntry[]): Simulatio
           leafNode(`leaf:${file.relativePath}`, "Battery", "battery", file.relativePath)
         );
       } else if (file.kind === "charger") {
-        const label = file.chargerId ? `Charger ${file.chargerId}` : "Charger";
+        const label = formatChargerLabel(file.chargerId);
         entry.chargers.push(
           leafNode(`leaf:${file.relativePath}`, label, "charger", file.relativePath)
         );
@@ -228,7 +310,7 @@ export function buildSimulationTree(files: SimulationDataFileEntry[]): Simulatio
       children.push(...sortByLabel(value.chargers));
       return {
         id: `building:${buildingId}`,
-        label: buildingId === "unknown" ? "Building" : `Building ${buildingId}`,
+        label: formatBuildingLabel(buildingId),
         kind: "building",
         selectable: true,
         fileRefs: [...value.buildingFiles],

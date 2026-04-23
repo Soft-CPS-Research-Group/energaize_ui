@@ -112,7 +112,7 @@ describe("deployLogCharts utils", () => {
     expect(samples.every((item) => item.assetKind === "community")).toBe(true);
   });
 
-  it("parses 'Community battery' summary line into battery metrics for charts", () => {
+  it("parses 'Community battery' summary line into community metrics for charts", () => {
     const samples = parseDeployLogSamples([
       line("2026-04-13T08:13:25.006Z", "2026-04-13 08:13:25.006 | INFO | POST /inference | rbc.summary"),
       line(
@@ -121,9 +121,9 @@ describe("deployLogCharts utils", () => {
       )
     ]);
 
-    expect(samples.some((item) => item.assetId === "battery" && item.metricKey === "battery_action")).toBe(true);
-    expect(samples.some((item) => item.assetId === "battery" && item.metricKey === "battery_soc")).toBe(true);
-    expect(samples.some((item) => item.assetId === "battery" && item.metricKey === "battery_soc_raw")).toBe(true);
+    expect(samples.some((item) => item.assetId === "community" && item.metricKey === "battery_action")).toBe(true);
+    expect(samples.some((item) => item.assetId === "community" && item.metricKey === "battery_soc")).toBe(true);
+    expect(samples.some((item) => item.assetId === "community" && item.metricKey === "battery_soc_raw")).toBe(true);
   });
 
   it("builds chart series with point deduplication on same epoch", () => {
@@ -299,5 +299,10 @@ describe("deployLogCharts utils", () => {
 
   it("resolves boavista label from hq", () => {
     expect(resolveDeploySiteLabel("hq")).toBe("Boavista (HQ)");
+  });
+
+  it("resolves rh1 aliases as R-H-01 profile/label", () => {
+    expect(resolveDeploySiteLabel("rh1")).toBe("R-H-01");
+    expect(resolveDeploySiteProfile("rh1").id).toBe("rh01");
   });
 });

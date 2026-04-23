@@ -571,11 +571,11 @@ function shouldRenderAsLine(entry: SimulationSeries): boolean {
 }
 
 function isChargerFileRef(fileRef: string): boolean {
-  return /exported_data_building_\d+_charger_/i.test(fileRef);
+  return /exported_data_[^/]+_charger_[^/]+_ep\d+\.csv$/i.test(fileRef);
 }
 
 function isElectricVehicleFileRef(fileRef: string): boolean {
-  return /exported_data_electric_vehicle_\d+_ep\d+\.csv$/i.test(fileRef);
+  return /exported_data_(electric_vehicle_\d+|ev_[^/]+|vehicle_[^/]+)_ep\d+\.csv$/i.test(fileRef);
 }
 
 function isChargerConsumptionSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
@@ -762,6 +762,15 @@ function isNonShiftableSeries(entry: SimulationSeries): boolean {
 
 function isCommunityFileRef(fileRef: string): boolean {
   return /exported_data_community_ep\d+\.csv$/i.test(fileRef);
+}
+
+function isPrimaryEntityFileRef(fileRef: string): boolean {
+  const fileName = fileRef.split("/").pop() || fileRef;
+  if (!/^exported_data_.+_ep\d+\.csv$/i.test(fileName)) return false;
+  if (/^exported_data_(community|pricing)_ep\d+\.csv$/i.test(fileName)) return false;
+  if (/_battery_/i.test(fileName)) return false;
+  if (/_charger_/i.test(fileName)) return false;
+  return true;
 }
 
 function isEvSocSeries(entry: Pick<SimulationSeries, "id" | "metric">): boolean {
@@ -2324,7 +2333,7 @@ export function JobDetailPage(): JSX.Element {
           const evSeriesFiltered = isElectricVehicleFileRef(fileRef)
             ? mergedSeries.filter((entry) => !isBatteryCapacitySeries(entry))
             : mergedSeries;
-          const isCommunityCsv = /exported_data_community_ep\d+\.csv$/i.test(fileRef);
+          const isCommunityCsv = isCommunityFileRef(fileRef);
           let series: SimulationSeries[] = isCommunityCsv
             ? evSeriesFiltered.slice(0, 8)
             : evSeriesFiltered.slice(0, 6);
@@ -3941,9 +3950,7 @@ export function JobDetailPage(): JSX.Element {
                                 !isBuildingCompareMode &&
                                 (isCommunityMode
                                   ? index === 1
-                                  : /exported_data_(building_\d+|electric_vehicle_\d+)_ep\d+\.csv$/i.test(
-                                      bundle.fileRef
-                                    ))
+                                  : isPrimaryEntityFileRef(bundle.fileRef))
                               }
                             />
                           ))}

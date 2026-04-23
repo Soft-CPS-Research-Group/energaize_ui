@@ -116,7 +116,7 @@ function normalizeTargetId(targetId: string): string {
   if (["sm", "sao_mamede", "sao_mamed", "saomamede", "sao_mamede_inference"].includes(normalized)) {
     return "sao_mamede";
   }
-  if (["rh01", "rh_01", "r_h_01", "r_h01"].includes(normalized)) return "rh01";
+  if (["rh01", "rh1", "rh_01", "rh_1", "r_h_01", "r_h_1", "r_h01", "r_h1"].includes(normalized)) return "rh01";
   return normalized;
 }
 
@@ -543,6 +543,9 @@ export function parseDeployLogSamples(lines: DeployLogsHistoryLine[]): ParsedLog
         source,
         allowedRawKeys: new Set([
           "solar",
+          "non_shiftable",
+          "nsl",
+          "unmanaged",
           "meter_in",
           "meter_out",
           "meter_net",
@@ -596,7 +599,9 @@ export function parseDeployLogSamples(lines: DeployLogsHistoryLine[]): ParsedLog
         epochMs: lastEpochMs,
         source,
         keyPrefix: "battery",
-        forceAsset: { assetId: "battery", assetLabel: "Battery", assetKind: "battery" },
+        // "Community battery" refers to a community-level virtual battery and should not
+        // create a local Battery asset node for sites that do not have one.
+        forceAsset: { assetId: "community", assetLabel: "Community", assetKind: "community" },
         allowedRawKeys: new Set(["action", "dispatch", "soc", "soc_raw", "charge_cap", "discharge_cap"])
       });
       return;

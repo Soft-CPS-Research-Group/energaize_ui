@@ -14,6 +14,10 @@ describe("simulationData utils", () => {
     const building = parseSimulationDataFile("run/exported_data_building_7_ep0.csv");
     const battery = parseSimulationDataFile("run/exported_data_building_7_battery_ep0.csv");
     const charger = parseSimulationDataFile("run/exported_data_building_7_charger_7_1_ep0.csv");
+    const site = parseSimulationDataFile("latest/exported_data_hq_ep0.csv");
+    const siteBattery = parseSimulationDataFile("latest/exported_data_hq_battery_ep0.csv");
+    const siteCharger = parseSimulationDataFile("latest/exported_data_hq_charger_hq_01_ep0.csv");
+    const evAlias = parseSimulationDataFile("latest/exported_data_ev_demo9_001_ep0.csv");
     const kpi = parseSimulationDataFile("run/exported_kpis.csv");
 
     expect(community.kind).toBe("community");
@@ -21,6 +25,15 @@ describe("simulationData utils", () => {
     expect(battery.kind).toBe("battery");
     expect(charger.kind).toBe("charger");
     expect(charger.chargerId).toBe("7_1");
+    expect(site.kind).toBe("building");
+    expect(site.buildingId).toBe("hq");
+    expect(siteBattery.kind).toBe("battery");
+    expect(siteBattery.buildingId).toBe("hq");
+    expect(siteCharger.kind).toBe("charger");
+    expect(siteCharger.buildingId).toBe("hq");
+    expect(siteCharger.chargerId).toBe("hq_01");
+    expect(evAlias.kind).toBe("electric_vehicle");
+    expect(evAlias.vehicleId).toBe("demo9_001");
     expect(kpi.kind).toBe("kpi");
   });
 
@@ -41,6 +54,28 @@ describe("simulationData utils", () => {
 
     const evGroup = tree.children.find((node) => node.id === "group:electric-vehicles");
     expect(evGroup).toBeTruthy();
+  });
+
+  it("builds a tree for named sites (hq/sao_mamede/r-h-01)", () => {
+    const files = [
+      parseSimulationDataFile("latest/exported_data_hq_ep0.csv"),
+      parseSimulationDataFile("latest/exported_data_hq_battery_ep0.csv"),
+      parseSimulationDataFile("latest/exported_data_hq_charger_hq_01_ep0.csv"),
+      parseSimulationDataFile("latest/exported_data_sao_mamede_ep0.csv"),
+      parseSimulationDataFile("latest/exported_data_sao_mamede_battery_ep0.csv"),
+      parseSimulationDataFile("latest/exported_data_r-h-01_ep0.csv"),
+      parseSimulationDataFile("latest/exported_data_r-h-01_charger_r_h_01_1_ep0.csv")
+    ];
+
+    const tree = buildSimulationTree(files);
+    const hqNode = tree.children.find((node) => node.id === "building:hq");
+    const saoNode = tree.children.find((node) => node.id === "building:sao_mamede");
+    const rhNode = tree.children.find((node) => node.id === "building:r_h_01");
+
+    expect(hqNode?.label).toBe("Boavista (HQ)");
+    expect(hqNode?.children.length).toBe(2);
+    expect(saoNode?.label).toBe("Sao Mamede");
+    expect(rhNode?.label).toBe("R-H-01");
   });
 
   it("extracts KPI entries from exported_kpis csv", () => {
