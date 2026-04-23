@@ -9,6 +9,7 @@ import { SchedulerPage } from "./pages/kpi-manager/SchedulerPage";
 import { KpiLibraryPage } from "./pages/kpi-manager/KpiLibraryPage";
 import { DataProfilingPage } from "./pages/kpi-manager/DataProfilingPage";
 import { AggregateReportPage } from "./pages/kpi-manager/AggregateReportPage";
+import { CorrelationPage } from "./pages/kpi-manager/CorrelationPage";
 import { LoginPage } from "./pages/LoginPage";
 import { LogsPage } from "./pages/LogsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -69,6 +70,7 @@ export default function App(): JSX.Element {
               <Route path="library" element={<KpiLibraryPage />} />
               <Route path="data-health" element={<DataProfilingPage />} />
               <Route path="reports" element={<AggregateReportPage />} />
+              <Route path="correlations" element={<CorrelationPage />} />
             </Route>
           </Route>
         </Route>
