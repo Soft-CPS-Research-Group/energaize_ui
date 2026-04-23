@@ -37,7 +37,8 @@ const KPI_TABS = [
   { to: "/app/kpi-manager/explorer", label: "Explorer" },
   { to: "/app/kpi-manager/compare", label: "Compare" },
   { to: "/app/kpi-manager/scheduler", label: "Scheduler" },
-  { to: "/app/kpi-manager/library", label: "Library" }
+  { to: "/app/kpi-manager/library", label: "Library" },
+  { to: "/app/kpi-manager/data-health", label: "Data Health" },
 ];
 
 export function TopBar(): JSX.Element {

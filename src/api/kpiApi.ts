@@ -126,3 +126,53 @@ export const fetchKpiComparison = async ({
   );
   return response.data;
 };
+
+// ── Data Profiling ──────────────────────────────────────────────────────────
+
+export interface BuildingProfile {
+  total_payloads: number;
+  coverage_ratio: number;
+  confidence_score: number;
+  generated_fields: number;
+  total_fields: number;
+  authenticity_ratio: number;
+  physically_invalid: number;
+  validity_ratio: number;
+  gap_count: number;
+  gaps: Array<{ from: string; to: string; duration_seconds: number }>;
+  outlier_counts: Record<string, number>;
+}
+
+export interface DataProfileResponse {
+  status: string;
+  community: string;
+  period: { start: string; end: string };
+  data: Record<string, BuildingProfile>; // building_id -> profile
+}
+
+export interface FetchProfileParams {
+  community: string;
+  buildings: string[];
+  startDate: string;
+  endDate: string;
+  payloadFrequencySeconds?: number;
+}
+
+export const fetchDataProfile = async ({
+  community,
+  buildings,
+  startDate,
+  endDate,
+  payloadFrequencySeconds = 900,
+}: FetchProfileParams): Promise<DataProfileResponse> => {
+  const params = new URLSearchParams();
+  buildings.forEach(b => params.append('buildings', b));
+  params.append('start_date', startDate);
+  params.append('end_date', endDate);
+  params.append('payload_frequency_seconds', String(payloadFrequencySeconds));
+
+  const response = await api.get<DataProfileResponse>(
+    `api/v1/data/profile/${community}?${params.toString()}`
+  );
+  return response.data;
+};
