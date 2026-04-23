@@ -176,3 +176,59 @@ export const fetchDataProfile = async ({
   );
   return response.data;
 };
+
+// ── KPI Aggregation ──────────────────────────────────────────────────────────
+
+export type AggregatePeriod = "daily" | "weekly" | "monthly";
+
+export interface KpiAggStats {
+  sum: number;
+  mean: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+export interface AggregateBucket {
+  label: string;                                       // e.g. "2025-03" or "2025-W11"
+  start: string;                                       // "YYYY-MM-DD"
+  end: string;
+  scopes: Record<string, Record<string, KpiAggStats>>; // scope → kpiName → stats
+}
+
+export interface AggregateResponse {
+  status: string;
+  community: string;
+  period: AggregatePeriod;
+  buckets: AggregateBucket[];
+}
+
+export interface FetchAggregateParams {
+  community: string;
+  period: AggregatePeriod;
+  startDate?: string;
+  endDate?: string;
+  kpis?: string[];
+  scope?: string;
+}
+
+export const fetchKpiAggregate = async ({
+  community,
+  period,
+  startDate,
+  endDate,
+  kpis,
+  scope,
+}: FetchAggregateParams): Promise<AggregateResponse> => {
+  const params = new URLSearchParams();
+  params.append("period", period);
+  if (startDate) params.append("start_date", startDate);
+  if (endDate)   params.append("end_date", endDate);
+  if (scope)     params.append("scope", scope);
+  kpis?.forEach(k => params.append("kpis", k));
+
+  const response = await api.get<AggregateResponse>(
+    `api/v1/kpis/${community}/aggregate?${params.toString()}`
+  );
+  return response.data;
+};
