@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/KpiCard";
-import { Activity, AlertTriangle, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 
 interface KpiStatsProps {

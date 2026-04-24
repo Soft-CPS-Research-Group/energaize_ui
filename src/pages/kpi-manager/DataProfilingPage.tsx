@@ -299,8 +299,8 @@ export function DataProfilingPage() {
     <div className="page">
       <header className="jobs-hero">
         <div>
-          <h1>Data Health</h1>
-          <p>Assess data quality — coverage, outliers, and gaps — before trusting KPI values</p>
+          <h1>Data Health (On going work)</h1>
+          <p>Assess data quality (coverage, outliers, and gaps) before trusting KPI values</p>
         </div>
       </header>
 

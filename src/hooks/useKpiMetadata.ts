@@ -3,6 +3,7 @@ import { api as axios } from "../api/kpiApi";
 
 export interface KpiMeta {
   name: string;
+  display_name?: string;
   canonical_name?: string;
   category: string;
   type: "streaming" | "scheduled";

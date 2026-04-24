@@ -163,8 +163,8 @@ export function CorrelationPage() {
       {/* Header */}
       <header className="jobs-hero">
         <div>
-          <h1>KPI Correlations</h1>
-          <p>Analyse how two KPIs move together across 1-hour windows — spot trade-offs and synergies</p>
+          <h1>KPI Correlations (On going work)</h1>
+          <p>Analyse how two KPIs move together across 1-hour windows, spot trade-offs and synergies</p>
         </div>
       </header>
 

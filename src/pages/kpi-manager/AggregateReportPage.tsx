@@ -2,11 +2,10 @@ import { useState } from "react";
 import { fetchKpiAggregate } from "../../api/kpiApi";
 import type { AggregatePeriod, AggregateBucket, KpiAggStats } from "../../api/kpiApi";
 import { Button } from "../../components/ui/Button";
-import { MultiSelect } from "../../components/ui/MultiSelect";
 import { useCommunities } from "../../hooks/useCommunities";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import {
-  BarChart3, MapPin, Building2, Calendar,
+  BarChart3, MapPin, Calendar,
   Search, Loader2, AlertCircle, TrendingUp, TrendingDown,
 } from "lucide-react";
 
@@ -30,7 +29,7 @@ function isSumKpi(name: string) {
   return SUM_KPIS.has(name);
 }
 
-function fmt(v: number, kpiName: string): string {
+function fmt(v: number): string {
   if (Math.abs(v) >= 1000) return v.toLocaleString("pt-PT", { maximumFractionDigits: 1 });
   if (Math.abs(v) < 0.001) return v.toExponential(2);
   return v.toLocaleString("pt-PT", { maximumFractionDigits: 4 });
@@ -47,7 +46,7 @@ function unit(kpiName: string): string {
 
 function displayValue(name: string, stats: KpiAggStats, mode: "sum" | "mean"): string {
   const v = mode === "sum" || isSumKpi(name) ? stats.sum : stats.mean;
-  return fmt(v, name) + unit(name);
+  return fmt(v) + unit(name);
 }
 
 // ── Period selector ───────────────────────────────────────────────────────────
@@ -244,7 +243,7 @@ export function AggregateReportPage() {
     <div className="page">
       <header className="jobs-hero">
         <div>
-          <h1>Aggregate Report</h1>
+          <h1>Aggregate Report (On going work)</h1>
           <p>Group KPI windows by day, week, or month to spot trends and cumulative totals</p>
         </div>
       </header>
