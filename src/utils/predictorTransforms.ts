@@ -268,15 +268,17 @@ function embedBands(
     });
   }
 
-  // Derive stats per slot and write into the chart map
+  // Derive stats per slot and write into the chart map — only for slots that already exist
+  // (actual or forecast data). Never create new entries; that would pull in old prediction runs
+  // that predate the fetched history window and extend the chart backwards.
   for (const [slotKey, vals] of slotValues) {
     if (vals.length === 0) continue;
+    if (!map.has(slotKey)) continue;
     const sorted = [...vals].sort((a, b) => a - b);
     const lo = sorted[0];
     const hi = sorted[sorted.length - 1];
     const q1 = percentile(sorted, 25);
     const q3 = percentile(sorted, 75);
-    if (!map.has(slotKey)) map.set(slotKey, makePoint(slotKey));
     const pt = map.get(slotKey)!;
     if (lane === "consumption") {
       pt.cBandLo = lo;  pt.cBandHi = hi - lo;
