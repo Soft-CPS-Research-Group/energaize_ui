@@ -3,7 +3,7 @@ import { useState, useMemo } from "react";
 import { Button } from "../../components/ui/Button";
 import { useCommunities } from "../../hooks/useCommunities";
 import { useKpiMetadata, type KpiMeta } from "../../hooks/useKpiMetadata";
-import {  Card, CardContent, CardHeader, CardTitle  } from "../../components/ui/KpiCard";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/KpiCard";
 import {
   Building2, ChevronRight, ChevronDown, Network,
   Zap, DollarSign, Leaf, Car, Scale, Activity,
@@ -18,11 +18,11 @@ const CATEGORY_META: Record<string, {
   color: string;
   borderColor: string;
 }> = {
-  energy:   { label: "Energy Grid",  icon: <Zap size={16} />,         color: "#2563eb",   borderColor: "#bfdbfe" },
-  economic: { label: "Cost",         icon: <DollarSign size={16} />,  color: "#16a34a",  borderColor: "#bbf7d0" },
-  equity:   { label: "Equity",       icon: <Scale size={16} />,        color: "#9333ea", borderColor: "#e9d5ff" },
-  ev:       { label: "EV & Comfort", icon: <Car size={16} />,          color: "#ea580c", borderColor: "#fed7aa" },
-  carbon:   { label: "Emissions",    icon: <Leaf size={16} />,         color: "#0d9488",   borderColor: "#99f6e4" },
+  energy: { label: "Energy Grid", icon: <Zap size={16} />, color: "#2563eb", borderColor: "#bfdbfe" },
+  economic: { label: "Cost", icon: <DollarSign size={16} />, color: "#16a34a", borderColor: "#bbf7d0" },
+  equity: { label: "Equity", icon: <Scale size={16} />, color: "#9333ea", borderColor: "#e9d5ff" },
+  ev: { label: "EV & Comfort", icon: <Car size={16} />, color: "#ea580c", borderColor: "#fed7aa" },
+  carbon: { label: "Emissions", icon: <Leaf size={16} />, color: "#0d9488", borderColor: "#99f6e4" },
 };
 
 // ── KPI detail card ────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ type TreeNodeId =
 export function KpiExplorer() {
   const navigate = useNavigate();
   const { communities, loading: commLoading, error: commError } = useCommunities();
-  const { kpis: allKpis, loading: kpiLoading }                  = useKpiMetadata();
+  const { kpis: allKpis, loading: kpiLoading } = useKpiMetadata();
 
   const [selectedNode, setSelectedNode] = useState<TreeNodeId | null>(null);
   const [expandedCommunities, setExpandedCommunities] = useState<Set<string>>(new Set());
@@ -294,7 +294,7 @@ export function KpiExplorer() {
 
                     {/* Building nodes */}
                     {isExpanded && (
-                        <div style={{ marginLeft: "1.25rem", borderLeft: "1px solid var(--line)", paddingLeft: "0.5rem", display: "flex", flexDirection: "column", gap: "0.125rem", marginBottom: "0.25rem" }}>
+                      <div style={{ marginLeft: "1.25rem", borderLeft: "1px solid var(--line)", paddingLeft: "0.5rem", display: "flex", flexDirection: "column", gap: "0.125rem", marginBottom: "0.25rem" }}>
                         {buildings.map((building: any) => {
                           const isBuildingSelected =
                             selectedNode?.type === "building" &&

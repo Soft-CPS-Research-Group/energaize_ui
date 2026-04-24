@@ -47,6 +47,7 @@ export const fetchKpis = async ({
 
 export interface FetchHistoryParams {
   community: string;
+  buildings?: string[];
   startDate?: string;
   endDate?: string;
   kpis?: string[];
@@ -55,9 +56,12 @@ export interface FetchHistoryParams {
 }
 
 export const fetchKpiHistory = async ({
-  community, startDate, endDate, kpis, scope, limit = 1000,
+  community, buildings, startDate, endDate, kpis, scope, limit = 1000,
 }: FetchHistoryParams): Promise<any> => {
   const params = new URLSearchParams();
+  if (buildings && buildings.length > 0) {
+    buildings.forEach((b: any) => params.append("buildings", b));
+  }
   if (startDate) params.append("start_date", startDate);
   if (endDate) params.append("end_date", endDate);
   if (scope) params.append("scope", scope);
@@ -130,13 +134,15 @@ export const fetchKpiComparison = async ({
 // ── Data Profiling ──────────────────────────────────────────────────────────
 
 export interface BuildingProfile {
-  total_payloads: number;
+  actual_payloads?: number;
+  total_payloads?: number;
   coverage_ratio: number;
   confidence_score: number;
   generated_fields: number;
   total_fields: number;
   authenticity_ratio: number;
-  physically_invalid: number;
+  physically_invalid_count?: number;
+  physically_invalid?: number;
   validity_ratio: number;
   gap_count: number;
   gaps: Array<{ from: string; to: string; duration_seconds: number }>;

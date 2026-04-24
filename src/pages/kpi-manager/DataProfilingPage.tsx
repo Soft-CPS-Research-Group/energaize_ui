@@ -18,7 +18,7 @@ const getLocalDateString = (d: Date) =>
 
 const defaultEnd = new Date();
 const defaultStart = new Date();
-defaultStart.setDate(defaultStart.getDate() - 7);
+defaultStart.setDate(defaultStart.getDate() - 1);
 
 function pct(ratio: number) {
   return `${(ratio * 100).toFixed(1)}%`;
@@ -130,7 +130,7 @@ function BuildingProfileCard({ buildingId, profile }: { buildingId: string; prof
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem" }}>
           <span style={{ color: "var(--text-soft)" }}>Payloads received</span>
           <span style={{ fontWeight: 600, color: "var(--text)" }}>
-            {profile.total_payloads.toLocaleString()}
+            {(profile.actual_payloads ?? profile.total_payloads ?? 0).toLocaleString()}
           </span>
         </div>
 
@@ -140,7 +140,7 @@ function BuildingProfileCard({ buildingId, profile }: { buildingId: string; prof
         <RatioBar value={profile.validity_ratio}     label="Physical validity" />
 
         {/* Physically invalid */}
-        {profile.physically_invalid > 0 && (
+        {((profile.physically_invalid_count ?? profile.physically_invalid) || 0) > 0 && (
           <div style={{
             display: "flex", alignItems: "center", gap: "0.5rem",
             background: "rgba(220,38,38,0.07)", border: "1px solid rgba(220,38,38,0.2)",
@@ -148,7 +148,7 @@ function BuildingProfileCard({ buildingId, profile }: { buildingId: string; prof
             fontSize: "0.8rem", color: "#dc2626",
           }}>
             <XCircle size={14} />
-            {profile.physically_invalid} physically impossible reading{profile.physically_invalid !== 1 ? "s" : ""}
+            {(profile.physically_invalid_count ?? profile.physically_invalid)} physically impossible reading{((profile.physically_invalid_count ?? profile.physically_invalid) || 0) !== 1 ? "s" : ""}
           </div>
         )}
 
