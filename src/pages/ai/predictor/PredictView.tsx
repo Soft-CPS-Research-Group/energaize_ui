@@ -275,7 +275,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
           </strong>
         </div>
         <div className={`kpi${cMapeDir !== "idle" ? ` kpi--animating-${cMapeDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. MAPE · 24 h ↓<InfoTip tip="Mean Absolute Percentage Error for consumption. Slots where actual energy &lt; 0.05 kWh are excluded to prevent near-zero division from inflating the metric. Lower is better." /></span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. sMAPE · 24 h ↓<InfoTip tip="Symmetric MAPE for consumption — 2×|actual−pred| / (|actual|+|pred|), bounded 0–200%. Unlike standard MAPE it doesn’t blow up when actual is near zero, making it reliable across night-time low-consumption slots. Lower is better." /></span>
           <strong style={{ color: "#60a5fa" }}>
             <span ref={cMapeRef}>—</span>
             <DeltaChip delta={errors.consumption.mapeDelta} isPercent />
@@ -296,7 +296,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
           </strong>
         </div>
         <div className={`kpi${pMapeDir !== "idle" ? ` kpi--animating-${pMapeDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. MAPE · 24 h ↓<InfoTip tip="Mean Absolute Percentage Error for production. Slots where actual energy &lt; 0.05 kWh are excluded to prevent near-zero division from inflating the metric. Lower is better." /></span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. sMAPE · 24 h ↓<InfoTip tip="Symmetric MAPE for production — 2×|actual−pred| / (|actual|+|pred|), bounded 0–200%. Unlike standard MAPE it doesn’t blow up when actual is near zero, making it reliable across night-time zero-production slots. Lower is better." /></span>
           <strong style={{ color: "#a78bfa" }}>
             <span ref={pMapeRef}>—</span>
             <DeltaChip delta={errors.production.mapeDelta} isPercent />
