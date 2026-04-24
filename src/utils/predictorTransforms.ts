@@ -51,6 +51,9 @@ export interface ChartDataPoint {
   pBandHi: number | null;
   pBandQ1Lo: number | null;
   pBandQ1Hi: number | null;
+  // Most recent past prediction that covered this slot (only set where actual data exists)
+  lastPredConsumption: number | null;
+  lastPredProduction: number | null;
   [key: string]: string | number | null;
 }
 
@@ -100,6 +103,8 @@ function makePoint(timeIso: string): ChartDataPoint {
     predictedProduction: null,
     cBandLo: null, cBandHi: null, cBandQ1Lo: null, cBandQ1Hi: null,
     pBandLo: null, pBandHi: null, pBandQ1Lo: null, pBandQ1Hi: null,
+    lastPredConsumption: null,
+    lastPredProduction: null,
   };
 }
 
@@ -159,7 +164,8 @@ function computeWeightedErrors(
         localAbs += Math.abs(err);
         localSq  += err * err;
         matched++;
-        if (actual !== 0) { localPct += Math.abs(err / actual); matchedPct++; }
+        // Skip near-zero actuals to avoid division-by-near-zero inflating MAPE
+        if (actual > 0.05) { localPct += Math.abs(err / actual); matchedPct++; }
       });
       if (matched === 0) return;
       wSumAbs += w * (localAbs / matched);
@@ -198,6 +204,48 @@ function computeWeightedErrors(
   };
 }
 
+/**
+ * For each slot that already has actual data, store the value from the most recent prediction
+ * run that covered that slot. Entries are processed oldest-first so later ones overwrite.
+ */
+function embedLastPred(
+  entries: PredictionHistoryEntry[],
+  lane: "consumption" | "production",
+  map: Map<string, ChartDataPoint>
+): void {
+  if (entries.length === 0) return;
+
+  // Sort oldest → newest so the last write wins (= most recent prediction)
+  const sorted = [...entries].sort(
+    (a, b) =>
+      new Date(normalizeTs(a.target_time)).getTime() -
+      new Date(normalizeTs(b.target_time)).getTime()
+  );
+
+  // Build slot → most-recent-value lookup
+  const latestValue = new Map<string, number>();
+  for (const entry of sorted) {
+    const anchor = snap15(new Date(normalizeTs(entry.target_time)));
+    entry.prediction.forEach((val, step) => {
+      const slotKey = normalizeTs(
+        new Date(anchor.getTime() + step * 15 * 60_000).toISOString()
+      );
+      latestValue.set(slotKey, val);
+    });
+  }
+
+  // Write into chart points only where actual data exists (past only)
+  for (const [key, pt] of map) {
+    const val = latestValue.get(key);
+    if (val == null) continue;
+    if (lane === "consumption" && pt.actualConsumption != null) {
+      pt.lastPredConsumption = val;
+    } else if (lane === "production" && pt.actualProduction != null) {
+      pt.lastPredProduction = val;
+    }
+  }
+}
+
 /** Compute min/max/IQR confidence bands from prediction history and write into the chart map. */
 function embedBands(
   entries: PredictionHistoryEntry[],
@@ -220,15 +268,17 @@ function embedBands(
     });
   }
 
-  // Derive stats per slot and write into the chart map
+  // Derive stats per slot and write into the chart map — only for slots that already exist
+  // (actual or forecast data). Never create new entries; that would pull in old prediction runs
+  // that predate the fetched history window and extend the chart backwards.
   for (const [slotKey, vals] of slotValues) {
     if (vals.length === 0) continue;
+    if (!map.has(slotKey)) continue;
     const sorted = [...vals].sort((a, b) => a - b);
     const lo = sorted[0];
     const hi = sorted[sorted.length - 1];
     const q1 = percentile(sorted, 25);
     const q3 = percentile(sorted, 75);
-    if (!map.has(slotKey)) map.set(slotKey, makePoint(slotKey));
     const pt = map.get(slotKey)!;
     if (lane === "consumption") {
       pt.cBandLo = lo;  pt.cBandHi = hi - lo;
@@ -289,13 +339,15 @@ export function buildPredictorTimeline(
     });
   }
 
-  // Compute confidence bands from prediction history
+  // Compute confidence bands and last-prediction trace from prediction history
   if (predictionHistory) {
     if (predictionHistory.consumption?.length) {
       embedBands(predictionHistory.consumption, "consumption", map);
+      embedLastPred(predictionHistory.consumption, "consumption", map);
     }
     if (predictionHistory.production?.length) {
       embedBands(predictionHistory.production, "production", map);
+      embedLastPred(predictionHistory.production, "production", map);
     }
   }
 

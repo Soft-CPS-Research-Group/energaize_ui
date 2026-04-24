@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   usePredictorStats,
   usePredictorHistory,
@@ -26,6 +27,33 @@ import {
   ReferenceLine,
 } from "recharts";
 import { Zap, TrendingUp, Layers, Eye, EyeOff } from "lucide-react";
+
+function InfoTip({ tip }: { tip: string }) {
+  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+  const W = 260;
+  const GAP = 8;
+  const show = () => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - W / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
+    setPos({ left, bottom: window.innerHeight - rect.top + GAP });
+  };
+  const hide = () => setPos(null);
+  return (
+    <>
+      <span ref={ref} className="analysis-infotip" onMouseEnter={show} onMouseLeave={hide}>?</span>
+      {pos && createPortal(
+        <div
+          className="analysis-infotip-popup"
+          style={{ position: "fixed", left: pos.left, bottom: pos.bottom, width: W, pointerEvents: "none" }}
+        >{tip}</div>,
+        document.body,
+      )}
+    </>
+  );
+}
 
 interface PredictViewProps {
   selectedHouseId: string | null;
@@ -85,6 +113,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   const [activeLane, setActiveLane] = useState<Lane>("consumption");
   const [scaleMode, setScaleMode] = useState<ScaleMode>("auto");
   const [bandsOnly, setBandsOnly] = useState(false);
+  const [showBands, setShowBands] = useState(true);
   const [showForecastDialog, setShowForecastDialog] = useState(false);
   const [showFlexDialog, setShowFlexDialog] = useState(false);
 
@@ -128,7 +157,9 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
     ];
     const predCandidates: (number | null)[] = [
       isConsumption ? pt.predictedConsumption : null,
+      isConsumption ? pt.lastPredConsumption : null,
       isProduction ? pt.predictedProduction : null,
+      isProduction ? pt.lastPredProduction : null,
     ];
     const bandCandidates: (number | null)[] = [
       isConsumption && pt.cBandLo != null && pt.cBandHi != null ? (pt.cBandLo as number) + (pt.cBandHi as number) : null,
@@ -138,9 +169,16 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
     for (const v of predCandidates)  { if (v != null && v > _yMaxPrediction) _yMaxPrediction = v; }
     for (const v of bandCandidates)  { if (v != null && v > _yMaxBands) _yMaxBands = v; }
   }
+  // In predictions-only mode include bands in the scale, but only when they are within
+  // 3× the predicted line max — beyond that they're outlier-driven and would crush the chart.
+  const _yMaxPredWithBands =
+    showBands && _yMaxBands <= _yMaxPrediction * 3
+      ? Math.max(_yMaxPrediction, _yMaxBands)
+      : _yMaxPrediction;
+
   const yMax = (
     bandsOnly
-      ? _yMaxBands
+      ? _yMaxPredWithBands
       : scaleMode === "actual"
         ? _yMaxActual
         : scaleMode === "prediction"
@@ -223,42 +261,42 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
       {/* KPI strip — row 2: forecast accuracy (last 24 h, inverse-recency-weighted) */}
       <div className="kpi-grid predictor-kpi-grid predictor-kpi-grid--accuracy">
         <div className={`kpi${cMaeDir !== "idle" ? ` kpi--animating-${cMaeDir}` : ""}`}>
-          <span>Cons. MAE · 24 h ↓</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. MAE · 24 h ↓<InfoTip tip="Mean Absolute Error for consumption predictions — average magnitude of errors in kWh, inverse-recency-weighted across the last 24 h of forecast runs. Lower is better." /></span>
           <strong style={{ color: "#60a5fa" }}>
             <span ref={cMaeRef}>—</span>
             <DeltaChip delta={errors.consumption.maeDelta} />
           </strong>
         </div>
         <div className={`kpi${cRmseDir !== "idle" ? ` kpi--animating-${cRmseDir}` : ""}`}>
-          <span>Cons. RMSE · 24 h ↓</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. RMSE · 24 h ↓<InfoTip tip="Root Mean Squared Error for consumption — like MAE but penalises large individual errors more heavily. Lower is better." /></span>
           <strong style={{ color: "#60a5fa" }}>
             <span ref={cRmseRef}>—</span>
             <DeltaChip delta={errors.consumption.rmseDelta} />
           </strong>
         </div>
         <div className={`kpi${cMapeDir !== "idle" ? ` kpi--animating-${cMapeDir}` : ""}`}>
-          <span>Cons. MAPE · 24 h ↓</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. MAPE · 24 h ↓<InfoTip tip="Mean Absolute Percentage Error for consumption. Slots where actual energy &lt; 0.05 kWh are excluded to prevent near-zero division from inflating the metric. Lower is better." /></span>
           <strong style={{ color: "#60a5fa" }}>
             <span ref={cMapeRef}>—</span>
             <DeltaChip delta={errors.consumption.mapeDelta} isPercent />
           </strong>
         </div>
         <div className={`kpi${pMaeDir !== "idle" ? ` kpi--animating-${pMaeDir}` : ""}`}>
-          <span>Prod. MAE · 24 h ↓</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. MAE · 24 h ↓<InfoTip tip="Mean Absolute Error for production predictions — average magnitude of errors in kWh, inverse-recency-weighted across the last 24 h of forecast runs. Lower is better." /></span>
           <strong style={{ color: "#a78bfa" }}>
             <span ref={pMaeRef}>—</span>
             <DeltaChip delta={errors.production.maeDelta} />
           </strong>
         </div>
         <div className={`kpi${pRmseDir !== "idle" ? ` kpi--animating-${pRmseDir}` : ""}`}>
-          <span>Prod. RMSE · 24 h ↓</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. RMSE · 24 h ↓<InfoTip tip="Root Mean Squared Error for production — like MAE but penalises large individual errors more heavily. Lower is better." /></span>
           <strong style={{ color: "#a78bfa" }}>
             <span ref={pRmseRef}>—</span>
             <DeltaChip delta={errors.production.rmseDelta} />
           </strong>
         </div>
         <div className={`kpi${pMapeDir !== "idle" ? ` kpi--animating-${pMapeDir}` : ""}`}>
-          <span>Prod. MAPE · 24 h ↓</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. MAPE · 24 h ↓<InfoTip tip="Mean Absolute Percentage Error for production. Slots where actual energy &lt; 0.05 kWh are excluded to prevent near-zero division from inflating the metric. Lower is better." /></span>
           <strong style={{ color: "#a78bfa" }}>
             <span ref={pMapeRef}>—</span>
             <DeltaChip delta={errors.production.mapeDelta} isPercent />
@@ -274,11 +312,6 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               <span className="predictor-live-dot" title="Auto-refreshing" />
               Energy Forecast — {selectedHouseId}
             </h3>
-            {(predHistory.consumption.length > 0 || predHistory.production.length > 0) && (
-              <span className="predictor-spectrum-hint">
-                forecast uncertainty bands
-              </span>
-            )}
           </div>
 
           <div className="predictor-chart-controls">
@@ -331,12 +364,24 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               <button
                 className={`predictor-lane-btn${bandsOnly ? " is-active" : ""}`}
                 onClick={() => setBandsOnly((v) => !v)}
-                title={bandsOnly ? "Show all data" : "Show forecast bands only"}
+                title={bandsOnly ? "Show all data" : "Hide actual data, show predictions only"}
                 style={{ display: "flex", alignItems: "center", gap: 4 }}
               >
                 {bandsOnly ? <Eye size={12} /> : <EyeOff size={12} />}
-                Bands only
+                Predictions only
               </button>
+            )}
+
+            {(predHistory.consumption.length > 0 || predHistory.production.length > 0) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <button
+                  className={`predictor-lane-btn${showBands ? " is-active" : ""}`}
+                  onClick={() => setShowBands((v) => !v)}
+                >
+                  Bands
+                </button>
+                <InfoTip tip="Shaded areas show the spread of values forecasted across all historical prediction runs for each 15-min slot. Outer band: full min–max range. Inner (darker) band: interquartile range (p25–p75)." />
+              </div>
             )}
 
             <Button size="sm" variant="primary" onClick={() => setShowForecastDialog(true)} disabled={commandMutation.isPending}>
@@ -377,7 +422,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               wrapperStyle={{ fontSize: "0.78rem" }}
             />
 
-            {futureStart && !bandsOnly && (
+            {futureStart && (
               <ReferenceLine
                 x={futureStart.time}
                 yAxisId="left"
@@ -388,7 +433,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
             )}
 
             {/* Forecast confidence bands — outer (min–max) then inner (IQR), rendered below the lines */}
-            {isConsumption && (
+            {isConsumption && showBands && (
               <>
                 <Area yAxisId="left" type="monotone" dataKey="cBandLo"
                   stroke="none" fill="none" fillOpacity={0}
@@ -408,7 +453,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                   isAnimationActive={false} connectNulls={false} />
               </>
             )}
-            {isProduction && (
+            {isProduction && showBands && (
               <>
                 <Area yAxisId="left" type="monotone" dataKey="pBandLo"
                   stroke="none" fill="none" fillOpacity={0}
@@ -429,7 +474,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               </>
             )}
 
-            {/* Actual & predicted lines — hidden in bands-only mode */}
+            {/* Actual lines — hidden in predictions-only mode */}
             {isConsumption && !bandsOnly && (
               <Line
                 yAxisId="left"
@@ -443,7 +488,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 connectNulls={false}
               />
             )}
-            {isConsumption && !bandsOnly && (
+            {isConsumption && (
               <Line
                 yAxisId="left"
                 type="monotone"
@@ -462,6 +507,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 yAxisId="left"
                 type="monotone"
                 dataKey="actualProduction"
+
                 stroke={LANE_COLORS.production.actual}
                 strokeWidth={2}
                 name="Actual Production"
@@ -470,7 +516,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 connectNulls={false}
               />
             )}
-            {isProduction && !bandsOnly && (
+            {isProduction && (
               <Line
                 yAxisId="left"
                 type="monotone"
@@ -482,6 +528,38 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
+              />
+            )}
+
+            {/* Last-prediction trace: for each past point, the most recent model prediction */}
+            {isConsumption && (
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="lastPredConsumption"
+                stroke={LANE_COLORS.consumption.predicted}
+                strokeWidth={1.5}
+                strokeOpacity={0.35}
+                name="Last Pred. Consumption"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+                legendType="none"
+              />
+            )}
+            {isProduction && (
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="lastPredProduction"
+                stroke={LANE_COLORS.production.predicted}
+                strokeWidth={1.5}
+                strokeOpacity={0.35}
+                name="Last Pred. Production"
+                dot={false}
+                isAnimationActive={false}
+                connectNulls={false}
+                legendType="none"
               />
             )}
           </ComposedChart>
