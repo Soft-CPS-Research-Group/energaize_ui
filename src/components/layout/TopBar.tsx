@@ -34,10 +34,13 @@ const PREDICTOR_TABS = [
 
 const KPI_TABS = [
   { to: "/app/kpi-manager/dashboard", label: "Dashboard" },
-  { to: "/app/kpi-manager/explorer", label: "Explorer" },
   { to: "/app/kpi-manager/compare", label: "Compare" },
+  { to: "/app/kpi-manager/correlations", label: "Correlations" },
   { to: "/app/kpi-manager/scheduler", label: "Scheduler" },
-  { to: "/app/kpi-manager/library", label: "Library" }
+  { to: "/app/kpi-manager/reports", label: "Reports" },
+  { to: "/app/kpi-manager/data-health", label: "Data Health" },
+  { to: "/app/kpi-manager/explorer", label: "Explorer" },
+  { to: "/app/kpi-manager/library", label: "Library" },
 ];
 
 export function TopBar(): JSX.Element {
@@ -58,8 +61,8 @@ export function TopBar(): JSX.Element {
       : AI_TABS
     : isPredictor
       ? PREDICTOR_TABS
-    : isKpiManager
-      ? KPI_TABS
+      : isKpiManager
+        ? KPI_TABS
         : [{ to: "/app/logs", label: "Logs" }];
   const brandLink = isTrainingManager
     ? "/app/ai/jobs"

@@ -109,7 +109,7 @@ export function SchedulerPage() {
       {/* Page header */}
       <header className="jobs-hero">
         <div>
-          <h1>Scheduler</h1>
+          <h1>Scheduler (On going work)</h1>
           <p>Monitor and manage scheduled KPI jobs</p>
         </div>
         <div className="jobs-hero-meta">

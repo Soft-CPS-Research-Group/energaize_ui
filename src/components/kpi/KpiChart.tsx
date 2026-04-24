@@ -56,7 +56,7 @@ export const KpiChart = React.memo(function KpiChart({ title, data, lines, kpiNa
                 </button>
                 {showInfo && (
                   <div className="panel" style={{ position: "absolute", left: "2rem", top: 0, zIndex: 50, width: "300px", padding: "1rem" }}>
-                    <p style={{ fontWeight: "bold", margin: "0 0 0.5rem 0" }}>{meta.name}</p>
+                    <p style={{ fontWeight: "bold", margin: "0 0 0.5rem 0" }}>{meta.display_name || meta.canonical_name || meta.name}</p>
                     {meta.description && (
                       <p style={{ fontSize: "0.85rem", margin: "0 0 1rem 0", opacity: 0.8 }}>{meta.description}</p>
                     )}
@@ -101,7 +101,7 @@ export const KpiChart = React.memo(function KpiChart({ title, data, lines, kpiNa
       <CardContent>
         <div style={{ height: "350px", width: "100%" }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+            <LineChart data={data} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="timestamp"
@@ -115,10 +115,20 @@ export const KpiChart = React.memo(function KpiChart({ title, data, lines, kpiNa
                 minTickGap={30}
                 style={{ fontSize: "13px", fill: "var(--text)" }}
               />
-              <YAxis style={{ fontSize: "13px", fill: "var(--text)" }} />
+              <YAxis 
+                width={80}
+                style={{ fontSize: "13px", fill: "var(--text)" }} 
+                label={{ value: meta?.unit || "", angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: 'var(--text)' }, offset: -10 }}
+              />
               <Tooltip
                 contentStyle={{ backgroundColor: 'var(--bg-elev)', borderColor: 'var(--line)', color: 'var(--text)', borderRadius: "8px", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
                 itemStyle={{ color: 'var(--text)' }}
+                formatter={(value: any) => {
+                  if (typeof value === 'number') {
+                    return [meta?.unit ? `${value.toFixed(2)} ${meta.unit}` : value.toFixed(2)];
+                  }
+                  return [value];
+                }}
                 labelFormatter={(val) => {
                   try {
                     return format(new Date(val.replace(' ', 'T')), "PPp");

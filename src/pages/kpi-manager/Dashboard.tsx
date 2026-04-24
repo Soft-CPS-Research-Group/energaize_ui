@@ -11,6 +11,30 @@ import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { MultiSelect } from "../../components/ui/MultiSelect";
 import type { ProcessResponse } from "../../workers/dataProcessor.worker";
 
+
+// ── Chart data types produced by the data-processor worker ─────────────────
+
+interface StreamingChartState {
+  series: Array<Record<string, number | string>>;
+  categories: string[];
+  buildings: string[];
+}
+
+interface ScheduledStatItem {
+  scope: string;
+  kpiName: string;
+  summary: Record<string, number> | null;
+  timeseries: Array<{ value: number; period_start: string; period_end: string; [key: string]: any }>;
+  isStreaming?: boolean;
+}
+
+interface ScheduledChartState {
+  seriesByKpi: Record<string, Array<Record<string, number | string>>>;
+  categories: string[];
+  scopes: string[];
+  stats: ScheduledStatItem[];
+}
+
 const QUICK_PRESETS = [
   { label: "Today", days: 0 },
   { label: "Last 7 Days", days: 7 },
@@ -60,8 +84,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
   const [data, setData] = useState<KpiDataPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [chartData, setChartData] = useState<any>({ series: [], categories: [], buildings: [] });
-  const [scheduledChartData, setScheduledChartData] = useState<any>({ seriesByKpi: {}, categories: [], scopes: [], stats: [] });
+  const [chartData, setChartData] = useState<StreamingChartState>({ series: [], categories: [], buildings: [] });
+  const [scheduledChartData, setScheduledChartData] = useState<ScheduledChartState>({ seriesByKpi: {}, categories: [], scopes: [], stats: [] });
+  const [selectedScopeTab, setSelectedScopeTab] = useState<string>("All Scopes");
 
   const workerRef = useRef<Worker | null>(null);
 
@@ -71,9 +96,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
     });
 
     workerRef.current.onmessage = (event: MessageEvent<ProcessResponse>) => {
-      const { streamingChartData: chartData, scheduledChartData } = event.data as any;
-      setChartData(chartData);
-      setScheduledChartData(scheduledChartData);
+      const { streamingChartData: streamChartData, scheduledChartData: schedChartData } = event.data as any;
+      setChartData(streamChartData ?? { series: [], categories: [], buildings: [] });
+      setScheduledChartData(schedChartData ?? { seriesByKpi: {}, categories: [], scopes: [], stats: [] });
       setProcessing(false);
     };
 
@@ -134,6 +159,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         // and scheduled (new flat) docs — no live computation needed.
         const historyResponse = await fetchKpiHistory({
           community,
+          buildings,
           startDate: startDate ? new Date(startDate).toISOString() : undefined,
           endDate: endDate ? new Date(endDate).toISOString() : undefined,
           kpis: kpiFilter,
@@ -205,14 +231,20 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
 
   const streamingCharts = useMemo(() => {
     if (!chartData || !chartData.series || chartData.series.length === 0) return null;
+    
+    // Sort categories so order is consistent
+    const sortedCategories = [...chartData.categories].sort((a: string, b: string) => a.localeCompare(b));
+
     return (
       <div className="kpi-grid" >
-        {chartData.categories.map((kpiName: any) => {
+        {sortedCategories.map((kpiName: any) => {
           const lines = chartData.buildings.map((b: string) => `${b}_${kpiName}`);
+          const meta = kpiMeta.find((m: any) => m.name === kpiName);
+          const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
           return (
             <KpiChart
               key={`streaming_${kpiName}`}
-              title={`${kpiName} (Streaming)`}
+              title={`${titleName} (Streaming)`}
               kpiName={kpiName}
               data={chartData.series}
               lines={lines}
@@ -221,20 +253,26 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         })}
       </div>
     );
-  }, [chartData]);
+  }, [chartData, kpiMeta]);
 
   const scheduledCharts = useMemo(() => {
     if (!scheduledChartData?.seriesByKpi) return null;
     const entries = Object.entries(scheduledChartData.seriesByKpi);
     if (entries.length === 0) return null;
+    
+    // Sort entries so order is consistent
+    entries.sort(([kpiA], [kpiB]) => kpiA.localeCompare(kpiB));
+
     return (
       <div className="kpi-grid" >
         {entries.map(([kpiName, series]) => {
           const lines = scheduledChartData.scopes.map((s: string) => `${s}_${kpiName}`);
+          const meta = kpiMeta.find((m: any) => m.name === kpiName);
+          const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
           return (
             <KpiChart
               key={`scheduled_${kpiName}`}
-              title={`${kpiName} (Scheduled Temporal Series)`}
+              title={`${titleName} (Scheduled Temporal Series)`}
               kpiName={kpiName}
               data={series as any[]}
               lines={lines}
@@ -243,7 +281,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         })}
       </div>
     );
-  }, [scheduledChartData]);
+  }, [scheduledChartData, kpiMeta]);
 
   // Derive available KPI names from metadata
   const availableKpis = kpiMeta
@@ -304,7 +342,11 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
                   <Activity size={16} /> KPIs
                </label>
                <MultiSelect
-                  options={availableKpis.map((k: string) => ({ label: k, value: k }))}
+                  options={availableKpis.map((k: string) => {
+                    const meta = kpiMeta.find(m => m.name === k);
+                    const label = meta?.display_name || meta?.canonical_name || meta?.name || k;
+                    return { label: label, value: k };
+                  })}
                   selected={selectedKpis}
                   onChange={setSelectedKpis}
                   placeholder="Select KPIs..."
@@ -425,48 +467,84 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
 
         {/* SCHEDULED KPIs (Aggregates) */}
         {!loading && !processing && scheduledChartData && scheduledChartData.stats && scheduledChartData.stats.length > 0 && (
-          <div className="kpi-grid" >
-            {scheduledChartData.stats.map((statItem: any, idx: number) => {
-              const { scope, kpiName, summary, timeseries, isStreaming } = statItem;
-              let val: any = "N/A";
-              let desc = isStreaming ? "Streaming (live)" : "Scheduled";
-              
-              const formatSafeDate = (dStr: any) => {
-                if (!dStr || typeof dStr !== 'string') return '';
-                const parsed = new Date(dStr.replace(' ', 'T'));
-                return isNaN(parsed.getTime()) ? dStr : parsed.toLocaleDateString();
-              };
+          <div style={{ marginBottom: "2rem" }}>
+            {/* Scope Tabs */}
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem", borderBottom: "1px solid var(--line)", paddingBottom: "1rem" }}>
+              {["All Scopes", ...Array.from(new Set(scheduledChartData.stats.map(s => s.scope)))].map((scopeName) => (
+                <button
+                  key={scopeName}
+                  onClick={() => setSelectedScopeTab(scopeName)}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    borderRadius: "999px",
+                    fontSize: "0.85rem",
+                    fontWeight: selectedScopeTab === scopeName ? 600 : 400,
+                    cursor: "pointer",
+                    border: `1px solid ${selectedScopeTab === scopeName ? "var(--brand)" : "var(--line)"}`,
+                    background: selectedScopeTab === scopeName ? "var(--brand)" : "var(--bg-elev)",
+                    color: selectedScopeTab === scopeName ? "#fff" : "var(--text)",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  {scopeName}
+                </button>
+              ))}
+            </div>
 
-              if (summary) {
-                if (isStreaming) {
-                  // For streaming KPIs, mean value is more meaningful than total
-                  val = summary.mean_value ?? summary.total_value ?? summary.value;
-                } else {
-                  if ('total_value' in summary) val = summary.total_value;
-                  else if ('mean_value' in summary) val = summary.mean_value;
-                  else if ('value' in summary) val = summary.value;
-                }
-              }
+            {/* KPI Cards Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px", alignItems: "stretch" }}>
+              {[...scheduledChartData.stats]
+                .sort((a, b) => a.kpiName.localeCompare(b.kpiName))
+                .filter(statItem => selectedScopeTab === "All Scopes" || statItem.scope === selectedScopeTab)
+                .map((statItem: any, idx: number) => {
+                  const { scope, kpiName, summary, timeseries, isStreaming } = statItem;
+                  let val: any = "N/A";
+                  let desc = isStreaming ? "Streaming (live)" : "Scheduled";
 
-              if (timeseries && Array.isArray(timeseries) && timeseries.length > 0) {
-                 const start = timeseries[0].period_start;
-                 const end = timeseries[timeseries.length - 1].period_end;
-                 desc = `${isStreaming ? "Avg · " : ""}${formatSafeDate(start)} - ${formatSafeDate(end)}`;
-              }
+                  const formatSafeDate = (dStr: any) => {
+                    if (!dStr || typeof dStr !== 'string') return '';
+                    const parsed = new Date(dStr.replace(' ', 'T'));
+                    return isNaN(parsed.getTime()) ? dStr : parsed.toLocaleDateString();
+                  };
 
-              if (summary?.coverage_pct !== undefined && summary?.coverage_pct !== null) {
-                  desc += ` · Coverage: ${summary.coverage_pct}%`;
-              }
+                  if (summary) {
+                    if (isStreaming) {
+                      val = summary.mean_value ?? summary.total_value ?? summary.value;
+                    } else {
+                      if ('total_value' in summary) val = summary.total_value;
+                      else if ('mean_value' in summary) val = summary.mean_value;
+                      else if ('value' in summary) val = summary.value;
+                    }
+                  }
 
-              return (
-                <KpiStats
-                  key={`${scope}_${kpiName}_${idx}`}
-                  title={`${kpiName} (${scope})`}
-                  value={val != null && !isNaN(Number(val)) ? Number(val).toFixed(2) : "N/A"}
-                  description={desc}
-                />
-              );
-            })}
+                  if (timeseries && Array.isArray(timeseries) && timeseries.length > 0) {
+                     const start = timeseries[0].period_start;
+                     const end = timeseries[timeseries.length - 1].period_end;
+                     desc = `${isStreaming ? "Avg · " : ""}${formatSafeDate(start)} - ${formatSafeDate(end)}`;
+                  }
+
+                  if (summary?.coverage_pct !== undefined && summary?.coverage_pct !== null) {
+                      desc += ` · Coverage: ${summary.coverage_pct}%`;
+                  }
+
+                  const isAllScopes = selectedScopeTab === "All Scopes";
+                  const meta = kpiMeta.find((m: any) => m.name === kpiName);
+                  const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
+
+                  return (
+                    <div key={`${scope}_${kpiName}_${idx}`} style={{ display: "flex", flexDirection: "column" }}>
+                      <KpiStats
+                        title={titleName}
+                        subtitle={isAllScopes ? scope : undefined}
+                        value={val != null && !isNaN(Number(val)) ? Number(val).toFixed(2) : "N/A"}
+                        unit={meta?.unit || ""}
+                        kpiName={kpiName}
+                        description={desc}
+                      />
+                    </div>
+                  );
+                })}
+            </div>
           </div>
         )}
 

@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import {
   Search, Loader2, AlertCircle, TrendingUp,
-  TrendingDown, Minus, Calendar, MapPin, Building2, Activity,
+  TrendingDown, Minus, Calendar, MapPin, Building2, Activity, Info
 } from "lucide-react";
 import type { CompareResponse } from "../../api/kpiApi";
 
@@ -56,11 +56,15 @@ function DeltaChip({ absolute, relative_pct, lowerIsBetter = false }: {
   );
 }
 
-// KPIs where a lower value = better outcome (costs, emissions, losses)
+// KPIs where a lower value = better outcome.
+// Names must match the class names registered in kpi_factory.py._SCHEDULED_KPI_REGISTRY.
 const LOWER_IS_BETTER = new Set([
-  "EnergyCostKPI", "AutoconsumoKPI", "IndicadorNaoPrejuizoKPI",
-  "GiniBeneficiosKPI", "ConcentracaoBeneficiosCR20KPI",
-  "DailyLoadFactorKPI", "RampingKPI",
+  "EnergyCostKPI",             // lower cost = better
+  "DailyLoadFactorKPI",        // lower inefficiency = better (0 = flat profile)
+  "RampingKPI",                // lower ramping = smoother grid
+  "NoHarmIndicatorKPI",        // 0% = no member is worse off
+  "GiniBenefitsKPI",           // 0 = perfect equality
+  "BenefitConcentrationCR20KPI", // ~0.2 = proportional distribution
 ]);
 
 function getSummaryValue(summary: Record<string, number>): number | null {
@@ -349,18 +353,45 @@ export function ComparePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tableRows.map(({ scope, kpiName, baselineVal, realVal, delta }, i) => (
+                    {tableRows.map(({ scope, kpiName, baselineVal, realVal, delta }, i) => {
+                      const meta = kpiMeta.find((m: any) => m.name === kpiName);
+                      return (
                       <tr
                         key={`${scope}_${kpiName}`}
                         style={{ borderBottom: "1px solid var(--bg-elev-2)", backgroundColor: i % 2 === 0 ? "transparent" : "var(--bg)" }}
                       >
-                        <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: "14px", color: "var(--text)" }}>{kpiName}</td>
+                        <td style={{ padding: "12px 16px", color: "var(--text)" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>{meta?.display_name || meta?.canonical_name || meta?.name || kpiName}</span>
+                            {meta && (
+                              <div style={{ position: "relative", display: "flex", alignItems: "center", cursor: "help" }} onMouseEnter={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'block'; }} onMouseLeave={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'none'; }}>
+                                <Info size={14} style={{ opacity: 0.5 }} />
+                                <div className="tooltip-panel panel" style={{ display: "none", position: "absolute", left: "24px", top: "-10px", zIndex: 50, width: "300px", padding: "1rem" }}>
+                                  <p style={{ fontWeight: "bold", margin: "0 0 0.5rem 0" }}>{meta.display_name || meta.canonical_name || meta.name}</p>
+                                  {meta.description && (
+                                    <p style={{ fontSize: "0.85rem", margin: "0 0 1rem 0", opacity: 0.8 }}>{meta.description}</p>
+                                  )}
+                                  <div style={{ background: "var(--bg-elev-2)", padding: "0.5rem", borderRadius: "8px", marginBottom: "1rem" }}>
+                                    <p style={{ fontSize: "0.7rem", textTransform: "uppercase", margin: "0 0 0.25rem 0", opacity: 0.6 }}>Formula</p>
+                                    <code style={{ fontSize: "0.75rem" }}>{meta.formula || "—"}</code>
+                                  </div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", fontSize: "0.75rem", opacity: 0.8 }}>
+                                    <span><strong style={{ fontWeight: "bold" }}>Unit:</strong> {meta.unit || "—"}</span>
+                                    <span><strong style={{ fontWeight: "bold" }}>Window:</strong> {meta.window}</span>
+                                    <span><strong style={{ fontWeight: "bold" }}>Level:</strong> {meta.level}</span>
+                                    <span><strong style={{ fontWeight: "bold" }}>Type:</strong> {meta.type}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td style={{ padding: "12px 16px", color: "var(--text-soft)", fontSize: "14px" }}>{scope}</td>
                         <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 500, color: "var(--text)" }}>
-                          {baselineVal !== null ? baselineVal.toFixed(4) : "—"}
+                          {baselineVal !== null ? `${baselineVal.toFixed(4)} ${meta?.unit || ""}` : "—"}
                         </td>
                         <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 500, color: "var(--brand)" }}>
-                          {realVal !== null ? realVal.toFixed(4) : "—"}
+                          {realVal !== null ? `${realVal.toFixed(4)} ${meta?.unit || ""}` : "—"}
                         </td>
                         <td style={{ padding: "12px 16px", textAlign: "right" }}>
                           <DeltaChip
@@ -370,7 +401,8 @@ export function ComparePage() {
                           />
                         </td>
                       </tr>
-                    ))}
+                    );
+                  })}
                   </tbody>
                 </table>
               </div>
@@ -379,10 +411,35 @@ export function ComparePage() {
             {/* Timeline charts */}
             {viewMode === "chart" && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px" }}>
-                {Object.entries(chartDataByKpi).map(([kpiName, chartData]) => (
+                {Object.entries(chartDataByKpi).map(([kpiName, chartData]) => {
+                  const meta = kpiMeta.find((m: any) => m.name === kpiName);
+                  return (
                   <Card key={kpiName}>
                     <CardHeader>
-                      <CardTitle style={{ fontSize: "14px", fontFamily: "monospace" }}>{kpiName}</CardTitle>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <CardTitle style={{ fontSize: "16px" }}>{meta?.display_name || meta?.canonical_name || meta?.name || kpiName}</CardTitle>
+                        {meta && (
+                          <div style={{ position: "relative", display: "flex", alignItems: "center", cursor: "help" }} onMouseEnter={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'block'; }} onMouseLeave={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'none'; }}>
+                            <Info size={16} style={{ opacity: 0.5 }} />
+                            <div className="tooltip-panel panel" style={{ display: "none", position: "absolute", left: "28px", top: "-10px", zIndex: 50, width: "300px", padding: "1rem" }}>
+                              <p style={{ fontWeight: "bold", margin: "0 0 0.5rem 0" }}>{meta.display_name || meta.canonical_name || meta.name}</p>
+                              {meta.description && (
+                                <p style={{ fontSize: "0.85rem", margin: "0 0 1rem 0", opacity: 0.8, fontWeight: "normal" }}>{meta.description}</p>
+                              )}
+                              <div style={{ background: "var(--bg-elev-2)", padding: "0.5rem", borderRadius: "8px", marginBottom: "1rem" }}>
+                                <p style={{ fontSize: "0.7rem", textTransform: "uppercase", margin: "0 0 0.25rem 0", opacity: 0.6, fontWeight: "normal" }}>Formula</p>
+                                <code style={{ fontSize: "0.75rem", fontWeight: "normal" }}>{meta.formula || "—"}</code>
+                              </div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", fontSize: "0.75rem", opacity: 0.8, fontWeight: "normal" }}>
+                                <span><strong style={{ fontWeight: "bold" }}>Unit:</strong> {meta.unit || "—"}</span>
+                                <span><strong style={{ fontWeight: "bold" }}>Window:</strong> {meta.window}</span>
+                                <span><strong style={{ fontWeight: "bold" }}>Level:</strong> {meta.level}</span>
+                                <span><strong style={{ fontWeight: "bold" }}>Type:</strong> {meta.type}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       <p style={{ fontSize: "14px", color: "var(--text-soft)", margin: 0 }}>
                         X-axis: hours elapsed from start of each period
                         (allows overlay of periods with different absolute dates)
@@ -391,17 +448,27 @@ export function ComparePage() {
                     <CardContent>
                       <div style={{ height: "280px" }}>
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                          <LineChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
                             <XAxis
                               dataKey="hour"
                               tickFormatter={h => `+${h}h`}
                               style={{ fontSize: "11px" }}
                             />
-                            <YAxis style={{ fontSize: "11px" }} />
+                            <YAxis 
+                              width={80}
+                              style={{ fontSize: "11px", fill: "var(--text)" }} 
+                              label={{ value: meta?.unit || "", angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: 'var(--text)' }, offset: -10 }}
+                            />
                             <Tooltip
+                              formatter={(value: any) => {
+                                if (typeof value === 'number') {
+                                  return [meta?.unit ? `${value.toFixed(2)} ${meta.unit}` : value.toFixed(2)];
+                                }
+                                return [value];
+                              }}
                               labelFormatter={h => `Hour +${h}`}
-                              contentStyle={{ borderRadius: "8px", fontSize: "12px" }}
+                              contentStyle={{ borderRadius: "8px", fontSize: "12px", backgroundColor: 'var(--bg-elev)', borderColor: 'var(--line)', color: 'var(--text)' }}
                             />
                             <Legend />
                             <Line
@@ -426,7 +493,8 @@ export function ComparePage() {
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

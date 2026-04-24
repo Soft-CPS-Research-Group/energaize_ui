@@ -47,6 +47,7 @@ export const fetchKpis = async ({
 
 export interface FetchHistoryParams {
   community: string;
+  buildings?: string[];
   startDate?: string;
   endDate?: string;
   kpis?: string[];
@@ -55,9 +56,12 @@ export interface FetchHistoryParams {
 }
 
 export const fetchKpiHistory = async ({
-  community, startDate, endDate, kpis, scope, limit = 1000,
+  community, buildings, startDate, endDate, kpis, scope, limit = 1000,
 }: FetchHistoryParams): Promise<any> => {
   const params = new URLSearchParams();
+  if (buildings && buildings.length > 0) {
+    buildings.forEach((b: any) => params.append("buildings", b));
+  }
   if (startDate) params.append("start_date", startDate);
   if (endDate) params.append("end_date", endDate);
   if (scope) params.append("scope", scope);
@@ -76,37 +80,37 @@ export interface ComparePeriodsMeta {
   community: string;
   buildings: string[];
   baseline: { start: string; end: string };
-  real:     { start: string; end: string };
+  real: { start: string; end: string };
 }
 
 export interface KpiPeriodResult {
-  timeseries: Array<{ value: number; period_start: string; period_end: string; [key: string]: any }>;
+  timeseries: Array<{ value: number; period_start: string; period_end: string;[key: string]: any }>;
   summary: Record<string, number>;
 }
 
 export interface KpiComparisonEntry {
   baseline: KpiPeriodResult;
-  real:     KpiPeriodResult;
+  real: KpiPeriodResult;
   delta: {
-    absolute:     number | null;
+    absolute: number | null;
     relative_pct: number | null;
   };
 }
 
 export interface CompareResponse {
   status: string;
-  meta:   ComparePeriodsMeta;
-  data:   Record<string, Record<string, KpiComparisonEntry>>;
+  meta: ComparePeriodsMeta;
+  data: Record<string, Record<string, KpiComparisonEntry>>;
 }
 
 export interface FetchCompareParams {
-  community:      string;
-  buildings:      string[];
-  baselineStart:  string;
-  baselineEnd:    string;
-  realStart:      string;
-  realEnd:        string;
-  kpis?:          string[];
+  community: string;
+  buildings: string[];
+  baselineStart: string;
+  baselineEnd: string;
+  realStart: string;
+  realEnd: string;
+  kpis?: string[];
 }
 
 export const fetchKpiComparison = async ({
@@ -116,13 +120,172 @@ export const fetchKpiComparison = async ({
   const params = new URLSearchParams();
   buildings.forEach((b: any) => params.append("buildings", b));
   params.append("baseline_start", baselineStart);
-  params.append("baseline_end",   baselineEnd);
-  params.append("real_start",     realStart);
-  params.append("real_end",       realEnd);
+  params.append("baseline_end", baselineEnd);
+  params.append("real_start", realStart);
+  params.append("real_end", realEnd);
   kpis?.forEach(k => params.append("kpis", k));
 
   const response = await api.get<CompareResponse>(
     `api/v1/kpis/${community}/compare?${params.toString()}`
+  );
+  return response.data;
+};
+
+// ── Data Profiling ──────────────────────────────────────────────────────────
+
+export interface BuildingProfile {
+  actual_payloads?: number;
+  total_payloads?: number;
+  coverage_ratio: number;
+  confidence_score: number;
+  generated_fields: number;
+  total_fields: number;
+  authenticity_ratio: number;
+  physically_invalid_count?: number;
+  physically_invalid?: number;
+  validity_ratio: number;
+  gap_count: number;
+  gaps: Array<{ from: string; to: string; duration_seconds: number }>;
+  outlier_counts: Record<string, number>;
+}
+
+export interface DataProfileResponse {
+  status: string;
+  community: string;
+  period: { start: string; end: string };
+  data: Record<string, BuildingProfile>; // building_id -> profile
+}
+
+export interface FetchProfileParams {
+  community: string;
+  buildings: string[];
+  startDate: string;
+  endDate: string;
+  payloadFrequencySeconds?: number;
+}
+
+export const fetchDataProfile = async ({
+  community,
+  buildings,
+  startDate,
+  endDate,
+  payloadFrequencySeconds = 900,
+}: FetchProfileParams): Promise<DataProfileResponse> => {
+  const params = new URLSearchParams();
+  buildings.forEach(b => params.append('buildings', b));
+  params.append('start_date', startDate);
+  params.append('end_date', endDate);
+  params.append('payload_frequency_seconds', String(payloadFrequencySeconds));
+
+  const response = await api.get<DataProfileResponse>(
+    `api/v1/data/profile/${community}?${params.toString()}`
+  );
+  return response.data;
+};
+
+// ── KPI Aggregation ──────────────────────────────────────────────────────────
+
+export type AggregatePeriod = "daily" | "weekly" | "monthly";
+
+export interface KpiAggStats {
+  sum: number;
+  mean: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+export interface AggregateBucket {
+  label: string;                                       // e.g. "2025-03" or "2025-W11"
+  start: string;                                       // "YYYY-MM-DD"
+  end: string;
+  scopes: Record<string, Record<string, KpiAggStats>>; // scope → kpiName → stats
+}
+
+export interface AggregateResponse {
+  status: string;
+  community: string;
+  period: AggregatePeriod;
+  buckets: AggregateBucket[];
+}
+
+export interface FetchAggregateParams {
+  community: string;
+  period: AggregatePeriod;
+  startDate?: string;
+  endDate?: string;
+  kpis?: string[];
+  scope?: string;
+}
+
+export const fetchKpiAggregate = async ({
+  community,
+  period,
+  startDate,
+  endDate,
+  kpis,
+  scope,
+}: FetchAggregateParams): Promise<AggregateResponse> => {
+  const params = new URLSearchParams();
+  params.append("period", period);
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+  if (scope) params.append("scope", scope);
+  kpis?.forEach(k => params.append("kpis", k));
+
+  const response = await api.get<AggregateResponse>(
+    `api/v1/kpis/${community}/aggregate?${params.toString()}`
+  );
+  return response.data;
+};
+
+// ── KPI Correlation ───────────────────────────────────────────────────────────
+
+export interface CorrelationPoint {
+  x: number;
+  y: number;
+  period_start: string;
+  scope: string;
+}
+
+export type CorrelationInterpretation =
+  | "strong_positive" | "moderate_positive" | "weak_positive"
+  | "strong_negative" | "moderate_negative" | "weak_negative"
+  | "no_correlation" | "insufficient_data";
+
+export interface CorrelationResponse {
+  status: string;
+  community: string;
+  kpi_a: string;
+  kpi_b: string;
+  scope: string | null;
+  pearson_r: number | null;
+  interpretation: CorrelationInterpretation;
+  point_count: number;
+  data_points: CorrelationPoint[];
+}
+
+export interface FetchCorrelationParams {
+  community: string;
+  kpiA: string;
+  kpiB: string;
+  startDate?: string;
+  endDate?: string;
+  scope?: string;
+}
+
+export const fetchKpiCorrelation = async ({
+  community, kpiA, kpiB, startDate, endDate, scope,
+}: FetchCorrelationParams): Promise<CorrelationResponse> => {
+  const params = new URLSearchParams();
+  params.append("kpi_a", kpiA);
+  params.append("kpi_b", kpiB);
+  if (startDate) params.append("start_date", startDate);
+  if (endDate) params.append("end_date", endDate);
+  if (scope) params.append("scope", scope);
+
+  const response = await api.get<CorrelationResponse>(
+    `api/v1/kpis/${community}/correlations?${params.toString()}`
   );
   return response.data;
 };
