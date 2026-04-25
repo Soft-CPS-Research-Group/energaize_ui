@@ -1848,7 +1848,7 @@ button {
   display: grid;
   place-items: center;
   padding: 18px;
-  z-index: 80;
+  z-index: 300;
 }
 
 .modal {
@@ -8020,9 +8020,69 @@ button {
 }
 
 .analysis-drawer-footer {
-  padding: 14px 20px;
+  padding: 16px 20px;
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-elev) 94%, var(--line));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.analysis-drawer-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.analysis-drawer-footer-actions .btn-primary {
+  flex: 1;
+}
+
+.analysis-drawer-footer-secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.rename-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+  margin-bottom: -4px;
+}
+
+.rename-modal-hint {
+  font-size: 0.84rem;
+  color: var(--text-soft);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.rename-modal-hint code {
+  font-family: monospace;
+  font-size: 0.82rem;
+  background: color-mix(in srgb, var(--line) 50%, transparent);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.rename-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
 }
 
 .analysis-kv-row {

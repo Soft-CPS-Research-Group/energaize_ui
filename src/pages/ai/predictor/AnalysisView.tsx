@@ -1,17 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart, Bar, LineChart, Line, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
 } from "recharts";
-import { Download, RefreshCcw, X, ChevronDown, ChevronRight, Play } from "lucide-react";
+import { Download, RefreshCcw, X, ChevronDown, ChevronRight, Play, ArrowUpCircle, Pencil } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
+import { Modal } from "../../../components/ui/Modal";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import {
-  listModels, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
+  listModels, promoteModel, renameModel, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
   type CompareResult, type MissingDataResult, type SegmentAnalysisResult, type HpTuneResult,
   type ImportanceType, type Lane, type ParamSpec, type SubmitPayload,
@@ -238,12 +239,47 @@ function HorizonChart({ series }: { series: { name: string; color: string; data:
 // ─── Tab 1: Model Browser ─────────────────────────────────────────────────────
 
 function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance: (key: string) => void }) {
+  const queryClient = useQueryClient();
+  const { notifySuccess, notifyError } = useApiFeedback();
   const { data: models, isLoading, refetch } = useQuery({
     queryKey: ["analysis", "models"],
     queryFn: listModels,
     staleTime: 60000,
   });
   const [selected, setSelected] = useState<ModelMeta | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [newStem, setNewStem] = useState("");
+
+  const openRename = (m: ModelMeta) => {
+    setNewStem(m.model_key.replace(/^old\//, ""));
+    setRenameOpen(true);
+  };
+
+  const closeRename = () => {
+    setRenameOpen(false);
+    setNewStem("");
+  };
+
+  const promoteMutation = useMutation({
+    mutationFn: (key: string) => promoteModel(key),
+    onSuccess: (res) => {
+      notifySuccess("Model Promoted", `${res.model.model_key} is now in production.`);
+      queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
+      setSelected(null);
+    },
+    onError: (err) => notifyError("Promote Failed", err),
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: ({ key, stem }: { key: string; stem: string }) => renameModel(key, stem),
+    onSuccess: (res) => {
+      notifySuccess("Model Renamed", `Renamed to ${res.model.model_key}.`);
+      queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
+      closeRename();
+      setSelected(null);
+    },
+    onError: (err) => notifyError("Rename Failed", err),
+  });
 
   return (
     <div className="analysis-tab-body">
@@ -290,7 +326,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
         </div>
       )}
 
-      {/* Model detail drawer — portalled to body so it covers the full viewport */}
+      {/* Model detail drawer */}
       {selected && createPortal(
         <div className="analysis-overlay" onClick={() => setSelected(null)}>
           <div className="analysis-drawer" onClick={(e) => e.stopPropagation()}>
@@ -307,14 +343,68 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
               ))}
             </div>
             <div className="analysis-drawer-footer">
-              <Button variant="primary" onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
-                Feature Importance →
-              </Button>
+              <div className="analysis-drawer-footer-actions">
+                <Button variant="primary" onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
+                  Feature Importance →
+                </Button>
+              </div>
+              <div className="analysis-drawer-footer-secondary">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<Pencil size={13} />}
+                  onClick={() => openRename(selected)}
+                >
+                  Rename
+                </Button>
+                {selected.model_key.startsWith("old/") && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    iconLeft={<ArrowUpCircle size={13} />}
+                    disabled={promoteMutation.isPending}
+                    onClick={() => promoteMutation.mutate(selected.model_key)}
+                  >
+                    {promoteMutation.isPending ? "Promoting…" : "Promote to Production"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </div>,
         document.body
       )}
+
+      {/* Rename modal */}
+      <Modal title="Rename Model" open={renameOpen} onClose={closeRename} width="sm">
+        <div className="rename-modal-body">
+          <p className="rename-modal-hint">
+            Enter a new stem for <code>{selected?.model_key}</code>. Must match a valid pattern — no slashes or <code>.json</code> extension.
+          </p>
+          <label className="form-label">New stem</label>
+          <input
+            className="analysis-text-input"
+            placeholder="direct_model_1_year_R-H-01_consumption"
+            value={newStem}
+            onChange={(e) => setNewStem(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newStem.trim() && selected) renameMutation.mutate({ key: selected.model_key, stem: newStem.trim() });
+              if (e.key === "Escape") closeRename();
+            }}
+            autoFocus
+          />
+          <div className="rename-modal-actions">
+            <Button variant="secondary" onClick={closeRename} disabled={renameMutation.isPending}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={!newStem.trim() || renameMutation.isPending}
+              onClick={() => selected && renameMutation.mutate({ key: selected.model_key, stem: newStem.trim() })}
+            >
+              {renameMutation.isPending ? "Renaming…" : "Rename"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

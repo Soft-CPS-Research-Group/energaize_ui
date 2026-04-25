@@ -183,6 +183,20 @@ export async function getModel(modelKey: string): Promise<ModelMeta> {
   return http<ModelMeta>(url(`/api/analysis/models/${encodeURIComponent(modelKey)}`));
 }
 
+export async function promoteModel(modelKey: string): Promise<{ status: string; model: ModelMeta }> {
+  return http<{ status: string; model: ModelMeta }>(
+    url(`/api/analysis/models/${encodeURIComponent(modelKey)}/promote`),
+    { method: "POST" }
+  );
+}
+
+export async function renameModel(modelKey: string, newStem: string): Promise<{ status: string; model: ModelMeta }> {
+  return http<{ status: string; model: ModelMeta }>(
+    url(`/api/analysis/models/${encodeURIComponent(modelKey)}/rename`),
+    { method: "POST", body: JSON.stringify({ new_stem: newStem }) }
+  );
+}
+
 export async function getFeatureImportance(
   modelKey: string,
   importanceType: ImportanceType = "gain",
