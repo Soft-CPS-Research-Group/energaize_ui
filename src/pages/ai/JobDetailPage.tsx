@@ -1110,6 +1110,91 @@ function parseBuildingEntityId(entity: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeEntityToken(value: string): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function canonicalSiteKey(raw: string): string | null {
+  const normalized = normalizeEntityToken(raw);
+  if (!normalized || normalized === "building") return null;
+
+  if (normalized === "hq" || normalized === "boavista") return "hq";
+  if (["sm", "sao_mamede", "sao_mamed", "saomamede", "sao_mamede_inference"].includes(normalized)) {
+    return "sao_mamede";
+  }
+
+  const compact = normalized.replaceAll("_", "");
+  if (/^rh\d+$/.test(compact)) {
+    const digits = compact.replace(/^rh/, "");
+    return `r_h_${digits.padStart(2, "0")}`;
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return String(Number(normalized));
+  }
+
+  return normalized;
+}
+
+function parseKpiEntityBuildingKey(entity: string): string | null {
+  const normalized = normalizeEntityToken(entity);
+  if (!normalized) return null;
+
+  if (normalized.startsWith("building_")) {
+    return canonicalSiteKey(normalized.replace(/^building_+/, ""));
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return canonicalSiteKey(normalized);
+  }
+
+  if (
+    normalized === "hq" ||
+    normalized === "boavista" ||
+    ["sm", "sao_mamede", "sao_mamed", "saomamede", "sao_mamede_inference"].includes(normalized) ||
+    /^r?_?h_?\d+$/i.test(normalized)
+  ) {
+    return canonicalSiteKey(normalized);
+  }
+
+  return null;
+}
+
+function parseTreeNodeBuildingKey(node: SimulationTreeNode): string | null {
+  if (node.kind !== "building") return null;
+  const matchFromId = node.id.match(/^building:(.+)$/i);
+  if (matchFromId) {
+    const fromId = canonicalSiteKey(matchFromId[1]);
+    if (fromId) return fromId;
+  }
+  return canonicalSiteKey(node.label);
+}
+
+function formatKpiBuildingScopeLabel(siteKey: string): string {
+  if (/^\d+$/.test(siteKey)) {
+    return `Building ${Number(siteKey)}`;
+  }
+  if (siteKey === "hq") return "Boavista (HQ)";
+  if (siteKey === "sao_mamede") return "Sao Mamede";
+
+  const rhMatch = siteKey.match(/^r_h_(\d+)$/);
+  if (rhMatch) {
+    return `R-H-${rhMatch[1]!.padStart(2, "0")}`;
+  }
+
+  return siteKey
+    .split("_")
+    .filter(Boolean)
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(" ");
+}
+
 function parseBuildingNodeNumber(node: SimulationTreeNode): number | null {
   const matchFromId = node.id.match(/building:(\d+)/i);
   if (matchFromId) {
@@ -2560,18 +2645,37 @@ export function JobDetailPage(): JSX.Element {
 
     if (entities.size === 0) return [];
 
-    const buildingOrder = new Map<number, number>();
+    const buildingMetaByKey = new Map<string, { id: string; label: string; order: number }>();
     treeNodes.forEach((node, index) => {
       if (node.kind !== "building") return;
-      const match = node.label.match(/(\d+)/);
-      const buildingId = match ? Number(match[1]) : Number.NaN;
-      if (Number.isFinite(buildingId) && !buildingOrder.has(buildingId)) {
-        buildingOrder.set(buildingId, index);
-      }
+      const key = parseTreeNodeBuildingKey(node);
+      if (!key || buildingMetaByKey.has(key)) return;
+      buildingMetaByKey.set(key, {
+        id: node.id,
+        label: node.label,
+        order: index
+      });
+    });
+
+    const preferredBuildingLabels = new Map<string, string>();
+    kpiRows.forEach((row) => {
+      Object.keys(row.values).forEach((entity) => {
+        const key = parseKpiEntityBuildingKey(entity);
+        if (!key || preferredBuildingLabels.has(key)) return;
+        preferredBuildingLabels.set(key, formatKpiBuildingScopeLabel(key));
+      });
     });
 
     const communityEntities: string[] = [];
-    const buildingEntities = new Map<number, string[]>();
+    const buildingScopes = new Map<
+      string,
+      {
+        id: string;
+        label: string;
+        order: number;
+        entityKeys: string[];
+      }
+    >();
     const otherEntities: string[] = [];
 
     Array.from(entities)
@@ -2581,11 +2685,23 @@ export function JobDetailPage(): JSX.Element {
           communityEntities.push(entity);
           return;
         }
-        const buildingId = parseBuildingEntityId(entity);
-        if (buildingId !== null) {
-          const group = buildingEntities.get(buildingId) || [];
-          group.push(entity);
-          buildingEntities.set(buildingId, group);
+        const buildingKey = parseKpiEntityBuildingKey(entity);
+        if (buildingKey !== null) {
+          const fromTree = buildingMetaByKey.get(buildingKey);
+          const scopeId = fromTree?.id || `building:${buildingKey}`;
+          const existing = buildingScopes.get(scopeId);
+          if (existing) {
+            existing.entityKeys.push(entity);
+            buildingScopes.set(scopeId, existing);
+            return;
+          }
+
+          buildingScopes.set(scopeId, {
+            id: scopeId,
+            label: fromTree?.label || preferredBuildingLabels.get(buildingKey) || formatKpiBuildingScopeLabel(buildingKey),
+            order: fromTree?.order ?? Number.MAX_SAFE_INTEGER,
+            entityKeys: [entity]
+          });
           return;
         }
         otherEntities.push(entity);
@@ -2601,18 +2717,19 @@ export function JobDetailPage(): JSX.Element {
       });
     }
 
-    Array.from(buildingEntities.entries())
+    Array.from(buildingScopes.values())
       .sort((left, right) => {
-        const leftOrder = buildingOrder.get(left[0]) ?? left[0];
-        const rightOrder = buildingOrder.get(right[0]) ?? right[0];
-        return leftOrder - rightOrder;
+        const leftOrder = left.order;
+        const rightOrder = right.order;
+        if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+        return left.label.localeCompare(right.label);
       })
-      .forEach(([buildingId, entityKeys]) => {
+      .forEach((scope) => {
         scopes.push({
-          id: `building:${buildingId}`,
-          label: `Building ${buildingId}`,
+          id: scope.id,
+          label: scope.label,
           group: "building",
-          entityKeys
+          entityKeys: scope.entityKeys
         });
       });
 

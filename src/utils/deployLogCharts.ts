@@ -62,7 +62,7 @@ const CHARGER_ID_RE = /(?:charger|evse|cp)(?:[_\- ]?)([a-z0-9]{1,8})/i;
 const PHASE_HEADER_RE = /^\s*l([123])\s*-\s*/i;
 const CHARGER_LINE_RE = /^\s*([A-Z][A-Z0-9_]{3,})\s*-\s*(.+)$/;
 const INFERENCE_CYCLE_RE = /inference cycle/i;
-const INLINE_UNIT_RE = /^\s*(kwh|kw|eur|kgco2|percent|ratio|count|c)\b/i;
+const INLINE_UNIT_RE = /^\s*(kwh|kw|wh|w|mwh|mw|eur\/kwh|eur\/mwh|ceur\/kwh|eur|kgco2|percent|ratio|count|c)\b/i;
 
 const HQ_ASSETS: DeployAssetDefinition[] = [
   { id: "chargers", label: "Chargers", kind: "charger" },
@@ -214,6 +214,10 @@ function detectUnit(key: string): string | undefined {
   const normalized = normalizeToken(key);
   if (normalized.endsWith("_kw") || normalized.includes("_kw_")) return "kW";
   if (normalized.endsWith("_kwh") || normalized.includes("_kwh_")) return "kWh";
+  if (normalized.endsWith("_w") || normalized.includes("_w_")) return "W";
+  if (normalized.endsWith("_wh") || normalized.includes("_wh_")) return "Wh";
+  if (normalized.endsWith("_mw") || normalized.includes("_mw_")) return "MW";
+  if (normalized.endsWith("_mwh") || normalized.includes("_mwh_")) return "MWh";
   if (normalized.endsWith("_eur") || normalized.includes("price") || normalized.includes("tariff")) return "EUR";
   if (normalized.endsWith("_ratio") || normalized.endsWith("_percent") || normalized.endsWith("_pct")) return "%";
   if (normalized.endsWith("_count") || normalized.includes("_events")) return "count";
@@ -222,8 +226,16 @@ function detectUnit(key: string): string | undefined {
 
 function normalizeUnitToken(raw: string): string | undefined {
   const value = normalizeToken(raw);
+  const compactRaw = String(raw || "").trim().toLowerCase().replace(/\s+/g, "");
   if (value === "kw") return "kW";
   if (value === "kwh") return "kWh";
+  if (value === "w") return "W";
+  if (value === "wh") return "Wh";
+  if (value === "mw") return "MW";
+  if (value === "mwh") return "MWh";
+  if (value === "eur_kwh" || compactRaw === "€/kwh") return "EUR/kWh";
+  if (value === "eur_mwh" || compactRaw === "€/mwh") return "EUR/MWh";
+  if (value === "ceur_kwh" || compactRaw === "c€/kwh") return "cEUR/kWh";
   if (value === "eur") return "EUR";
   if (value === "kgco2") return "kgCO2";
   if (value === "percent") return "%";
@@ -240,6 +252,12 @@ function detectInlineUnit(text: string, afterIndex: number): string | undefined 
   const unitMatch = suffix.match(INLINE_UNIT_RE);
   if (!unitMatch) return undefined;
   return normalizeUnitToken(unitMatch[1]);
+}
+
+function detectPriceDefaultUnit(text: string): string {
+  const match = text.match(/^prices\s*\(([^)]+)\)/i);
+  if (!match?.[1]) return "EUR/kWh";
+  return normalizeUnitToken(match[1]) || "EUR/kWh";
 }
 
 function classifyAsset(key: string): {
@@ -641,7 +659,7 @@ export function parseDeployLogSamples(lines: DeployLogsHistoryLine[]): ParsedLog
         source,
         keyPrefix: "price",
         forceAsset: { assetId: "pricing", assetLabel: "Prices", assetKind: "pricing" },
-        defaultUnit: "EUR/kWh"
+        defaultUnit: detectPriceDefaultUnit(trimmed)
       });
       return;
     }

@@ -260,6 +260,28 @@ describe("deployLogCharts utils", () => {
     expect(tree.some((node) => node.id === "pricing")).toBe(true);
   });
 
+  it("keeps price unit declared in Prices header", () => {
+    const samples = parseDeployLogSamples([
+      line("2026-04-12T20:54:35.021Z", "2026-04-12 20:54:35.021 | INFO | request_id=abc | status=0 | POST /inference | rbc.summary"),
+      line(null, "Prices (EUR/MWh): now=64.2 h1=58.0 h2=52.1")
+    ]);
+
+    const now = samples.find((item) => item.metricKey === "price_now");
+    expect(now?.unit).toBe("EUR/MWh");
+  });
+
+  it("parses W and Wh units from inline summary tokens", () => {
+    const samples = parseDeployLogSamples([
+      line("2026-04-12T20:54:35.021Z", "2026-04-12 20:54:35.021 | INFO | request_id=abc | status=0 | POST /inference | rbc.summary"),
+      line(null, "Inputs: solar=4200 W meter_in=6200 Wh meter_out=0 Wh")
+    ]);
+
+    const solar = samples.find((item) => item.metricKey === "solar");
+    const meterIn = samples.find((item) => item.metricKey === "meter_in");
+    expect(solar?.unit).toBe("W");
+    expect(meterIn?.unit).toBe("Wh");
+  });
+
   it("shows only Battery action and SoC metrics in battery charts tree", () => {
     const samples = parseDeployLogSamples([
       line("2026-04-13T08:13:25.006Z", "2026-04-13 08:13:25.006 | INFO | POST /inference | rbc.summary"),

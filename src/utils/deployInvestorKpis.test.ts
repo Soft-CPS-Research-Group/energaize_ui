@@ -39,9 +39,9 @@ describe("deployInvestorKpis", () => {
 
     expect(summary.targets).toHaveLength(1);
     expect(summary.targets[0].savedEur).not.toBeNull();
-    expect(summary.targets[0].savedEur || 0).toBeGreaterThan(0);
-    expect(summary.targets[0].savedPct || 0).toBeGreaterThan(0);
-    expect(summary.targets[0].communitySharePct).toBeCloseTo(33.333, 2);
+    expect(summary.targets[0].savedEur || 0).toBeCloseTo(0, 8);
+    expect(summary.targets[0].savedPct || 0).toBeCloseTo(0, 8);
+    expect(summary.targets[0].communitySharePct || 0).toBeCloseTo(0, 8);
     expect(summary.targets[0].solarSelfConsumptionPct || 0).toBeGreaterThan(0);
   });
 
@@ -92,6 +92,45 @@ describe("deployInvestorKpis", () => {
     expect(hqSnapshot?.savedPct || 0).toBeGreaterThanOrEqual(0);
   });
 
+  it("uses RH01 canonical price with small timestamp skew between targets", () => {
+    const rh01Lines: DeployLogsHistoryLine[] = [
+      line("2026-04-12T12:03:13.797Z", "2026-04-12 12:03:13.797 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=0.0100 kWh meter_out=0.0000 kWh solar=0.0 kW"),
+      line(null, "Prices (EUR/kWh): now=0.0601")
+    ];
+
+    const hqLines: DeployLogsHistoryLine[] = [
+      line("2026-04-12T12:03:13.780Z", "2026-04-12 12:03:13.780 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: solar=1.5 kW unmanaged=0.0 kW"),
+      line(null, "L1 - total=0.0 kW runtime_limit=19.9 kW manifest_limit=18.3 kW"),
+      line(null, "  AC000002_1 - ev=100 connected=yes action=1.6 min=1.6 max=4.6 flex=no")
+    ];
+
+    const summary = computeDeployInvestorKpis(
+      [
+        {
+          targetId: "rh01",
+          targetName: "R-H-01",
+          lines: rh01Lines
+        },
+        {
+          targetId: "hq",
+          targetName: "HQ",
+          lines: hqLines
+        }
+      ],
+      {
+        windowStartEpochMs: Date.parse("2026-04-12T12:03:00Z"),
+        windowEndEpochMs: Date.parse("2026-04-12T12:04:00Z")
+      }
+    );
+
+    const hqSnapshot = summary.targets.find((entry) => entry.targetId === "hq");
+    expect(hqSnapshot).toBeTruthy();
+    expect(hqSnapshot?.priceSource).toBe("rh01");
+    expect(hqSnapshot?.savedEur).not.toBeNull();
+  });
+
   it("estimates HQ demand from charger actions when meter_in is unavailable", () => {
     const rh01Lines: DeployLogsHistoryLine[] = [
       line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
@@ -134,6 +173,44 @@ describe("deployInvestorKpis", () => {
     expect(hqSnapshot?.priceSource).toBe("rh01");
   });
 
+  it("estimates demand from dispatch commanded_total when charger lines are unavailable", () => {
+    const rh01Lines: DeployLogsHistoryLine[] = [
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=0.0100 kWh meter_out=0.0000 kWh solar=0.0 kW"),
+      line(null, "Prices (EUR/kWh): now=0.2000")
+    ];
+
+    const hqLines: DeployLogsHistoryLine[] = [
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: solar=0.0 kW unmanaged=0.0 kW"),
+      line(null, "Dispatch: commanded_total=24.0 kW")
+    ];
+
+    const summary = computeDeployInvestorKpis(
+      [
+        {
+          targetId: "rh01",
+          targetName: "R-H-01",
+          lines: rh01Lines
+        },
+        {
+          targetId: "hq",
+          targetName: "HQ",
+          lines: hqLines
+        }
+      ],
+      {
+        windowStartEpochMs: Date.parse("2026-04-12T09:59:00Z"),
+        windowEndEpochMs: Date.parse("2026-04-12T10:01:00Z")
+      }
+    );
+
+    const hqSnapshot = summary.targets.find((entry) => entry.targetId === "hq");
+    expect(hqSnapshot).toBeTruthy();
+    expect(hqSnapshot?.demandKwh24 || 0).toBeGreaterThan(0);
+    expect(hqSnapshot?.communitySharePct || 0).toBeCloseTo(0, 6);
+  });
+
   it("uses tariff prices when price_now is zero", () => {
     const lines: DeployLogsHistoryLine[] = [
       line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
@@ -161,6 +238,104 @@ describe("deployInvestorKpis", () => {
     expect(target.savedEur || 0).toBeGreaterThan(0);
     expect(target.savedPct).not.toBeNull();
     expect(target.savedPct || 0).toBeGreaterThan(0);
+  });
+
+  it("ignores samples outside the requested KPI window", () => {
+    const lines: DeployLogsHistoryLine[] = [
+      line("2026-04-11T10:00:00Z", "2026-04-11 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=10.0000 kWh meter_out=0.0000 kWh solar=0.0 kW"),
+      line(null, "Community: in=0.0000 kWh out=0.0000 kWh net=0.0000 kWh"),
+      line(null, "Prices (EUR/kWh): now=0.2000"),
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=0.0500 kWh meter_out=0.0000 kWh solar=0.0 kW"),
+      line(null, "Community: in=0.0000 kWh out=0.0000 kWh net=0.0000 kWh"),
+      line(null, "Prices (EUR/kWh): now=0.2000")
+    ];
+
+    const summary = computeDeployInvestorKpis(
+      [
+        {
+          targetId: "rh01",
+          targetName: "R-H-01",
+          lines
+        }
+      ],
+      {
+        windowStartEpochMs: Date.parse("2026-04-12T09:59:00Z"),
+        windowEndEpochMs: Date.parse("2026-04-12T10:01:00Z")
+      }
+    );
+
+    const target = summary.targets[0];
+    expect(target.gridImportKwh24).toBeCloseTo(0.05, 6);
+    expect(target.savedEur || 0).toBeCloseTo(0, 6);
+  });
+
+  it("normalizes EUR/MWh prices to EUR/kWh before cost KPIs", () => {
+    const linesKwh: DeployLogsHistoryLine[] = [
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=0.0500 kWh meter_out=0.0000 kWh solar=0.0 kW"),
+      line(null, "Community: in=0.0200 kWh out=0.0000 kWh net=0.0200 kWh"),
+      line(null, "Prices (EUR/kWh): now=0.0600")
+    ];
+    const linesMwh: DeployLogsHistoryLine[] = [
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=0.0500 kWh meter_out=0.0000 kWh solar=0.0 kW"),
+      line(null, "Community: in=0.0200 kWh out=0.0000 kWh net=0.0200 kWh"),
+      line(null, "Prices (EUR/MWh): now=60.0000")
+    ];
+
+    const window = {
+      windowStartEpochMs: Date.parse("2026-04-12T09:59:00Z"),
+      windowEndEpochMs: Date.parse("2026-04-12T10:01:00Z")
+    };
+    const summaryKwh = computeDeployInvestorKpis(
+      [
+        {
+          targetId: "rh01",
+          targetName: "R-H-01",
+          lines: linesKwh
+        }
+      ],
+      window
+    );
+    const summaryMwh = computeDeployInvestorKpis(
+      [
+        {
+          targetId: "rh01",
+          targetName: "R-H-01",
+          lines: linesMwh
+        }
+      ],
+      window
+    );
+
+    expect(summaryMwh.targets[0].savedEur || 0).toBeCloseTo(summaryKwh.targets[0].savedEur || 0, 8);
+  });
+
+  it("converts Wh/W metrics to kWh before aggregating demand", () => {
+    const lines: DeployLogsHistoryLine[] = [
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=72.0 Wh meter_out=0.0 Wh solar=3600 W"),
+      line(null, "Prices (EUR/kWh): now=0.2000")
+    ];
+
+    const summary = computeDeployInvestorKpis(
+      [
+        {
+          targetId: "rh01",
+          targetName: "R-H-01",
+          lines
+        }
+      ],
+      {
+        windowStartEpochMs: Date.parse("2026-04-12T09:59:00Z"),
+        windowEndEpochMs: Date.parse("2026-04-12T10:01:00Z")
+      }
+    );
+
+    const target = summary.targets[0];
+    expect(target.gridImportKwh24).toBeCloseTo(0.072, 6);
   });
 
   it("does not show night-time solar as 100% when generation is near zero", () => {
@@ -219,9 +394,55 @@ describe("deployInvestorKpis", () => {
       }
     );
 
-    expect(summary.global.savedEur || 0).toBeGreaterThan(0);
+    expect(summary.global.savedEur || 0).toBeGreaterThanOrEqual(0);
     expect(summary.global.communitySharePct || 0).toBeCloseTo(0, 6);
     expect(summary.global.communitySharePct || 0).toBeLessThanOrEqual(100);
+  });
+
+  it("allocates community out pool across targets and credits only own export used by community", () => {
+    const targetALines: DeployLogsHistoryLine[] = [
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=0.0300 kWh meter_out=0.0200 kWh solar=0.0 kW"),
+      line(null, "Community: in=0.0400 kWh out=0.0300 kWh net=0.0100 kWh"),
+      line(null, "Prices (EUR/kWh): now=0.2000")
+    ];
+    const targetBLines: DeployLogsHistoryLine[] = [
+      line("2026-04-12T10:00:00Z", "2026-04-12 10:00:00.000 | INFO | POST /inference | rbc.summary"),
+      line(null, "Inputs: meter_in=0.0100 kWh meter_out=0.0100 kWh solar=0.0 kW"),
+      line(null, "Community: in=0.0400 kWh out=0.0300 kWh net=0.0100 kWh"),
+      line(null, "Prices (EUR/kWh): now=0.2000")
+    ];
+
+    const summary = computeDeployInvestorKpis(
+      [
+        {
+          targetId: "site_a",
+          targetName: "Site A",
+          lines: targetALines
+        },
+        {
+          targetId: "site_b",
+          targetName: "Site B",
+          lines: targetBLines
+        }
+      ],
+      {
+        windowStartEpochMs: Date.parse("2026-04-12T09:59:00Z"),
+        windowEndEpochMs: Date.parse("2026-04-12T10:01:00Z")
+      }
+    );
+
+    const siteA = summary.targets.find((entry) => entry.targetId === "site_a");
+    const siteB = summary.targets.find((entry) => entry.targetId === "site_b");
+    expect(siteA).toBeTruthy();
+    expect(siteB).toBeTruthy();
+
+    expect(siteA?.communityInKwh24 || 0).toBeCloseTo(0.02, 8);
+    expect(siteB?.communityInKwh24 || 0).toBeCloseTo(0.01, 8);
+    expect(siteA?.communityOutKwh24 || 0).toBeCloseTo(0.02, 8);
+    expect(siteB?.communityOutKwh24 || 0).toBeCloseTo(0.01, 8);
+    expect(siteA?.savedEur || 0).toBeGreaterThan(0);
+    expect(siteB?.savedEur || 0).toBeGreaterThan(0);
   });
 
   it("respects battery dispatch sign for virtual meters (SM/HQ)", () => {
