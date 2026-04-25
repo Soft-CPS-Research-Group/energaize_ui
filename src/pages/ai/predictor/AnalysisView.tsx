@@ -263,6 +263,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                   <th>House</th>
                   <th>Lane</th>
                   <th>Type <InfoTip tip="warm = trained on a specific house's historical data. cold_start = generic model used when no history is available." /></th>
+                  <th>Schema</th>
                   <th>Size (KB)</th>
                   <th>Stored MAE <InfoTip tip="Mean Absolute Error recorded at training time on the validation set. Lower is better." /></th>
                   <th># Features <InfoTip tip="Number of input features this model was trained on (lag values, time encodings, etc)." /></th>
@@ -276,6 +277,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                     <td>{m.house_id ?? <span className="is-muted">—</span>}</td>
                     <td><Badge tone={m.lane === "consumption" ? "info" : "warning"}>{m.lane}</Badge></td>
                     <td><Badge tone={m.model_type === "warm" ? "success" : "neutral"}>{m.model_type}</Badge></td>
+                    <td><Badge tone={m.model_schema === "sparse" ? "warning" : "neutral"}>{m.model_schema}</Badge></td>
                     <td>{m.file_size_kb.toFixed(1)}</td>
                     <td>{fmt(m.stored_mae)}</td>
                     <td>{m.n_features}</td>

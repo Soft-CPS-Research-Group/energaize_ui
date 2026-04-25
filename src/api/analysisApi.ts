@@ -20,6 +20,7 @@ export interface ModelMeta {
   house_id: string | null;
   lane: Lane;
   model_type: ModelType;
+  model_schema: "dense" | "sparse";
   file_path: string;
   file_size_kb: number;
   stored_mae: number;
