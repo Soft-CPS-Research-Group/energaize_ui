@@ -49,6 +49,7 @@ export interface PredictorCommandPayload {
   command: "train" | "train-cold" | "predict" | "flex";
   house_id?: string;
   lane?: "consumption" | "production" | "both";
+  model_schema?: "dense" | "sparse";
 }
 
 export async function getStats(): Promise<PredictorStats> {
