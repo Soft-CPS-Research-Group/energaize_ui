@@ -5,7 +5,8 @@ import {
   getHistory,
   getPredictions,
   getPredictionHistory,
-  getTrainingProgress,
+  getJobs,
+  getJob,
   executeCommand,
   cancelJob,
   PredictorCommandPayload,
@@ -63,9 +64,18 @@ export function usePredictorPredictionHistory(houseId: string | null) {
 
 export function usePredictorTrainingProgress() {
   return useQuery({
-    queryKey: ["predictor", "training-progress_v2"],
-    queryFn: getTrainingProgress,
-    refetchInterval: 5000, // Poll every 5s for training progress
+    queryKey: ["predictor", "jobs"],
+    queryFn: getJobs,
+    refetchInterval: 5000,
+  });
+}
+
+export function usePredictorJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ["predictor", "jobs", jobId],
+    queryFn: () => getJob(jobId!),
+    enabled: !!jobId,
+    refetchInterval: 5000,
   });
 }
 
@@ -75,7 +85,7 @@ export function usePredictorCommand() {
   return useMutation({
     mutationFn: (payload: PredictorCommandPayload) => executeCommand(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["predictor", "training-progress"] });
+      queryClient.invalidateQueries({ queryKey: ["predictor", "jobs"] });
     },
   });
 }
@@ -86,7 +96,7 @@ export function useCancelTrainingJob() {
   return useMutation({
     mutationFn: (jobId: string) => cancelJob(jobId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["predictor", "training-progress"] });
+      queryClient.invalidateQueries({ queryKey: ["predictor", "jobs"] });
     },
   });
 }

@@ -117,7 +117,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
                 </thead>
                 <tbody>
                   {activeJobs.map((job, idx) => {
-                    const pct = job.total > 0 ? (job.progress / job.total) * 100 : 0;
+                    const pct = job.percent ?? 0;
                     return (
                       <tr key={`${job.job_id}-${idx}`}>
                         <td className="is-muted" style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>
@@ -132,7 +132,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
                               <div className="predictor-progress-fill" style={{ width: `${pct}%` }} />
                             </div>
                             <span className="is-muted" style={{ fontSize: "0.75rem", whiteSpace: "nowrap" }}>
-                              {job.progress}/{job.total}
+                              {job.progress_current}/{job.progress_total}
                             </span>
                           </div>
                         </td>
