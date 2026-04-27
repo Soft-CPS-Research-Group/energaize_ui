@@ -1848,7 +1848,7 @@ button {
   display: grid;
   place-items: center;
   padding: 18px;
-  z-index: 300;
+  z-index: 80;
 }
 
 .modal {
@@ -6488,9 +6488,6 @@ button {
   padding: 9px 10px;
   background: var(--bg-elev-2);
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .deploy-switch-selected {
@@ -6500,7 +6497,6 @@ button {
   background: color-mix(in srgb, var(--bg-elev) 90%, var(--bg));
   display: grid;
   gap: 2px;
-  min-width: 0;
 }
 
 .deploy-switch-selected small {
@@ -6509,22 +6505,12 @@ button {
 }
 
 .deploy-switch-selected strong {
-  display: block;
   line-height: 1.25;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
 }
 
 .deploy-switch-selected code {
-  display: block;
   color: var(--text-soft);
   font-size: 0.78rem;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
 }
 
 .deploy-switch-actions {
@@ -7112,10 +7098,6 @@ button {
 .dock-logo-isep {
   height: 21px;
   max-width: 108px;
-}
-
-:root[data-theme="light"] .dock-logo-isep {
-  height: 23px;
 }
 
 .dock-logo-icharging {
@@ -7870,6 +7852,56 @@ button {
   color: var(--text);
 }
 
+/* ── Model browser: filter bar ── */
+.analysis-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.analysis-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.analysis-filter-clear {
+  align-self: flex-end;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.analysis-filter-clear:hover { background: color-mix(in srgb, #f87171 10%, transparent); color: #f87171; }
+
+/* ── Active model pill ── */
+.analysis-active-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: var(--brand);
+  border: 1px solid color-mix(in srgb, var(--brand) 40%, transparent);
+  vertical-align: middle;
+}
+
 /* ── Metric chips ── */
 .analysis-metrics-row {
   display: flex;
@@ -8020,69 +8052,9 @@ button {
 }
 
 .analysis-drawer-footer {
-  padding: 16px 20px;
+  padding: 14px 20px;
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-elev) 94%, var(--line));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.analysis-drawer-footer-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.analysis-drawer-footer-actions .btn-primary {
-  flex: 1;
-}
-
-.analysis-drawer-footer-secondary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 4px;
-  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
-}
-
-.rename-modal-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.form-label {
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-soft);
-  margin-bottom: -4px;
-}
-
-.rename-modal-hint {
-  font-size: 0.84rem;
-  color: var(--text-soft);
-  margin: 0;
-  line-height: 1.5;
-}
-
-.rename-modal-hint code {
-  font-family: monospace;
-  font-size: 0.82rem;
-  background: color-mix(in srgb, var(--line) 50%, transparent);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-
-.rename-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 4px;
 }
 
 .analysis-kv-row {

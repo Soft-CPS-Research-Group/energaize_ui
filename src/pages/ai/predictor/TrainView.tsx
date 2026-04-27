@@ -35,7 +35,6 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
   const [showTrainDialog, setShowTrainDialog] = useState(false);
   const [showColdTrainDialog, setShowColdTrainDialog] = useState(false);
   const [jobToCancel, setJobToCancel] = useState<string | null>(null);
-  const [modelSchema, setModelSchema] = useState<"dense" | "sparse">("dense");
 
   const activeJobs = jobs?.filter((j) => ["PENDING", "FETCHING", "RUNNING"].includes(j.status)) ?? [];
   const completedJobs = jobs?.filter((j) => !["PENDING", "FETCHING", "RUNNING"].includes(j.status)) ?? [];
@@ -43,7 +42,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
   const handleTrain = () => {
     if (!selectedHouseId) return;
     commandMutation.mutate(
-      { command: "train", house_id: selectedHouseId, lane: "both", model_schema: modelSchema },
+      { command: "train", house_id: selectedHouseId, lane: "both" },
       {
         onSuccess: (res) => { notifySuccess("Training Queued", res.message); setShowTrainDialog(false); },
         onError: (err) => notifyError("Training Error", err),
@@ -117,7 +116,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
                 </thead>
                 <tbody>
                   {activeJobs.map((job, idx) => {
-                    const pct = job.percent ?? 0;
+                    const pct = job.total > 0 ? (job.progress / job.total) * 100 : 0;
                     return (
                       <tr key={`${job.job_id}-${idx}`}>
                         <td className="is-muted" style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>
@@ -132,7 +131,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
                               <div className="predictor-progress-fill" style={{ width: `${pct}%` }} />
                             </div>
                             <span className="is-muted" style={{ fontSize: "0.75rem", whiteSpace: "nowrap" }}>
-                              {job.progress_current}/{job.progress_total}
+                              {job.progress}/{job.total}
                             </span>
                           </div>
                         </td>
@@ -195,22 +194,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
       <ConfirmDialog
         open={showTrainDialog}
         title="Train Model"
-        message={
-          <>
-            <span>{`Start a new training job for house ${selectedHouseId}? If the new model performs better, it will be automatically hot-swapped.`}</span>
-            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-              <label style={{ fontSize: "0.85rem", fontWeight: 500 }}>Model schema:</label>
-              <select
-                value={modelSchema}
-                onChange={(e) => setModelSchema(e.target.value as "dense" | "sparse")}
-                style={{ fontSize: "0.85rem", padding: "2px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--surface)", color: "inherit" }}
-              >
-                <option value="dense">Dense (default)</option>
-                <option value="sparse">Sparse</option>
-              </select>
-            </div>
-          </>
-        }
+        message={`Start a new training job for house ${selectedHouseId}? If the new model performs better, it will be automatically hot-swapped.`}
         confirmLabel="Train Both Lanes"
         confirmVariant="primary"
         pending={commandMutation.isPending}

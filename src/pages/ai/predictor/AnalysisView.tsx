@@ -1,18 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   BarChart, Bar, LineChart, Line, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
 } from "recharts";
-import { Download, RefreshCcw, X, ChevronDown, ChevronRight, Play, ArrowUpCircle, Pencil } from "lucide-react";
+import { Download, RefreshCcw, X, ChevronDown, ChevronRight, Play } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
-import { Modal } from "../../../components/ui/Modal";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
+import { getHouses, getActiveModel, type ActiveModelResponse } from "../../../api/predictorApi";
 import {
-  listModels, promoteModel, renameModel, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
+  listModels, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
   type CompareResult, type MissingDataResult, type SegmentAnalysisResult, type HpTuneResult,
   type ImportanceType, type Lane, type ParamSpec, type SubmitPayload,
@@ -239,56 +239,115 @@ function HorizonChart({ series }: { series: { name: string; color: string; data:
 // ─── Tab 1: Model Browser ─────────────────────────────────────────────────────
 
 function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance: (key: string) => void }) {
-  const queryClient = useQueryClient();
-  const { notifySuccess, notifyError } = useApiFeedback();
   const { data: models, isLoading, refetch } = useQuery({
     queryKey: ["analysis", "models"],
     queryFn: listModels,
     staleTime: 60000,
   });
   const [selected, setSelected] = useState<ModelMeta | null>(null);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [newStem, setNewStem] = useState("");
+  const [activeModels, setActiveModels] = useState<Record<string, ActiveModelResponse>>({});
 
-  const openRename = (m: ModelMeta) => {
-    setNewStem(m.model_key.replace(/^old\//, ""));
-    setRenameOpen(true);
+  // Filters
+  const [filterLane, setFilterLane] = useState<"all" | Lane>("all");
+  const [filterHouse, setFilterHouse] = useState("all");
+  const [filterModelType, setFilterModelType] = useState<"all" | "warm" | "cold_start">("all");
+  const [filterBackend, setFilterBackend] = useState<"all" | "xgboost" | "lgbm" | "lstm">("all");
+  const [sortBy, setSortBy] = useState<"mae-asc" | "mae-desc" | "date-asc" | "date-desc">("mae-asc");
+
+  // Fetch active-model for each unique house in the model list
+  useEffect(() => {
+    if (!models) return;
+    const houseIds = [...new Set(models.filter((m) => m.house_id).map((m) => m.house_id!))];
+    Promise.allSettled(houseIds.map((id) => getActiveModel(id).then((res) => [id, res] as const))).then((results) => {
+      const map: Record<string, ActiveModelResponse> = {};
+      for (const r of results) {
+        if (r.status === "fulfilled") { const [id, res] = r.value; map[id] = res; }
+      }
+      setActiveModels(map);
+    });
+  }, [models]);
+
+  const isActive = (m: ModelMeta): boolean => {
+    if (!m.house_id || !m.backend_type) return false;
+    const active = activeModels[m.house_id];
+    return !!active && active[m.lane] === m.backend_type;
   };
 
-  const closeRename = () => {
-    setRenameOpen(false);
-    setNewStem("");
-  };
+  const uniqueHouses = [...new Set((models ?? []).filter((m) => m.house_id).map((m) => m.house_id!))].sort();
 
-  const promoteMutation = useMutation({
-    mutationFn: (key: string) => promoteModel(key),
-    onSuccess: (res) => {
-      notifySuccess("Model Promoted", `${res.model.model_key} is now in production.`);
-      queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
-      setSelected(null);
-    },
-    onError: (err) => notifyError("Promote Failed", err),
-  });
-
-  const renameMutation = useMutation({
-    mutationFn: ({ key, stem }: { key: string; stem: string }) => renameModel(key, stem),
-    onSuccess: (res) => {
-      notifySuccess("Model Renamed", `Renamed to ${res.model.model_key}.`);
-      queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
-      closeRename();
-      setSelected(null);
-    },
-    onError: (err) => notifyError("Rename Failed", err),
-  });
+  const displayedModels = (models ?? [])
+    .filter((m) => {
+      if (filterLane !== "all" && m.lane !== filterLane) return false;
+      if (filterHouse !== "all" && m.house_id !== filterHouse) return false;
+      if (filterModelType !== "all" && m.model_type !== filterModelType) return false;
+      if (filterBackend !== "all" && m.backend_type !== filterBackend) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "mae-asc")  return (a.stored_mae ?? Infinity) - (b.stored_mae ?? Infinity);
+      if (sortBy === "mae-desc") return (b.stored_mae ?? -Infinity) - (a.stored_mae ?? -Infinity);
+      if (sortBy === "date-asc")  return (a.stored_at ?? "").localeCompare(b.stored_at ?? "");
+      if (sortBy === "date-desc") return (b.stored_at ?? "").localeCompare(a.stored_at ?? "");
+      return 0;
+    });
 
   return (
     <div className="analysis-tab-body">
       <div className="analysis-toolbar">
-        <h3>Production Models</h3>
-        <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={13} />} onClick={() => refetch()}>
-          Refresh
-        </Button>
+        <h3>Available Models</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
+          <select className="predictor-house-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            style={{ fontSize: "0.8rem" }}>
+            <option value="mae-asc">Sort: MAE ↑</option>
+            <option value="mae-desc">Sort: MAE ↓</option>
+            <option value="date-asc">Sort: Date ↑</option>
+            <option value="date-desc">Sort: Date ↓</option>
+          </select>
+          <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={13} />} onClick={() => refetch()}>Refresh</Button>
+        </div>
       </div>
+
+      {/* Filter bar */}
+      <div className="analysis-filter-bar">
+        <label className="analysis-filter-field">
+          <span>Lane</span>
+          <select className="predictor-house-select" value={filterLane} onChange={(e) => setFilterLane(e.target.value as typeof filterLane)}>
+            <option value="all">All</option>
+            <option value="consumption">Consumption</option>
+            <option value="production">Production</option>
+          </select>
+        </label>
+        <label className="analysis-filter-field">
+          <span>House</span>
+          <select className="predictor-house-select" value={filterHouse} onChange={(e) => setFilterHouse(e.target.value)}>
+            <option value="all">All</option>
+            {uniqueHouses.map((h) => <option key={h} value={h}>{h}</option>)}
+          </select>
+        </label>
+        <label className="analysis-filter-field">
+          <span>Variant</span>
+          <select className="predictor-house-select" value={filterModelType} onChange={(e) => setFilterModelType(e.target.value as typeof filterModelType)}>
+            <option value="all">All</option>
+            <option value="warm">Warm</option>
+            <option value="cold_start">Cold Start</option>
+          </select>
+        </label>
+        <label className="analysis-filter-field">
+          <span>Backend</span>
+          <select className="predictor-house-select" value={filterBackend} onChange={(e) => setFilterBackend(e.target.value as typeof filterBackend)}>
+            <option value="all">All</option>
+            <option value="xgboost">XGBoost</option>
+            <option value="lgbm">LightGBM</option>
+            <option value="lstm">LSTM</option>
+          </select>
+        </label>
+        {(filterLane !== "all" || filterHouse !== "all" || filterModelType !== "all" || filterBackend !== "all") && (
+          <button className="analysis-filter-clear" onClick={() => { setFilterLane("all"); setFilterHouse("all"); setFilterModelType("all"); setFilterBackend("all"); }}>
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {isLoading ? <EVChargingLoader label="Loading models…" /> : (
         <div className="panel" style={{ padding: 0 }}>
           <div style={{ overflowX: "auto" }}>
@@ -298,8 +357,8 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                   <th>Model Key</th>
                   <th>House</th>
                   <th>Lane</th>
-                  <th>Type <InfoTip tip="warm = trained on a specific house's historical data. cold_start = generic model used when no history is available." /></th>
-                  <th>Schema</th>
+                  <th>Variant <InfoTip tip="warm = trained on a specific house's historical data. cold_start = generic model used when no history is available." /></th>
+                  <th>Backend</th>
                   <th>Size (KB)</th>
                   <th>Stored MAE <InfoTip tip="Mean Absolute Error recorded at training time on the validation set. Lower is better." /></th>
                   <th># Features <InfoTip tip="Number of input features this model was trained on (lag values, time encodings, etc)." /></th>
@@ -307,26 +366,32 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                 </tr>
               </thead>
               <tbody>
-                {(models ?? []).map((m) => (
+                {displayedModels.map((m) => (
                   <tr key={m.model_key} className="is-clickable" onClick={() => setSelected(m)}>
-                    <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{m.model_key}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>
+                      {m.model_key}
+                      {isActive(m) && <span className="analysis-active-pill">active</span>}
+                    </td>
                     <td>{m.house_id ?? <span className="is-muted">—</span>}</td>
                     <td><Badge tone={m.lane === "consumption" ? "info" : "warning"}>{m.lane}</Badge></td>
                     <td><Badge tone={m.model_type === "warm" ? "success" : "neutral"}>{m.model_type}</Badge></td>
-                    <td><Badge tone={m.model_schema === "sparse" ? "warning" : "neutral"}>{m.model_schema}</Badge></td>
+                    <td>{m.backend_type ? <Badge tone="neutral">{m.backend_type}</Badge> : <span className="is-muted">—</span>}</td>
                     <td>{m.file_size_kb.toFixed(1)}</td>
                     <td>{fmt(m.stored_mae)}</td>
                     <td>{m.n_features}</td>
                     <td>{m.n_outputs}</td>
                   </tr>
                 ))}
+                {displayedModels.length === 0 && (
+                  <tr><td colSpan={9} style={{ textAlign: "center", padding: "24px 0" }} className="is-muted">No models match the current filters.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* Model detail drawer */}
+      {/* Model detail drawer — portalled to body so it covers the full viewport */}
       {selected && createPortal(
         <div className="analysis-overlay" onClick={() => setSelected(null)}>
           <div className="analysis-drawer" onClick={(e) => e.stopPropagation()}>
@@ -343,68 +408,14 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
               ))}
             </div>
             <div className="analysis-drawer-footer">
-              <div className="analysis-drawer-footer-actions">
-                <Button variant="primary" onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
-                  Feature Importance →
-                </Button>
-              </div>
-              <div className="analysis-drawer-footer-secondary">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  iconLeft={<Pencil size={13} />}
-                  onClick={() => openRename(selected)}
-                >
-                  Rename
-                </Button>
-                {selected.model_key.startsWith("old/") && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    iconLeft={<ArrowUpCircle size={13} />}
-                    disabled={promoteMutation.isPending}
-                    onClick={() => promoteMutation.mutate(selected.model_key)}
-                  >
-                    {promoteMutation.isPending ? "Promoting…" : "Promote to Production"}
-                  </Button>
-                )}
-              </div>
+              <Button variant="primary" onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
+                Feature Importance →
+              </Button>
             </div>
           </div>
         </div>,
         document.body
       )}
-
-      {/* Rename modal */}
-      <Modal title="Rename Model" open={renameOpen} onClose={closeRename} width="sm">
-        <div className="rename-modal-body">
-          <p className="rename-modal-hint">
-            Enter a new stem for <code>{selected?.model_key}</code>. Must match a valid pattern — no slashes or <code>.json</code> extension.
-          </p>
-          <label className="form-label">New stem</label>
-          <input
-            className="analysis-text-input"
-            placeholder="direct_model_1_year_R-H-01_consumption"
-            value={newStem}
-            onChange={(e) => setNewStem(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newStem.trim() && selected) renameMutation.mutate({ key: selected.model_key, stem: newStem.trim() });
-              if (e.key === "Escape") closeRename();
-            }}
-            autoFocus
-          />
-          <div className="rename-modal-actions">
-            <Button variant="secondary" onClick={closeRename} disabled={renameMutation.isPending}>Cancel</Button>
-            <Button
-              variant="primary"
-              disabled={!newStem.trim() || renameMutation.isPending}
-              onClick={() => selected && renameMutation.mutate({ key: selected.model_key, stem: newStem.trim() })}
-            >
-              {renameMutation.isPending ? "Renaming…" : "Rename"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }
@@ -504,6 +515,7 @@ function FeatureImportanceTab({ initialModelKey }: { initialModelKey?: string })
 function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
+  const { data: houses } = useQuery({ queryKey: ["predictor", "houses_v2"], queryFn: getHouses, staleTime: 60000 });
   const [houseId, setHouseId] = useState("");
   const [lane, setLane] = useState<Lane>("consumption");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -553,8 +565,11 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
     <div className="analysis-tab-body">
       <div className="analysis-form-grid">
         <label className="analysis-form-field">
-          <span>House ID <InfoTip tip="The household identifier to evaluate, e.g. R-H-01. Models are filtered to this house and lane." /></span>
-          <input className="analysis-text-input" value={houseId} onChange={(e) => setHouseId(e.target.value)} placeholder="e.g. R-H-01" />
+          <span>House <InfoTip tip="The household identifier to evaluate, e.g. R-H-01. Models are filtered to this house and lane." /></span>
+          <select className="predictor-house-select" value={houseId} onChange={(e) => setHouseId(e.target.value)}>
+            <option value="">Select house…</option>
+            {(houses ?? []).map((h) => <option key={h} value={h}>{h}</option>)}
+          </select>
         </label>
         <label className="analysis-form-field">
           <span>Lane <InfoTip tip="consumption = electricity drawn from the grid. production = solar/generation output." /></span>

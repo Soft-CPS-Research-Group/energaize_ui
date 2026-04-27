@@ -20,12 +20,13 @@ export interface ModelMeta {
   house_id: string | null;
   lane: Lane;
   model_type: ModelType;
-  model_schema: "dense" | "sparse";
+  backend_type?: "xgboost" | "lgbm" | "lstm";
   file_path: string;
   file_size_kb: number;
   stored_mae: number;
   n_features: number;
   n_outputs: number;
+  stored_at?: string;
 }
 
 export interface FeatureScore {
@@ -181,20 +182,6 @@ export async function listModels(): Promise<ModelMeta[]> {
 
 export async function getModel(modelKey: string): Promise<ModelMeta> {
   return http<ModelMeta>(url(`/api/analysis/models/${encodeURIComponent(modelKey)}`));
-}
-
-export async function promoteModel(modelKey: string): Promise<{ status: string; model: ModelMeta }> {
-  return http<{ status: string; model: ModelMeta }>(
-    url(`/api/analysis/models/${encodeURIComponent(modelKey)}/promote`),
-    { method: "POST" }
-  );
-}
-
-export async function renameModel(modelKey: string, newStem: string): Promise<{ status: string; model: ModelMeta }> {
-  return http<{ status: string; model: ModelMeta }>(
-    url(`/api/analysis/models/${encodeURIComponent(modelKey)}/rename`),
-    { method: "POST", body: JSON.stringify({ new_stem: newStem }) }
-  );
 }
 
 export async function getFeatureImportance(
