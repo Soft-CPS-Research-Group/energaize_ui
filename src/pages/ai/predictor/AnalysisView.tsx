@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart, Bar, LineChart, Line, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
@@ -10,7 +10,7 @@ import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { getHouses } from "../../../api/predictorApi";
+import { getHouses, setActiveModel } from "../../../api/predictorApi";
 import {
   listModels, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
@@ -239,12 +239,25 @@ function HorizonChart({ series }: { series: { name: string; color: string; data:
 // ─── Tab 1: Model Browser ─────────────────────────────────────────────────────
 
 function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance: (key: string) => void }) {
+  const queryClient = useQueryClient();
+  const { notifySuccess, notifyError } = useApiFeedback();
   const { data: models, isLoading, refetch } = useQuery({
     queryKey: ["analysis", "models"],
     queryFn: listModels,
     staleTime: 60000,
   });
   const [selected, setSelected] = useState<ModelMeta | null>(null);
+
+  const promoteMutation = useMutation({
+    mutationFn: (m: ModelMeta) =>
+      setActiveModel(m.house_id!, { lane: m.lane, model_type: m.model_backend ?? "xgboost" }),
+    onSuccess: (_res, m) => {
+      notifySuccess("Model Promoted", `${m.model_backend ?? "xgboost"} is now active for ${m.house_id} / ${m.lane}.`);
+      setSelected(null);
+      queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
+    },
+    onError: (err) => notifyError("Promote Failed", err),
+  });
 
   // Filters
   const [filterLane, setFilterLane] = useState<"all" | Lane>("all");
@@ -394,7 +407,16 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
               ))}
             </div>
             <div className="analysis-drawer-footer">
-              <Button variant="primary" onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
+              {selected.house_id != null && selected.active !== true && (
+                <Button
+                  variant="primary"
+                  onClick={() => promoteMutation.mutate(selected)}
+                  disabled={promoteMutation.isPending}
+                >
+                  {promoteMutation.isPending ? "Promoting…" : "Set as Active"}
+                </Button>
+              )}
+              <Button variant={selected.house_id != null && selected.active !== true ? "secondary" : "primary"} onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
                 Feature Importance →
               </Button>
             </div>
