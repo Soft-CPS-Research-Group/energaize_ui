@@ -7886,6 +7886,14 @@ button {
 }
 .analysis-filter-clear:hover { background: color-mix(in srgb, #f87171 10%, transparent); color: #f87171; }
 
+/* ── Spin animation ── */
+@keyframes analysis-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.is-spinning { animation: analysis-spin 0.7s linear infinite; }
+.analysis-table--loading { opacity: 0.45; pointer-events: none; transition: opacity 0.15s; }
+
 /* ── Active model pill ── */
 .analysis-active-pill {
   display: inline-flex;

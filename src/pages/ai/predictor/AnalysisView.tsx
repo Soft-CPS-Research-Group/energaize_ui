@@ -241,7 +241,7 @@ function HorizonChart({ series }: { series: { name: string; color: string; data:
 function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance: (key: string) => void }) {
   const queryClient = useQueryClient();
   const { notifySuccess, notifyError } = useApiFeedback();
-  const { data: models, isLoading, refetch } = useQuery({
+  const { data: models, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["analysis", "models"],
     queryFn: listModels,
     staleTime: 60000,
@@ -301,7 +301,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
             <option value="date-asc">Sort: Date ↑</option>
             <option value="date-desc">Sort: Date ↓</option>
           </select>
-          <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={13} />} onClick={() => refetch()}>Refresh</Button>
+          <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={13} className={isFetching ? "is-spinning" : ""} />} onClick={() => refetch()} disabled={isFetching}>Refresh</Button>
         </div>
       </div>
 
@@ -349,7 +349,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
 
       {isLoading ? <EVChargingLoader label="Loading models…" /> : (
         <div className="panel" style={{ padding: 0 }}>
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto" }} className={isFetching ? "analysis-table--loading" : ""}>
             <table className="table">
               <thead>
                 <tr>
@@ -532,6 +532,7 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<CompareResult | null>(null);
   const [segOpen, setSegOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as CompareResult);
@@ -544,9 +545,10 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
 
   const submit = async () => {
     try {
+      setSubmitting(true);
       const res = await submitJob({ job_type: "compare", house_id: houseId, lane, model_keys: selectedKeys, test_days: testDays, include_segments: includeSegments });
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const toggleKey = (k: string) =>
@@ -610,8 +612,8 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
           }
         </div>
       </div>
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={selectedKeys.length < 1 || !houseId}
-        onClick={submit}>Run Compare Job</Button>
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={selectedKeys.length < 1 || !houseId || submitting}
+        onClick={submit}>{submitting ? "Submitting…" : "Run Compare Job"}</Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
         <JobProgressBar job={job} onCancel={async () => { await cancelJob(job.job_id); reset(); setJobId(null); }} />
@@ -712,6 +714,7 @@ function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [segments, setSegments] = useState<string[]>(["weekday_weekend"]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<SegmentAnalysisResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as SegmentAnalysisResult);
@@ -727,9 +730,10 @@ function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const submit = async () => {
     if (!selectedModel) return;
     try {
+      setSubmitting(true);
       const res = await submitJob({ job_type: "segment", house_id: selectedModel.house_id!, lane: selectedModel.lane, model_key: modelKey, segments, test_days: testDays });
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const toggleSeg = (s: string) =>
@@ -770,8 +774,8 @@ function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
           ))}
         </div>
       </div>
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || segments.length === 0} onClick={submit}>
-        Run Segment Analysis
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || segments.length === 0 || submitting} onClick={submit}>
+        {submitting ? "Submitting…" : "Run Segment Analysis"}
       </Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
@@ -823,6 +827,7 @@ function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [testDays, setTestDays] = useState(30);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<MissingDataResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as MissingDataResult);
@@ -838,9 +843,10 @@ function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const submit = async () => {
     if (!selectedModel) return;
     try {
+      setSubmitting(true);
       const res = await submitJob({ job_type: "missing-data", house_id: selectedModel.house_id!, lane: selectedModel.lane, model_key: modelKey, gap_rates: gapRates, gap_types: gapTypes, n_simulations: nSim, test_days: testDays });
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const toggleRate = (r: number) => setGapRates((prev) => prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r].sort());
@@ -899,8 +905,8 @@ function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
           </div>
         </div>
       </div>
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || gapRates.length === 0 || gapTypes.length === 0} onClick={submit}>
-        Run Missing Data Test
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || gapRates.length === 0 || gapTypes.length === 0 || submitting} onClick={submit}>
+        {submitting ? "Submitting…" : "Run Missing Data Test"}
       </Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
@@ -975,6 +981,7 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [nextId, setNextId] = useState(4);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<HpTuneResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as HpTuneResult);
@@ -1006,10 +1013,11 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const submit = async () => {
     if (!selectedModel) return;
     try {
+      setSubmitting(true);
       const payload: SubmitPayload = { job_type: "hyperparameter-tune", house_id: selectedModel.house_id!, lane: selectedModel.lane, model_key: modelKey, strategy, n_trials: strategy === "random" ? nTrials : undefined, param_space: buildParamSpace() };
       const res = await submitJob(payload);
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const scatterData = result ? result.results.map((t) => ({ trial: t.trial, mae: t.metrics.mae, best: t.trial === result.results.reduce((b, c) => c.metrics.mae < b.metrics.mae ? c : b, result.results[0]).trial })) : [];
@@ -1072,8 +1080,8 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
         ))}
       </div>
 
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || paramRows.length === 0} onClick={submit}>
-        Start Tuning
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || paramRows.length === 0 || submitting} onClick={submit}>
+        {submitting ? "Submitting…" : "Start Tuning"}
       </Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
@@ -1143,7 +1151,7 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
 
 function JobHistoryPanel({ onLoadJob }: { onLoadJob: (job: AnalysisJob, tabIndex: number) => void }) {
   const [open, setOpen] = useState(false);
-  const { data: jobs, refetch, isLoading } = useQuery({ queryKey: ["analysis", "jobs"], queryFn: listJobs, staleTime: 10000, enabled: open });
+  const { data: jobs, refetch, isLoading, isFetching } = useQuery({ queryKey: ["analysis", "jobs"], queryFn: listJobs, staleTime: 10000, enabled: open });
 
   const TAB_INDEX: Record<string, number> = { compare: 2, segment: 3, "missing-data": 4, "hyperparameter-tune": 5 };
 
@@ -1153,8 +1161,8 @@ function JobHistoryPanel({ onLoadJob }: { onLoadJob: (job: AnalysisJob, tabIndex
         <button className="analysis-collapsible-btn" onClick={() => setOpen((v) => !v)}>
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Job History
         </button>
-        <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={12} />}
-          onClick={() => refetch()}>Refresh</Button>
+        <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={12} className={isFetching ? "is-spinning" : ""} />}
+          onClick={() => refetch()} disabled={isFetching}>Refresh</Button>
       </div>
       {open && (
         isLoading ? <EVChargingLoader label="Loading history…" /> : (
