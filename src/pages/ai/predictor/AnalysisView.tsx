@@ -10,7 +10,7 @@ import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { getHouses, getActiveModel, type ActiveModelResponse } from "../../../api/predictorApi";
+import { getHouses } from "../../../api/predictorApi";
 import {
   listModels, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
@@ -245,7 +245,6 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
     staleTime: 60000,
   });
   const [selected, setSelected] = useState<ModelMeta | null>(null);
-  const [activeModels, setActiveModels] = useState<Record<string, ActiveModelResponse>>({});
 
   // Filters
   const [filterLane, setFilterLane] = useState<"all" | Lane>("all");
@@ -254,33 +253,19 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
   const [filterBackend, setFilterBackend] = useState<"all" | "xgboost" | "lgbm" | "lstm">("all");
   const [sortBy, setSortBy] = useState<"mae-asc" | "mae-desc" | "date-asc" | "date-desc">("mae-asc");
 
-  // Fetch active-model for each unique house in the model list
-  useEffect(() => {
-    if (!models) return;
-    const houseIds = [...new Set(models.filter((m) => m.house_id).map((m) => m.house_id!))];
-    Promise.allSettled(houseIds.map((id) => getActiveModel(id).then((res) => [id, res] as const))).then((results) => {
-      const map: Record<string, ActiveModelResponse> = {};
-      for (const r of results) {
-        if (r.status === "fulfilled") { const [id, res] = r.value; map[id] = res; }
-      }
-      setActiveModels(map);
-    });
-  }, [models]);
-
-  const isActive = (m: ModelMeta): boolean => {
-    if (!m.house_id || !m.backend_type) return false;
-    const active = activeModels[m.house_id];
-    return !!active && active[m.lane] === m.backend_type;
-  };
+  // model_backend is optional — backend defaults to xgboost when absent
+  const effectiveBackend = (m: ModelMeta) => m.model_backend ?? "xgboost";
 
   const uniqueHouses = [...new Set((models ?? []).filter((m) => m.house_id).map((m) => m.house_id!))].sort();
+  const hasGeneric = (models ?? []).some((m) => !m.house_id);
 
   const displayedModels = (models ?? [])
     .filter((m) => {
       if (filterLane !== "all" && m.lane !== filterLane) return false;
-      if (filterHouse !== "all" && m.house_id !== filterHouse) return false;
+      if (filterHouse === "generic") { if (m.house_id != null) return false; }
+      else if (filterHouse !== "all" && m.house_id !== filterHouse) return false;
       if (filterModelType !== "all" && m.model_type !== filterModelType) return false;
-      if (filterBackend !== "all" && m.backend_type !== filterBackend) return false;
+      if (filterBackend !== "all" && effectiveBackend(m) !== filterBackend) return false;
       return true;
     })
     .sort((a, b) => {
@@ -321,6 +306,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
           <span>House</span>
           <select className="predictor-house-select" value={filterHouse} onChange={(e) => setFilterHouse(e.target.value)}>
             <option value="all">All</option>
+            {hasGeneric && <option value="generic">Generic (no house)</option>}
             {uniqueHouses.map((h) => <option key={h} value={h}>{h}</option>)}
           </select>
         </label>
@@ -333,7 +319,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
           </select>
         </label>
         <label className="analysis-filter-field">
-          <span>Backend</span>
+          <span>Type</span>
           <select className="predictor-house-select" value={filterBackend} onChange={(e) => setFilterBackend(e.target.value as typeof filterBackend)}>
             <option value="all">All</option>
             <option value="xgboost">XGBoost</option>
@@ -358,7 +344,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                   <th>House</th>
                   <th>Lane</th>
                   <th>Variant <InfoTip tip="warm = trained on a specific house's historical data. cold_start = generic model used when no history is available." /></th>
-                  <th>Backend</th>
+                  <th>Type</th>
                   <th>Size (KB)</th>
                   <th>Stored MAE <InfoTip tip="Mean Absolute Error recorded at training time on the validation set. Lower is better." /></th>
                   <th># Features <InfoTip tip="Number of input features this model was trained on (lag values, time encodings, etc)." /></th>
@@ -370,12 +356,12 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                   <tr key={m.model_key} className="is-clickable" onClick={() => setSelected(m)}>
                     <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>
                       {m.model_key}
-                      {isActive(m) && <span className="analysis-active-pill">active</span>}
+                      {m.active === true && <span className="analysis-active-pill">active</span>}
                     </td>
                     <td>{m.house_id ?? <span className="is-muted">—</span>}</td>
                     <td><Badge tone={m.lane === "consumption" ? "info" : "warning"}>{m.lane}</Badge></td>
                     <td><Badge tone={m.model_type === "warm" ? "success" : "neutral"}>{m.model_type}</Badge></td>
-                    <td>{m.backend_type ? <Badge tone="neutral">{m.backend_type}</Badge> : <span className="is-muted">—</span>}</td>
+                    <td><Badge tone="neutral">{m.model_backend ?? "xgboost"}</Badge></td>
                     <td>{m.file_size_kb.toFixed(1)}</td>
                     <td>{fmt(m.stored_mae)}</td>
                     <td>{m.n_features}</td>

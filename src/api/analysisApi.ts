@@ -20,7 +20,8 @@ export interface ModelMeta {
   house_id: string | null;
   lane: Lane;
   model_type: ModelType;
-  backend_type?: "xgboost" | "lgbm" | "lstm";
+  model_backend?: "xgboost" | "lgbm" | "lstm";
+  active: boolean | null;
   file_path: string;
   file_size_kb: number;
   stored_mae: number;

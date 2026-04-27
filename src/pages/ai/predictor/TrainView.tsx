@@ -6,6 +6,7 @@ import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { useState } from "react";
 import { PlusCircle, RotateCcw } from "lucide-react";
+import type { ModelBackend } from "../../../api/predictorApi";
 
 interface TrainViewProps {
   selectedHouseId: string | null;
@@ -35,6 +36,8 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
   const [showTrainDialog, setShowTrainDialog] = useState(false);
   const [showColdTrainDialog, setShowColdTrainDialog] = useState(false);
   const [jobToCancel, setJobToCancel] = useState<string | null>(null);
+  const [trainModelType, setTrainModelType] = useState<ModelBackend>("xgboost");
+  const [trainSchema, setTrainSchema] = useState<"dense" | "sparse">("dense");
 
   const activeJobs = jobs?.filter((j) => ["PENDING", "FETCHING", "RUNNING"].includes(j.status)) ?? [];
   const completedJobs = jobs?.filter((j) => !["PENDING", "FETCHING", "RUNNING"].includes(j.status)) ?? [];
@@ -42,7 +45,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
   const handleTrain = () => {
     if (!selectedHouseId) return;
     commandMutation.mutate(
-      { command: "train", house_id: selectedHouseId, lane: "both" },
+      { command: "train", house_id: selectedHouseId, lane: "both", model_type: trainModelType, model_schema: trainSchema },
       {
         onSuccess: (res) => { notifySuccess("Training Queued", res.message); setShowTrainDialog(false); },
         onError: (err) => notifyError("Training Error", err),
@@ -194,8 +197,37 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
       <ConfirmDialog
         open={showTrainDialog}
         title="Train Model"
-        message={`Start a new training job for house ${selectedHouseId}? If the new model performs better, it will be automatically hot-swapped.`}
-        confirmLabel="Train Both Lanes"
+        message={
+          <>
+            <p style={{ marginBottom: 14 }}>Configure training for house <strong>{selectedHouseId}</strong>. If the new model outperforms the current one it will be hot-swapped automatically.</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
+                <span style={{ color: "var(--text-soft)" }}>Model type</span>
+                <select
+                  className="predictor-house-select"
+                  value={trainModelType}
+                  onChange={(e) => setTrainModelType(e.target.value as ModelBackend)}
+                >
+                  <option value="xgboost">XGBoost</option>
+                  <option value="lgbm">LightGBM</option>
+                  <option value="lstm">LSTM</option>
+                </select>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
+                <span style={{ color: "var(--text-soft)" }}>Feature schema</span>
+                <select
+                  className="predictor-house-select"
+                  value={trainSchema}
+                  onChange={(e) => setTrainSchema(e.target.value as "dense" | "sparse")}
+                >
+                  <option value="dense">Dense</option>
+                  <option value="sparse">Sparse</option>
+                </select>
+              </label>
+            </div>
+          </>
+        }
+        confirmLabel="Start Training"
         confirmVariant="primary"
         pending={commandMutation.isPending}
         onConfirm={handleTrain}

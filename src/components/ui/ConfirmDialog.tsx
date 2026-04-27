@@ -28,7 +28,7 @@ export function ConfirmDialog({
   return (
     <Modal title={title} open={open} onClose={onCancel} width="sm">
       <section className="confirm-dialog">
-        <p>{message}</p>
+        <div>{message}</div>
         <div className="inline-end">
           <Button variant="secondary" onClick={onCancel} disabled={pending}>
             {cancelLabel}
