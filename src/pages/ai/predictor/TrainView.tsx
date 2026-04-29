@@ -138,7 +138,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
                             </span>
                           </div>
                         </td>
-                        <td className="is-muted" style={{ fontSize: "0.8rem" }}>{fmtEta(job.eta_seconds)}</td>
+                        <td className="is-muted" style={{ fontSize: "0.8rem" }}>{job.eta_str ?? fmtEta(job.eta_seconds)}</td>
                         <td>
                           <Button variant="ghost" size="sm" onClick={() => setJobToCancel(job.job_id)}>
                             Cancel

@@ -37,6 +37,7 @@ export interface TrainingJob {
   progress: number;
   total: number;
   eta_seconds: number | null;
+  eta_str?: string | null;
   age_seconds: number;
   submitted_at: string;
   started_at: string | null;
@@ -143,6 +144,7 @@ export async function getTrainingProgress(): Promise<TrainingJob[]> {
       progress: job.curr || 0,
       total: job.tot || 100,
       eta_seconds: 0,
+      eta_str: job.eta ?? null,
       age_seconds: 0,
       submitted_at: new Date().toISOString(),
       started_at: new Date().toISOString(),
