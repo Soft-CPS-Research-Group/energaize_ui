@@ -88,7 +88,7 @@ const METRIC_TIPS: Record<string, string> = {
   MAE: "Mean Absolute Error (kWh) — average magnitude of prediction errors. Lower is better.",
   NMAE: "Normalised MAE as % of mean actual value — lets you compare error across houses with different energy scales.",
   RMSE: "Root Mean Squared Error (kWh) — like MAE but penalises large individual errors more heavily.",
-  MAPE: "Mean Absolute Percentage Error — prediction error expressed as a percentage of the actual value.",
+  MAPE: "Symmetric Mean Absolute Percentage Error — prediction error expressed as a percentage of the average of actual and predicted values. More stable than standard MAPE near zero.",
   "R²": "R² (coefficient of determination): 1.0 = perfect fit, 0 = predicting the mean, negative = worse than baseline.",
   Samples: "Number of 15-minute time steps in the held-out test set used to compute these metrics.",
 };
@@ -179,14 +179,14 @@ function JobProgressBar({ job, onCancel }: { job: AnalysisJob; onCancel: () => v
 
 // ─── MetricsRow ───────────────────────────────────────────────────────────────
 
-function MetricsRow({ m }: { m: ReturnType<typeof Object.values>[0] & { mae: number; nmae_pct: number; rmse: number; mape_pct: number; r2: number; n_samples: number } }) {
+function MetricsRow({ m }: { m: ReturnType<typeof Object.values>[0] & { mae: number; nmae_pct: number; rmse: number; smape_pct: number; r2: number; n_samples: number } }) {
   return (
     <div className="analysis-metrics-row">
       {[
         ["MAE", fmt(m.mae) + " kWh"],
         ["NMAE", fmtPct(m.nmae_pct)],
         ["RMSE", fmt(m.rmse) + " kWh"],
-        ["MAPE", fmtPct(m.mape_pct)],
+        ["MAPE", fmtPct(m.smape_pct)],
         ["R²", fmt(m.r2, 4)],
         ["Samples", String(m.n_samples)],
       ].map(([label, val]) => (
@@ -564,9 +564,9 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
     return row;
   }) : [];
 
-  // Relative/percentage metrics — NMAE% and MAPE% share one scale
-  const pctData = result ? (["nmae_pct", "mape_pct"] as const).map((metric) => {
-    const row: Record<string, unknown> = { metric: metric === "nmae_pct" ? "NMAE%" : "MAPE%" };
+  // Relative/percentage metrics — NMAE% and SMAPE% share one scale
+  const pctData = result ? (["nmae_pct", "smape_pct"] as const).map((metric) => {
+    const row: Record<string, unknown> = { metric: metric === "nmae_pct" ? "NMAE%" : "SMAPE%" };
     for (const [mk, ev] of Object.entries(result.evaluation)) row[mk] = (ev as unknown as Record<string, number>)[metric];
     return row;
   }) : [];
@@ -639,7 +639,7 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
             </ResponsiveContainer>
           </div>
           <div className="panel">
-            <h4>Relative Errors — NMAE% &amp; MAPE%</h4>
+            <h4>Relative Errors — NMAE% &amp; SMAPE%</h4>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={pctData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />

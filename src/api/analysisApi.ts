@@ -47,7 +47,7 @@ export interface MetricsBundle {
   mae: number;
   nmae_pct: number;
   rmse: number;
-  mape_pct: number;
+  smape_pct: number;
   r2: number;
   n_samples: number;
   daytime_mae: number | null;
@@ -57,7 +57,7 @@ export interface HorizonStep {
   step: number;
   mae: number;
   rmse: number;
-  mape: number;
+  smape: number;
 }
 
 export interface SegmentResult {
