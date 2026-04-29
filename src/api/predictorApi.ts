@@ -33,15 +33,18 @@ export interface TrainingJob {
   job_id: string;
   house_id: string;
   lane: string;
+  model_type: string | null; // "xgboost" | "lgbm" | "lstm"
   status: string; // "PENDING" | "FETCHING" | "RUNNING" | "ACCEPTED" | "REJECTED" | "CANCELED" | "FAILED"
-  progress: number;
-  total: number;
+  progress_current: number;
+  progress_total: number;
+  percent: number;
+  eta: string | null;         // human-readable e.g. "3m18s"
   eta_seconds: number | null;
-  eta_str?: string | null;
-  age_seconds: number;
+  elapsed_seconds: number;
   submitted_at: string;
   started_at: string | null;
   finished_at: string | null;
+  result_message: string | null;
   prev_mae: number | null;
   new_mae: number | null;
 }
@@ -119,44 +122,9 @@ export async function getPredictionHistory(
   );
 }
 
-export async function getTrainingProgress(): Promise<TrainingJob[]> {
-  const res = await http<any>(buildPredictorUrl("/api/training-progress"));
-  const jobsRaw = Array.isArray(res) ? res : (res?.jobs || []);
-  
-  return jobsRaw.map((job: any): TrainingJob => {
-    // If the backend returns the actual TrainingJob format, use it as is
-    if (job.status && job.job_id) {
-      return job;
-    }
-    
-    // Otherwise, parse the `{ key, curr, tot, pct, eta }` payload
-    const parts = (job.key || "").split("_");
-    const house_id = parts[0] || "Unknown";
-    const lane = parts[1] || "both";
-    
-    const isCompleted = job.pct >= 100;
-    
-    return {
-      job_id: job.key || `job-${Math.random().toString(36).substr(2,9)}`,
-      house_id,
-      lane,
-      status: isCompleted ? "COMPLETED" : "RUNNING",
-      progress: job.curr || 0,
-      total: job.tot || 100,
-      eta_seconds: 0,
-      eta_str: job.eta ?? null,
-      age_seconds: 0,
-      submitted_at: new Date().toISOString(),
-      started_at: new Date().toISOString(),
-      finished_at: isCompleted ? new Date().toISOString() : null,
-      prev_mae: null,
-      new_mae: null,
-    };
-  });
-}
-
 export async function getJobs(): Promise<TrainingJob[]> {
-  return getTrainingProgress();
+  const res = await http<any>(buildPredictorUrl("/api/jobs"));
+  return Array.isArray(res) ? res : (res?.jobs ?? []);
 }
 
 export async function getJob(jobId: string): Promise<TrainingJob> {
