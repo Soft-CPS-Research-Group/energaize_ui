@@ -6507,9 +6507,6 @@ button {
   padding: 9px 10px;
   background: var(--bg-elev-2);
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .deploy-switch-selected {
@@ -6519,7 +6516,6 @@ button {
   background: color-mix(in srgb, var(--bg-elev) 90%, var(--bg));
   display: grid;
   gap: 2px;
-  min-width: 0;
 }
 
 .deploy-switch-selected small {
@@ -6528,22 +6524,12 @@ button {
 }
 
 .deploy-switch-selected strong {
-  display: block;
   line-height: 1.25;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
 }
 
 .deploy-switch-selected code {
-  display: block;
   color: var(--text-soft);
   font-size: 0.78rem;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
 }
 
 .deploy-switch-actions {
@@ -7131,10 +7117,6 @@ button {
 .dock-logo-isep {
   height: 21px;
   max-width: 108px;
-}
-
-:root[data-theme="light"] .dock-logo-isep {
-  height: 23px;
 }
 
 .dock-logo-icharging {
@@ -7889,6 +7871,64 @@ button {
   color: var(--text);
 }
 
+/* ── Model browser: filter bar ── */
+.analysis-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.analysis-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.analysis-filter-clear {
+  align-self: flex-end;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.analysis-filter-clear:hover { background: color-mix(in srgb, #f87171 10%, transparent); color: #f87171; }
+
+/* ── Spin animation ── */
+@keyframes analysis-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.is-spinning { animation: analysis-spin 0.7s linear infinite; }
+.analysis-table--loading { opacity: 0.45; pointer-events: none; transition: opacity 0.15s; }
+
+/* ── Active model pill ── */
+.analysis-active-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+  color: var(--brand);
+  border: 1px solid color-mix(in srgb, var(--brand) 40%, transparent);
+  vertical-align: middle;
+}
+
 /* ── Metric chips ── */
 .analysis-metrics-row {
   display: flex;
@@ -8133,4 +8173,34 @@ tr.is-clickable {
 
 tr.is-clickable:hover {
   background: color-mix(in srgb, var(--brand) 7%, var(--bg-elev));
+}
+
+/* ── Job detail modal ── */
+.train-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.train-detail-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.train-detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.train-detail-label {
+  min-width: 82px;
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }

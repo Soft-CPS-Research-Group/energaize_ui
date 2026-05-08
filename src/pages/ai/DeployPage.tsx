@@ -58,7 +58,7 @@ const HISTORY_DEFAULT_HOURS = 6;
 const INVESTOR_REFETCH_MS = 300_000;
 const INVESTOR_HISTORY_LIMIT_LINES = 2000;
 const INVESTOR_HISTORY_MAX_PAGES = 8;
-const INVESTOR_HISTORY_SEARCH_TERMS = ["Inputs:", "Prices", "Community:", "connected=", "Community battery"] as const;
+const INVESTOR_HISTORY_SEARCH_TERMS = ["Inputs:", "Prices", "Community:", "Dispatch:", "Battery:"] as const;
 const INVESTOR_HISTORY_FALLBACK_LIMIT_LINES = 2000;
 const INVESTOR_CLOCK_TICK_MS = 300_000;
 const INVESTOR_KPI_INIT_DELAY_MS = 250;
@@ -377,7 +377,20 @@ function hasInvestorKpiSamples(lines: DeployLogsHistoryLine[]): boolean {
 function needsInvestorDemandBackfill(lines: DeployLogsHistoryLine[]): boolean {
   if (!lines.length) return false;
   const parsed = parseDeployLogSamples(lines);
-  const hasCommunity = parsed.some((sample) => sample.metricKey === "community_in" || sample.metricKey === "community_net");
+  const hasAnyKpiSignal = parsed.some((sample) => {
+    if (sample.metricKey.startsWith("price_")) return true;
+    return (
+      sample.metricKey === "meter_in" ||
+      sample.metricKey === "grid_meter_in" ||
+      sample.metricKey === "meter_out" ||
+      sample.metricKey === "grid_meter_out" ||
+      sample.metricKey === "community_in" ||
+      sample.metricKey === "community_out" ||
+      sample.metricKey === "community_net" ||
+      sample.metricKey === "solar" ||
+      sample.metricKey === "battery_dispatch"
+    );
+  });
   const hasDemand = parsed.some(
     (sample) =>
       sample.metricKey === "meter_in" ||
@@ -385,7 +398,7 @@ function needsInvestorDemandBackfill(lines: DeployLogsHistoryLine[]): boolean {
       sample.metricKey === "action_kw" ||
       sample.metricKey === "connected_total"
   );
-  return hasCommunity && !hasDemand;
+  return hasAnyKpiSignal && !hasDemand;
 }
 
 async function loadHistorySegmentForTarget(params: {

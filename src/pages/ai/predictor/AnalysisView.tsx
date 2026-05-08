@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart, Bar, LineChart, Line, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
@@ -10,6 +10,7 @@ import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
+import { getHouses, setActiveModel } from "../../../api/predictorApi";
 import {
   listModels, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
@@ -87,7 +88,7 @@ const METRIC_TIPS: Record<string, string> = {
   MAE: "Mean Absolute Error (kWh) — average magnitude of prediction errors. Lower is better.",
   NMAE: "Normalised MAE as % of mean actual value — lets you compare error across houses with different energy scales.",
   RMSE: "Root Mean Squared Error (kWh) — like MAE but penalises large individual errors more heavily.",
-  MAPE: "Mean Absolute Percentage Error — prediction error expressed as a percentage of the actual value.",
+  MAPE: "Symmetric Mean Absolute Percentage Error — prediction error expressed as a percentage of the average of actual and predicted values. More stable than standard MAPE near zero.",
   "R²": "R² (coefficient of determination): 1.0 = perfect fit, 0 = predicting the mean, negative = worse than baseline.",
   Samples: "Number of 15-minute time steps in the held-out test set used to compute these metrics.",
 };
@@ -178,14 +179,14 @@ function JobProgressBar({ job, onCancel }: { job: AnalysisJob; onCancel: () => v
 
 // ─── MetricsRow ───────────────────────────────────────────────────────────────
 
-function MetricsRow({ m }: { m: ReturnType<typeof Object.values>[0] & { mae: number; nmae_pct: number; rmse: number; mape_pct: number; r2: number; n_samples: number } }) {
+function MetricsRow({ m }: { m: ReturnType<typeof Object.values>[0] & { mae: number; nmae_pct: number; rmse: number; smape_pct: number; r2: number; n_samples: number } }) {
   return (
     <div className="analysis-metrics-row">
       {[
         ["MAE", fmt(m.mae) + " kWh"],
         ["NMAE", fmtPct(m.nmae_pct)],
         ["RMSE", fmt(m.rmse) + " kWh"],
-        ["MAPE", fmtPct(m.mape_pct)],
+        ["MAPE", fmtPct(m.smape_pct)],
         ["R²", fmt(m.r2, 4)],
         ["Samples", String(m.n_samples)],
       ].map(([label, val]) => (
@@ -238,31 +239,125 @@ function HorizonChart({ series }: { series: { name: string; color: string; data:
 // ─── Tab 1: Model Browser ─────────────────────────────────────────────────────
 
 function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance: (key: string) => void }) {
-  const { data: models, isLoading, refetch } = useQuery({
+  const queryClient = useQueryClient();
+  const { notifySuccess, notifyError } = useApiFeedback();
+  const { data: models, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["analysis", "models"],
     queryFn: listModels,
     staleTime: 60000,
   });
   const [selected, setSelected] = useState<ModelMeta | null>(null);
 
+  const promoteMutation = useMutation({
+    mutationFn: (m: ModelMeta) =>
+      setActiveModel(m.house_id!, { lane: m.lane, model_type: m.model_backend ?? "xgboost" }),
+    onSuccess: (_res, m) => {
+      notifySuccess("Model Promoted", `${m.model_backend ?? "xgboost"} is now active for ${m.house_id} / ${m.lane}.`);
+      setSelected(null);
+      queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
+    },
+    onError: (err) => notifyError("Promote Failed", err),
+  });
+
+  // Filters
+  const [filterLane, setFilterLane] = useState<"all" | Lane>("all");
+  const [filterHouse, setFilterHouse] = useState("all");
+  const [filterModelType, setFilterModelType] = useState<"all" | "warm" | "cold_start">("all");
+  const [filterBackend, setFilterBackend] = useState<"all" | "xgboost" | "lgbm" | "lstm">("all");
+  const [sortBy, setSortBy] = useState<"mae-asc" | "mae-desc" | "date-asc" | "date-desc">("mae-asc");
+
+  // model_backend is optional — backend defaults to xgboost when absent
+  const effectiveBackend = (m: ModelMeta) => m.model_backend ?? "xgboost";
+
+  const uniqueHouses = [...new Set((models ?? []).filter((m) => m.house_id).map((m) => m.house_id!))].sort();
+  const hasGeneric = (models ?? []).some((m) => !m.house_id);
+
+  const displayedModels = (models ?? [])
+    .filter((m) => {
+      if (filterLane !== "all" && m.lane !== filterLane) return false;
+      if (filterHouse === "generic") { if (m.house_id != null) return false; }
+      else if (filterHouse !== "all" && m.house_id !== filterHouse) return false;
+      if (filterModelType !== "all" && m.model_type !== filterModelType) return false;
+      if (filterBackend !== "all" && effectiveBackend(m) !== filterBackend) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "mae-asc")  return (a.stored_mae ?? Infinity) - (b.stored_mae ?? Infinity);
+      if (sortBy === "mae-desc") return (b.stored_mae ?? -Infinity) - (a.stored_mae ?? -Infinity);
+      if (sortBy === "date-asc")  return (a.stored_at ?? "").localeCompare(b.stored_at ?? "");
+      if (sortBy === "date-desc") return (b.stored_at ?? "").localeCompare(a.stored_at ?? "");
+      return 0;
+    });
+
   return (
     <div className="analysis-tab-body">
       <div className="analysis-toolbar">
-        <h3>Production Models</h3>
-        <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={13} />} onClick={() => refetch()}>
-          Refresh
-        </Button>
+        <h3>Available Models</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
+          <select className="predictor-house-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            style={{ fontSize: "0.8rem" }}>
+            <option value="mae-asc">Sort: MAE ↑</option>
+            <option value="mae-desc">Sort: MAE ↓</option>
+            <option value="date-asc">Sort: Date ↑</option>
+            <option value="date-desc">Sort: Date ↓</option>
+          </select>
+          <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={13} className={isFetching ? "is-spinning" : ""} />} onClick={() => refetch()} disabled={isFetching}>Refresh</Button>
+        </div>
       </div>
+
+      {/* Filter bar */}
+      <div className="analysis-filter-bar">
+        <label className="analysis-filter-field">
+          <span>Lane</span>
+          <select className="predictor-house-select" value={filterLane} onChange={(e) => setFilterLane(e.target.value as typeof filterLane)}>
+            <option value="all">All</option>
+            <option value="consumption">Consumption</option>
+            <option value="production">Production</option>
+          </select>
+        </label>
+        <label className="analysis-filter-field">
+          <span>House</span>
+          <select className="predictor-house-select" value={filterHouse} onChange={(e) => setFilterHouse(e.target.value)}>
+            <option value="all">All</option>
+            {hasGeneric && <option value="generic">Generic (no house)</option>}
+            {uniqueHouses.map((h) => <option key={h} value={h}>{h}</option>)}
+          </select>
+        </label>
+        <label className="analysis-filter-field">
+          <span>Variant</span>
+          <select className="predictor-house-select" value={filterModelType} onChange={(e) => setFilterModelType(e.target.value as typeof filterModelType)}>
+            <option value="all">All</option>
+            <option value="warm">Warm</option>
+            <option value="cold_start">Cold Start</option>
+          </select>
+        </label>
+        <label className="analysis-filter-field">
+          <span>Type</span>
+          <select className="predictor-house-select" value={filterBackend} onChange={(e) => setFilterBackend(e.target.value as typeof filterBackend)}>
+            <option value="all">All</option>
+            <option value="xgboost">XGBoost</option>
+            <option value="lgbm">LightGBM</option>
+            <option value="lstm">LSTM</option>
+          </select>
+        </label>
+        {(filterLane !== "all" || filterHouse !== "all" || filterModelType !== "all" || filterBackend !== "all") && (
+          <button className="analysis-filter-clear" onClick={() => { setFilterLane("all"); setFilterHouse("all"); setFilterModelType("all"); setFilterBackend("all"); }}>
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {isLoading ? <EVChargingLoader label="Loading models…" /> : (
         <div className="panel" style={{ padding: 0 }}>
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto" }} className={isFetching ? "analysis-table--loading" : ""}>
             <table className="table">
               <thead>
                 <tr>
                   <th>Model Key</th>
                   <th>House</th>
                   <th>Lane</th>
-                  <th>Type <InfoTip tip="warm = trained on a specific house's historical data. cold_start = generic model used when no history is available." /></th>
+                  <th>Variant <InfoTip tip="warm = trained on a specific house's historical data. cold_start = generic model used when no history is available." /></th>
+                  <th>Type</th>
                   <th>Size (KB)</th>
                   <th>Stored MAE <InfoTip tip="Mean Absolute Error recorded at training time on the validation set. Lower is better." /></th>
                   <th># Features <InfoTip tip="Number of input features this model was trained on (lag values, time encodings, etc)." /></th>
@@ -270,18 +365,25 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                 </tr>
               </thead>
               <tbody>
-                {(models ?? []).map((m) => (
+                {displayedModels.map((m) => (
                   <tr key={m.model_key} className="is-clickable" onClick={() => setSelected(m)}>
-                    <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{m.model_key}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>
+                      {m.model_key}
+                      {m.active === true && <span className="analysis-active-pill">active</span>}
+                    </td>
                     <td>{m.house_id ?? <span className="is-muted">—</span>}</td>
                     <td><Badge tone={m.lane === "consumption" ? "info" : "warning"}>{m.lane}</Badge></td>
                     <td><Badge tone={m.model_type === "warm" ? "success" : "neutral"}>{m.model_type}</Badge></td>
+                    <td><Badge tone="neutral">{m.model_backend ?? "xgboost"}</Badge></td>
                     <td>{m.file_size_kb.toFixed(1)}</td>
                     <td>{fmt(m.stored_mae)}</td>
                     <td>{m.n_features}</td>
                     <td>{m.n_outputs}</td>
                   </tr>
                 ))}
+                {displayedModels.length === 0 && (
+                  <tr><td colSpan={9} style={{ textAlign: "center", padding: "24px 0" }} className="is-muted">No models match the current filters.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -305,7 +407,16 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
               ))}
             </div>
             <div className="analysis-drawer-footer">
-              <Button variant="primary" onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
+              {selected.house_id != null && selected.active !== true && (
+                <Button
+                  variant="primary"
+                  onClick={() => promoteMutation.mutate(selected)}
+                  disabled={promoteMutation.isPending}
+                >
+                  {promoteMutation.isPending ? "Promoting…" : "Set as Active"}
+                </Button>
+              )}
+              <Button variant={selected.house_id != null && selected.active !== true ? "secondary" : "primary"} onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
                 Feature Importance →
               </Button>
             </div>
@@ -412,6 +523,7 @@ function FeatureImportanceTab({ initialModelKey }: { initialModelKey?: string })
 function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
+  const { data: houses } = useQuery({ queryKey: ["predictor", "houses_v2"], queryFn: getHouses, staleTime: 60000 });
   const [houseId, setHouseId] = useState("");
   const [lane, setLane] = useState<Lane>("consumption");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -420,6 +532,7 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<CompareResult | null>(null);
   const [segOpen, setSegOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as CompareResult);
@@ -432,9 +545,10 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
 
   const submit = async () => {
     try {
+      setSubmitting(true);
       const res = await submitJob({ job_type: "compare", house_id: houseId, lane, model_keys: selectedKeys, test_days: testDays, include_segments: includeSegments });
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const toggleKey = (k: string) =>
@@ -450,9 +564,9 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
     return row;
   }) : [];
 
-  // Relative/percentage metrics — NMAE% and MAPE% share one scale
-  const pctData = result ? (["nmae_pct", "mape_pct"] as const).map((metric) => {
-    const row: Record<string, unknown> = { metric: metric === "nmae_pct" ? "NMAE%" : "MAPE%" };
+  // Relative/percentage metrics — NMAE% and SMAPE% share one scale
+  const pctData = result ? (["nmae_pct", "smape_pct"] as const).map((metric) => {
+    const row: Record<string, unknown> = { metric: metric === "nmae_pct" ? "NMAE%" : "SMAPE%" };
     for (const [mk, ev] of Object.entries(result.evaluation)) row[mk] = (ev as unknown as Record<string, number>)[metric];
     return row;
   }) : [];
@@ -461,8 +575,11 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
     <div className="analysis-tab-body">
       <div className="analysis-form-grid">
         <label className="analysis-form-field">
-          <span>House ID <InfoTip tip="The household identifier to evaluate, e.g. R-H-01. Models are filtered to this house and lane." /></span>
-          <input className="analysis-text-input" value={houseId} onChange={(e) => setHouseId(e.target.value)} placeholder="e.g. R-H-01" />
+          <span>House <InfoTip tip="The household identifier to evaluate, e.g. R-H-01. Models are filtered to this house and lane." /></span>
+          <select className="predictor-house-select" value={houseId} onChange={(e) => setHouseId(e.target.value)}>
+            <option value="">Select house…</option>
+            {(houses ?? []).map((h) => <option key={h} value={h}>{h}</option>)}
+          </select>
         </label>
         <label className="analysis-form-field">
           <span>Lane <InfoTip tip="consumption = electricity drawn from the grid. production = solar/generation output." /></span>
@@ -495,8 +612,8 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
           }
         </div>
       </div>
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={selectedKeys.length < 1 || !houseId}
-        onClick={submit}>Run Compare Job</Button>
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={selectedKeys.length < 1 || !houseId || submitting}
+        onClick={submit}>{submitting ? "Submitting…" : "Run Compare Job"}</Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
         <JobProgressBar job={job} onCancel={async () => { await cancelJob(job.job_id); reset(); setJobId(null); }} />
@@ -522,7 +639,7 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
             </ResponsiveContainer>
           </div>
           <div className="panel">
-            <h4>Relative Errors — NMAE% &amp; MAPE%</h4>
+            <h4>Relative Errors — NMAE% &amp; SMAPE%</h4>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={pctData} margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
@@ -597,6 +714,7 @@ function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [segments, setSegments] = useState<string[]>(["weekday_weekend"]);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<SegmentAnalysisResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as SegmentAnalysisResult);
@@ -612,9 +730,10 @@ function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const submit = async () => {
     if (!selectedModel) return;
     try {
+      setSubmitting(true);
       const res = await submitJob({ job_type: "segment", house_id: selectedModel.house_id!, lane: selectedModel.lane, model_key: modelKey, segments, test_days: testDays });
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const toggleSeg = (s: string) =>
@@ -655,8 +774,8 @@ function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
           ))}
         </div>
       </div>
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || segments.length === 0} onClick={submit}>
-        Run Segment Analysis
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || segments.length === 0 || submitting} onClick={submit}>
+        {submitting ? "Submitting…" : "Run Segment Analysis"}
       </Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
@@ -708,6 +827,7 @@ function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [testDays, setTestDays] = useState(30);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<MissingDataResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as MissingDataResult);
@@ -723,9 +843,10 @@ function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const submit = async () => {
     if (!selectedModel) return;
     try {
+      setSubmitting(true);
       const res = await submitJob({ job_type: "missing-data", house_id: selectedModel.house_id!, lane: selectedModel.lane, model_key: modelKey, gap_rates: gapRates, gap_types: gapTypes, n_simulations: nSim, test_days: testDays });
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const toggleRate = (r: number) => setGapRates((prev) => prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r].sort());
@@ -784,8 +905,8 @@ function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
           </div>
         </div>
       </div>
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || gapRates.length === 0 || gapTypes.length === 0} onClick={submit}>
-        Run Missing Data Test
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || gapRates.length === 0 || gapTypes.length === 0 || submitting} onClick={submit}>
+        {submitting ? "Submitting…" : "Run Missing Data Test"}
       </Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
@@ -860,6 +981,7 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const [nextId, setNextId] = useState(4);
   const [jobId, setJobId] = useState<string | null>(null);
   const [result, setResult] = useState<HpTuneResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialJob?.result) setResult(initialJob.result as HpTuneResult);
@@ -891,10 +1013,11 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const submit = async () => {
     if (!selectedModel) return;
     try {
+      setSubmitting(true);
       const payload: SubmitPayload = { job_type: "hyperparameter-tune", house_id: selectedModel.house_id!, lane: selectedModel.lane, model_key: modelKey, strategy, n_trials: strategy === "random" ? nTrials : undefined, param_space: buildParamSpace() };
       const res = await submitJob(payload);
       setResult(null); reset(); setJobId(res.job_id);
-    } catch (e) { notifyError("Submit failed", e as Error); }
+    } catch (e) { notifyError("Submit failed", e as Error); } finally { setSubmitting(false); }
   };
 
   const scatterData = result ? result.results.map((t) => ({ trial: t.trial, mae: t.metrics.mae, best: t.trial === result.results.reduce((b, c) => c.metrics.mae < b.metrics.mae ? c : b, result.results[0]).trial })) : [];
@@ -957,8 +1080,8 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
         ))}
       </div>
 
-      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || paramRows.length === 0} onClick={submit}>
-        Start Tuning
+      <Button variant="primary" iconLeft={<Play size={14} />} disabled={!modelKey || paramRows.length === 0 || submitting} onClick={submit}>
+        {submitting ? "Submitting…" : "Start Tuning"}
       </Button>
 
       {job && (job.status === "PENDING" || job.status === "RUNNING") && (
@@ -1028,7 +1151,7 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
 
 function JobHistoryPanel({ onLoadJob }: { onLoadJob: (job: AnalysisJob, tabIndex: number) => void }) {
   const [open, setOpen] = useState(false);
-  const { data: jobs, refetch, isLoading } = useQuery({ queryKey: ["analysis", "jobs"], queryFn: listJobs, staleTime: 10000, enabled: open });
+  const { data: jobs, refetch, isLoading, isFetching } = useQuery({ queryKey: ["analysis", "jobs"], queryFn: listJobs, staleTime: 10000, enabled: open });
 
   const TAB_INDEX: Record<string, number> = { compare: 2, segment: 3, "missing-data": 4, "hyperparameter-tune": 5 };
 
@@ -1038,8 +1161,8 @@ function JobHistoryPanel({ onLoadJob }: { onLoadJob: (job: AnalysisJob, tabIndex
         <button className="analysis-collapsible-btn" onClick={() => setOpen((v) => !v)}>
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Job History
         </button>
-        <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={12} />}
-          onClick={() => refetch()}>Refresh</Button>
+        <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={12} className={isFetching ? "is-spinning" : ""} />}
+          onClick={() => refetch()} disabled={isFetching}>Refresh</Button>
       </div>
       {open && (
         isLoading ? <EVChargingLoader label="Loading history…" /> : (

@@ -6,6 +6,7 @@ const DEFAULT_STEP_MS = 15_000;
 const MIN_STEP_MS = 5_000;
 const MAX_STEP_MS = 15 * 60 * 1000;
 const MIN_SOLAR_KWH_FOR_RATIO = 0.02;
+const CANONICAL_PRICE_LOOKAHEAD_MS = 60_000;
 const RH01_TARGET_ALIASES = new Set(["rh01", "rh1", "rh_01", "rh_1", "r_h_01", "r_h_1", "r_h01", "r_h1"]);
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ANSI_ESCAPE_RE = /\u001b\[[0-9;]*m/g;
@@ -143,6 +144,31 @@ function normalizeUnit(value: string | undefined): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "");
+}
+
+function isEpochInWindow(epochMs: number, windowStartEpochMs: number, windowEndEpochMs: number): boolean {
+  if (!Number.isFinite(epochMs)) return false;
+  if (!Number.isFinite(windowStartEpochMs) || !Number.isFinite(windowEndEpochMs)) return true;
+  return epochMs >= windowStartEpochMs && epochMs <= windowEndEpochMs;
+}
+
+function normalizePriceEurPerKwh(value: number, unit: string | undefined): number {
+  const normalized = normalizeUnit(unit);
+  if (!normalized) return value;
+
+  if (
+    normalized.includes("ceur/kwh") ||
+    normalized.includes("c€/kwh") ||
+    (normalized.includes("cent") && normalized.includes("kwh"))
+  ) {
+    return value / 100;
+  }
+
+  if (normalized.includes("eur/mwh") || normalized.includes("€/mwh")) {
+    return value / 1000;
+  }
+
+  return value;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -413,6 +439,13 @@ function toEnergySamples(
         };
       }
 
+      if (unit === "wh") {
+        return {
+          epochMs: point.epochMs,
+          kwh: normalizeEnergy(rawValue / 1000)
+        };
+      }
+
       if (unit === "kw") {
         const nextEpoch = sorted[index + 1]?.epochMs;
         const durationMs = Math.max(
@@ -422,6 +455,37 @@ function toEnergySamples(
         return {
           epochMs: point.epochMs,
           kwh: normalizeEnergy(rawValue * (durationMs / 3_600_000))
+        };
+      }
+
+      if (unit === "w") {
+        const nextEpoch = sorted[index + 1]?.epochMs;
+        const durationMs = Math.max(
+          MIN_STEP_MS,
+          Math.min(defaultStepMs, Number.isFinite(nextEpoch) ? Math.max(0, nextEpoch - point.epochMs) : defaultStepMs)
+        );
+        return {
+          epochMs: point.epochMs,
+          kwh: normalizeEnergy((rawValue / 1000) * (durationMs / 3_600_000))
+        };
+      }
+
+      if (unit === "mw") {
+        const nextEpoch = sorted[index + 1]?.epochMs;
+        const durationMs = Math.max(
+          MIN_STEP_MS,
+          Math.min(defaultStepMs, Number.isFinite(nextEpoch) ? Math.max(0, nextEpoch - point.epochMs) : defaultStepMs)
+        );
+        return {
+          epochMs: point.epochMs,
+          kwh: normalizeEnergy(rawValue * 1000 * (durationMs / 3_600_000))
+        };
+      }
+
+      if (unit === "mwh") {
+        return {
+          epochMs: point.epochMs,
+          kwh: normalizeEnergy(rawValue * 1000)
         };
       }
 
@@ -444,9 +508,15 @@ function energyByEpoch(samples: EnergySample[]): Map<number, number> {
 
 function buildPriceLookup(points: MetricPoint[]): (epochMs: number) => number | null {
   const sorted = [...points]
-    .map((point) => ({ epochMs: point.epochMs, value: finiteNumber(point.value) }))
-    .filter((point): point is { epochMs: number; value: number | null } => point.value !== null)
-    .map((point) => ({ epochMs: point.epochMs, value: point.value as number }))
+    .map((point) => {
+      const numeric = finiteNumber(point.value);
+      if (numeric === null) return null;
+      return {
+        epochMs: point.epochMs,
+        value: normalizePriceEurPerKwh(numeric, point.unit)
+      };
+    })
+    .filter((point): point is { epochMs: number; value: number } => Boolean(point))
     .sort((left, right) => left.epochMs - right.epochMs);
 
   if (sorted.length === 0) {
@@ -478,6 +548,42 @@ function buildPriceLookup(points: MetricPoint[]): (epochMs: number) => number | 
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
+}
+
+function allocateCommunityPoolEqually(
+  needsByTarget: number[],
+  poolKwh: number
+): number[] {
+  const allocations = needsByTarget.map(() => 0);
+  let remainingPool = Math.max(0, poolKwh);
+  let active = needsByTarget
+    .map((need, index) => ({ index, need: Math.max(0, need) }))
+    .filter((entry) => entry.need > 1e-9);
+
+  while (remainingPool > 1e-9 && active.length > 0) {
+    const equalShare = remainingPool / active.length;
+    let consumed = 0;
+    const nextActive: Array<{ index: number; need: number }> = [];
+
+    active.forEach((entry) => {
+      const room = Math.max(0, entry.need - allocations[entry.index]);
+      if (room <= 1e-9) return;
+      const take = Math.min(room, equalShare);
+      if (take > 0) {
+        allocations[entry.index] += take;
+        consumed += take;
+      }
+      if (room - take > 1e-9) {
+        nextActive.push(entry);
+      }
+    });
+
+    if (consumed <= 1e-9) break;
+    remainingPool = Math.max(0, remainingPool - consumed);
+    active = nextActive;
+  }
+
+  return allocations;
 }
 
 function isRh01TargetId(targetId: string): boolean {
@@ -566,7 +672,9 @@ function buildTargetContext(
   windowEndEpochMs: number
 ): ParsedTargetContext {
   const expandedLines = expandHistoryLines(input.lines || []);
-  const samples = parseDeployLogSamples(expandedLines);
+  const samples = parseDeployLogSamples(expandedLines).filter((sample) =>
+    isEpochInWindow(sample.epochMs, windowStartEpochMs, windowEndEpochMs)
+  );
 
   return {
     targetId: input.targetId,
@@ -583,7 +691,12 @@ function buildTargetContext(
       chargerDemand: collectChargerDemandPoints(samples),
       batteryDispatch: collectBatteryDispatchPoints(samples),
       nonShiftableLoad: collectPreferredMetricPoints(samples, ["non_shiftable", "nsl", "unmanaged"]),
-      connectedTotal: collectPreferredMetricPoints(samples, ["connected_total", "dispatch_connected_total"]),
+      connectedTotal: collectPreferredMetricPoints(samples, [
+        "connected_total",
+        "dispatch_connected_total",
+        "commanded_total",
+        "dispatch_commanded_total"
+      ]),
       solar: collectPreferredMetricPoints(samples, ["solar", "solar_generation_kwh", "solar_generation_kw"]),
       price: collectPricePoints(samples)
     },
@@ -702,6 +815,7 @@ function resolvePriceForEpoch(params: {
   canonicalPriceLookup: ((epochMs: number) => number | null) | null;
   localPriceLookup: (epochMs: number) => number | null;
   allowLocalFallback: boolean;
+  canonicalLookaheadMs?: number;
 }): {
   price: number | null;
   usedCanonical: boolean;
@@ -710,6 +824,14 @@ function resolvePriceForEpoch(params: {
   const canonical = params.canonicalPriceLookup ? params.canonicalPriceLookup(params.epochMs) : null;
   if (canonical !== null && Number.isFinite(canonical)) {
     return { price: canonical, usedCanonical: true, usedLocal: false };
+  }
+
+  const lookaheadMs = Math.max(0, Math.floor(params.canonicalLookaheadMs || 0));
+  if (lookaheadMs > 0 && params.canonicalPriceLookup) {
+    const canonicalWithLookahead = params.canonicalPriceLookup(params.epochMs + lookaheadMs);
+    if (canonicalWithLookahead !== null && Number.isFinite(canonicalWithLookahead)) {
+      return { price: canonicalWithLookahead, usedCanonical: true, usedLocal: false };
+    }
   }
 
   if (params.allowLocalFallback) {
@@ -794,20 +916,37 @@ export function computeDeployInvestorKpis(
 
     if (rows.length === 0) return;
 
-    rows.forEach((row) => {
+    const communityPoolOutKwh = rows.reduce(
+      (maxValue, row) => Math.max(maxValue, Math.max(0, row.slot.communityOutKwh)),
+      0
+    );
+    const communityNeedsByTarget = rows.map((row) => {
+      const gridImportKwh = Math.max(0, row.slot.gridImportKwh);
+      const localNeedKwh = Math.max(0, row.slot.localLoadKwh - row.slot.localGenerationKwh);
+      return Math.max(gridImportKwh, localNeedKwh);
+    });
+    const allocatedCommunityByTarget = allocateCommunityPoolEqually(communityNeedsByTarget, communityPoolOutKwh);
+    const totalCommunityAllocated = allocatedCommunityByTarget.reduce((sum, value) => sum + value, 0);
+    const totalGridExport = rows.reduce((sum, row) => sum + Math.max(0, row.slot.gridExportKwh), 0);
+    const communityUsedFromExports = Math.min(totalCommunityAllocated, totalGridExport);
+
+    rows.forEach((row, rowIndex) => {
       const acc = accumulators.get(row.model.context.targetId);
       if (!acc) return;
 
-      const communityInKwh = Math.max(0, row.slot.communityInKwh);
-      const communityOutKwh = Math.max(0, row.slot.communityOutKwh);
       const gridImportKwh = Math.max(0, row.slot.gridImportKwh);
       const gridExportKwh = Math.max(0, row.slot.gridExportKwh);
-      const demandKwh = Math.max(0, row.slot.localLoadKwh, gridImportKwh + communityInKwh);
+      const allocatedCommunityKwh = Math.max(0, allocatedCommunityByTarget[rowIndex] || 0);
+      const creditedCommunityExportKwh =
+        totalGridExport > 1e-9
+          ? Math.min(gridExportKwh, communityUsedFromExports * (gridExportKwh / totalGridExport))
+          : 0;
+      const demandKwh = Math.max(0, row.slot.localLoadKwh, gridImportKwh + allocatedCommunityKwh);
       const solarSelfUsedKwh = Math.max(0, Math.min(row.slot.solarGeneratedKwh, demandKwh));
 
       acc.demandKwh24 += demandKwh;
-      acc.communityInKwh24 += communityInKwh;
-      acc.communityOutKwh24 += communityOutKwh;
+      acc.communityInKwh24 += allocatedCommunityKwh;
+      acc.communityOutKwh24 += creditedCommunityExportKwh;
       acc.solarGeneratedKwh24 += row.slot.solarGeneratedKwh;
       acc.solarSelfUsedKwh24 += solarSelfUsedKwh;
       acc.gridImportKwh24 += gridImportKwh;
@@ -817,7 +956,8 @@ export function computeDeployInvestorKpis(
         epochMs,
         canonicalPriceLookup,
         localPriceLookup: row.model.localPriceLookup,
-        allowLocalFallback: canonicalContext === null
+        allowLocalFallback: canonicalContext === null,
+        canonicalLookaheadMs: CANONICAL_PRICE_LOOKAHEAD_MS
       });
 
       if (priceResolution.price !== null && Number.isFinite(priceResolution.price)) {
@@ -825,11 +965,11 @@ export function computeDeployInvestorKpis(
         if (priceResolution.usedCanonical) acc.usedCanonicalPrice = true;
         if (priceResolution.usedLocal) acc.usedLocalPrice = true;
 
-        const baseline = (gridImportKwh + communityInKwh) * priceResolution.price;
+        const baseline = (gridImportKwh + allocatedCommunityKwh) * priceResolution.price;
         const actual =
           gridImportKwh * priceResolution.price +
-          communityInKwh * priceResolution.price * COMMUNITY_PRICE_FACTOR -
-          (gridExportKwh + communityOutKwh) * priceResolution.price * COMMUNITY_PRICE_FACTOR;
+          allocatedCommunityKwh * priceResolution.price * COMMUNITY_PRICE_FACTOR -
+          creditedCommunityExportKwh * priceResolution.price * COMMUNITY_PRICE_FACTOR;
 
         acc.tariffBaselineCostEur24 += baseline;
         acc.actualCostEur24 += actual;

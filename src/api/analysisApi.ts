@@ -20,11 +20,14 @@ export interface ModelMeta {
   house_id: string | null;
   lane: Lane;
   model_type: ModelType;
+  model_backend?: "xgboost" | "lgbm" | "lstm";
+  active: boolean | null;
   file_path: string;
   file_size_kb: number;
   stored_mae: number;
   n_features: number;
   n_outputs: number;
+  stored_at?: string;
 }
 
 export interface FeatureScore {
@@ -44,7 +47,7 @@ export interface MetricsBundle {
   mae: number;
   nmae_pct: number;
   rmse: number;
-  mape_pct: number;
+  smape_pct: number;
   r2: number;
   n_samples: number;
   daytime_mae: number | null;
@@ -54,7 +57,7 @@ export interface HorizonStep {
   step: number;
   mae: number;
   rmse: number;
-  mape: number;
+  smape: number;
 }
 
 export interface SegmentResult {

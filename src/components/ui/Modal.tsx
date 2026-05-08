@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
 interface Props {
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export function Modal({ title, open, onClose, children, width = "md" }: Props): JSX.Element {
-  return (
+  return createPortal(
     <AnimatePresence>
       {open ? (
         <motion.div
@@ -39,6 +40,7 @@ export function Modal({ title, open, onClose, children, width = "md" }: Props): 
           </motion.div>
         </motion.div>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

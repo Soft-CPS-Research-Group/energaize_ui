@@ -164,8 +164,10 @@ function computeWeightedErrors(
         localAbs += Math.abs(err);
         localSq  += err * err;
         matched++;
-        // Skip near-zero actuals to avoid division-by-near-zero inflating MAPE
-        if (actual > 0.05) { localPct += Math.abs(err / actual); matchedPct++; }
+        // Symmetric MAPE: denominator is (|actual| + |predicted|) / 2, so it never blows up
+        // near zero actuals the way standard MAPE does. Only skip when both are essentially zero.
+        const denom = (Math.abs(actual) + Math.abs(val)) / 2;
+        if (denom > 0.01) { localPct += Math.abs(err) / denom; matchedPct++; }
       });
       if (matched === 0) return;
       wSumAbs += w * (localAbs / matched);
