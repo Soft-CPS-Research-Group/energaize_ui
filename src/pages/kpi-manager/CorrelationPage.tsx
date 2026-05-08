@@ -7,12 +7,12 @@ import { useCommunities } from "../../hooks/useCommunities";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import {
-  ScatterChart, Scatter, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer,
+  ScatterChart, Scatter, XAxis, YAxis, Line, LineChart,
+  CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart,
 } from "recharts";
 import {
   Search, Loader2, AlertCircle, ArrowRightLeft,
-  MapPin, Building2, Calendar, Activity,
+  MapPin, Building2, Calendar, Activity, Info,
 } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -99,6 +99,28 @@ function ScatterTooltip({ active, payload, kpiA, kpiB }: any) {
   );
 }
 
+// ── Linear regression trend line ─────────────────────────────────────────────
+
+function computeTrendLine(points: Array<{ x: number; y: number }>) {
+  const n = points.length;
+  if (n < 2) return [];
+  const sumX  = points.reduce((a, p) => a + p.x, 0);
+  const sumY  = points.reduce((a, p) => a + p.y, 0);
+  const sumXY = points.reduce((a, p) => a + p.x * p.y, 0);
+  const sumX2 = points.reduce((a, p) => a + p.x * p.x, 0);
+  const denom = n * sumX2 - sumX * sumX;
+  if (denom === 0) return [];
+  const slope = (n * sumXY - sumX * sumY) / denom;
+  const intercept = (sumY - slope * sumX) / n;
+  const xs = points.map(p => p.x);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  return [
+    { x: minX, trend: slope * minX + intercept },
+    { x: maxX, trend: slope * maxX + intercept },
+  ];
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function CorrelationPage() {
@@ -119,7 +141,6 @@ export function CorrelationPage() {
 
   const scheduledKpis = kpiMeta
     .filter((k: any) => k.status === "available" && k.registered)
-    .filter((k: any) => !["AverageImportedEnergyKPI", "AverageExportedEnergyKPI"].includes(k.name))
     .map((k: any) => k.name as string);
 
   const currentBuildings: string[] = communities[community] ?? COMMUNITY_FALLBACK[community] ?? [];
@@ -163,12 +184,18 @@ export function CorrelationPage() {
       {/* Header */}
       <header className="jobs-hero">
         <div>
-          <h1>KPI Correlations (On going work)</h1>
+          <h1>KPI Correlations</h1>
           <p>Analyse how two KPIs move together across 1-hour windows, spot trade-offs and synergies</p>
         </div>
       </header>
 
       <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
+
+        {/* Info note */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.625rem", padding: "0.75rem 1rem", borderRadius: "0.75rem", background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.2)", fontSize: "0.8rem", color: "var(--text-soft)" }}>
+          <Info size={14} style={{ flexShrink: 0, marginTop: "1px", color: "#6366f1" }} />
+          <span>Correlations are computed on <strong>stored KPI windows</strong>. To update the data, run a calculation first from the <strong>Dashboard</strong> or trigger a run from the <strong>Scheduler</strong>.</span>
+        </div>
 
         {/* ── Filter panel ── */}
         <div style={{ backgroundColor: "var(--bg-elev)", padding: "20px", borderRadius: "12px", border: "1px solid var(--line)", boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -289,7 +316,7 @@ export function CorrelationPage() {
               </CardHeader>
             </Card>
 
-            {/* Scatter plot */}
+            {/* Scatter plot with trend line */}
             {result.data_points.length >= 2 && (
               <Card style={{ gridColumn: "1 / -1" }}>
                 <CardHeader>
@@ -297,27 +324,33 @@ export function CorrelationPage() {
                     Scatter: {result.kpi_a.replace("KPI", "")} (x) vs {result.kpi_b.replace("KPI", "")} (y)
                   </CardTitle>
                   <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "var(--text-soft)" }}>
-                    Each dot = one 1-hour computation window. Hover for details.
+                    Each dot = one 1-hour computation window · Dashed line = linear trend. Hover for details.
                   </p>
                 </CardHeader>
                 <CardContent>
                   <div style={{ height: "360px" }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={true} />
+                      <ComposedChart
+                        data={[
+                          ...result.data_points.map(p => ({ ...p, type: "scatter" })),
+                          ...computeTrendLine(result.data_points).map(p => ({ ...p, type: "trend" })),
+                        ]}
+                        margin={{ top: 10, right: 20, bottom: 20, left: 10 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
                         <XAxis
                           type="number"
                           dataKey="x"
                           name={result.kpi_a}
                           label={{ value: result.kpi_a.replace("KPI", ""), position: "insideBottom", offset: -10, style: { fontSize: "12px", fill: "var(--text-soft)" } }}
-                          style={{ fontSize: "11px", fill: "var(--text)" }}
+                          style={{ fontSize: "11px" }}
                         />
                         <YAxis
                           type="number"
                           dataKey="y"
                           name={result.kpi_b}
                           label={{ value: result.kpi_b.replace("KPI", ""), angle: -90, position: "insideLeft", offset: 10, style: { fontSize: "12px", fill: "var(--text-soft)" } }}
-                          style={{ fontSize: "11px", fill: "var(--text)" }}
+                          style={{ fontSize: "11px" }}
                         />
                         <Tooltip
                           content={
@@ -325,11 +358,22 @@ export function CorrelationPage() {
                           }
                         />
                         <Scatter
+                          dataKey="y"
                           data={result.data_points}
                           fill="var(--brand)"
                           fillOpacity={0.6}
                         />
-                      </ScatterChart>
+                        <Line
+                          dataKey="trend"
+                          data={computeTrendLine(result.data_points)}
+                          type="linear"
+                          dot={false}
+                          stroke="#ef4444"
+                          strokeWidth={1.5}
+                          strokeDasharray="5 3"
+                          legendType="none"
+                        />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </CardContent>

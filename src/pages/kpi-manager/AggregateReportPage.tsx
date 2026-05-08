@@ -243,7 +243,7 @@ export function AggregateReportPage() {
     <div className="page">
       <header className="jobs-hero">
         <div>
-          <h1>Aggregate Report (On going work)</h1>
+          <h1>Aggregate Report</h1>
           <p>Group KPI windows by day, week, or month to spot trends and cumulative totals</p>
         </div>
       </header>
@@ -344,6 +344,43 @@ export function AggregateReportPage() {
               <span style={{ fontSize: "0.75rem", color: "var(--text-soft)", marginLeft: "auto" }}>
                 Cost/Savings/Balance always show totals regardless of mode
               </span>
+              <button
+                onClick={() => {
+                  if (!buckets) return;
+                  // Collect all unique (scope, kpi) rows
+                  const keys = new Set<string>();
+                  for (const b of buckets) for (const sc of Object.keys(b.scopes)) for (const kpi of Object.keys(b.scopes[sc])) keys.add(`${sc}||${kpi}`);
+                  const rows = Array.from(keys).sort().map(k => { const [sc, kpi] = k.split("||"); return { sc, kpi }; });
+                  // Build header row
+                  const header = ["Scope", "KPI", ...buckets.map(b => b.label)];
+                  // Build data rows
+                  const dataRows = rows.map(({ sc, kpi }) => {
+                    const vals = buckets.map(b => {
+                      const stats = b.scopes[sc]?.[kpi];
+                      if (!stats) return "";
+                      const v = (mode === "sum" || isSumKpi(kpi)) ? stats.sum : stats.mean;
+                      return v.toString();
+                    });
+                    return [sc, kpi, ...vals];
+                  });
+                  const csv = [header, ...dataRows].map(r => r.map(c => `"${c}"`).join(",")).join("\n");
+                  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `kpi_report_${community}_${period}_${startDate}_${endDate}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                style={{
+                  padding: "0.25rem 0.875rem", borderRadius: "9999px", fontSize: "0.8rem", fontWeight: 600,
+                  cursor: "pointer", border: "1px solid var(--line)",
+                  background: "var(--bg-elev)", color: "var(--text)",
+                  display: "flex", alignItems: "center", gap: "0.375rem",
+                }}
+              >
+                ↓ Download CSV
+              </button>
             </div>
           )}
         </div>

@@ -255,6 +255,76 @@ function SumStat({ label, value, accent }: { label: string; value: string; accen
   );
 }
 
+// ── Formula explainer ────────────────────────────────────────────────
+
+function FormulaExplainer() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{
+      background: "var(--bg-elev)", border: "1px solid var(--line)",
+      borderRadius: "0.75rem", overflow: "hidden",
+    }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0.75rem 1.25rem", background: "none", border: "none",
+          cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, color: "var(--text-soft)",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <ShieldCheck size={14} style={{ color: "var(--brand)" }} />
+          How is the Confidence Score calculated?
+        </span>
+        <span style={{ fontSize: "0.7rem", opacity: 0.6 }}>{open ? "▲ hide" : "▼ show"}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: "0 1.25rem 1.25rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text)", padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.06)", borderRadius: "0.5rem", border: "1px solid rgba(99,102,241,0.15)", fontFamily: "monospace", letterSpacing: "0.02em" }}>
+            Confidence = Coverage × Authenticity × Physical Validity
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "0.75rem" }}>
+            {[
+              {
+                label: "Coverage",
+                color: "#16a34a",
+                desc: "Ratio of payloads actually received vs. expected, based on the data frequency you set. A gap in data lowers this.",
+                formula: "actual / expected",
+              },
+              {
+                label: "Authenticity",
+                color: "#d97706",
+                desc: "Ratio of real sensor readings vs. total readings. Values simulated or filled by Percepta are marked generated=true and counted against this.",
+                formula: "real fields / total fields",
+              },
+              {
+                label: "Physical Validity",
+                color: "#6366f1",
+                desc: "Ratio of payloads that pass physical sanity checks (non-negative energy, realistic SoC ranges, etc.).",
+                formula: "valid payloads / total payloads",
+              },
+            ].map(({ label, color, desc, formula }) => (
+              <div key={label} style={{
+                padding: "0.75rem", borderRadius: "0.5rem",
+                border: `1px solid ${color}25`, background: `${color}08`,
+              }}>
+                <div style={{ fontSize: "0.8rem", fontWeight: 700, color, marginBottom: "0.25rem" }}>{label}</div>
+                <div style={{ fontSize: "0.7rem", fontFamily: "monospace", color: "var(--text-soft)", marginBottom: "0.375rem", opacity: 0.8 }}>{formula}</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-soft)", lineHeight: 1.45 }}>{desc}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-soft)", margin: 0 }}>
+            All three dimensions are between 0 and 1. A score of <strong>1.0</strong> means complete, real, and physically valid data.
+            A score below <strong>0.5</strong> (Low) means KPI values from this building should be treated with caution.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export function DataProfilingPage() {
@@ -268,6 +338,7 @@ export function DataProfilingPage() {
   });
   const [startDate, setStartDate] = useState(getLocalDateString(defaultStart));
   const [endDate, setEndDate]     = useState(getLocalDateString(defaultEnd));
+  const [freqSeconds, setFreqSeconds] = useState<number>(900);
 
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
@@ -286,6 +357,7 @@ export function DataProfilingPage() {
         buildings,
         startDate: new Date(startDate).toISOString(),
         endDate:   new Date(endDate).toISOString(),
+        payloadFrequencySeconds: freqSeconds,
       });
       setProfiles(Object.entries(res.data));
     } catch (e: any) {
@@ -299,7 +371,7 @@ export function DataProfilingPage() {
     <div className="page">
       <header className="jobs-hero">
         <div>
-          <h1>Data Health (On going work)</h1>
+          <h1>Data Health</h1>
           <p>Assess data quality (coverage, outliers, and gaps) before trusting KPI values</p>
         </div>
       </header>
@@ -339,7 +411,7 @@ export function DataProfilingPage() {
             </div>
           </div>
 
-          {/* Dates + run */}
+          {/* Dates + frequency + run */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end", borderTop: "1px solid var(--line)", paddingTop: "1rem" }}>
             <div style={{ width: "150px" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
@@ -360,6 +432,20 @@ export function DataProfilingPage() {
                 type="date"
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
+                style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
+              />
+            </div>
+            <div style={{ width: "170px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}
+                title="Expected interval between payloads (in seconds). Used to compute coverage ratio. Default: 900s = 15 min.">
+                <Clock size={16} /> Data Frequency (s)
+              </label>
+              <input
+                type="number"
+                min={60}
+                step={60}
+                value={freqSeconds}
+                onChange={e => setFreqSeconds(Math.max(1, parseInt(e.target.value) || 900))}
                 style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
               />
             </div>
@@ -405,6 +491,7 @@ export function DataProfilingPage() {
         {!loading && profiles && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <SummaryBar profiles={profiles} />
+            <FormulaExplainer />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "1rem" }}>
               {profiles.map(([buildingId, profile]) => (
                 <BuildingProfileCard key={buildingId} buildingId={buildingId} profile={profile} />

@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-export const KPI_API_BASE_URL = import.meta.env.VITE_KPI_API_URL?.replace(/\/$/, "") || 'http://193.136.62.78:8007';
+//export const KPI_API_BASE_URL = import.meta.env.VITE_KPI_API_URL?.replace(/\/$/, "") || 'http://193.136.62.78:8007';
+export const KPI_API_BASE_URL = import.meta.env.VITE_KPI_API_URL?.replace(/\/$/, "") || 'http://localhost:8000';
 
 export const api = axios.create({ baseURL: `${KPI_API_BASE_URL}/` });
 import type { ApiResponse } from "../types/kpi";
@@ -286,6 +287,52 @@ export const fetchKpiCorrelation = async ({
 
   const response = await api.get<CorrelationResponse>(
     `api/v1/kpis/${community}/correlations?${params.toString()}`
+  );
+  return response.data;
+};
+
+// ── Live State (streaming snapshots) ─────────────────────────────────────────
+
+export interface LiveSnapshot {
+  community: string;
+  building: string;
+  timestamp: string;
+  updated_at?: string;
+  // Energy
+  grid_import_kwh: number;
+  grid_export_kwh: number;
+  net_grid_kwh: number;
+  solar_kwh: number;
+  non_shiftable_load_kwh: number;
+  // Storage
+  battery_soc_avg: number | null;
+  battery_count: number;
+  // EV
+  ev_charging_kw: number;
+  active_ev_sessions: number;
+  // Price
+  energy_price_eur_kwh: number | null;
+  // Quality
+  authenticity_ratio: number;
+  is_physically_valid: boolean;
+  has_generated_data: boolean;
+}
+
+export interface LiveStateResponse {
+  status: string;
+  community: string;
+  count: number;
+  data: LiveSnapshot[];
+}
+
+export const fetchLiveState = async (
+  community: string,
+  buildings?: string[],
+): Promise<LiveStateResponse> => {
+  const params = new URLSearchParams();
+  buildings?.forEach(b => params.append("buildings", b));
+  const response = await api.get<LiveStateResponse>(
+    `api/v1/live/${community}?${params.toString()}`
   );
   return response.data;
 };

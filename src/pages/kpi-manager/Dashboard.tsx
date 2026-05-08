@@ -10,6 +10,7 @@ import { useCommunities } from "../../hooks/useCommunities";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { MultiSelect } from "../../components/ui/MultiSelect";
 import type { ProcessResponse } from "../../workers/dataProcessor.worker";
+import { LiveDashboard } from "./LiveDashboard";
 
 
 // ── Chart data types produced by the data-processor worker ─────────────────
@@ -298,6 +299,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
           <p>Analyze KPI data across communities and buildings</p>
         </div>
       </header>
+
+      {/* LIVE TELEMETRY PANEL */}
+      <LiveDashboard key={community} community={community} buildings={buildings} />
 
       {/* FILTERS */}
       <div style={{ paddingBottom: "0.5rem" }}>
