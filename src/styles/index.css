@@ -8212,3 +8212,370 @@ tr.is-clickable:hover {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+/* ── Train config modal ───────────────────────────────────────────────────── */
+
+.train-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(80vh - 120px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.train-modal-config-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.train-modal-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.84rem;
+  min-width: 130px;
+}
+
+.train-modal-config-field > span {
+  font-size: 0.72rem;
+  color: var(--text-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.train-modal-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-soft);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.train-modal-hp-area {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elev-2) 70%, transparent);
+}
+
+.train-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+/* ── Hyperparams grid ─────────────────────────────────────────────────────── */
+
+.hp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 600px) {
+  .hp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.hp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hp-field-label {
+  font-size: 0.7rem;
+  color: var(--text-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hp-input {
+  height: 32px !important;
+  padding: 0 8px !important;
+  font-size: 0.84rem !important;
+}
+
+/* ── LSTM Layer Builder ───────────────────────────────────────────────────── */
+
+.lstm-builder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 4px 0 8px;
+}
+
+.lstm-io-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1.5px dashed var(--line);
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-soft);
+  background: var(--bg);
+  letter-spacing: 0.03em;
+}
+
+.lstm-connector {
+  width: 2px;
+  height: 14px;
+  background: var(--line);
+  margin-left: 20px;
+  position: relative;
+}
+
+.lstm-connector::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: -3px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--line);
+}
+
+.lstm-layer-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  width: 100%;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.lstm-layer-card:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--line));
+}
+
+.lstm-layer-card-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.lstm-layer-accent {
+  width: 4px;
+  border-radius: 2px;
+  align-self: stretch;
+  flex-shrink: 0;
+  min-height: 28px;
+}
+
+.lstm-layer-type-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 5px;
+  min-width: 64px;
+  text-align: center;
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.lstm-layer-params {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.lstm-layer-param {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+}
+
+.lstm-layer-param-label {
+  color: var(--text-soft);
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.lstm-layer-param-input {
+  width: 68px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  text-align: center;
+  transition: border-color 0.13s;
+}
+
+.lstm-layer-param-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.lstm-layer-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  transition: color 0.12s, background 0.12s;
+  margin-left: auto;
+}
+
+.lstm-layer-delete:hover {
+  color: #f87171;
+  background: color-mix(in srgb, #f87171 12%, transparent);
+}
+
+.lstm-empty-hint {
+  font-size: 0.8rem;
+  color: var(--text-soft);
+  font-style: italic;
+  padding: 10px 2px 4px;
+}
+
+.lstm-add-layer-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 10px 0 2px;
+}
+
+.lstm-add-type-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 1.5px dashed var(--line);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: border-style 0.1s, background 0.12s, opacity 0.12s;
+}
+
+.lstm-add-type-btn:hover {
+  border-style: solid;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+/* ── Model detail hyperparams (analysis drawer & job modal) ──────────────── */
+
+.analysis-hyperparams-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.analysis-hyperparams-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-soft);
+  margin-bottom: 8px;
+}
+
+.analysis-hyperparams-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.analysis-hp-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  transition: background 0.12s;
+}
+
+.analysis-hp-chip:hover {
+  background: color-mix(in srgb, var(--bg-elev-2) 80%, transparent);
+}
+
+.analysis-hp-chip-key {
+  font-size: 0.66rem;
+  color: var(--text-soft);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.analysis-hp-chip-val {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: monospace;
+}
+
+.analysis-layers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analysis-layer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 0.8rem;
+}
+
+.analysis-layer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.analysis-layer-type {
+  font-weight: 700;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 52px;
+}
+
+.analysis-layer-params {
+  color: var(--text-soft);
+  font-size: 0.77rem;
+  font-family: monospace;
+}

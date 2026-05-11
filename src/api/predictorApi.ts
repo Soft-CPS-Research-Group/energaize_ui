@@ -29,6 +29,45 @@ export interface PredictorPredictionsResponse {
   production: number[];
 }
 
+export type LSTMLayerSpec =
+  | { type: "linear"; out: number }
+  | { type: "relu" }
+  | { type: "lstm"; hidden: number; num_layers: number }
+  | { type: "dropout"; p: number };
+
+export interface XGBoostHyperparams {
+  n_estimators?: number;
+  max_depth?: number;
+  learning_rate?: number;
+  subsample?: number;
+  colsample_bytree?: number;
+  min_child_weight?: number;
+}
+
+export interface LGBMHyperparams {
+  objective?: string;
+  n_estimators?: number;
+  max_depth?: number;
+  learning_rate?: number;
+  num_leaves?: number;
+  subsample?: number;
+  colsample_bytree?: number;
+  min_child_samples?: number;
+  reg_alpha?: number;
+  reg_lambda?: number;
+}
+
+export interface LSTMHyperparams {
+  lookback?: number;
+  epochs?: number;
+  batch_size?: number;
+  lr?: number;
+  patience?: number;
+  layers?: LSTMLayerSpec[];
+}
+
+export type ModelHyperparams = XGBoostHyperparams | LGBMHyperparams | LSTMHyperparams;
+
 export interface TrainingJob {
   job_id: string;
   house_id: string;
@@ -47,6 +86,7 @@ export interface TrainingJob {
   result_message: string | null;
   prev_mae: number | null;
   new_mae: number | null;
+  hyperparams?: Record<string, unknown> | null;
 }
 
 export type ModelBackend = "xgboost" | "lgbm" | "lstm";
@@ -74,6 +114,7 @@ export interface PredictorCommandPayload {
   lane?: "consumption" | "production" | "both";
   model_schema?: string;
   model_type?: ModelBackend;
+  hyperparams?: Record<string, unknown>;
 }
 
 export async function getStats(): Promise<PredictorStats> {

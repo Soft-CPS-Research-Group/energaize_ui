@@ -6,8 +6,259 @@ import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { Modal } from "../../../components/ui/Modal";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { useState } from "react";
-import { PlusCircle, RotateCcw } from "lucide-react";
+import { PlusCircle, RotateCcw, Plus, Trash2 } from "lucide-react";
 import type { ModelBackend, TrainingJob } from "../../../api/predictorApi";
+
+// ─── LSTM layer types ─────────────────────────────────────────────────────────
+
+type LSTMLayerType = "linear" | "relu" | "lstm" | "dropout";
+
+interface LSTMLayer {
+  id: string;
+  type: LSTMLayerType;
+  out?: string;
+  hidden?: string;
+  num_layers?: string;
+  p?: string;
+}
+
+const LAYER_COLORS: Record<LSTMLayerType, string> = {
+  linear:  "#3b82f6",
+  relu:    "#22c55e",
+  lstm:    "#8b5cf6",
+  dropout: "#f97316",
+};
+
+const LAYER_LABELS: Record<LSTMLayerType, string> = {
+  linear:  "Linear",
+  relu:    "ReLU",
+  lstm:    "LSTM",
+  dropout: "Dropout",
+};
+
+function makeLayer(type: LSTMLayerType): LSTMLayer {
+  const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  if (type === "linear")  return { id, type, out: "64" };
+  if (type === "lstm")    return { id, type, hidden: "256", num_layers: "2" };
+  if (type === "dropout") return { id, type, p: "0.3" };
+  return { id, type };
+}
+
+function serializeLayer(l: LSTMLayer): Record<string, unknown> {
+  if (l.type === "linear")  return { type: "linear", out: Number(l.out ?? 64) };
+  if (l.type === "lstm")    return { type: "lstm", hidden: Number(l.hidden ?? 256), num_layers: Number(l.num_layers ?? 2) };
+  if (l.type === "dropout") return { type: "dropout", p: Number(l.p ?? 0.3) };
+  return { type: "relu" };
+}
+
+// ─── Default hyperparams ──────────────────────────────────────────────────────
+
+const XGB_DEFAULTS = { n_estimators: "500", max_depth: "7", learning_rate: "0.1", subsample: "0.8", colsample_bytree: "0.8", min_child_weight: "1" } as const;
+type XGBKey = keyof typeof XGB_DEFAULTS;
+
+const LGBM_DEFAULTS = { objective: "tweedie", n_estimators: "1000", max_depth: "-1", learning_rate: "0.03", num_leaves: "127", subsample: "0.8", colsample_bytree: "0.7", min_child_samples: "10", reg_alpha: "0.1", reg_lambda: "1.0" } as const;
+type LGBMKey = keyof typeof LGBM_DEFAULTS;
+
+const LSTM_DEFAULTS = { lookback: "672", epochs: "100", batch_size: "64", lr: "0.001", patience: "20" } as const;
+type LSTMKey = keyof typeof LSTM_DEFAULTS;
+
+// ─── Small number input ───────────────────────────────────────────────────────
+
+function HpNumInput({ label, value, onChange, step, min, max }: {
+  label: string; value: string; onChange: (v: string) => void;
+  step?: string; min?: string | number; max?: string | number;
+}) {
+  return (
+    <label className="hp-field">
+      <span className="hp-field-label">{label}</span>
+      <input type="number" className="analysis-text-input hp-input" value={value}
+        step={step} min={min} max={max} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  );
+}
+
+// ─── Per-model hyperparams forms ──────────────────────────────────────────────
+
+function XGBForm({ schema, onSchemaChange, params, onChange }: {
+  schema: "dense" | "sparse";
+  onSchemaChange: (v: "dense" | "sparse") => void;
+  params: { [K in XGBKey]: string };
+  onChange: (k: XGBKey, v: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <label className="train-modal-config-field">
+        <span>Feature schema</span>
+        <select className="predictor-house-select" value={schema} onChange={(e) => onSchemaChange(e.target.value as "dense" | "sparse")}>
+          <option value="dense">Dense</option>
+          <option value="sparse">Sparse</option>
+        </select>
+      </label>
+      <div>
+        <div className="train-modal-section-title">Hyperparameters</div>
+        <div className="hp-grid" style={{ marginTop: 8 }}>
+          <HpNumInput label="n_estimators" value={params.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
+          <HpNumInput label="max_depth" value={params.max_depth} min={1} max={20} onChange={(v) => onChange("max_depth", v)} />
+          <HpNumInput label="learning_rate" value={params.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
+          <HpNumInput label="subsample" value={params.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
+          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
+          <HpNumInput label="min_child_weight" value={params.min_child_weight} min={0} onChange={(v) => onChange("min_child_weight", v)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LGBMForm({ params, onChange }: {
+  params: { [K in LGBMKey]: string };
+  onChange: (k: LGBMKey, v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="train-modal-section-title">Hyperparameters</div>
+      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+        <label className="hp-field">
+          <span className="hp-field-label">objective</span>
+          <select className="predictor-house-select" value={params.objective} onChange={(e) => onChange("objective", e.target.value)}>
+            <option value="tweedie">tweedie</option>
+            <option value="regression">regression</option>
+            <option value="huber">huber</option>
+          </select>
+        </label>
+        <div className="hp-grid">
+          <HpNumInput label="n_estimators" value={params.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
+          <HpNumInput label="max_depth" value={params.max_depth} min={-1} onChange={(v) => onChange("max_depth", v)} />
+          <HpNumInput label="learning_rate" value={params.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
+          <HpNumInput label="num_leaves" value={params.num_leaves} min={2} onChange={(v) => onChange("num_leaves", v)} />
+          <HpNumInput label="subsample" value={params.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
+          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
+          <HpNumInput label="min_child_samples" value={params.min_child_samples} min={1} onChange={(v) => onChange("min_child_samples", v)} />
+          <HpNumInput label="reg_alpha" value={params.reg_alpha} step="0.01" min={0} onChange={(v) => onChange("reg_alpha", v)} />
+          <HpNumInput label="reg_lambda" value={params.reg_lambda} step="0.1" min={0} onChange={(v) => onChange("reg_lambda", v)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LSTMLayerCard({ layer, onChange, onDelete }: {
+  layer: LSTMLayer;
+  onChange: (l: LSTMLayer) => void;
+  onDelete: () => void;
+}) {
+  const color = LAYER_COLORS[layer.type];
+  return (
+    <div className="lstm-layer-card">
+      <div className="lstm-layer-card-inner">
+        <div className="lstm-layer-accent" style={{ background: color }} />
+        <span className="lstm-layer-type-badge" style={{ background: `color-mix(in srgb, ${color} 15%, var(--bg-elev))`, color }}>
+          {LAYER_LABELS[layer.type]}
+        </span>
+        <div className="lstm-layer-params">
+          {layer.type === "linear" && (
+            <div className="lstm-layer-param">
+              <span className="lstm-layer-param-label">out</span>
+              <input type="number" className="lstm-layer-param-input" value={layer.out ?? "64"} min={1}
+                onChange={(e) => onChange({ ...layer, out: e.target.value })} />
+            </div>
+          )}
+          {layer.type === "lstm" && (
+            <>
+              <div className="lstm-layer-param">
+                <span className="lstm-layer-param-label">hidden</span>
+                <input type="number" className="lstm-layer-param-input" value={layer.hidden ?? "256"} min={1}
+                  onChange={(e) => onChange({ ...layer, hidden: e.target.value })} />
+              </div>
+              <div className="lstm-layer-param">
+                <span className="lstm-layer-param-label">num_layers</span>
+                <input type="number" className="lstm-layer-param-input" value={layer.num_layers ?? "2"} min={1} max={8}
+                  onChange={(e) => onChange({ ...layer, num_layers: e.target.value })} />
+              </div>
+            </>
+          )}
+          {layer.type === "dropout" && (
+            <div className="lstm-layer-param">
+              <span className="lstm-layer-param-label">p</span>
+              <input type="number" className="lstm-layer-param-input" value={layer.p ?? "0.3"} min={0} max={1} step="0.05"
+                onChange={(e) => onChange({ ...layer, p: e.target.value })} />
+            </div>
+          )}
+          {layer.type === "relu" && (
+            <span style={{ fontSize: "0.75rem", color: "var(--text-soft)", fontStyle: "italic" }}>no params</span>
+          )}
+        </div>
+        <button className="lstm-layer-delete" onClick={onDelete} title="Remove layer">
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LSTMForm({ params, onChange, layers, onLayersChange }: {
+  params: { [K in LSTMKey]: string };
+  onChange: (k: LSTMKey, v: string) => void;
+  layers: LSTMLayer[];
+  onLayersChange: (l: LSTMLayer[]) => void;
+}) {
+  const updateLayer = (id: string, updated: LSTMLayer) =>
+    onLayersChange(layers.map((l) => (l.id === id ? updated : l)));
+  const deleteLayer = (id: string) =>
+    onLayersChange(layers.filter((l) => l.id !== id));
+  const addLayer = (type: LSTMLayerType) =>
+    onLayersChange([...layers, makeLayer(type)]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div>
+        <div className="train-modal-section-title">Training Hyperparameters</div>
+        <div className="hp-grid" style={{ marginTop: 8 }}>
+          <HpNumInput label="lookback" value={params.lookback} min={1} onChange={(v) => onChange("lookback", v)} />
+          <HpNumInput label="epochs" value={params.epochs} min={1} onChange={(v) => onChange("epochs", v)} />
+          <HpNumInput label="batch_size" value={params.batch_size} min={1} onChange={(v) => onChange("batch_size", v)} />
+          <HpNumInput label="lr" value={params.lr} step="0.0001" min={0} onChange={(v) => onChange("lr", v)} />
+          <HpNumInput label="patience" value={params.patience} min={1} onChange={(v) => onChange("patience", v)} />
+        </div>
+      </div>
+
+      <div>
+        <div className="train-modal-section-title" style={{ marginBottom: 10 }}>Architecture <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-soft)" }}>(optional — omit to use default)</span></div>
+        <div className="lstm-builder">
+          <div className="lstm-io-node">▶ Input</div>
+          {layers.length === 0 && (
+            <p className="lstm-empty-hint">No custom layers — model uses its built-in default architecture</p>
+          )}
+          {layers.map((layer) => (
+            <div key={layer.id}>
+              <div className="lstm-connector" />
+              <LSTMLayerCard
+                layer={layer}
+                onChange={(updated) => updateLayer(layer.id, updated)}
+                onDelete={() => deleteLayer(layer.id)}
+              />
+            </div>
+          ))}
+          {layers.length > 0 && (
+            <>
+              <div className="lstm-connector" />
+              <div className="lstm-io-node">◀ Output</div>
+            </>
+          )}
+        </div>
+        <div className="lstm-add-layer-row">
+          {(["linear", "relu", "lstm", "dropout"] as LSTMLayerType[]).map((t) => (
+            <button key={t} className="lstm-add-type-btn"
+              style={{ borderColor: `color-mix(in srgb, ${LAYER_COLORS[t]} 40%, var(--line))`, color: LAYER_COLORS[t] }}
+              onClick={() => addLayer(t)}>
+              <Plus size={11} />
+              {LAYER_LABELS[t]}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface TrainViewProps {
   selectedHouseId: string | null;
@@ -127,6 +378,36 @@ function JobDetailModal({ job, onClose, onCancel, cancelling }: {
           </div>
         </div>
 
+        {job.hyperparams && Object.keys(job.hyperparams).length > 0 && (
+          <div className="train-detail-section">
+            <div className="train-modal-section-title" style={{ marginBottom: 8 }}>Hyperparameters</div>
+            <div className="analysis-hyperparams-grid">
+              {Object.entries(job.hyperparams).filter(([k]) => k !== "layers").map(([k, v]) => (
+                <div key={k} className="analysis-hp-chip">
+                  <span className="analysis-hp-chip-key">{k}</span>
+                  <span className="analysis-hp-chip-val">{String(v)}</span>
+                </div>
+              ))}
+            </div>
+            {Array.isArray((job.hyperparams as Record<string, unknown>).layers) && (
+              <div style={{ marginTop: 10 }}>
+                <div className="hp-field-label" style={{ marginBottom: 6 }}>Architecture</div>
+                <div className="analysis-layers-list">
+                  {((job.hyperparams as Record<string, unknown[]>).layers as Record<string, unknown>[]).map((l, i) => (
+                    <div key={i} className="analysis-layer-item">
+                      <div className="analysis-layer-dot" style={{ background: LAYER_COLORS[(l.type as LSTMLayerType)] ?? "#888" }} />
+                      <span className="analysis-layer-type">{String(l.type)}</span>
+                      <span className="analysis-layer-params">
+                        {l.type === "linear" ? `out=${l.out}` : l.type === "lstm" ? `hidden=${l.hidden}, layers=${l.num_layers}` : l.type === "dropout" ? `p=${l.p}` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {isActive && (
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <Button variant="danger" size="sm" onClick={onCancel} disabled={cancelling}>
@@ -151,13 +432,63 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
   const [trainModelType, setTrainModelType] = useState<ModelBackend>("xgboost");
   const [trainSchema, setTrainSchema] = useState<"dense" | "sparse">("dense");
 
+  // Hyperparams state
+  const [xgbParams, setXgbParams] = useState<{ [K in XGBKey]: string }>({ ...XGB_DEFAULTS });
+  const [lgbmParams, setLgbmParams] = useState<{ [K in LGBMKey]: string }>({ ...LGBM_DEFAULTS });
+  const [lstmParams, setLstmParams] = useState<{ [K in LSTMKey]: string }>({ ...LSTM_DEFAULTS });
+  const [lstmLayers, setLstmLayers] = useState<LSTMLayer[]>([]);
+
+  function buildHyperparams(): Record<string, unknown> {
+    if (trainModelType === "xgboost") {
+      return {
+        n_estimators: Number(xgbParams.n_estimators),
+        max_depth: Number(xgbParams.max_depth),
+        learning_rate: Number(xgbParams.learning_rate),
+        subsample: Number(xgbParams.subsample),
+        colsample_bytree: Number(xgbParams.colsample_bytree),
+        min_child_weight: Number(xgbParams.min_child_weight),
+      };
+    }
+    if (trainModelType === "lgbm") {
+      return {
+        objective: lgbmParams.objective,
+        n_estimators: Number(lgbmParams.n_estimators),
+        max_depth: Number(lgbmParams.max_depth),
+        learning_rate: Number(lgbmParams.learning_rate),
+        num_leaves: Number(lgbmParams.num_leaves),
+        subsample: Number(lgbmParams.subsample),
+        colsample_bytree: Number(lgbmParams.colsample_bytree),
+        min_child_samples: Number(lgbmParams.min_child_samples),
+        reg_alpha: Number(lgbmParams.reg_alpha),
+        reg_lambda: Number(lgbmParams.reg_lambda),
+      };
+    }
+    // lstm
+    const hp: Record<string, unknown> = {
+      lookback: Number(lstmParams.lookback),
+      epochs: Number(lstmParams.epochs),
+      batch_size: Number(lstmParams.batch_size),
+      lr: Number(lstmParams.lr),
+      patience: Number(lstmParams.patience),
+    };
+    if (lstmLayers.length > 0) hp.layers = lstmLayers.map(serializeLayer);
+    return hp;
+  }
+
   const activeJobs = jobs?.filter((j) => ACTIVE_STATUSES.includes(j.status)) ?? [];
   const completedJobs = jobs?.filter((j) => !ACTIVE_STATUSES.includes(j.status)) ?? [];
 
   const handleTrain = () => {
     if (!selectedHouseId) return;
     commandMutation.mutate(
-      { command: "train", house_id: selectedHouseId, lane: "both", model_type: trainModelType, model_schema: trainSchema },
+      {
+        command: "train",
+        house_id: selectedHouseId,
+        lane: "both",
+        model_type: trainModelType,
+        ...(trainModelType === "xgboost" ? { model_schema: trainSchema } : {}),
+        hyperparams: buildHyperparams(),
+      },
       {
         onSuccess: (res) => { notifySuccess("Training Queued", res.message); setShowTrainDialog(false); },
         onError: (err) => notifyError("Training Error", err),
@@ -308,46 +639,6 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
       )}
 
       <ConfirmDialog
-        open={showTrainDialog}
-        title="Train Model"
-        message={
-          <>
-            <p style={{ marginBottom: 14 }}>Configure training for house <strong>{selectedHouseId}</strong>. If the new model outperforms the current one it will be hot-swapped automatically.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
-                <span style={{ color: "var(--text-soft)" }}>Model type</span>
-                <select
-                  className="predictor-house-select"
-                  value={trainModelType}
-                  onChange={(e) => setTrainModelType(e.target.value as ModelBackend)}
-                >
-                  <option value="xgboost">XGBoost</option>
-                  <option value="lgbm">LightGBM</option>
-                  <option value="lstm">LSTM</option>
-                </select>
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
-                <span style={{ color: "var(--text-soft)" }}>Feature schema</span>
-                <select
-                  className="predictor-house-select"
-                  value={trainSchema}
-                  onChange={(e) => setTrainSchema(e.target.value as "dense" | "sparse")}
-                >
-                  <option value="dense">Dense</option>
-                  <option value="sparse">Sparse</option>
-                </select>
-              </label>
-            </div>
-          </>
-        }
-        confirmLabel="Start Training"
-        confirmVariant="primary"
-        pending={commandMutation.isPending}
-        onConfirm={handleTrain}
-        onCancel={() => setShowTrainDialog(false)}
-      />
-
-      <ConfirmDialog
         open={showColdTrainDialog}
         title="Retrain Cold-Start Model"
         message="This will submit a distributed cold-start training job across all houses in the cluster."
@@ -357,6 +648,64 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
         onConfirm={handleColdTrain}
         onCancel={() => setShowColdTrainDialog(false)}
       />
+
+      {/* ── Train config modal ── */}
+      <Modal title={`Train — ${selectedHouseId ?? ""}`} open={showTrainDialog} onClose={() => setShowTrainDialog(false)} width="lg">
+        <div className="train-modal-body">
+          {/* Top config row */}
+          <div className="train-modal-config-row">
+            <label className="train-modal-config-field">
+              <span>Model type</span>
+              <select
+                className="predictor-house-select"
+                value={trainModelType}
+                onChange={(e) => setTrainModelType(e.target.value as ModelBackend)}
+              >
+                <option value="xgboost">XGBoost</option>
+                <option value="lgbm">LightGBM</option>
+                <option value="lstm">LSTM</option>
+              </select>
+            </label>
+          </div>
+
+          <p style={{ margin: 0, fontSize: "0.83rem", color: "var(--text-soft)" }}>
+            All fields are optional — omitting any falls back to the server-side production defaults.
+          </p>
+
+          {/* Per-model hyperparams */}
+          <div className="train-modal-hp-area">
+            {trainModelType === "xgboost" && (
+              <XGBForm
+                schema={trainSchema}
+                onSchemaChange={setTrainSchema}
+                params={xgbParams}
+                onChange={(k, v) => setXgbParams((p) => ({ ...p, [k]: v }))}
+              />
+            )}
+            {trainModelType === "lgbm" && (
+              <LGBMForm
+                params={lgbmParams}
+                onChange={(k, v) => setLgbmParams((p) => ({ ...p, [k]: v }))}
+              />
+            )}
+            {trainModelType === "lstm" && (
+              <LSTMForm
+                params={lstmParams}
+                onChange={(k, v) => setLstmParams((p) => ({ ...p, [k]: v }))}
+                layers={lstmLayers}
+                onLayersChange={setLstmLayers}
+              />
+            )}
+          </div>
+
+          <div className="train-modal-footer">
+            <Button variant="secondary" onClick={() => setShowTrainDialog(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleTrain} disabled={commandMutation.isPending}>
+              {commandMutation.isPending ? "Submitting…" : "Start Training"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
