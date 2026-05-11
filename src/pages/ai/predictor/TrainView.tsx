@@ -766,7 +766,7 @@ function MeterCard({ label, value, sub, color, data, dataKey, domain, unit }: {
             <YAxis domain={domain} hide />
             <Tooltip
               contentStyle={{ background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 6, fontSize: "0.7rem" }}
-              formatter={(v: number) => [`${v.toFixed(1)}${unit}`, label]}
+              formatter={(v) => [`${(+(v ?? 0)).toFixed(1)}${unit}`, label]}
               labelFormatter={() => ""}
             />
             <Area
