@@ -228,7 +228,7 @@ export function KpiExplorer() {
     : "Choose a community or building from the left panel";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }} className="page">
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", paddingBottom: 0 }} className="page">
       {/* Header */}
       <header className="jobs-hero">
         <div>
@@ -329,7 +329,7 @@ export function KpiExplorer() {
           </aside>
 
           {/* ── Right Content Panel ──────────────────────────────────────── */}
-          <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem", backgroundColor: "var(--bg)" }}>
+          <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem 1.5rem 0 1.5rem", backgroundColor: "var(--bg)" }}>
             {/* Panel header */}
             <div style={{ marginBottom: "1.25rem" }}>
               <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "var(--text)", margin: 0 }}>{panelTitle}</h2>

@@ -190,7 +190,7 @@ export function ComparePage() {
         </div>
       </header>
 
-      <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
+      <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
         {/* Filters panel */}
         <div style={{ backgroundColor: "var(--bg-elev)", padding: "20px", borderRadius: "12px", border: "1px solid var(--line)", boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: "16px" }}>
 

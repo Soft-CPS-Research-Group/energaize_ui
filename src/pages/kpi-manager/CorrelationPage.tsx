@@ -189,7 +189,7 @@ export function CorrelationPage() {
         </div>
       </header>
 
-      <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
+      <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
 
         {/* Info note */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: "0.625rem", padding: "0.75rem 1rem", borderRadius: "0.75rem", background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.2)", fontSize: "0.8rem", color: "var(--text-soft)" }}>

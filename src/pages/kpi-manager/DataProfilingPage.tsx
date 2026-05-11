@@ -78,30 +78,10 @@ function RatioBar({ value, label, good = true }: { value: number; label: string;
   );
 }
 
-// ── Outlier chip ─────────────────────────────────────────────────────────────
-
-function OutlierChip({ field, count }: { field: string; count: number }) {
-  const label = field.replace(/_/g, " ");
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: "0.25rem",
-      fontSize: "0.75rem", padding: "0.125rem 0.5rem",
-      borderRadius: "9999px", fontWeight: 500,
-      backgroundColor: count > 0 ? "rgba(220,38,38,0.08)" : "var(--bg)",
-      color: count > 0 ? "#dc2626" : "var(--text-soft)",
-      border: `1px solid ${count > 0 ? "rgba(220,38,38,0.25)" : "var(--line)"}`,
-    }}>
-      {count > 0 ? <AlertTriangle size={11} /> : <CheckCircle2 size={11} />}
-      {label}: {count}
-    </span>
-  );
-}
-
 // ── Building profile card ────────────────────────────────────────────────────
 
 function BuildingProfileCard({ buildingId, profile }: { buildingId: string; profile: BuildingProfile }) {
   const [showGaps, setShowGaps] = useState(false);
-  const outlierEntries = Object.entries(profile.outlier_counts ?? {});
 
   return (
     <div style={{
@@ -149,20 +129,6 @@ function BuildingProfileCard({ buildingId, profile }: { buildingId: string; prof
           }}>
             <XCircle size={14} />
             {(profile.physically_invalid_count ?? profile.physically_invalid)} physically impossible reading{((profile.physically_invalid_count ?? profile.physically_invalid) || 0) !== 1 ? "s" : ""}
-          </div>
-        )}
-
-        {/* Outliers */}
-        {outlierEntries.length > 0 && (
-          <div>
-            <p style={{ fontSize: "0.75rem", color: "var(--text-soft)", marginBottom: "0.5rem", fontWeight: 500 }}>
-              Outlier counts (by sensor field)
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
-              {outlierEntries.map(([field, count]) => (
-                <OutlierChip key={field} field={field} count={count} />
-              ))}
-            </div>
           </div>
         )}
 
@@ -338,7 +304,6 @@ export function DataProfilingPage() {
   });
   const [startDate, setStartDate] = useState(getLocalDateString(defaultStart));
   const [endDate, setEndDate]     = useState(getLocalDateString(defaultEnd));
-  const [freqSeconds, setFreqSeconds] = useState<number>(900);
 
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
@@ -357,7 +322,6 @@ export function DataProfilingPage() {
         buildings,
         startDate: new Date(startDate).toISOString(),
         endDate:   new Date(endDate).toISOString(),
-        payloadFrequencySeconds: freqSeconds,
       });
       setProfiles(Object.entries(res.data));
     } catch (e: any) {
@@ -372,7 +336,7 @@ export function DataProfilingPage() {
       <header className="jobs-hero">
         <div>
           <h1>Data Health</h1>
-          <p>Assess data quality (coverage, outliers, and gaps) before trusting KPI values</p>
+          <p>Assess data quality (coverage, authenticity, validity, and gaps) before trusting KPI values</p>
         </div>
       </header>
 
@@ -435,20 +399,7 @@ export function DataProfilingPage() {
                 style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
               />
             </div>
-            <div style={{ width: "170px" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}
-                title="Expected interval between payloads (in seconds). Used to compute coverage ratio. Default: 900s = 15 min.">
-                <Clock size={16} /> Data Frequency (s)
-              </label>
-              <input
-                type="number"
-                min={60}
-                step={60}
-                value={freqSeconds}
-                onChange={e => setFreqSeconds(Math.max(1, parseInt(e.target.value) || 900))}
-                style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-              />
-            </div>
+
             <div style={{ marginLeft: "auto" }}>
               <Button
                 onClick={handleFetch}
@@ -483,7 +434,7 @@ export function DataProfilingPage() {
           <div className="route-loading panel">
             <Loader2 className="ev-loader" />
             <p className="font-medium animate-pulse">Running data quality assessment…</p>
-            <p>Checking coverage, outliers, and gaps across selected buildings.</p>
+            <p>Checking coverage, authenticity, validity, and gaps across selected buildings.</p>
           </div>
         )}
 

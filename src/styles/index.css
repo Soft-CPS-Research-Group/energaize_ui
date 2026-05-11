@@ -1424,6 +1424,14 @@ button {
   display: grid;
   gap: 14px;
   align-content: start;
+  padding-bottom: calc(var(--institutional-dock-offset, 0px) + 24px);
+}
+
+/* Inner scrollable content area used by full-height .page containers
+   (CorrelationPage, KpiExplorer, ComparePage, SchedulerPage).
+   Provides footer clearance when the page manages its own scroll. */
+.page-inner {
+  padding-bottom: calc(var(--institutional-dock-offset, 0px) + 32px);
 }
 
 .page-header {

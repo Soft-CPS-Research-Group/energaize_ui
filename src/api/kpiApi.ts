@@ -162,7 +162,6 @@ export interface FetchProfileParams {
   buildings: string[];
   startDate: string;
   endDate: string;
-  payloadFrequencySeconds?: number;
 }
 
 export const fetchDataProfile = async ({
@@ -170,13 +169,11 @@ export const fetchDataProfile = async ({
   buildings,
   startDate,
   endDate,
-  payloadFrequencySeconds = 900,
 }: FetchProfileParams): Promise<DataProfileResponse> => {
   const params = new URLSearchParams();
   buildings.forEach(b => params.append('buildings', b));
   params.append('start_date', startDate);
   params.append('end_date', endDate);
-  params.append('payload_frequency_seconds', String(payloadFrequencySeconds));
 
   const response = await api.get<DataProfileResponse>(
     `api/v1/data/profile/${community}?${params.toString()}`

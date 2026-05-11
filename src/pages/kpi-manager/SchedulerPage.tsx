@@ -454,7 +454,7 @@ export function SchedulerPage() {
         </div>
       </header>
 
-      <div className="page-content" style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1.5rem" }}>
+      <div className="page-content page-inner" style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1.5rem", paddingBottom: "4rem" }}>
         {/* Scheduler status pill */}
         {status && (
           <div style={{
