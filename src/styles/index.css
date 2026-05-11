@@ -1877,24 +1877,21 @@ button {
   justify-content: center;
   padding: 18px;
   z-index: 80;
-  overflow-x: auto;
 }
 
-/* Flex row that holds the main modal + optional adjacent panel */
+/* Wraps just the main modal; position:relative so the panel can be
+   absolutely positioned off its right edge without moving the modal. */
 .modal-pair-wrapper {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  /* don't exceed the viewport; let the row scroll horizontally if needed */
-  max-width: calc(100vw - 36px);
+  position: relative;
 }
 
-/* The adjacent side panel (e.g. NNViz) */
+/* Side panel hangs off the right edge of the wrapper — the modal never shifts */
 .modal-side-panel {
-  flex-shrink: 0;
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 0;
   max-height: 90vh;
   overflow-y: auto;
-  border-radius: 10px;
 }
 
 .modal {
@@ -8706,15 +8703,15 @@ tr.is-clickable:hover {
   min-width: 0;
 }
 
-/* ── NN shape visualiser ──────────────────────────────────────────────────── */
+/* ── NN shape visualiser — timeline style ─────────────────────────────────── */
 
 .nn-viz {
-  width: 224px;
+  width: 220px;
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  padding: 16px 16px 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
 .nn-viz-header {
@@ -8727,7 +8724,7 @@ tr.is-clickable:hover {
 }
 
 .nn-viz-title {
-  font-size: 0.68rem;
+  font-size: 0.67rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -8735,93 +8732,97 @@ tr.is-clickable:hover {
 }
 
 .nn-viz-subtitle {
-  font-size: 0.62rem;
+  font-size: 0.61rem;
   color: var(--text-soft);
 }
 
-.nn-viz-stack {
+/* Timeline list */
+.nn-viz-nodes {
   display: flex;
   flex-direction: column;
 }
 
-.nn-viz-entry {
+/* One node = gutter (dot + line) + content (name + dim) */
+.nn-viz-node {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-height: 0;
+}
+
+/* Gutter column */
+.nn-viz-gutter {
   display: flex;
   flex-direction: column;
-}
-
-/* Connector line between cards */
-.nn-viz-arrow {
-  width: 1px;
-  height: 12px;
-  background: var(--line);
-  margin: 0 auto;
-}
-
-/* Individual layer card */
-.nn-viz-card {
-  border-radius: 8px;
-  padding: 8px 10px 6px;
-  border: 1px solid color-mix(in srgb, var(--layer-color, #888) 30%, var(--line));
-  background: color-mix(in srgb, var(--layer-color, #888) 9%, var(--bg-elev));
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.nn-viz-card.is-pass-through {
-  border-style: dashed;
-  opacity: 0.7;
-}
-
-/* Top row: dot + name + dimension */
-.nn-viz-card-top {
-  display: flex;
   align-items: center;
-  gap: 7px;
+  width: 10px;
+  flex-shrink: 0;
 }
 
-/* Colored circle dot */
-.nn-viz-card-dot {
-  width: 7px;
-  height: 7px;
+/* Colored circle */
+.nn-viz-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--layer-color, #888);
   flex-shrink: 0;
-  box-shadow: 0 0 5px color-mix(in srgb, var(--layer-color, #888) 60%, transparent);
+  margin-top: 8px;
+  box-shadow: 0 0 7px color-mix(in srgb, var(--layer-color, #888) 60%, transparent);
+  transition: background 0.2s, box-shadow 0.2s;
 }
 
-.nn-viz-card-name {
-  font-size: 0.66rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--text);
+/* Pass-through: hollow dot */
+.nn-viz-node.is-pass-through .nn-viz-dot {
+  background: transparent;
+  border: 1.5px dashed var(--layer-color, #888);
+  box-shadow: none;
+}
+
+/* Vertical line connecting to next node */
+.nn-viz-line {
+  width: 1px;
   flex: 1;
+  min-height: 12px;
+  background: var(--line);
+  margin-top: 3px;
+}
+
+/* Right side: name + dim, with a subtle separator */
+.nn-viz-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 0 12px;
+}
+
+.nn-viz-node:last-child .nn-viz-content {
+  padding-bottom: 2px;
+}
+
+/* Pass-through: muted text */
+.nn-viz-node.is-pass-through .nn-viz-content {
+  opacity: 0.55;
+}
+
+.nn-viz-name {
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text);
   line-height: 1;
 }
 
-.nn-viz-card-dim {
-  font-size: 0.7rem;
-  font-weight: 700;
+/* Dimension in layer colour, monospace, bold */
+.nn-viz-dim {
+  font-size: 0.78rem;
+  font-weight: 800;
   font-family: monospace;
   color: var(--layer-color, #888);
   line-height: 1;
-}
-
-/* Proportion bar */
-.nn-viz-card-bar-track {
-  height: 3px;
-  background: color-mix(in srgb, var(--layer-color, #888) 16%, var(--bg));
-  border-radius: 99px;
-  overflow: hidden;
-}
-
-.nn-viz-card-bar-fill {
-  height: 100%;
-  width: var(--fill-pct, 50%);
-  background: var(--layer-color, #888);
-  border-radius: 99px;
-  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: right;
 }
 
 /* ── Model detail hyperparams (analysis drawer & job modal) ──────────────── */

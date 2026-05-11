@@ -353,61 +353,52 @@ function NNViz({ layers }: { layers: LSTMLayer[] }) {
   const INPUT_DIM  = 12;  // fixed: 12 features per timestep
   const OUTPUT_DIM = 96;  // fixed: 96 × 15-min slots = 24 h
 
-  const explicitDims = layers.map((l): number | null => {
-    if (l.type === "linear") return Number(l.out ?? 64);
-    if (l.type === "lstm")   return Number(l.hidden ?? 128);
-    return null;
-  });
-
   const resolvedDims: number[] = [];
   let lastDim = INPUT_DIM;
-  for (const d of explicitDims) {
-    const v = d ?? lastDim;
-    resolvedDims.push(v);
-    if (d !== null) lastDim = d;
+  for (const l of layers) {
+    if (l.type === "linear")  { lastDim = Number(l.out ?? 64); resolvedDims.push(lastDim); }
+    else if (l.type === "lstm") { lastDim = Number(l.hidden ?? 128); resolvedDims.push(lastDim); }
+    else resolvedDims.push(lastDim); // relu / dropout: pass-through
   }
 
-  type Entry = { label: string; dim: number; dimLabel: string; color: string; dashed: boolean };
+  type Entry = { label: string; dimLabel: string; color: string; passThrough: boolean };
 
   const entries: Entry[] = [
-    { label: "Input", dim: INPUT_DIM, dimLabel: String(INPUT_DIM), color: "#94a3b8", dashed: false },
+    { label: "Input",  dimLabel: String(INPUT_DIM),  color: "#94a3b8", passThrough: false },
     ...layers.map((l, i) => ({
-      label:    LAYER_LABELS[l.type],
-      dim:      resolvedDims[i],
-      dimLabel: l.type === "linear"  ? String(l.out ?? 64)
-              : l.type === "lstm"    ? `h=${l.hidden ?? 128}`
-              : l.type === "dropout" ? `p=${l.p ?? 0.3}`
-              : "—",
-      color:    LAYER_COLORS[l.type],
-      dashed:   l.type === "relu" || l.type === "dropout",
+      label:       LAYER_LABELS[l.type],
+      dimLabel:    l.type === "linear"  ? String(l.out ?? 64)
+                 : l.type === "lstm"    ? `h=${l.hidden ?? 128}`
+                 : l.type === "dropout" ? `p=${l.p ?? 0.3}`
+                 : "",
+      color:       LAYER_COLORS[l.type],
+      passThrough: l.type === "relu" || l.type === "dropout",
     })),
-    { label: "Output", dim: OUTPUT_DIM, dimLabel: String(OUTPUT_DIM), color: "#22c55e", dashed: false },
+    { label: "Output", dimLabel: String(OUTPUT_DIM), color: "#22c55e", passThrough: false },
   ];
-
-  const maxDim = Math.max(...entries.map(e => e.dim), 1);
 
   return (
     <div className="nn-viz">
       <div className="nn-viz-header">
-        <span className="nn-viz-title">Network Shape</span>
+        <span className="nn-viz-title">Architecture</span>
         <span className="nn-viz-subtitle">{layers.length + 2} layers</span>
       </div>
-      <div className="nn-viz-stack">
+      <div className="nn-viz-nodes">
         {entries.map((e, i) => (
-          <div key={i} className="nn-viz-entry">
-            {i > 0 && <div className="nn-viz-arrow" />}
-            <div
-              className={`nn-viz-card${e.dashed ? " is-pass-through" : ""}`}
-              style={{ "--layer-color": e.color, "--fill-pct": `${Math.round((e.dim / maxDim) * 100)}%` } as CSSProperties}
-            >
-              <div className="nn-viz-card-top">
-                <span className="nn-viz-card-dot" />
-                <span className="nn-viz-card-name">{e.label}</span>
-                <span className="nn-viz-card-dim">{e.dimLabel}</span>
-              </div>
-              <div className="nn-viz-card-bar-track">
-                <div className="nn-viz-card-bar-fill" />
-              </div>
+          <div
+            key={i}
+            className={`nn-viz-node${e.passThrough ? " is-pass-through" : ""}`}
+            style={{ "--layer-color": e.color } as CSSProperties}
+          >
+            {/* Left gutter: dot + connecting line */}
+            <div className="nn-viz-gutter">
+              <div className="nn-viz-dot" />
+              {i < entries.length - 1 && <div className="nn-viz-line" />}
+            </div>
+            {/* Content: name + dimension */}
+            <div className="nn-viz-content">
+              <span className="nn-viz-name">{e.label}</span>
+              {e.dimLabel && <span className="nn-viz-dim">{e.dimLabel}</span>}
             </div>
           </div>
         ))}
