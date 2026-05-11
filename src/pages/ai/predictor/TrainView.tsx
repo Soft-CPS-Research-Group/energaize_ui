@@ -5,8 +5,9 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { Modal } from "../../../components/ui/Modal";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { useState } from "react";
-import { PlusCircle, RotateCcw, Plus, Trash2 } from "lucide-react";
+import { useState, useRef, Fragment, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
+import { PlusCircle, RotateCcw, Trash2, GripVertical } from "lucide-react";
 import type { ModelBackend, TrainingJob } from "../../../api/predictorApi";
 
 // ─── LSTM layer types ─────────────────────────────────────────────────────────
@@ -51,6 +52,40 @@ function serializeLayer(l: LSTMLayer): Record<string, unknown> {
   return { type: "relu" };
 }
 
+const LAYER_TIPS: Record<LSTMLayerType, string> = {
+  linear:  "Fully-connected layer — multiplies the input by a learned weight matrix and adds a bias. Use it to project, mix, or reduce feature dimensions.",
+  relu:    "Rectified Linear Unit — activation function that sets all negative values to zero. Adds non-linearity without any learnable parameters.",
+  lstm:    "Long Short-Term Memory — recurrent layer that captures long-range temporal patterns through gated memory cells. 'hidden' sets the cell size; 'num_layers' stacks multiple LSTM layers on top of each other.",
+  dropout: "Randomly zeroes a fraction p of activations during each training step. Reduces overfitting by preventing neurons from co-adapting.",
+};
+
+function LayerInfoTip({ type }: { type: LSTMLayerType }) {
+  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+  const W = 230;
+  const GAP = 8;
+  const show = () => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - W / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
+    setPos({ left, bottom: window.innerHeight - rect.top + GAP });
+  };
+  const hide = () => setPos(null);
+  return (
+    <>
+      <span ref={ref} className="analysis-infotip" onMouseEnter={show} onMouseLeave={hide}>?</span>
+      {pos && createPortal(
+        <div
+          className="analysis-infotip-popup"
+          style={{ position: "fixed", left: pos.left, bottom: pos.bottom, width: W, pointerEvents: "none" }}
+        >{LAYER_TIPS[type]}</div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // ─── Default hyperparams ──────────────────────────────────────────────────────
 
 const XGB_DEFAULTS = { n_estimators: "500", max_depth: "7", learning_rate: "0.1", subsample: "0.8", colsample_bytree: "0.8", min_child_weight: "1" } as const;
@@ -61,6 +96,59 @@ type LGBMKey = keyof typeof LGBM_DEFAULTS;
 
 const LSTM_DEFAULTS = { lookback: "672", epochs: "100", batch_size: "64", lr: "0.001", patience: "20" } as const;
 type LSTMKey = keyof typeof LSTM_DEFAULTS;
+
+type LSTMPreset = { name: string; tip: string; layers: Omit<LSTMLayer, "id">[] };
+const LSTM_PRESETS: LSTMPreset[] = [
+  {
+    name: "Funnel",
+    tip: "Progressively narrows the representation via Linear 256→128→64 with ReLU activations. Good all-round starting point for most energy forecasting tasks.",
+    layers: [
+      { type: "linear", out: "256" }, { type: "relu" },
+      { type: "linear", out: "128" }, { type: "relu" },
+      { type: "linear", out: "64" },
+    ],
+  },
+  {
+    name: "LSTM Core",
+    tip: "Two-layer LSTM followed by dropout and a linear projection. Strong baseline that captures short and medium-range temporal patterns.",
+    layers: [
+      { type: "lstm", hidden: "128", num_layers: "2" },
+      { type: "dropout", p: "0.2" },
+      { type: "linear", out: "64" },
+    ],
+  },
+  {
+    name: "Deep LSTM",
+    tip: "Wide 3-layer LSTM with two linear compression stages. Best for long lookbacks (≥ 672 steps) where capturing weekly or multi-day seasonality matters.",
+    layers: [
+      { type: "lstm", hidden: "256", num_layers: "3" },
+      { type: "relu" },
+      { type: "dropout", p: "0.25" },
+      { type: "linear", out: "128" },
+      { type: "linear", out: "64" },
+    ],
+  },
+  {
+    name: "Encode → LSTM",
+    tip: "A linear encoder compresses raw features before the recurrent layer — reduces noise, speeds up LSTM convergence, and improves generalisation on high-dimensional feature sets.",
+    layers: [
+      { type: "linear", out: "256" },
+      { type: "relu" },
+      { type: "lstm", hidden: "128", num_layers: "2" },
+      { type: "dropout", p: "0.2" },
+      { type: "linear", out: "64" },
+    ],
+  },
+  {
+    name: "Bottleneck",
+    tip: "Compresses down to 32 units then expands back out — forces the model to distil the most essential temporal features. Useful when you suspect noise or redundancy in the feature space.",
+    layers: [
+      { type: "linear", out: "256" }, { type: "relu" },
+      { type: "linear", out: "32" }, { type: "relu" },
+      { type: "linear", out: "256" },
+    ],
+  },
+];
 
 // ─── Small number input ───────────────────────────────────────────────────────
 
@@ -141,59 +229,194 @@ function LGBMForm({ params, onChange }: {
   );
 }
 
-function LSTMLayerCard({ layer, onChange, onDelete }: {
+// ─── Insert zone (hover to add | drag-over to drop) ──────────────────────────────────
+
+function InsertZone({ insertIndex, isDragActive, isDropTarget, onInsert, onDragEnter, onDrop }: {
+  insertIndex: number;
+  isDragActive: boolean;
+  isDropTarget: boolean;
+  onInsert: (type: LSTMLayerType, at: number) => void;
+  onDragEnter: (at: number) => void;
+  onDrop: (at: number) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const showPicker = hovered && !isDragActive;
+
+  return (
+    <div
+      className={`lstm-insert-zone${isDropTarget ? " is-drop-target" : ""}${showPicker ? " is-open" : ""}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onDragEnter={(e) => { e.preventDefault(); onDragEnter(insertIndex); }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+      onDrop={(e) => { e.preventDefault(); onDrop(insertIndex); }}
+    >
+      <span className="lstm-insert-plus">+</span>
+      {showPicker && (
+        <div className="lstm-insert-picker">
+          {(["linear", "relu", "lstm", "dropout"] as LSTMLayerType[]).map((t) => (
+            <button
+              key={t}
+              className="lstm-insert-type-btn"
+              style={{ color: LAYER_COLORS[t] }}
+              onMouseDown={(e) => { e.preventDefault(); onInsert(t, insertIndex); setHovered(false); }}
+            >
+              <span className="lstm-insert-dot" style={{ background: LAYER_COLORS[t] }} />
+              {LAYER_LABELS[t]}
+              <span className="lstm-layer-type-tip" style={{ color: LAYER_COLORS[t] }}>
+                ?
+                <span className="lstm-layer-type-tip-popup">{LAYER_TIPS[t]}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Layer card (draggable) ──────────────────────────────────────────────────────
+
+function LSTMLayerCard({ layer, index, onChange, onDelete, onDragStart, onDragEnd, onDragEnterCard, isDragging }: {
   layer: LSTMLayer;
+  index: number;
   onChange: (l: LSTMLayer) => void;
   onDelete: () => void;
+  onDragStart: (i: number) => void;
+  onDragEnd: () => void;
+  onDragEnterCard: () => void;
+  isDragging: boolean;
 }) {
   const color = LAYER_COLORS[layer.type];
   return (
-    <div className="lstm-layer-card">
-      <div className="lstm-layer-card-inner">
-        <div className="lstm-layer-accent" style={{ background: color }} />
-        <span className="lstm-layer-type-badge" style={{ background: `color-mix(in srgb, ${color} 15%, var(--bg-elev))`, color }}>
-          {LAYER_LABELS[layer.type]}
-        </span>
-        <div className="lstm-layer-params">
-          {layer.type === "linear" && (
+    <div
+      className={`lstm-layer-card${isDragging ? " is-dragging" : ""}`}
+      draggable
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; onDragStart(index); }}
+      onDragEnd={onDragEnd}
+      onDragEnter={onDragEnterCard}
+      onDragOver={(e) => e.preventDefault()}
+    >
+      <div className="lstm-layer-accent" style={{ background: color }} />
+      <GripVertical size={14} className="lstm-drag-handle" />
+      <span className="lstm-layer-type-badge" style={{ background: `color-mix(in srgb, ${color} 15%, var(--bg-elev))`, color }}>
+        {LAYER_LABELS[layer.type]}
+      </span>
+      <LayerInfoTip type={layer.type} />
+      <div className="lstm-layer-params">
+        {layer.type === "linear" && (
+          <div className="lstm-layer-param">
+            <span className="lstm-layer-param-label">out</span>
+            <input type="number" className="lstm-layer-param-input" value={layer.out ?? "64"} min={1}
+              onDragStart={(e) => e.stopPropagation()}
+              onChange={(e) => onChange({ ...layer, out: e.target.value })} />
+          </div>
+        )}
+        {layer.type === "lstm" && (
+          <>
             <div className="lstm-layer-param">
-              <span className="lstm-layer-param-label">out</span>
-              <input type="number" className="lstm-layer-param-input" value={layer.out ?? "64"} min={1}
-                onChange={(e) => onChange({ ...layer, out: e.target.value })} />
+              <span className="lstm-layer-param-label">hidden</span>
+              <input type="number" className="lstm-layer-param-input" value={layer.hidden ?? "256"} min={1}
+                onDragStart={(e) => e.stopPropagation()}
+                onChange={(e) => onChange({ ...layer, hidden: e.target.value })} />
             </div>
-          )}
-          {layer.type === "lstm" && (
-            <>
-              <div className="lstm-layer-param">
-                <span className="lstm-layer-param-label">hidden</span>
-                <input type="number" className="lstm-layer-param-input" value={layer.hidden ?? "256"} min={1}
-                  onChange={(e) => onChange({ ...layer, hidden: e.target.value })} />
-              </div>
-              <div className="lstm-layer-param">
-                <span className="lstm-layer-param-label">num_layers</span>
-                <input type="number" className="lstm-layer-param-input" value={layer.num_layers ?? "2"} min={1} max={8}
-                  onChange={(e) => onChange({ ...layer, num_layers: e.target.value })} />
-              </div>
-            </>
-          )}
-          {layer.type === "dropout" && (
             <div className="lstm-layer-param">
-              <span className="lstm-layer-param-label">p</span>
-              <input type="number" className="lstm-layer-param-input" value={layer.p ?? "0.3"} min={0} max={1} step="0.05"
-                onChange={(e) => onChange({ ...layer, p: e.target.value })} />
+              <span className="lstm-layer-param-label">num_layers</span>
+              <input type="number" className="lstm-layer-param-input" value={layer.num_layers ?? "2"} min={1} max={8}
+                onDragStart={(e) => e.stopPropagation()}
+                onChange={(e) => onChange({ ...layer, num_layers: e.target.value })} />
             </div>
-          )}
-          {layer.type === "relu" && (
-            <span style={{ fontSize: "0.75rem", color: "var(--text-soft)", fontStyle: "italic" }}>no params</span>
-          )}
-        </div>
-        <button className="lstm-layer-delete" onClick={onDelete} title="Remove layer">
-          <Trash2 size={13} />
-        </button>
+          </>
+        )}
+        {layer.type === "dropout" && (
+          <div className="lstm-layer-param">
+            <span className="lstm-layer-param-label">p</span>
+            <input type="number" className="lstm-layer-param-input" value={layer.p ?? "0.3"} min={0} max={1} step="0.05"
+              onDragStart={(e) => e.stopPropagation()}
+              onChange={(e) => onChange({ ...layer, p: e.target.value })} />
+          </div>
+        )}
+        {layer.type === "relu" && (
+          <span className="lstm-layer-noparam">activation only</span>
+        )}
+      </div>
+      <button className="lstm-layer-delete" onClick={onDelete} title="Remove layer">
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+}
+
+// ─── Neural-network shape visualiser ──────────────────────────────────────────
+
+function NNViz({ layers }: { layers: LSTMLayer[] }) {
+  const INPUT_DIM  = 12;  // fixed: 12 features per timestep
+  const OUTPUT_DIM = 96;  // fixed: 96 × 15-min slots = 24 h
+
+  const explicitDims = layers.map((l): number | null => {
+    if (l.type === "linear") return Number(l.out ?? 64);
+    if (l.type === "lstm")   return Number(l.hidden ?? 128);
+    return null;
+  });
+
+  const resolvedDims: number[] = [];
+  let lastDim = INPUT_DIM;
+  for (const d of explicitDims) {
+    const v = d ?? lastDim;
+    resolvedDims.push(v);
+    if (d !== null) lastDim = d;
+  }
+
+  type Entry = { label: string; dim: number; dimLabel: string; color: string; dashed: boolean };
+
+  const entries: Entry[] = [
+    { label: "Input", dim: INPUT_DIM, dimLabel: String(INPUT_DIM), color: "#94a3b8", dashed: false },
+    ...layers.map((l, i) => ({
+      label:    LAYER_LABELS[l.type],
+      dim:      resolvedDims[i],
+      dimLabel: l.type === "linear"  ? String(l.out ?? 64)
+              : l.type === "lstm"    ? `h=${l.hidden ?? 128}`
+              : l.type === "dropout" ? `p=${l.p ?? 0.3}`
+              : "—",
+      color:    LAYER_COLORS[l.type],
+      dashed:   l.type === "relu" || l.type === "dropout",
+    })),
+    { label: "Output", dim: OUTPUT_DIM, dimLabel: String(OUTPUT_DIM), color: "#22c55e", dashed: false },
+  ];
+
+  const maxDim = Math.max(...entries.map(e => e.dim), 1);
+
+  return (
+    <div className="nn-viz">
+      <div className="nn-viz-header">
+        <span className="nn-viz-title">Network Shape</span>
+        <span className="nn-viz-subtitle">{layers.length + 2} layers</span>
+      </div>
+      <div className="nn-viz-stack">
+        {entries.map((e, i) => (
+          <div key={i} className="nn-viz-entry">
+            {i > 0 && <div className="nn-viz-arrow" />}
+            <div
+              className={`nn-viz-card${e.dashed ? " is-pass-through" : ""}`}
+              style={{ "--layer-color": e.color, "--fill-pct": `${Math.round((e.dim / maxDim) * 100)}%` } as CSSProperties}
+            >
+              <div className="nn-viz-card-top">
+                <span className="nn-viz-card-dot" />
+                <span className="nn-viz-card-name">{e.label}</span>
+                <span className="nn-viz-card-dim">{e.dimLabel}</span>
+              </div>
+              <div className="nn-viz-card-bar-track">
+                <div className="nn-viz-card-bar-fill" />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
+
+// ─── LSTM form ─────────────────────────────────────────────────────────────────
 
 function LSTMForm({ params, onChange, layers, onLayersChange }: {
   params: { [K in LSTMKey]: string };
@@ -201,15 +424,29 @@ function LSTMForm({ params, onChange, layers, onLayersChange }: {
   layers: LSTMLayer[];
   onLayersChange: (l: LSTMLayer[]) => void;
 }) {
-  const updateLayer = (id: string, updated: LSTMLayer) =>
-    onLayersChange(layers.map((l) => (l.id === id ? updated : l)));
-  const deleteLayer = (id: string) =>
-    onLayersChange(layers.filter((l) => l.id !== id));
-  const addLayer = (type: LSTMLayerType) =>
-    onLayersChange([...layers, makeLayer(type)]);
+  const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
+  const [dropTargetIdx, setDropTargetIdx] = useState<number | null>(null);
+  const isDragActive = dragSrcIdx !== null;
+
+  const insertAt = (type: LSTMLayerType, at: number) => {
+    const next = [...layers];
+    next.splice(at, 0, makeLayer(type));
+    onLayersChange(next);
+  };
+
+  const handleDragEnd = () => { setDragSrcIdx(null); setDropTargetIdx(null); };
+
+  const handleDrop = (at: number) => {
+    if (dragSrcIdx === null) return;
+    const next = [...layers];
+    const [removed] = next.splice(dragSrcIdx, 1);
+    next.splice(at > dragSrcIdx ? at - 1 : at, 0, removed);
+    onLayersChange(next);
+    handleDragEnd();
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
         <div className="train-modal-section-title">Training Hyperparameters</div>
         <div className="hp-grid" style={{ marginTop: 8 }}>
@@ -222,38 +459,66 @@ function LSTMForm({ params, onChange, layers, onLayersChange }: {
       </div>
 
       <div>
-        <div className="train-modal-section-title" style={{ marginBottom: 10 }}>Architecture <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-soft)" }}>(optional — omit to use default)</span></div>
-        <div className="lstm-builder">
-          <div className="lstm-io-node">▶ Input</div>
-          {layers.length === 0 && (
-            <p className="lstm-empty-hint">No custom layers — model uses its built-in default architecture</p>
-          )}
-          {layers.map((layer) => (
-            <div key={layer.id}>
-              <div className="lstm-connector" />
-              <LSTMLayerCard
-                layer={layer}
-                onChange={(updated) => updateLayer(layer.id, updated)}
-                onDelete={() => deleteLayer(layer.id)}
-              />
-            </div>
-          ))}
-          {layers.length > 0 && (
-            <>
-              <div className="lstm-connector" />
-              <div className="lstm-io-node">◀ Output</div>
-            </>
-          )}
+        <div className="train-modal-section-title" style={{ marginBottom: 10 }}>
+          Architecture
+          <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-soft)", marginLeft: 6 }}>
+            (optional — omit to use default)
+          </span>
         </div>
-        <div className="lstm-add-layer-row">
-          {(["linear", "relu", "lstm", "dropout"] as LSTMLayerType[]).map((t) => (
-            <button key={t} className="lstm-add-type-btn"
-              style={{ borderColor: `color-mix(in srgb, ${LAYER_COLORS[t]} 40%, var(--line))`, color: LAYER_COLORS[t] }}
-              onClick={() => addLayer(t)}>
-              <Plus size={11} />
-              {LAYER_LABELS[t]}
-            </button>
-          ))}
+        <div className="lstm-arch-row">
+          <div className="lstm-arch-main">
+            <div className="lstm-presets">
+              {LSTM_PRESETS.map((preset) => (
+                <button
+                  key={preset.name}
+                  className="lstm-preset-btn"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onLayersChange(preset.layers.map((l) => ({ ...makeLayer(l.type), ...l })));
+                  }}
+                >
+                  {preset.name}
+                </button>
+              ))}
+            </div>
+            <div className="lstm-builder">
+              <div className="lstm-io-node">▶ Input</div>
+              <InsertZone
+                insertIndex={0}
+                isDragActive={isDragActive}
+                isDropTarget={dropTargetIdx === 0}
+                onInsert={insertAt}
+                onDragEnter={(at) => setDropTargetIdx(at)}
+                onDrop={handleDrop}
+              />
+              {layers.length === 0 && (
+                <p className="lstm-empty-hint">Hover the <strong>+</strong> between nodes to insert a layer — drag cards to reorder</p>
+              )}
+              {layers.map((layer, idx) => (
+                <Fragment key={layer.id}>
+                  <LSTMLayerCard
+                    layer={layer}
+                    index={idx}
+                    onChange={(updated) => onLayersChange(layers.map((l) => (l.id === layer.id ? updated : l)))}
+                    onDelete={() => onLayersChange(layers.filter((l) => l.id !== layer.id))}
+                    onDragStart={(i) => setDragSrcIdx(i)}
+                    onDragEnd={handleDragEnd}
+                    onDragEnterCard={() => setDropTargetIdx(null)}
+                    isDragging={dragSrcIdx === idx}
+                  />
+                  <InsertZone
+                    insertIndex={idx + 1}
+                    isDragActive={isDragActive}
+                    isDropTarget={dropTargetIdx === idx + 1}
+                    onInsert={insertAt}
+                    onDragEnter={(at) => setDropTargetIdx(at)}
+                    onDrop={handleDrop}
+                  />
+                </Fragment>
+              ))}
+              <div className="lstm-io-node lstm-io-node--out">◀ Output</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -431,6 +696,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
   const [detailJob, setDetailJob] = useState<TrainingJob | null>(null);
   const [trainModelType, setTrainModelType] = useState<ModelBackend>("xgboost");
   const [trainSchema, setTrainSchema] = useState<"dense" | "sparse">("dense");
+  const [trainLane, setTrainLane] = useState<"consumption" | "production" | "both">("both");
 
   // Hyperparams state
   const [xgbParams, setXgbParams] = useState<{ [K in XGBKey]: string }>({ ...XGB_DEFAULTS });
@@ -484,7 +750,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
       {
         command: "train",
         house_id: selectedHouseId,
-        lane: "both",
+        lane: trainLane,
         model_type: trainModelType,
         ...(trainModelType === "xgboost" ? { model_schema: trainSchema } : {}),
         hyperparams: buildHyperparams(),
@@ -650,7 +916,17 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
       />
 
       {/* ── Train config modal ── */}
-      <Modal title={`Train — ${selectedHouseId ?? ""}`} open={showTrainDialog} onClose={() => setShowTrainDialog(false)} width="lg">
+      <Modal
+        title={`Train — ${selectedHouseId ?? ""}`}
+        open={showTrainDialog}
+        onClose={() => setShowTrainDialog(false)}
+        width="lg"
+        adjacentPanel={
+          trainModelType === "lstm" && lstmLayers.length > 0
+            ? <NNViz layers={lstmLayers} />
+            : undefined
+        }
+      >
         <div className="train-modal-body">
           {/* Top config row */}
           <div className="train-modal-config-row">
@@ -664,6 +940,18 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
                 <option value="xgboost">XGBoost</option>
                 <option value="lgbm">LightGBM</option>
                 <option value="lstm">LSTM</option>
+              </select>
+            </label>
+            <label className="train-modal-config-field">
+              <span>Lane</span>
+              <select
+                className="predictor-house-select"
+                value={trainLane}
+                onChange={(e) => setTrainLane(e.target.value as "consumption" | "production" | "both")}
+              >
+                <option value="both">Both</option>
+                <option value="consumption">Consumption</option>
+                <option value="production">Production</option>
               </select>
             </label>
           </div>

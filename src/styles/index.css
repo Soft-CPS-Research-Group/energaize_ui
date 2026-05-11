@@ -1872,10 +1872,29 @@ button {
   position: fixed;
   inset: 0;
   background: rgba(8, 14, 12, 0.58);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 18px;
   z-index: 80;
+  overflow-x: auto;
+}
+
+/* Flex row that holds the main modal + optional adjacent panel */
+.modal-pair-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  /* don't exceed the viewport; let the row scroll horizontally if needed */
+  max-width: calc(100vw - 36px);
+}
+
+/* The adjacent side panel (e.g. NNViz) */
+.modal-side-panel {
+  flex-shrink: 0;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 10px;
 }
 
 .modal {
@@ -8311,51 +8330,210 @@ tr.is-clickable:hover {
 .lstm-builder {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
+  width: 100%;
   gap: 0;
-  padding: 4px 0 8px;
+  padding: 4px 0 6px;
 }
 
+/* Input / Output terminal nodes */
 .lstm-io-node {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 5px 12px;
-  border: 1.5px dashed var(--line);
-  border-radius: 6px;
-  font-size: 0.76rem;
+  padding: 6px 0;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-soft);
-  background: var(--bg);
-  letter-spacing: 0.03em;
-}
-
-.lstm-connector {
-  width: 2px;
-  height: 14px;
-  background: var(--line);
-  margin-left: 20px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   position: relative;
 }
 
-.lstm-connector::after {
+.lstm-io-node::before,
+.lstm-io-node::after {
   content: "";
-  position: absolute;
-  bottom: -1px;
-  left: -3px;
-  width: 0;
-  height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid var(--line);
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  max-width: 32px;
 }
 
+/* ── Insert zone (hover → add picker | dragover → drop target) ── */
+
+.lstm-insert-zone {
+  position: relative;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  cursor: default;
+  z-index: 1;
+}
+
+.lstm-insert-zone::before,
+.lstm-insert-zone::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  transition: background 0.15s;
+}
+
+.lstm-insert-zone.is-drop-target::before,
+.lstm-insert-zone.is-drop-target::after {
+  background: var(--brand);
+}
+
+/* The + square */
+.lstm-insert-plus {
+  width: 18px;
+  height: 18px;
+  border: 1.5px dashed color-mix(in srgb, var(--text-soft) 55%, transparent);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--text-soft);
+  background: var(--bg-elev);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s, opacity 0.15s;
+  user-select: none;
+  opacity: 0.5;
+}
+
+.lstm-insert-zone:hover .lstm-insert-plus,
+.lstm-insert-zone.is-open .lstm-insert-plus {
+  border-color: var(--brand);
+  border-style: solid;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, var(--bg-elev));
+  opacity: 1;
+}
+
+.lstm-insert-zone.is-drop-target .lstm-insert-plus {
+  border-color: var(--brand);
+  border-style: solid;
+  color: var(--brand);
+  opacity: 1;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+/* Picker popup that appears on hover */
+.lstm-insert-picker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 3px;
+  z-index: 10;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 5px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  animation: analysis-fadein 0.1s ease both;
+  pointer-events: auto;
+}
+
+.lstm-insert-type-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+
+.lstm-insert-type-btn:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* ? tip inside picker buttons */
+.lstm-layer-type-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 0.58rem;
+  font-weight: 700;
+  cursor: default;
+  margin-left: 2px;
+  opacity: 0.55;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.lstm-layer-type-tip:hover {
+  opacity: 1;
+}
+
+.lstm-layer-type-tip-popup {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font-size: 0.73rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  white-space: normal;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.lstm-layer-type-tip:hover .lstm-layer-type-tip-popup {
+  display: block;
+}
+
+.lstm-insert-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Layer card ── */
+
 .lstm-layer-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--bg-elev);
   width: 100%;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.15s, border-color 0.15s, opacity 0.15s;
+  cursor: grab;
+  user-select: none;
 }
 
 .lstm-layer-card:hover {
@@ -8363,68 +8541,90 @@ tr.is-clickable:hover {
   border-color: color-mix(in srgb, var(--brand) 30%, var(--line));
 }
 
-.lstm-layer-card-inner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+.lstm-layer-card:active {
+  cursor: grabbing;
+}
+
+.lstm-layer-card.is-dragging {
+  opacity: 0.35;
+  border-style: dashed;
+}
+
+.lstm-drag-handle {
+  color: var(--text-soft);
+  flex-shrink: 0;
+  opacity: 0.45;
+  padding: 0 2px 0 8px;
+  transition: opacity 0.12s;
+  cursor: grab;
+}
+
+.lstm-layer-card:hover .lstm-drag-handle {
+  opacity: 0.85;
 }
 
 .lstm-layer-accent {
   width: 4px;
-  border-radius: 2px;
+  border-radius: 0 2px 2px 0;
   align-self: stretch;
   flex-shrink: 0;
   min-height: 28px;
+  margin-right: 2px;
 }
 
 .lstm-layer-type-badge {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   padding: 3px 10px;
   border-radius: 5px;
-  min-width: 64px;
+  min-width: 62px;
   text-align: center;
   flex-shrink: 0;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .lstm-layer-params {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   flex: 1;
   flex-wrap: wrap;
+}
+
+.lstm-layer-noparam {
+  font-size: 0.74rem;
+  color: var(--text-soft);
+  font-style: italic;
 }
 
 .lstm-layer-param {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.78rem;
+  gap: 6px;
 }
 
 .lstm-layer-param-label {
   color: var(--text-soft);
   white-space: nowrap;
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .lstm-layer-param-input {
-  width: 68px;
+  width: 72px;
   height: 26px;
   padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--bg);
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   text-align: center;
   transition: border-color 0.13s;
+  cursor: text;
 }
 
 .lstm-layer-param-input:focus {
@@ -8455,38 +8655,173 @@ tr.is-clickable:hover {
 }
 
 .lstm-empty-hint {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-soft);
   font-style: italic;
-  padding: 10px 2px 4px;
+  text-align: center;
+  padding: 6px 0 2px;
 }
 
-.lstm-add-layer-row {
+/* ── LSTM Presets ──────────────────────────────────────────────────────────── */
+
+.lstm-presets {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
-  padding: 10px 0 2px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
-.lstm-add-type-btn {
+.lstm-preset-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 11px;
+  padding: 4px 11px;
   border-radius: 6px;
-  border: 1.5px dashed var(--line);
-  background: transparent;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: border-style 0.1s, background 0.12s, opacity 0.12s;
+  transition: border-color 0.13s, background 0.13s, color 0.13s;
+  white-space: nowrap;
+  user-select: none;
 }
 
-.lstm-add-type-btn:hover {
-  border-style: solid;
-  background: color-mix(in srgb, currentColor 8%, transparent);
+.lstm-preset-btn:hover {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, var(--bg-elev));
+  color: var(--brand);
+}
+
+/* ── Architecture two-column layout ───────────────────────────────────────── */
+
+.lstm-arch-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.lstm-arch-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── NN shape visualiser ──────────────────────────────────────────────────── */
+
+.nn-viz {
+  width: 224px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+}
+
+.nn-viz-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.nn-viz-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text);
+}
+
+.nn-viz-subtitle {
+  font-size: 0.62rem;
+  color: var(--text-soft);
+}
+
+.nn-viz-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.nn-viz-entry {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Connector line between cards */
+.nn-viz-arrow {
+  width: 1px;
+  height: 12px;
+  background: var(--line);
+  margin: 0 auto;
+}
+
+/* Individual layer card */
+.nn-viz-card {
+  border-radius: 8px;
+  padding: 8px 10px 6px;
+  border: 1px solid color-mix(in srgb, var(--layer-color, #888) 30%, var(--line));
+  background: color-mix(in srgb, var(--layer-color, #888) 9%, var(--bg-elev));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nn-viz-card.is-pass-through {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+/* Top row: dot + name + dimension */
+.nn-viz-card-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Colored circle dot */
+.nn-viz-card-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--layer-color, #888);
+  flex-shrink: 0;
+  box-shadow: 0 0 5px color-mix(in srgb, var(--layer-color, #888) 60%, transparent);
+}
+
+.nn-viz-card-name {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text);
+  flex: 1;
+  line-height: 1;
+}
+
+.nn-viz-card-dim {
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--layer-color, #888);
+  line-height: 1;
+}
+
+/* Proportion bar */
+.nn-viz-card-bar-track {
+  height: 3px;
+  background: color-mix(in srgb, var(--layer-color, #888) 16%, var(--bg));
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.nn-viz-card-bar-fill {
+  height: 100%;
+  width: var(--fill-pct, 50%);
+  background: var(--layer-color, #888);
+  border-radius: 99px;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ── Model detail hyperparams (analysis drawer & job modal) ──────────────── */
