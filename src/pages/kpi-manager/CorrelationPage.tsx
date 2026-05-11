@@ -7,7 +7,7 @@ import { useCommunities } from "../../hooks/useCommunities";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import {
-  ScatterChart, Scatter, XAxis, YAxis, Line, LineChart,
+  Scatter, XAxis, YAxis, Line,
   CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart,
 } from "recharts";
 import {
