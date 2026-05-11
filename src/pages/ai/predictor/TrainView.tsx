@@ -12,7 +12,7 @@ import type { ModelBackend, TrainingJob } from "../../../api/predictorApi";
 
 // ─── LSTM layer types ─────────────────────────────────────────────────────────
 
-type LSTMLayerType = "linear" | "relu" | "lstm" | "dropout";
+type LSTMLayerType = "linear" | "relu" | "lstm" | "dropout" | "gru" | "attention";
 
 interface LSTMLayer {
   id: string;
@@ -24,39 +24,48 @@ interface LSTMLayer {
 }
 
 const LAYER_COLORS: Record<LSTMLayerType, string> = {
-  linear:  "#3b82f6",
-  relu:    "#22c55e",
-  lstm:    "#8b5cf6",
-  dropout: "#f97316",
+  linear:    "#3b82f6",
+  relu:      "#22c55e",
+  lstm:      "#8b5cf6",
+  dropout:   "#f97316",
+  gru:       "#ec4899",
+  attention: "#f59e0b",
 };
 
 const LAYER_LABELS: Record<LSTMLayerType, string> = {
-  linear:  "Linear",
-  relu:    "ReLU",
-  lstm:    "LSTM",
-  dropout: "Dropout",
+  linear:    "Linear",
+  relu:      "ReLU",
+  lstm:      "LSTM",
+  dropout:   "Dropout",
+  gru:       "GRU",
+  attention: "Attention",
 };
 
 function makeLayer(type: LSTMLayerType): LSTMLayer {
   const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   if (type === "linear")  return { id, type, out: "64" };
   if (type === "lstm")    return { id, type, hidden: "256", num_layers: "2" };
+  if (type === "gru")     return { id, type, hidden: "128", num_layers: "1" };
   if (type === "dropout") return { id, type, p: "0.3" };
   return { id, type };
 }
 
 function serializeLayer(l: LSTMLayer): Record<string, unknown> {
-  if (l.type === "linear")  return { type: "linear", out: Number(l.out ?? 64) };
-  if (l.type === "lstm")    return { type: "lstm", hidden: Number(l.hidden ?? 256), num_layers: Number(l.num_layers ?? 2) };
+  if (l.type === "linear")  return { type: "linear",  out: Number(l.out ?? 64) };
+  if (l.type === "lstm")    return { type: "lstm",    hidden: Number(l.hidden ?? 256), num_layers: Number(l.num_layers ?? 2) };
+  if (l.type === "gru")     return { type: "gru",     hidden: Number(l.hidden ?? 128), num_layers: Number(l.num_layers ?? 1) };
   if (l.type === "dropout") return { type: "dropout", p: Number(l.p ?? 0.3) };
-  return { type: "relu" };
+  if (l.type === "attention") return { type: "attention" };
+  return { type: l.type };
 }
 
 const LAYER_TIPS: Record<LSTMLayerType, string> = {
-  linear:  "Fully-connected layer — multiplies the input by a learned weight matrix and adds a bias. Use it to project, mix, or reduce feature dimensions.",
-  relu:    "Rectified Linear Unit — activation function that sets all negative values to zero. Adds non-linearity without any learnable parameters.",
-  lstm:    "Long Short-Term Memory — recurrent layer that captures long-range temporal patterns through gated memory cells. 'hidden' sets the cell size; 'num_layers' stacks multiple LSTM layers on top of each other.",
-  dropout: "Randomly zeroes a fraction p of activations during each training step. Reduces overfitting by preventing neurons from co-adapting.",
+  linear:    "Fully-connected layer — multiplies the input by a learned weight matrix and adds a bias. Use it to project, mix, or reduce feature dimensions.",
+  relu:      "Rectified Linear Unit — activation function that sets all negative values to zero. Adds non-linearity without any learnable parameters.",
+  lstm:      "Long Short-Term Memory — recurrent layer that captures long-range temporal patterns through gated memory cells. 'hidden' sets the cell size; 'num_layers' stacks multiple LSTM layers on top of each other.",
+  dropout:   "Randomly zeroes a fraction p of activations during each training step. Reduces overfitting by preventing neurons from co-adapting.",
+  gru:       "Gated Recurrent Unit — a lighter recurrent layer than LSTM with fewer parameters. Trains faster and often matches LSTM performance on shorter sequences.",
+  attention: "Self-attention mechanism — lets the model weight every timestep in the sequence against every other, capturing global dependencies that recurrent layers can miss. No learnable size; output shape matches input.",
 };
 
 function LayerInfoTip({ type }: { type: LSTMLayerType }) {
@@ -254,7 +263,7 @@ function InsertZone({ insertIndex, isDragActive, isDropTarget, onInsert, onDragE
       <span className="lstm-insert-plus">+</span>
       {showPicker && (
         <div className="lstm-insert-picker">
-          {(["linear", "relu", "lstm", "dropout"] as LSTMLayerType[]).map((t) => (
+          {(["linear", "relu", "lstm", "dropout", "gru", "attention"] as LSTMLayerType[]).map((t) => (
             <button
               key={t}
               className="lstm-insert-type-btn"
@@ -336,8 +345,24 @@ function LSTMLayerCard({ layer, index, onChange, onDelete, onDragStart, onDragEn
               onChange={(e) => onChange({ ...layer, p: e.target.value })} />
           </div>
         )}
-        {layer.type === "relu" && (
-          <span className="lstm-layer-noparam">activation only</span>
+        {layer.type === "gru" && (
+          <>
+            <div className="lstm-layer-param">
+              <span className="lstm-layer-param-label">hidden</span>
+              <input type="number" className="lstm-layer-param-input" value={layer.hidden ?? "128"} min={1}
+                onDragStart={(e) => e.stopPropagation()}
+                onChange={(e) => onChange({ ...layer, hidden: e.target.value })} />
+            </div>
+            <div className="lstm-layer-param">
+              <span className="lstm-layer-param-label">num_layers</span>
+              <input type="number" className="lstm-layer-param-input" value={layer.num_layers ?? "1"} min={1} max={8}
+                onDragStart={(e) => e.stopPropagation()}
+                onChange={(e) => onChange({ ...layer, num_layers: e.target.value })} />
+            </div>
+          </>
+        )}
+        {(layer.type === "relu" || layer.type === "attention") && (
+          <span className="lstm-layer-noparam">{layer.type === "attention" ? "no params" : "activation only"}</span>
         )}
       </div>
       <button className="lstm-layer-delete" onClick={onDelete} title="Remove layer">
@@ -356,9 +381,10 @@ function NNViz({ layers }: { layers: LSTMLayer[] }) {
   const resolvedDims: number[] = [];
   let lastDim = INPUT_DIM;
   for (const l of layers) {
-    if (l.type === "linear")  { lastDim = Number(l.out ?? 64); resolvedDims.push(lastDim); }
+    if (l.type === "linear")  { lastDim = Number(l.out ?? 64);  resolvedDims.push(lastDim); }
     else if (l.type === "lstm") { lastDim = Number(l.hidden ?? 128); resolvedDims.push(lastDim); }
-    else resolvedDims.push(lastDim); // relu / dropout: pass-through
+    else if (l.type === "gru")  { lastDim = Number(l.hidden ?? 128); resolvedDims.push(lastDim); }
+    else resolvedDims.push(lastDim); // relu / dropout / attention: pass-through
   }
 
   type Entry = { label: string; dimLabel: string; color: string; passThrough: boolean };
