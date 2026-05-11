@@ -365,7 +365,7 @@ function NNViz({ layers }: { layers: LSTMLayer[] }) {
 
   const entries: Entry[] = [
     { label: "Input",  dimLabel: String(INPUT_DIM),  color: "#94a3b8", passThrough: false },
-    ...layers.map((l, i) => ({
+    ...layers.map((l) => ({
       label:       LAYER_LABELS[l.type],
       dimLabel:    l.type === "linear"  ? String(l.out ?? 64)
                  : l.type === "lstm"    ? `h=${l.hidden ?? 128}`
