@@ -8420,15 +8420,10 @@ tr.is-clickable:hover {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 18%, transparent);
 }
 
-/* Picker popup that appears on hover */
+/* Picker popup — rendered via portal, position:fixed set inline */
 .lstm-insert-picker {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   display: flex;
   gap: 3px;
-  z-index: 10;
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: 8px;

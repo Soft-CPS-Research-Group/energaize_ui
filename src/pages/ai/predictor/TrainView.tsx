@@ -109,17 +109,8 @@ type LSTMKey = keyof typeof LSTM_DEFAULTS;
 type LSTMPreset = { name: string; tip: string; layers: Omit<LSTMLayer, "id">[] };
 const LSTM_PRESETS: LSTMPreset[] = [
   {
-    name: "Funnel",
-    tip: "Progressively narrows the representation via Linear 256→128→64 with ReLU activations. Good all-round starting point for most energy forecasting tasks.",
-    layers: [
-      { type: "linear", out: "256" }, { type: "relu" },
-      { type: "linear", out: "128" }, { type: "relu" },
-      { type: "linear", out: "64" },
-    ],
-  },
-  {
     name: "LSTM Core",
-    tip: "Two-layer LSTM followed by dropout and a linear projection. Strong baseline that captures short and medium-range temporal patterns.",
+    tip: "The canonical LSTM baseline — two stacked recurrent layers with dropout regularisation and a final linear projection. The safest starting point for any energy forecasting task.",
     layers: [
       { type: "lstm", hidden: "128", num_layers: "2" },
       { type: "dropout", p: "0.2" },
@@ -127,34 +118,57 @@ const LSTM_PRESETS: LSTMPreset[] = [
     ],
   },
   {
-    name: "Deep LSTM",
-    tip: "Wide 3-layer LSTM with two linear compression stages. Best for long lookbacks (≥ 672 steps) where capturing weekly or multi-day seasonality matters.",
+    name: "GRU Lite",
+    tip: "A single-layer GRU has fewer parameters than LSTM, trains roughly 30% faster, and often matches LSTM accuracy on short-to-medium lookbacks. Good first choice when compute is limited.",
     layers: [
-      { type: "lstm", hidden: "256", num_layers: "3" },
+      { type: "gru", hidden: "128", num_layers: "1" },
+      { type: "dropout", p: "0.2" },
+      { type: "linear", out: "64" },
+    ],
+  },
+  {
+    name: "Encode → LSTM",
+    tip: "Expands the 12 raw features into a richer 64-d space before the recurrent layer. The encoder reduces input noise and speeds up LSTM convergence, especially with long lookbacks.",
+    layers: [
+      { type: "linear", out: "64" },
       { type: "relu" },
+      { type: "lstm", hidden: "128", num_layers: "2" },
+      { type: "dropout", p: "0.2" },
+      { type: "linear", out: "64" },
+    ],
+  },
+  {
+    name: "LSTM + Attention",
+    tip: "LSTM captures local sequential patterns; self-attention then lets every timestep compare directly against every other, catching long-range dependencies (e.g. same hour yesterday vs. same hour last week) that recurrent layers can miss.",
+    layers: [
+      { type: "lstm", hidden: "128", num_layers: "2" },
+      { type: "attention" },
+      { type: "dropout", p: "0.2" },
+      { type: "linear", out: "64" },
+    ],
+  },
+  {
+    name: "Deep Hybrid",
+    tip: "Full encoder-decoder stack: a linear projection enriches the feature space, deep GRU captures multi-scale temporal patterns, self-attention provides a global view of the sequence, then two compression layers decode to the output space. Best for weekly lookbacks (672 steps).",
+    layers: [
+      { type: "linear", out: "64" },
+      { type: "relu" },
+      { type: "gru", hidden: "256", num_layers: "2" },
+      { type: "attention" },
       { type: "dropout", p: "0.25" },
       { type: "linear", out: "128" },
       { type: "linear", out: "64" },
     ],
   },
   {
-    name: "Encode → LSTM",
-    tip: "A linear encoder compresses raw features before the recurrent layer — reduces noise, speeds up LSTM convergence, and improves generalisation on high-dimensional feature sets.",
+    name: "Temporal Bottleneck",
+    tip: "The LSTM compresses the sequence into a rich temporal representation, then a narrow 32-unit linear layer forces the model to distil only the most essential patterns — preventing lazy pass-through and acting as a strong regulariser. The decoder then expands back out for the final 96-step forecast.",
     layers: [
-      { type: "linear", out: "256" },
+      { type: "lstm", hidden: "256", num_layers: "2" },
+      { type: "linear", out: "32" },
       { type: "relu" },
-      { type: "lstm", hidden: "128", num_layers: "2" },
       { type: "dropout", p: "0.2" },
-      { type: "linear", out: "64" },
-    ],
-  },
-  {
-    name: "Bottleneck",
-    tip: "Compresses down to 32 units then expands back out — forces the model to distil the most essential temporal features. Useful when you suspect noise or redundancy in the feature space.",
-    layers: [
-      { type: "linear", out: "256" }, { type: "relu" },
-      { type: "linear", out: "32" }, { type: "relu" },
-      { type: "linear", out: "256" },
+      { type: "linear", out: "128" },
     ],
   },
 ];
@@ -249,20 +263,40 @@ function InsertZone({ insertIndex, isDragActive, isDropTarget, onInsert, onDragE
   onDrop: (at: number) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const plusRef = useRef<HTMLSpanElement>(null);
   const showPicker = hovered && !isDragActive;
+
+  // Position the portal picker centered above the + button
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const updatePos = () => {
+    if (!plusRef.current) return;
+    const r = plusRef.current.getBoundingClientRect();
+    setPickerPos({ top: r.top - 8, left: r.left + r.width / 2 });
+  };
 
   return (
     <div
       className={`lstm-insert-zone${isDropTarget ? " is-drop-target" : ""}${showPicker ? " is-open" : ""}`}
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={() => { setHovered(true); updatePos(); }}
       onMouseLeave={() => setHovered(false)}
       onDragEnter={(e) => { e.preventDefault(); onDragEnter(insertIndex); }}
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
       onDrop={(e) => { e.preventDefault(); onDrop(insertIndex); }}
     >
-      <span className="lstm-insert-plus">+</span>
-      {showPicker && (
-        <div className="lstm-insert-picker">
+      <span ref={plusRef} className="lstm-insert-plus">+</span>
+      {showPicker && pickerPos && createPortal(
+        <div
+          className="lstm-insert-picker"
+          style={{
+            position: "fixed",
+            top: pickerPos.top,
+            left: pickerPos.left,
+            transform: "translate(-50%, -100%)",
+            zIndex: 99999,
+          }}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
           {(["linear", "relu", "lstm", "dropout", "gru", "attention"] as LSTMLayerType[]).map((t) => (
             <button
               key={t}
@@ -272,13 +306,11 @@ function InsertZone({ insertIndex, isDragActive, isDropTarget, onInsert, onDragE
             >
               <span className="lstm-insert-dot" style={{ background: LAYER_COLORS[t] }} />
               {LAYER_LABELS[t]}
-              <span className="lstm-layer-type-tip" style={{ color: LAYER_COLORS[t] }}>
-                ?
-                <span className="lstm-layer-type-tip-popup">{LAYER_TIPS[t]}</span>
-              </span>
+              <LayerInfoTip type={t} />
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
