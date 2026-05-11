@@ -8,7 +8,7 @@ import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import {
   MapPin, Building2, Calendar, Search, Loader2,
   AlertCircle, ShieldCheck, ShieldAlert, ShieldX,
-  CheckCircle2, XCircle, AlertTriangle, Clock,
+  XCircle, Clock,
 } from "lucide-react";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
