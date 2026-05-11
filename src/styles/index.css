@@ -6327,6 +6327,69 @@ button {
   align-items: start;
 }
 
+/* ── System resource meters ────────────────────────────── */
+.sys-meters-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.sys-meter {
+  position: relative;
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px 12px;
+  overflow: hidden;
+  min-height: 82px;
+}
+
+.sys-meter::after {
+  display: none;
+}
+
+.sys-meter-chart {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 70%;
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(to right, transparent 15%, black 85%);
+  mask-image: linear-gradient(to right, transparent 15%, black 85%);
+}
+
+.sys-meter-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sys-meter-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-soft);
+}
+
+.sys-meter-value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  font-family: monospace;
+  line-height: 1;
+}
+
+.sys-meter-sub {
+  font-size: 0.64rem;
+  color: var(--text-soft);
+}
+/* ──────────────────────────────────────────────────────── */
+
 @media (max-width: 800px) {
   .predictor-train-grid {
     grid-template-columns: 1fr;

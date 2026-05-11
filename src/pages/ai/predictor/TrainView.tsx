@@ -1,4 +1,5 @@
 import { usePredictorTrainingProgress, usePredictorCommand, useCancelTrainingJob } from "../../../hooks/usePredictor";
+import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -8,7 +9,7 @@ import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { useState, useRef, Fragment, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { PlusCircle, RotateCcw, Trash2, GripVertical } from "lucide-react";
-import type { ModelBackend, TrainingJob } from "../../../api/predictorApi";
+import type { ModelBackend, TrainingJob, SystemInfo } from "../../../api/predictorApi";
 
 // ─── LSTM layer types ─────────────────────────────────────────────────────────
 
@@ -734,9 +735,100 @@ function JobDetailModal({ job, onClose, onCancel, cancelling }: {
   );
 }
 
+// ─── System resource meters ──────────────────────────────────────────────────
+
+const METER_HISTORY_MAX = 40;
+
+type MeterEntry = { cpu: number; ram_gb: number };
+const meterHistory: MeterEntry[] = [];
+
+function MeterCard({ label, value, sub, color, data, dataKey, domain, unit }: {
+  label: string;
+  value: string;
+  sub: string;
+  color: string;
+  data: MeterEntry[];
+  dataKey: keyof MeterEntry;
+  domain: [number, number];
+  unit: string;
+}) {
+  return (
+    <div className="sys-meter">
+      <div className="sys-meter-chart">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+                <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <YAxis domain={domain} hide />
+            <Tooltip
+              contentStyle={{ background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 6, fontSize: "0.7rem" }}
+              formatter={(v: number) => [`${v.toFixed(1)}${unit}`, label]}
+              labelFormatter={() => ""}
+            />
+            <Area
+              type="monotone"
+              dataKey={dataKey}
+              stroke={color}
+              strokeWidth={1.5}
+              fill={`url(#grad-${dataKey})`}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="sys-meter-content">
+        <div className="sys-meter-label">{label}</div>
+        <div className="sys-meter-value" style={{ color }}>{value}</div>
+        <div className="sys-meter-sub">{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+function SystemMeters({ system }: { system: SystemInfo }) {
+  const cpuPct = Math.min(system.cpu_percent / system.cpu_count, 100);
+  const ramPct = system.ram_percent;
+
+  meterHistory.push({ cpu: cpuPct, ram_gb: system.ram_used_gb });
+  if (meterHistory.length > METER_HISTORY_MAX) meterHistory.splice(0, meterHistory.length - METER_HISTORY_MAX);
+
+  const cpuColor = cpuPct > 80 ? "var(--err)" : cpuPct > 60 ? "var(--warn)" : "var(--brand)";
+  const ramColor = ramPct > 85 ? "var(--err)" : ramPct > 65 ? "var(--warn)" : "#8b5cf6";
+
+  return (
+    <div className="sys-meters-row">
+      <MeterCard
+        label="CPU"
+        value={`${cpuPct.toFixed(1)}%`}
+        sub={`${system.cpu_count} cores · ${system.cpu_percent.toFixed(0)}% aggregate`}
+        color={cpuColor}
+        data={[...meterHistory]}
+        dataKey="cpu"
+        domain={[0, 100]}
+        unit="%"
+      />
+      <MeterCard
+        label="RAM"
+        value={`${ramPct.toFixed(1)}%`}
+        sub={`${system.ram_used_gb.toFixed(1)} / ${system.ram_total_gb.toFixed(0)} GB`}
+        color={ramColor}
+        data={[...meterHistory]}
+        dataKey="ram_gb"
+        domain={[0, system.ram_total_gb]}
+        unit=" GB"
+      />
+    </div>
+  );
+}
+
 export function TrainView({ selectedHouseId }: TrainViewProps) {
   const { notifySuccess, notifyError } = useApiFeedback();
-  const { data: jobs } = usePredictorTrainingProgress();
+  const { data: jobsData } = usePredictorTrainingProgress();
   const commandMutation = usePredictorCommand();
   const cancelMutation = useCancelTrainingJob();
 
@@ -790,6 +882,8 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
     return hp;
   }
 
+  const jobs = jobsData?.jobs;
+  const systemInfo = jobsData?.system ?? null;
   const activeJobs = jobs?.filter((j) => ACTIVE_STATUSES.includes(j.status)) ?? [];
   const completedJobs = jobs?.filter((j) => !ACTIVE_STATUSES.includes(j.status)) ?? [];
 
@@ -849,6 +943,8 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
           Retrain Cold-Start Models
         </Button>
       </div>
+
+      {systemInfo && <SystemMeters system={systemInfo} />}
 
       <div className="predictor-train-grid">
         {/* Active jobs */}

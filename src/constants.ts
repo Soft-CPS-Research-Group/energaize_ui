@@ -88,7 +88,7 @@ export const LOGIN_BACKGROUNDS = [
   "https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&w=2200&q=80"
 ] as const;
 
-export const JOB_POLL_MS = 5000;
+export const JOB_POLL_MS = 2000;
 export const HOSTS_POLL_MS = 7000;
 export const DATASETS_POLL_MS = 10000;
 export const LOGS_POLL_MS = 5000;

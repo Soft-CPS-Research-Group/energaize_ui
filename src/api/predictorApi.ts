@@ -163,9 +163,25 @@ export async function getPredictionHistory(
   );
 }
 
-export async function getJobs(): Promise<TrainingJob[]> {
+export interface SystemInfo {
+  cpu_percent: number;
+  cpu_count: number;
+  ram_used_gb: number;
+  ram_total_gb: number;
+  ram_percent: number;
+}
+
+export interface JobsResponse {
+  jobs: TrainingJob[];
+  system: SystemInfo | null;
+}
+
+export async function getJobs(): Promise<JobsResponse> {
   const res = await http<any>(buildPredictorUrl("/api/jobs"));
-  return Array.isArray(res) ? res : (res?.jobs ?? []);
+  if (Array.isArray(res)) {
+    return { jobs: res, system: null };
+  }
+  return { jobs: res?.jobs ?? [], system: res?.system ?? null };
 }
 
 export async function getJob(jobId: string): Promise<TrainingJob> {
