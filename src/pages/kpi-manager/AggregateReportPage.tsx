@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { fetchKpiAggregate } from "../../api/kpiApi";
+import { fetchKpiAggregate, fetchKpis } from "../../api/kpiApi";
 import type { AggregatePeriod, AggregateBucket, KpiAggStats } from "../../api/kpiApi";
 import { Button } from "../../components/ui/Button";
+import { MultiSelect } from "../../components/ui/MultiSelect";
 import { useCommunities } from "../../hooks/useCommunities";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { LineChart, Line, XAxis } from "recharts";
 import {
   BarChart3, MapPin, Calendar,
   Search, Loader2, AlertCircle, TrendingUp, TrendingDown,
@@ -22,7 +26,7 @@ defaultStart.setMonth(defaultStart.getMonth() - 3);
 const SUM_KPIS = new Set([
   "EnergyCostKPI",
   "EffectiveSavingsKPI",
-  "NetEnergyBalanceKPI",
+  "SelfConsumptionKPI",
 ]);
 
 function isSumKpi(name: string) {
@@ -62,9 +66,10 @@ const PERIODS: { label: string; value: AggregatePeriod }[] = [
 interface PivotProps {
   buckets: AggregateBucket[];
   mode: "sum" | "mean";
+  onOpenChart: (scope: string, kpi: string) => void;
 }
 
-function PivotTable({ buckets, mode }: PivotProps) {
+function PivotTable({ buckets, mode, onOpenChart }: PivotProps) {
   if (buckets.length === 0) return <p style={{ color: "var(--text-soft)" }}>No data in range.</p>;
 
   // Collect all unique (scope, kpiName) pairs
@@ -114,7 +119,19 @@ function PivotTable({ buckets, mode }: PivotProps) {
                   {scope}
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 600, whiteSpace: "nowrap" }}>
-                  {kpi.replace("KPI", "")}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {kpi.replace("KPI", "")}
+                    <button
+                      onClick={() => onOpenChart(scope, kpi)}
+                      style={{
+                        background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: "4px",
+                        padding: "2px 4px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
+                      }}
+                      title="View Trend"
+                    >
+                      <BarChart3 size={12} color="var(--text-soft)" />
+                    </button>
+                  </div>
                 </td>
                 {rowVals.map((stats, bi) => {
                   if (!stats) {
@@ -220,11 +237,33 @@ export function AggregateReportPage() {
   const [error,    setError]    = useState<string | null>(null);
   const [buckets,  setBuckets]  = useState<AggregateBucket[] | null>(null);
 
+  const [activeChart, setActiveChart] = useState<{ scope: string; kpi: string } | null>(null);
+  const [recompute, setRecompute] = useState(false);
+  const [recomputeLoading, setRecomputeLoading] = useState(false);
+  const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
+
   const handleFetch = async () => {
     setLoading(true);
     setError(null);
     setBuckets(null);
     try {
+      if (recompute) {
+        setRecomputeLoading(true);
+        const bldgs = selectedBuildings.length > 0 ? selectedBuildings : (communities[community] && communities[community].length > 0 ? [communities[community][0]] : []);
+        if (bldgs.length === 0) {
+          throw new Error("Select at least one building in settings or ensure the community has buildings.");
+        }
+        await fetchKpis({
+          community,
+          buildings: bldgs,
+          startDate: new Date(startDate).toISOString(),
+          endDate: new Date(endDate).toISOString(),
+          computeAggregated: true,
+          computeScheduled: true
+        });
+        setRecomputeLoading(false);
+      }
+
       const res = await fetchKpiAggregate({
         community,
         period,
@@ -234,6 +273,7 @@ export function AggregateReportPage() {
       setBuckets(res.buckets);
     } catch (e: any) {
       setError(e?.response?.data?.detail || e?.message || "Aggregation failed");
+      setRecomputeLoading(false);
     } finally {
       setLoading(false);
     }
@@ -311,14 +351,41 @@ export function AggregateReportPage() {
             </div>
 
             {/* Run */}
-            <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }} title="Check this to force recomputation from raw telemetry instead of using scheduled pre-calculated results">
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={recompute}
+                      onChange={(e) => setRecompute(e.target.checked)}
+                      style={{ position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", borderWidth: 0 }}
+                    />
+                    <div style={{ width: "2.5rem", height: "1.5rem", borderRadius: "999px", background: recompute ? "var(--brand)" : "var(--line)", transition: "all 0.2s" }}></div>
+                    <div style={{ position: "absolute", left: "0.25rem", top: "0.25rem", width: "1rem", height: "1rem", background: "var(--bg-elev)", borderRadius: "50%", transition: "all 0.2s", transform: recompute ? "translateX(1rem)" : "none" }}></div>
+                  </div>
+                  <div style={{ marginLeft: "0.75rem", fontSize: "0.85rem", fontWeight: "bold" }}>
+                    Re-calculate first
+                  </div>
+                </label>
+                {recompute && (
+                   <MultiSelect
+                      options={(communities[community] || []).map(b => ({ label: b.replace(/_/g, " "), value: b }))}
+                      selected={selectedBuildings}
+                      onChange={setSelectedBuildings}
+                      placeholder="Select buildings"
+                   />
+                )}
+              </div>
+
               <Button
                 variant="primary"
-                disabled={loading}
+                disabled={loading || recomputeLoading}
                 onClick={handleFetch}
-                iconLeft={loading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                iconLeft={(loading || recomputeLoading) ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
               >
-                {loading ? "Computing…" : "Run Report"}
+                {recomputeLoading ? "Recalculating…" : loading ? "Aggregating…" : "Run Report"}
               </Button>
             </div>
           </div>
@@ -381,6 +448,61 @@ export function AggregateReportPage() {
               >
                 ↓ Download CSV
               </button>
+              <button
+                onClick={() => {
+                  if (!buckets) return;
+                  const doc = new jsPDF("landscape", "pt", "a4");
+                  doc.text(`KPI Report — ${community} — ${period} — ${startDate} → ${endDate}`, 40, 40);
+
+                  const keys = new Set<string>();
+                  for (const b of buckets) for (const sc of Object.keys(b.scopes)) for (const kpi of Object.keys(b.scopes[sc])) keys.add(`${sc}||${kpi}`);
+                  const rows = Array.from(keys).sort().map(k => { const [sc, kpi] = k.split("||"); return { sc, kpi }; });
+
+                  const header = ["Scope", "KPI", ...buckets.map(b => b.label)];
+                  const dataRows = rows.map(({ sc, kpi }) => {
+                    const vals = buckets.map(b => {
+                      const stats = b.scopes[sc]?.[kpi];
+                      if (!stats) return "—";
+                      return displayValue(kpi, stats, mode);
+                    });
+                    return [sc, kpi.replace("KPI", ""), ...vals];
+                  });
+
+                  autoTable(doc, {
+                    startY: 60,
+                    head: [header],
+                    body: dataRows,
+                    didParseCell: (data) => {
+                      if (data.section === "body" && data.column.index >= 2) {
+                        const rowIdx = data.row.index;
+                        const { sc, kpi } = rows[rowIdx];
+                        const rowStats = buckets.map(b => b.scopes[sc]?.[kpi] ?? null).filter((v): v is KpiAggStats => v !== null);
+                        const allVals = rowStats.map(v => (mode === "sum" || isSumKpi(kpi)) ? v.sum : v.mean);
+                        const globalMax = allVals.length ? Math.max(...allVals) : 0;
+                        const globalMin = allVals.length ? Math.min(...allVals) : 0;
+
+                        const colIdx = data.column.index - 2;
+                        const stats = buckets[colIdx].scopes[sc]?.[kpi];
+                        if (stats && allVals.length > 1) {
+                          const v = (mode === "sum" || isSumKpi(kpi)) ? stats.sum : stats.mean;
+                          if (v === globalMax) data.cell.styles.textColor = "#16a34a";
+                          else if (v === globalMin) data.cell.styles.textColor = "#dc2626";
+                        }
+                      }
+                    }
+                  });
+
+                  doc.save(`kpi_report_${community}_${period}_${startDate}_${endDate}.pdf`);
+                }}
+                style={{
+                  padding: "0.25rem 0.875rem", borderRadius: "9999px", fontSize: "0.8rem", fontWeight: 600,
+                  cursor: "pointer", border: "1px solid var(--line)",
+                  background: "var(--bg-elev)", color: "var(--text)",
+                  display: "flex", alignItems: "center", gap: "0.375rem",
+                }}
+              >
+                ↓ Download PDF
+              </button>
             </div>
           )}
         </div>
@@ -409,12 +531,12 @@ export function AggregateReportPage() {
         {!loading && buckets && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <TotalsBar buckets={buckets} />
-            <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="panel" style={{ padding: 0, overflow: "hidden", minWidth: 0 }}>
               <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--line)", fontWeight: 600 }}>
                 KPI Values by {period.charAt(0).toUpperCase() + period.slice(1)} Period
               </div>
               <div style={{ padding: "0.5rem" }}>
-                <PivotTable buckets={buckets} mode={mode} />
+                <PivotTable buckets={buckets} mode={mode} onOpenChart={(s, k) => setActiveChart({ scope: s, kpi: k })} />
               </div>
             </div>
           </div>
@@ -428,6 +550,57 @@ export function AggregateReportPage() {
           </div>
         )}
       </main>
+
+      {activeChart && (() => {
+        const chartData = buckets?.map(b => ({
+          label: b.label,
+          value: b.scopes[activeChart.scope]?.[activeChart.kpi] ? 
+            ((mode === "sum" || isSumKpi(activeChart.kpi)) 
+              ? b.scopes[activeChart.scope][activeChart.kpi].sum 
+              : b.scopes[activeChart.scope][activeChart.kpi].mean) 
+            : null
+        })).filter(p => p.value != null) || [];
+        
+        return (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 100,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)"
+          }} onClick={() => setActiveChart(null)}>
+            <div 
+              style={{
+                background: "var(--bg)", border: "1px solid var(--line)", padding: "1.5rem",
+                borderRadius: "0.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
+                width: "400px", maxWidth: "90vw"
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <div style={{ fontSize: "1rem", fontWeight: "bold", color: "var(--text)" }}>
+                  {activeChart.kpi.replace("KPI", "")} Trend
+                </div>
+                <button 
+                  onClick={() => setActiveChart(null)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-soft)", fontSize: "1.2rem" }}
+                >
+                  ✕
+                </button>
+              </div>
+              
+              {chartData.length < 2 ? (
+                <p style={{ color: "var(--text-soft)", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
+                  Not enough data points to show trend.
+                </p>
+              ) : (
+                <LineChart width={350} height={200} data={chartData} style={{ margin: "0 auto" }}>
+                  <XAxis dataKey="label" fontSize={10} tickMargin={5} stroke="var(--text-soft)" />
+                  <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} isAnimationActive={false} />
+                </LineChart>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

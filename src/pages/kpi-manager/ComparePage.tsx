@@ -101,7 +101,6 @@ export function ComparePage() {
   // KPIs appropriate for baseline vs real comparison (exclude per-building meter KPIs)
   const comparableKpis = kpiMeta
     .filter((k: any) => k.status === "available" && k.registered)
-    .filter((k: any) => !["AverageImportedEnergyKPI", "AverageExportedEnergyKPI"].includes(k.name))
     .map((k: any) => k.name);
 
   const [selectedKpis, setSelectedKpis] = useState<string[]>([]); 
