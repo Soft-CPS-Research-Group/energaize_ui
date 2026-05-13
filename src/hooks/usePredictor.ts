@@ -66,7 +66,7 @@ export function usePredictorTrainingProgress() {
   return useQuery({
     queryKey: ["predictor", "jobs"],
     queryFn: getJobs,
-    refetchInterval: 5000,
+    refetchInterval: 2000,
   });
 }
 

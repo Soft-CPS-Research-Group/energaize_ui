@@ -399,12 +399,57 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
               <button className="icon-btn" onClick={() => setSelected(null)}><X size={16} /></button>
             </div>
             <div className="analysis-drawer-body">
-              {(Object.entries(selected) as [string, unknown][]).map(([k, v]) => (
-                <div key={k} className="analysis-kv-row">
-                  <span className="analysis-kv-key">{k}</span>
-                  <span className="analysis-kv-val">{String(v ?? "—")}</span>
+              {(Object.entries(selected) as [string, unknown][])
+                .filter(([k]) => k !== "hyperparams")
+                .map(([k, v]) => (
+                  <div key={k} className="analysis-kv-row">
+                    <span className="analysis-kv-key">{k}</span>
+                    <span className="analysis-kv-val">{String(v ?? "—")}</span>
+                  </div>
+                ))
+              }
+              {selected.hyperparams != null && Object.keys(selected.hyperparams).length > 0 ? (
+                <div className="analysis-hyperparams-section">
+                  <div className="analysis-hyperparams-title">Hyperparameters</div>
+                  <div className="analysis-hyperparams-grid">
+                    {Object.entries(selected.hyperparams)
+                      .filter(([k]) => k !== "layers")
+                      .map(([k, v]) => (
+                        <div key={k} className="analysis-hp-chip">
+                          <span className="analysis-hp-chip-key">{k}</span>
+                          <span className="analysis-hp-chip-val">{String(v)}</span>
+                        </div>
+                      ))}
+                  </div>
+                  {Array.isArray((selected.hyperparams as Record<string, unknown>).layers) && (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="hp-field-label" style={{ marginBottom: 6 }}>Architecture</div>
+                      <div className="analysis-layers-list">
+                        {((selected.hyperparams as Record<string, unknown[]>).layers as Record<string, unknown>[]).map((l, i) => {
+                          const layerColors: Record<string, string> = { linear: "#3b82f6", relu: "#22c55e", lstm: "#8b5cf6", dropout: "#f97316" };
+                          const color = layerColors[String(l.type)] ?? "#888";
+                          const params =
+                            l.type === "linear" ? `out=${l.out}` :
+                            l.type === "lstm"   ? `hidden=${l.hidden}, layers=${l.num_layers}` :
+                            l.type === "dropout" ? `p=${l.p}` : "";
+                          return (
+                            <div key={i} className="analysis-layer-item">
+                              <div className="analysis-layer-dot" style={{ background: color }} />
+                              <span className="analysis-layer-type" style={{ color }}>{String(l.type)}</span>
+                              {params && <span className="analysis-layer-params">{params}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+              ) : selected.hyperparams === null ? (
+                <div className="analysis-kv-row">
+                  <span className="analysis-kv-key">hyperparams</span>
+                  <span className="analysis-kv-val is-muted" style={{ fontStyle: "italic" }}>none recorded (trained before v2)</span>
+                </div>
+              ) : null}
             </div>
             <div className="analysis-drawer-footer">
               {selected.house_id != null && selected.active !== true && (

@@ -28,6 +28,7 @@ export interface ModelMeta {
   n_features: number;
   n_outputs: number;
   stored_at?: string;
+  hyperparams?: Record<string, unknown> | null;
 }
 
 export interface FeatureScore {

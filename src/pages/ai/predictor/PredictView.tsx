@@ -539,7 +539,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 dataKey="lastPredConsumption"
                 stroke={LANE_COLORS.consumption.predicted}
                 strokeWidth={1.5}
-                strokeOpacity={0.35}
+                strokeOpacity={0.8}
                 name="Last Pred. Consumption"
                 dot={false}
                 isAnimationActive={false}
@@ -554,7 +554,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 dataKey="lastPredProduction"
                 stroke={LANE_COLORS.production.predicted}
                 strokeWidth={1.5}
-                strokeOpacity={0.35}
+                strokeOpacity={0.8}
                 name="Last Pred. Production"
                 dot={false}
                 isAnimationActive={false}
