@@ -19,6 +19,7 @@ interface UIContextValue {
   communities: CommunityContext[];
   activeCommunity: CommunityContext;
   setActiveCommunity: (communityId: string) => void;
+  addCommunity: (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => CommunityContext;
   notifications: NotificationItem[];
   toasts: ToastItem[];
   unreadCount: number;
@@ -49,7 +50,9 @@ function resolvePreferredTheme(): ThemeMode {
 
 export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [theme, setThemeState] = useState<ThemeMode>(resolvePreferredTheme);
-  const [communities] = useState<CommunityContext[]>(INITIAL_COMMUNITIES);
+  const [communities, setCommunities] = useState<CommunityContext[]>(() =>
+    readStorage<CommunityContext[]>(STORAGE_KEYS.communities, INITIAL_COMMUNITIES)
+  );
 
   const [activeCommunityId, setActiveCommunityId] = useState<string>(() => {
     const persisted = readStorage<string | null>(STORAGE_KEYS.communityId, null);
@@ -84,6 +87,28 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
     setSelectedEntityId("community");
     writeStorage(STORAGE_KEYS.communityId, communityId);
   }, []);
+
+  const addCommunity = useCallback(
+    (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => {
+      const community: CommunityContext = {
+        id: createId("community"),
+        status: "normal",
+        topologyPreset: "blank",
+        ...input
+      };
+
+      setCommunities((previous) => {
+        const next = [community, ...previous];
+        writeStorage(STORAGE_KEYS.communities, next);
+        return next;
+      });
+      setActiveCommunityId(community.id);
+      setSelectedEntityId("community");
+      writeStorage(STORAGE_KEYS.communityId, community.id);
+      return community;
+    },
+    []
+  );
 
   const pushNotification = useCallback(
     (input: Omit<NotificationItem, "id" | "timestamp" | "read">) => {
@@ -156,6 +181,7 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
       communities,
       activeCommunity,
       setActiveCommunity,
+      addCommunity,
       notifications,
       toasts,
       unreadCount,
@@ -179,6 +205,7 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
       communities,
       activeCommunity,
       setActiveCommunity,
+      addCommunity,
       notifications,
       toasts,
       unreadCount,

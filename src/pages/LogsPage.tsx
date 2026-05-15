@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileWarning, Search } from "lucide-react";
-import { listJobs } from "../api/trainingApi";
+import { listJobs, listJobsInitialData } from "../api/trainingApi";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../hooks/useApiFeedback";
 import { useJobLogsPolling } from "../hooks/useJobLogsPolling";
@@ -17,6 +17,7 @@ export function LogsPage(): JSX.Element {
   const jobsQuery = useQuery({
     queryKey: ["jobs", "for-logs"],
     queryFn: listJobs,
+    initialData: listJobsInitialData,
     refetchInterval: JOB_POLL_MS
   });
 

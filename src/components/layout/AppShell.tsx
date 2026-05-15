@@ -11,7 +11,10 @@ export function AppShell(): JSX.Element {
   const location = useLocation();
   const { session } = useAuth();
   const hideTree =
-    isTrainingManagerRole(session?.role) || isPredictorRole(session?.role) || isKpiManagerRole(session?.role);
+    isTrainingManagerRole(session?.role) ||
+    isPredictorRole(session?.role) ||
+    isKpiManagerRole(session?.role) ||
+    location.pathname.startsWith("/app/community/topology");
   const showTree = !hideTree;
 
   return (

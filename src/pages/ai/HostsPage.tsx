@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCcw, Server } from "lucide-react";
-import { listHosts, listJobs } from "../../api/trainingApi";
+import { listHosts, listJobs, listJobsInitialData } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageHeader } from "../../components/ui/PageHeader";
+import type { HostInfo } from "../../types";
+import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { formatDateTime } from "../../utils/time";
 
@@ -36,6 +38,15 @@ function renderBudgetLine(
   );
 }
 
+function renderCapacityLine(hostName: string, host: HostInfo): JSX.Element {
+  const capacity = resolveHostCapacitySummary(hostName, host);
+  return (
+    <span className={`jobs-capacity-line${capacity.overCapacity ? " is-over-capacity" : ""}`}>
+      {capacity.label}
+    </span>
+  );
+}
+
 export function HostsPage(): JSX.Element {
   const hostsQuery = useQuery({
     queryKey: ["hosts"],
@@ -45,6 +56,7 @@ export function HostsPage(): JSX.Element {
   const jobsQuery = useQuery({
     queryKey: ["jobs"],
     queryFn: listJobs,
+    initialData: listJobsInitialData,
     refetchInterval: 7000
   });
 
@@ -81,6 +93,7 @@ export function HostsPage(): JSX.Element {
               <tr>
                 <th>Host</th>
                 <th>Status</th>
+                <th>Slots</th>
                 <th>Active Job</th>
                 <th>Terminal State</th>
                 <th>Budget</th>
@@ -100,6 +113,7 @@ export function HostsPage(): JSX.Element {
                     <span className={`host-live-dot${isRecentHostUpdate(row.last_seen) ? " is-online" : ""}`} />
                     {isRecentHostUpdate(row.last_seen) ? " Live" : " Offline"}
                   </td>
+                  <td>{renderCapacityLine(row.name, row)}</td>
                   <td>{resolveJobName(row.current_job_id || row.info.active_job_id || null)}</td>
                   <td>{row.current_job_status || row.info.active_job_status || row.info.last_terminal_status || "-"}</td>
                   <td>{renderBudgetLine(row.info.budget?.accounts)}</td>

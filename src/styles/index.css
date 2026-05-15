@@ -1094,6 +1094,7 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .topbar-right {
@@ -1126,22 +1127,62 @@ button {
   display: block;
 }
 
-.community-switcher {
+.community-context {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--bg-elev);
+  gap: 8px;
+  min-width: 0;
 }
 
-.community-switcher select {
-  border: 0;
-  outline: none;
-  background: transparent;
+.community-context-main {
+  min-width: 0;
+  max-width: 270px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elev), var(--bg) 8%);
   color: var(--text);
-  padding: 8px 6px;
+  padding: 6px 10px 6px 12px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+}
+
+.community-context-main:hover {
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--line));
+  background: color-mix(in srgb, var(--brand) 8%, var(--bg-elev));
+}
+
+.community-context-main.is-static {
+  cursor: default;
+}
+
+.community-context-main.is-static:hover {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--bg-elev), var(--bg) 8%);
+}
+
+.community-context-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  text-align: left;
+}
+
+.community-context-copy small {
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.community-context-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 650;
 }
 
 .topbar-nav {
@@ -1164,6 +1205,8 @@ button {
 }
 
 .top-tab {
+  display: inline-flex;
+  align-items: center;
   border-radius: 8px 8px 6px 6px;
   padding: 10px 14px 9px;
   color: var(--text-soft);
@@ -1249,7 +1292,7 @@ button {
   cursor: not-allowed;
 }
 
-.mobile-only {
+.mobile-tree-trigger {
   display: none;
 }
 
@@ -1274,6 +1317,16 @@ button {
 
 .community-tree.is-collapsed {
   width: 74px;
+}
+
+.community-tree.is-collapsed header {
+  justify-content: center;
+}
+
+.community-tree.is-collapsed header > div,
+.community-tree.is-collapsed .tree-toggle,
+.community-tree.is-collapsed .tree-toggle-placeholder {
+  display: none;
 }
 
 .community-tree header {
@@ -1410,6 +1463,25 @@ button {
 .community-tree.is-collapsed .tree-section,
 .community-tree.is-collapsed .tree-section-head {
   display: none;
+}
+
+.community-tree.is-collapsed .tree-root,
+.community-tree.is-collapsed .tree-group {
+  padding: 8px 0;
+  overflow: hidden;
+}
+
+.community-tree.is-collapsed .tree-item {
+  justify-content: center;
+}
+
+.community-tree.is-collapsed .tree-target {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 34px;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
 }
 
 .workspace-main {
@@ -1624,8 +1696,7 @@ button {
 .form-grid textarea,
 .form-grid select,
 .toolbar select,
-.toolbar input,
-.community-switcher select {
+.toolbar input {
   border: 1px solid var(--line);
   background: var(--bg-elev-2);
   color: var(--text);
@@ -1763,6 +1834,1068 @@ button {
   font-weight: 600;
 }
 
+.community-select-page {
+  min-height: 100vh;
+  padding: 0 0 calc(var(--institutional-dock-offset) + 26px);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--brand) 14%, transparent), transparent 34%),
+    linear-gradient(145deg, color-mix(in srgb, var(--bg), var(--bg-elev) 36%), var(--bg));
+}
+
+.community-select-appbar {
+  width: 100%;
+}
+
+.community-select-brand {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+}
+
+.community-select-shell {
+  max-width: 920px;
+  margin: 18px auto 0;
+  padding: 0 18px;
+}
+
+.community-select-panel {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-elev), transparent 3%);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.community-select-panel-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 16px;
+  align-items: start;
+  padding: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.community-select-panel-head h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.45rem, 1.1rem + 1vw, 2.1rem);
+}
+
+.community-select-panel-head p {
+  margin: 5px 0 0;
+  color: var(--text-soft);
+}
+
+.community-select-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 20%);
+}
+
+.community-select-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.community-select-controls label > span {
+  color: var(--text-soft);
+  font-size: 0.84rem;
+}
+
+.community-select-controls select {
+  min-width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-elev);
+  color: var(--text);
+  padding: 9px 10px;
+}
+
+.community-select-create {
+  margin-left: auto;
+}
+
+.community-select-list {
+  list-style: none;
+  margin: 0;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.community-select-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--bg-elev), var(--bg) 8%);
+  box-shadow: 0 8px 18px rgba(18, 33, 28, 0.04);
+}
+
+.community-select-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line));
+}
+
+.community-select-main {
+  min-width: 0;
+}
+
+.community-select-main h2 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.06rem;
+}
+
+.community-select-main > span,
+.community-select-main p,
+.community-select-meta {
+  color: var(--text-soft);
+}
+
+.community-select-main p {
+  margin: 7px 0 10px;
+}
+
+.community-select-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.community-select-meta small,
+.community-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.community-select-side {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.community-create-form {
+  display: grid;
+  gap: 12px;
+}
+
+.community-create-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.community-create-form label > span {
+  color: var(--text-soft);
+  font-size: 0.84rem;
+}
+
+.community-create-form input,
+.community-create-form textarea {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  padding: 9px 10px;
+}
+
+.community-create-form textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
+.community-create-note {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--brand) 8%, var(--bg-elev-2));
+  color: var(--text-soft);
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.community-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tree-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-left: auto;
+}
+
+.tree-status-dot.is-warning {
+  background: var(--warn);
+}
+
+.tree-status-dot.is-offline {
+  background: var(--danger);
+}
+
+.energy-console-page {
+  gap: 16px;
+}
+
+.energy-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.energy-page-head h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(1.5rem, 1.05rem + 1.4vw, 2.35rem);
+}
+
+.energy-page-head p {
+  margin: 5px 0 0;
+  color: var(--text-soft);
+}
+
+.energy-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.energy-timebar,
+.energy-log-toolbar {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elev), var(--bg) 10%);
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.energy-timebar small {
+  color: var(--text-soft);
+  margin-left: auto;
+}
+
+.energy-segments,
+.prosumer-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 3px;
+  background: var(--bg-elev-2);
+}
+
+.energy-segments button,
+.prosumer-segmented button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 13px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.energy-segments button.is-active,
+.prosumer-segmented button.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand), var(--brand-strong));
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+.energy-range-btn {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  padding: 9px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.energy-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.energy-kpi-card,
+.energy-price-card,
+.energy-mini-panel,
+.energy-asset-card,
+.energy-detail-card,
+.prosumer-flex-card,
+.prosumer-flex-summary {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  box-shadow: 0 8px 18px rgba(18, 33, 28, 0.04);
+}
+
+.energy-kpi-card,
+.energy-price-card {
+  padding: 14px;
+  min-height: 106px;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+
+.energy-kpi-card span,
+.energy-price-card span,
+.energy-mini-panel h2,
+.energy-detail-list dt {
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+
+.energy-kpi-card strong,
+.energy-price-card strong {
+  font-family: var(--font-heading);
+  font-size: 1.7rem;
+}
+
+.energy-kpi-card small {
+  color: var(--text-soft);
+}
+
+.energy-kpi-card.is-success small {
+  color: var(--brand-strong);
+}
+
+.energy-kpi-card.is-warning small {
+  color: var(--warn);
+}
+
+.energy-main-chart {
+  padding: 18px;
+}
+
+.energy-main-chart header,
+.energy-section-head,
+.energy-detail-card header,
+.prosumer-flex-card header,
+.prosumer-flex-summary header,
+.energy-inspector header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.energy-main-chart h2,
+.energy-section-head h2,
+.energy-detail-card h2,
+.prosumer-flex-card h2,
+.prosumer-flex-summary h2,
+.energy-inspector h2 {
+  margin: 0;
+  font-family: var(--font-heading);
+}
+
+.energy-main-chart p,
+.prosumer-flex-card p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+}
+
+.energy-chart-tooltip {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elev), transparent 4%);
+  box-shadow: var(--shadow);
+  padding: 10px;
+  display: grid;
+  gap: 5px;
+}
+
+.energy-chart-tooltip span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-soft);
+}
+
+.energy-chart-tooltip i {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.energy-status-strip {
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--brand) 12%, var(--bg-elev));
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.energy-status-strip span {
+  color: var(--text-soft);
+}
+
+.energy-lower-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr 1fr 1.65fr;
+  gap: 10px;
+}
+
+.energy-mini-panel {
+  padding: 14px;
+  min-height: 142px;
+  position: relative;
+  overflow: hidden;
+}
+
+.energy-mini-panel h2 {
+  margin: 0 0 12px;
+}
+
+.energy-ring {
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at center, var(--bg-elev) 56%, transparent 57%),
+    conic-gradient(var(--brand) var(--value), var(--line) 0);
+}
+
+.energy-ring strong,
+.energy-large-number {
+  font-family: var(--font-heading);
+  font-size: 1.6rem;
+}
+
+.energy-progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.energy-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 62%, #7cc7ff));
+}
+
+.energy-soft-icon {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  color: color-mix(in srgb, var(--brand) 70%, transparent);
+}
+
+.energy-entity-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.energy-assets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.energy-asset-card {
+  text-align: left;
+  color: var(--text);
+  padding: 12px;
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+}
+
+.energy-asset-card.is-selected {
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+
+.energy-asset-card header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.energy-asset-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--line));
+}
+
+.energy-asset-card strong {
+  display: block;
+}
+
+.energy-asset-card small {
+  color: var(--text-soft);
+}
+
+.energy-asset-card dl,
+.energy-detail-list {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.energy-asset-card dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.energy-asset-card dt,
+.energy-detail-list dt {
+  color: var(--text-soft);
+  font-size: 0.76rem;
+}
+
+.energy-asset-card dd,
+.energy-detail-list dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+}
+
+.energy-detail-card {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.energy-progress-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+}
+
+.energy-progress-row strong {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+}
+
+.energy-detail-list {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.energy-schedule-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 10%);
+  display: grid;
+  gap: 7px;
+}
+
+.energy-schedule-card span,
+.energy-schedule-card small {
+  color: var(--text-soft);
+}
+
+.energy-schedule-track {
+  height: 22px;
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--line) 70%, transparent) 0 1px, transparent 1px 24px),
+    var(--bg-elev);
+  position: relative;
+  overflow: hidden;
+}
+
+.energy-schedule-track span {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 72%, #9adcbf);
+}
+
+.energy-topology-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: auto auto minmax(560px, 1fr);
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow);
+}
+
+.energy-topology-toolbar {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 15%);
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.energy-topology-toolbar > span {
+  margin-left: auto;
+  color: var(--text-soft);
+  font-size: 0.84rem;
+}
+
+.topology-edit-tray {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elev), var(--bg) 10%);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(130px, 0.65fr) minmax(160px, 1fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.topology-edit-tray label {
+  display: grid;
+  gap: 5px;
+}
+
+.topology-edit-tray label > span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.topology-edit-tray input,
+.topology-edit-tray select {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  padding: 8px 10px;
+  min-height: 36px;
+}
+
+.topology-target-chip {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 12%);
+  padding: 7px 10px;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+}
+
+.topology-target-chip span {
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.topology-target-chip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.energy-topology-canvas {
+  position: relative;
+  min-height: 640px;
+  overflow: hidden;
+  background:
+    linear-gradient(color-mix(in srgb, var(--line) 35%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 35%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 26%),
+    color-mix(in srgb, var(--bg), var(--bg-elev) 45%);
+  background-size: 24px 24px, 24px 24px, auto, auto;
+}
+
+.energy-topology-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.energy-edge {
+  fill: none;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  opacity: 0.82;
+}
+
+.energy-edge.is-production {
+  stroke: var(--brand);
+}
+
+.energy-edge.is-storage {
+  stroke: #52b6c8;
+}
+
+.energy-edge.is-demand {
+  stroke: var(--warn);
+}
+
+.energy-edge.is-grid {
+  stroke: var(--info);
+}
+
+.topology-graph-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  max-width: min(420px, calc(100% - 28px));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-elev), transparent 8%);
+  color: var(--text-soft);
+  padding: 7px 11px;
+  font-size: 0.78rem;
+  box-shadow: 0 8px 18px rgba(18, 33, 28, 0.05);
+  pointer-events: none;
+}
+
+.topology-empty-builder {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  max-width: min(430px, calc(100% - 28px));
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elev), transparent 4%);
+  box-shadow: 0 10px 24px rgba(18, 33, 28, 0.06);
+  padding: 11px 13px;
+  display: grid;
+  gap: 4px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.topology-empty-builder strong {
+  font-size: 0.9rem;
+}
+
+.topology-empty-builder span {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.energy-topology-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: clamp(150px, 15vw, 190px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elev), transparent 4%);
+  color: var(--text);
+  box-shadow: 0 8px 18px rgba(18, 33, 28, 0.04);
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  cursor: pointer;
+  z-index: 2;
+  touch-action: none;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease,
+    background 140ms ease;
+}
+
+.energy-topology-node:hover {
+  border-color: color-mix(in srgb, var(--brand) 38%, var(--line));
+  transform: translate(-50%, -50%) translateY(-1px);
+}
+
+.energy-topology-node.is-draggable {
+  cursor: grab;
+}
+
+.energy-topology-node.is-dragging {
+  cursor: grabbing;
+  transform: translate(-50%, -50%) scale(1.03);
+  z-index: 5;
+}
+
+.energy-topology-node.is-selected {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent), 0 8px 18px rgba(18, 33, 28, 0.04);
+}
+
+.topology-node-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 25%, var(--line));
+}
+
+.topology-node-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.topology-node-copy strong,
+.topology-node-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topology-node-copy small {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.topology-status {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.topology-status.is-warning {
+  background: var(--warn);
+}
+
+.topology-status.is-offline {
+  background: var(--danger);
+}
+
+.energy-topology-node.is-warning {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--line));
+}
+
+.energy-topology-node.is-offline {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  opacity: 0.7;
+}
+
+.topology-inspector-note {
+  margin: -4px 0 0;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.topology-inspector-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.topology-inspector-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.topology-inspector-form label > span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.topology-inspector-form input,
+.topology-inspector-form select,
+.topology-inspector-form textarea {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.topology-inspector-form textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.topology-inspector-form .full-col {
+  grid-column: 1 / -1;
+}
+
+.energy-inspector {
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.energy-inspector-kpis {
+  display: grid;
+  gap: 8px;
+}
+
+.energy-inspector-kpis div {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 18%);
+}
+
+.energy-inspector-kpis span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  margin-bottom: 2px;
+}
+
+.energy-inspector-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.energy-log-toolbar select {
+  border: 1px solid var(--line);
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 9px 10px;
+}
+
+.energy-logs-panel {
+  padding: 0;
+  overflow: auto;
+}
+
+.energy-log-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+  z-index: 1;
+}
+
+.energy-log-table td {
+  white-space: nowrap;
+}
+
+.energy-log-table td:last-child {
+  white-space: normal;
+  min-width: 320px;
+}
+
+.energy-log-empty {
+  padding: 28px;
+  color: var(--text-soft);
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+
+.prosumer-flex-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prosumer-flex-card,
+.prosumer-flex-summary {
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+.prosumer-flex-card label {
+  display: grid;
+  gap: 7px;
+}
+
+.prosumer-flex-card label > span {
+  color: var(--text-soft);
+}
+
+.prosumer-flex-card input[type="range"] {
+  accent-color: var(--brand);
+}
+
+.energy-toggle-row {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.energy-toggle-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.energy-toggle-row input {
+  width: 44px;
+  height: 24px;
+  accent-color: var(--brand);
+}
+
+.prosumer-flex-summary {
+  grid-column: 1 / -1;
+}
+
+.prosumer-flex-summary ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.prosumer-flex-summary li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1838,6 +2971,11 @@ button {
 
 .btn-secondary {
   background: var(--bg-elev);
+}
+
+.btn.is-active {
+  border-color: color-mix(in srgb, var(--brand) 52%, var(--line));
+  background: color-mix(in srgb, var(--brand) 14%, var(--bg-elev));
 }
 
 .btn-ghost {
@@ -2578,6 +3716,16 @@ button {
 .jobs-meta {
   color: var(--text-soft);
   font-size: 0.8rem;
+}
+
+.jobs-capacity-line {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.jobs-capacity-line.is-over-capacity {
+  color: var(--danger);
 }
 
 .jobs-host-list,
@@ -7317,7 +8465,7 @@ button {
     display: none;
   }
 
-  .mobile-only {
+  .mobile-tree-trigger {
     display: grid;
   }
 
@@ -7389,6 +8537,37 @@ button {
   .sim-chart-grid {
     grid-template-columns: 1fr;
   }
+
+  .community-select-panel-head,
+  .energy-topology-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .energy-topology-shell {
+    grid-template-rows: auto auto minmax(480px, 1fr) auto;
+  }
+
+  .topology-edit-tray {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .energy-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .energy-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .energy-lower-grid,
+  .prosumer-flex-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .energy-detail-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -7410,6 +8589,9 @@ button {
   }
 
   .kpi-grid,
+  .energy-kpi-grid,
+  .energy-lower-grid,
+  .prosumer-flex-grid,
   .job-overview-metrics,
   .account-grid,
   .details-grid,
@@ -7417,6 +8599,84 @@ button {
   .account-form-grid,
   .job-overview-list {
     grid-template-columns: 1fr;
+  }
+
+  .community-select-page {
+    padding-bottom: calc(var(--institutional-dock-offset) + 20px);
+  }
+
+  .community-select-shell {
+    margin-top: 12px;
+    padding: 0 12px;
+  }
+
+  .energy-page-head,
+  .community-select-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .energy-page-head {
+    display: flex;
+  }
+
+  .community-select-item {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .community-select-side {
+    justify-items: stretch;
+  }
+
+  .community-select-panel-head,
+  .community-select-controls,
+  .energy-timebar,
+  .energy-log-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .community-select-create {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .energy-head-actions {
+    justify-content: flex-start;
+  }
+
+  .energy-segments,
+  .prosumer-segmented {
+    overflow-x: auto;
+    justify-content: flex-start;
+  }
+
+  .energy-main-chart {
+    padding: 12px;
+  }
+
+  .energy-assets-grid,
+  .energy-asset-card dl,
+  .energy-detail-list {
+    grid-template-columns: 1fr;
+  }
+
+  .energy-topology-canvas {
+    min-height: 460px;
+  }
+
+  .energy-topology-node {
+    width: 145px;
+    padding: 8px 9px;
+  }
+
+  .topology-edit-tray {
+    grid-template-columns: 1fr;
+  }
+
+  .energy-topology-toolbar > span {
+    margin-left: 0;
   }
 
   .job-overview-hero {

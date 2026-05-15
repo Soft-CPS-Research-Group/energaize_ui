@@ -23,6 +23,7 @@ export interface CommunityContext {
   buildings: number;
   assets?: number;
   status: "normal" | "alerts" | "offline";
+  topologyPreset?: "demo" | "blank";
 }
 
 export interface NotificationItem {
@@ -231,8 +232,23 @@ export interface HostInfo {
     executor?: string;
     worker_version?: string;
     max_active_jobs?: number | null;
+    max_active_jobs_by_profile?: {
+      cpu?: number;
+      gpu?: number;
+      [key: string]: number | undefined;
+    };
     active_job_id?: string | null;
     active_job_count?: number | null;
+    active_job_count_by_profile?: {
+      cpu?: number;
+      gpu?: number;
+      [key: string]: number | undefined;
+    };
+    active_job_ids_by_profile?: {
+      cpu?: string[];
+      gpu?: string[];
+      [key: string]: string[] | undefined;
+    };
     active_job_ids?: string[];
     active_jobs?: Array<{
       job_id: string;

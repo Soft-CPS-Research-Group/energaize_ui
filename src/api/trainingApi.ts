@@ -17,6 +17,8 @@ import {
   listExampleJobs
 } from "../mocks/exampleJobs";
 
+const DEV_JOBS_BACKEND_TIMEOUT_MS = 15000;
+
 export interface DatasetCreatePayload {
   name: string;
   site_id: string;
@@ -193,11 +195,32 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
   };
 }
 
+export function listLocalJobs(): JobItem[] {
+  return listExampleJobs().map((item) => ({
+    ...item,
+    status: normalizeJobStatus(item.status)
+  }));
+}
+
+export function listJobsInitialData(): JobItem[] | undefined {
+  if (!import.meta.env.DEV) return undefined;
+  const localJobs = listLocalJobs();
+  return localJobs.length > 0 ? localJobs : undefined;
+}
+
 export async function listJobs(): Promise<JobItem[]> {
   let requestError: unknown = null;
   let backendJobs: JobItem[] = [];
+  const localExampleJobs = listLocalJobs();
+  let backendTimeoutId: number | null = null;
 
   try {
+    const controller =
+      import.meta.env.DEV && localExampleJobs.length > 0 ? new AbortController() : null;
+    backendTimeoutId = controller
+      ? window.setTimeout(() => controller.abort(), DEV_JOBS_BACKEND_TIMEOUT_MS)
+      : null;
+
     const result = await http<
       Array<
         Omit<JobItem, "status"> & {
@@ -205,19 +228,16 @@ export async function listJobs(): Promise<JobItem[]> {
           job_info: JobInfo;
         }
       >
-    >("/jobs");
+    >("/jobs", controller ? { signal: controller.signal } : undefined);
     backendJobs = result.map((item) => ({
       ...item,
       status: normalizeJobStatus(item.status)
     }));
   } catch (error) {
     requestError = error;
+  } finally {
+    if (backendTimeoutId) window.clearTimeout(backendTimeoutId);
   }
-
-  const localExampleJobs = listExampleJobs().map((item) => ({
-    ...item,
-    status: normalizeJobStatus(item.status)
-  }));
 
   const merged = new Map<string, JobItem>();
   backendJobs.forEach((item) => merged.set(item.job_id, item));

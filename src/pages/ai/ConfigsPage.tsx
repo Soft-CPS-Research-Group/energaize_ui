@@ -16,6 +16,7 @@ import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import { datasetSchemaPath } from "../../utils/datasetPath";
 import { useSearchParams } from "react-router-dom";
 
 type EditorMode = "create" | "edit";
@@ -161,7 +162,7 @@ const DEFAULT_VISUAL_MODEL: ConfigModel = {
   },
   simulator: {
     dataset_name: "citylearn_challenge_2022_phase_all_plus_evs",
-    dataset_path: "./datasets/citylearn_challenge_2022_phase_all_plus_evs/schema.json",
+    dataset_path: "/data/datasets/citylearn_challenge_2022_phase_all_plus_evs/schema.json",
     central_agent: false,
     reward_function: "RewardFunction",
     reward_function_kwargs: {},
@@ -313,10 +314,6 @@ function parseNumberArray(value: string, fallback: number[]): number[] {
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isFinite(item) && item > 0);
   return parsed.length > 0 ? parsed : fallback;
-}
-
-function datasetSchemaPath(datasetName: string): string {
-  return `./datasets/${datasetName}/schema.json`;
 }
 
 export function ConfigsPage(): JSX.Element {
@@ -925,11 +922,11 @@ export function ConfigsPage(): JSX.Element {
                           </label>
 
                           <label>
-                            <span>Dataset path</span>
+                            <span>Dataset path inside job container</span>
                             <input
                               value={valueAsString(parsedModel, "simulator.dataset_path")}
                               onChange={(event) => updateVisualField("simulator.dataset_path", event.target.value)}
-                              placeholder="./datasets/<name>/schema.json"
+                              placeholder="/data/datasets/<name>/schema.json"
                             />
                           </label>
 
