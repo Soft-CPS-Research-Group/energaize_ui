@@ -1711,7 +1711,7 @@ export function JobsPage(): JSX.Element {
               </span>
             </header>
             {!hostsLiveWindow ? (
-              <small className="jobs-live-reminder">No recent host heartbeat. Check VPN/backend connectivity.</small>
+              <small className="jobs-live-reminder">No recent host heartbeat. Check VPN/orchestrator connectivity.</small>
             ) : null}
             <ul className="jobs-host-list">
               {hostRows.length > 0 ? (

@@ -1,4 +1,4 @@
-import { apiFileUrl, http } from "./client";
+import { http, jobOrchestratorFileUrl, jobOrchestratorHttp } from "./client";
 import type {
   DatasetItem,
   HostsPayload,
@@ -17,7 +17,7 @@ import {
   listExampleJobs
 } from "../mocks/exampleJobs";
 
-const DEV_JOBS_BACKEND_TIMEOUT_MS = 15000;
+const DEV_JOBS_ORCHESTRATOR_TIMEOUT_MS = 15000;
 
 export interface DatasetCreatePayload {
   name: string;
@@ -87,15 +87,15 @@ export interface JobImageVersionsResponse {
 }
 
 export async function listDatasets(): Promise<DatasetItem[]> {
-  return http<DatasetItem[]>("/datasets");
+  return jobOrchestratorHttp<DatasetItem[]>("/datasets");
 }
 
 export async function listDatasetSites(): Promise<{ sites: DatasetSiteItem[] }> {
-  return http<{ sites: DatasetSiteItem[] }>("/dataset/sites");
+  return jobOrchestratorHttp<{ sites: DatasetSiteItem[] }>("/dataset/sites");
 }
 
 export async function createDataset(payload: DatasetCreatePayload): Promise<DatasetCreateResponse> {
-  return http<DatasetCreateResponse>("/dataset", {
+  return jobOrchestratorHttp<DatasetCreateResponse>("/dataset", {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -105,34 +105,34 @@ export async function uploadDataset(payload: { file: File; name: string }): Prom
   const formData = new FormData();
   formData.append("file", payload.file);
   formData.append("name", payload.name);
-  return http<{ message: string; name: string }>("/dataset/upload", {
+  return jobOrchestratorHttp<{ message: string; name: string }>("/dataset/upload", {
     method: "POST",
     body: formData
   });
 }
 
 export async function deleteDataset(name: string): Promise<{ message: string }> {
-  return http<{ message: string }>(`/dataset/${encodeURIComponent(name)}`, {
+  return jobOrchestratorHttp<{ message: string }>(`/dataset/${encodeURIComponent(name)}`, {
     method: "DELETE"
   });
 }
 
 export function datasetDownloadUrl(name: string): string {
-  return apiFileUrl(`/dataset/download/${encodeURIComponent(name)}`);
+  return jobOrchestratorFileUrl(`/dataset/download/${encodeURIComponent(name)}`);
 }
 
 export async function listDatesAvailable(siteId: string): Promise<Array<Record<string, string>>> {
-  return http<Array<Record<string, string>>>(`/dataset/dates-available/${encodeURIComponent(siteId)}`);
+  return jobOrchestratorHttp<Array<Record<string, string>>>(`/dataset/dates-available/${encodeURIComponent(siteId)}`);
 }
 
 export async function listExperimentConfigs(): Promise<string[]> {
-  return http<string[]>("/experiment-configs");
+  return jobOrchestratorHttp<string[]>("/experiment-configs");
 }
 
 export async function getExperimentConfig(
   fileName: string
 ): Promise<{ yaml_content: string }> {
-  const yamlContent = await http<string>(
+  const yamlContent = await jobOrchestratorHttp<string>(
     `/experiment-config/${encodeURIComponent(fileName)}`,
     undefined,
     { responseType: "text" }
@@ -144,7 +144,7 @@ export async function saveExperimentConfig(payload: {
   file_name: string;
   yaml_content: string;
 }): Promise<{ message: string; file: string }> {
-  return http<{ message: string; file: string }>("/experiment-config/create", {
+  return jobOrchestratorHttp<{ message: string; file: string }>("/experiment-config/create", {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -154,7 +154,7 @@ export async function updateExperimentConfig(payload: {
   file_name: string;
   yaml_content: string;
 }): Promise<{ message: string; file?: string }> {
-  return http<{ message: string; file?: string }>(
+  return jobOrchestratorHttp<{ message: string; file?: string }>(
     `/experiment-config/${encodeURIComponent(payload.file_name)}`,
     {
       method: "PUT",
@@ -164,7 +164,7 @@ export async function updateExperimentConfig(payload: {
 }
 
 export async function deleteExperimentConfig(fileName: string): Promise<{ message: string }> {
-  return http<{ message: string }>(`/experiment-config/${encodeURIComponent(fileName)}`, {
+  return jobOrchestratorHttp<{ message: string }>(`/experiment-config/${encodeURIComponent(fileName)}`, {
     method: "DELETE"
   });
 }
@@ -177,7 +177,7 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
   image_tag?: string;
   image?: string;
 }> {
-  const result = await http<{
+  const result = await jobOrchestratorHttp<{
     job_id: string;
     status: string;
     host?: string;
@@ -218,10 +218,10 @@ export async function listJobs(): Promise<JobItem[]> {
     const controller =
       import.meta.env.DEV && localExampleJobs.length > 0 ? new AbortController() : null;
     backendTimeoutId = controller
-      ? window.setTimeout(() => controller.abort(), DEV_JOBS_BACKEND_TIMEOUT_MS)
+      ? window.setTimeout(() => controller.abort(), DEV_JOBS_ORCHESTRATOR_TIMEOUT_MS)
       : null;
 
-    const result = await http<
+    const result = await jobOrchestratorHttp<
       Array<
         Omit<JobItem, "status"> & {
           status: string;
@@ -258,7 +258,7 @@ export async function getJobStatus(jobId: string): Promise<{ job_id: string; sta
     return { job_id: jobId, status: normalizeJobStatus(local) };
   }
 
-  const result = await http<{ job_id: string; status: string }>(`/status/${encodeURIComponent(jobId)}`);
+  const result = await jobOrchestratorHttp<{ job_id: string; status: string }>(`/status/${encodeURIComponent(jobId)}`);
   return {
     ...result,
     status: normalizeJobStatus(result.status)
@@ -268,25 +268,25 @@ export async function getJobStatus(jobId: string): Promise<{ job_id: string; sta
 export async function getJobInfo(jobId: string): Promise<JobInfo> {
   const local = getExampleJobInfo(jobId);
   if (local) return local;
-  return http<JobInfo>(`/job-info/${encodeURIComponent(jobId)}`);
+  return jobOrchestratorHttp<JobInfo>(`/job-info/${encodeURIComponent(jobId)}`);
 }
 
 export async function getJobProgress(jobId: string): Promise<Record<string, unknown>> {
   const local = getExampleJobProgress(jobId);
   if (local) return local;
-  return http<Record<string, unknown>>(`/progress/${encodeURIComponent(jobId)}`);
+  return jobOrchestratorHttp<Record<string, unknown>>(`/progress/${encodeURIComponent(jobId)}`);
 }
 
 export async function getJobResult(jobId: string): Promise<Record<string, unknown>> {
   const local = getExampleJobResult(jobId);
   if (local) return local;
-  return http<Record<string, unknown>>(`/result/${encodeURIComponent(jobId)}`);
+  return jobOrchestratorHttp<Record<string, unknown>>(`/result/${encodeURIComponent(jobId)}`);
 }
 
 export async function getJobFileLogs(jobId: string): Promise<string> {
   const local = await getExampleJobLogs(jobId);
   if (local) return local;
-  return http<string>(`/file-logs/${encodeURIComponent(jobId)}`, undefined, {
+  return jobOrchestratorHttp<string>(`/file-logs/${encodeURIComponent(jobId)}`, undefined, {
     responseType: "text"
   });
 }
@@ -294,7 +294,7 @@ export async function getJobFileLogs(jobId: string): Promise<string> {
 export async function getJobLogs(jobId: string): Promise<string> {
   const local = await getExampleJobLogs(jobId);
   if (local) return local;
-  return http<string>(`/logs/${encodeURIComponent(jobId)}`, undefined, {
+  return jobOrchestratorHttp<string>(`/logs/${encodeURIComponent(jobId)}`, undefined, {
     responseType: "text"
   });
 }
@@ -380,14 +380,14 @@ export async function getJobLogsChunk(
     query.set("max_bytes", String(Math.floor(params.maxBytes)));
   }
   const suffix = query.toString();
-  const payload = await http<unknown>(
+  const payload = await jobOrchestratorHttp<unknown>(
     `/logs-chunk/${encodeURIComponent(jobId)}${suffix ? `?${suffix}` : ""}`
   );
   return normalizeLogsChunkResponse(jobId, payload, params?.offset);
 }
 
 export async function getJobResolvedConfig(jobId: string): Promise<{ yaml_content: string }> {
-  const yamlContent = await http<string>(
+  const yamlContent = await jobOrchestratorHttp<string>(
     `/job-resolved-config/${encodeURIComponent(jobId)}`,
     undefined,
     { responseType: "text" }
@@ -396,31 +396,31 @@ export async function getJobResolvedConfig(jobId: string): Promise<{ yaml_conten
 }
 
 export async function stopJob(jobId: string): Promise<JobActionResponse> {
-  return http<JobActionResponse>(`/stop/${encodeURIComponent(jobId)}`, {
+  return jobOrchestratorHttp<JobActionResponse>(`/stop/${encodeURIComponent(jobId)}`, {
     method: "POST"
   });
 }
 
 export async function opsStopJob(payload: { job_id: string; reason?: string }): Promise<JobActionResponse> {
   const { job_id, reason = "ops_stop" } = payload;
-  return http<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/stop`, {
+  return jobOrchestratorHttp<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/stop`, {
     method: "POST",
     body: JSON.stringify({ reason })
   });
 }
 
 export async function deleteJob(jobId: string): Promise<JobActionResponse> {
-  return http<JobActionResponse>(`/job/${encodeURIComponent(jobId)}`, {
+  return jobOrchestratorHttp<JobActionResponse>(`/job/${encodeURIComponent(jobId)}`, {
     method: "DELETE"
   });
 }
 
 export async function listQueue(): Promise<QueueItem[]> {
-  return http<QueueItem[]>("/queue");
+  return jobOrchestratorHttp<QueueItem[]>("/queue");
 }
 
 export async function listHosts(): Promise<HostsPayload> {
-  return http<HostsPayload>("/hosts");
+  return jobOrchestratorHttp<HostsPayload>("/hosts");
 }
 
 export async function listJobImageVersions(params?: {
@@ -431,7 +431,7 @@ export async function listJobImageVersions(params?: {
   if (params?.repository) search.set("repository", params.repository);
   if (params?.limit) search.set("limit", String(params.limit));
   const suffix = search.size ? `?${search.toString()}` : "";
-  return http<JobImageVersionsResponse>(`/job-images/versions${suffix}`);
+  return jobOrchestratorHttp<JobImageVersionsResponse>(`/job-images/versions${suffix}`);
 }
 
 export async function opsRequeueJob(payload: {
@@ -441,7 +441,7 @@ export async function opsRequeueJob(payload: {
   require_host?: boolean | null;
 }): Promise<JobActionResponse> {
   const { job_id, ...body } = payload;
-  return http<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/requeue`, {
+  return jobOrchestratorHttp<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/requeue`, {
     method: "POST",
     body: JSON.stringify(body)
   });
@@ -453,7 +453,7 @@ export async function opsFailJob(payload: {
   force?: boolean;
 }): Promise<JobActionResponse> {
   const { job_id, ...body } = payload;
-  return http<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/fail`, {
+  return jobOrchestratorHttp<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/fail`, {
     method: "POST",
     body: JSON.stringify(body)
   });
@@ -465,14 +465,14 @@ export async function opsCancelJob(payload: {
   force?: boolean;
 }): Promise<JobActionResponse> {
   const { job_id, ...body } = payload;
-  return http<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/cancel`, {
+  return jobOrchestratorHttp<JobActionResponse>(`/ops/jobs/${encodeURIComponent(job_id)}/cancel`, {
     method: "POST",
     body: JSON.stringify(body)
   });
 }
 
 export async function opsCleanupQueue(force = false): Promise<{ count: number; removed: string[] }> {
-  return http<{ count: number; removed: string[] }>("/ops/queue/cleanup", {
+  return jobOrchestratorHttp<{ count: number; removed: string[] }>("/ops/queue/cleanup", {
     method: "POST",
     body: JSON.stringify({ force })
   });
@@ -483,7 +483,7 @@ export async function opsCleanupJobs(keep?: string[]): Promise<{
   kept: string[];
   count: number;
 }> {
-  return http<{ removed: string[]; kept: string[]; count: number }>("/ops/jobs/cleanup", {
+  return jobOrchestratorHttp<{ removed: string[]; kept: string[]; count: number }>("/ops/jobs/cleanup", {
     method: "POST",
     body: JSON.stringify({ keep })
   });

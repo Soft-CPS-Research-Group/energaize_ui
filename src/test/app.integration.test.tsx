@@ -5,7 +5,7 @@ import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import App from "../App";
-import { API_BASE_URL } from "../api/client";
+import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
 import { AuthProvider } from "../contexts/AuthContext";
 import { UIProvider } from "../contexts/UIContext";
 import { server } from "./server";
@@ -93,7 +93,7 @@ describe("App integration", () => {
     seedAiSession();
     const user = userEvent.setup();
 
-    const api = API_BASE_URL.replace(/\/$/, "");
+    const api = JOB_ORCHESTRATOR_API_URL.replace(/\/$/, "");
     server.use(
       http.get(`${api}/logs-chunk/:jobId`, ({ request, params }) => {
         const url = new URL(request.url);

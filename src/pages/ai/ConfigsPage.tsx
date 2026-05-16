@@ -357,7 +357,7 @@ export function ConfigsPage(): JSX.Element {
     onSuccess: (_, payload) => {
       notifySuccess(
         editorMode === "edit" ? "Experiment config updated" : "Experiment config saved",
-        `${payload.file_name} stored in backend.`
+        `${payload.file_name} stored in the Job Orchestrator.`
       );
       setEditorOpen(false);
       queryClient.invalidateQueries({ queryKey: ["configs"] });
@@ -368,7 +368,7 @@ export function ConfigsPage(): JSX.Element {
   const deleteMutation = useMutation({
     mutationFn: (target: string) => deleteExperimentConfig(target),
     onSuccess: () => {
-      notifyInfo("Experiment config deleted", "Experiment config removed from backend.");
+      notifyInfo("Experiment config deleted", "Experiment config removed from the Job Orchestrator.");
       queryClient.invalidateQueries({ queryKey: ["configs"] });
     },
     onError: (error) => notifyError("Failed to delete experiment config", error)
@@ -737,7 +737,7 @@ export function ConfigsPage(): JSX.Element {
                     placeholder="demo.yaml"
                   />
                   {editorMode === "edit" ? (
-                    <small className="jobs-meta">File name locked in edit mode (backend updates by file name).</small>
+                    <small className="jobs-meta">File name locked in edit mode (orchestrator updates by file name).</small>
                   ) : null}
                 </label>
 
@@ -904,7 +904,7 @@ export function ConfigsPage(): JSX.Element {
                         <h3>Simulator</h3>
                         <div className="config-visual-grid">
                           <label>
-                            <span>Dataset (from backend machine)</span>
+                            <span>Dataset (from orchestrator storage)</span>
                             <select
                               value={selectedDatasetName}
                               onChange={(event) => updateDatasetSelection(event.target.value)}

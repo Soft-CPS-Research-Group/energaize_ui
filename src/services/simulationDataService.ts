@@ -1,4 +1,4 @@
-import { http } from "../api/client";
+import { jobOrchestratorHttp } from "../api/client";
 import type { SimulationDataFileEntry } from "../types";
 import { parseSimulationDataFile } from "../utils/simulationData";
 
@@ -72,7 +72,7 @@ function resolveJobId(jobId: string, simulationDataDir: string | null): string {
 }
 
 async function getBackendIndex(jobId: string, session: string | null): Promise<BackendIndexResponse> {
-  return http<BackendIndexResponse>("/simulation-data/index", {
+  return jobOrchestratorHttp<BackendIndexResponse>("/simulation-data/index", {
     method: "POST",
     body: JSON.stringify({
       job_id: jobId,
@@ -82,7 +82,7 @@ async function getBackendIndex(jobId: string, session: string | null): Promise<B
 }
 
 async function readBackendFile(jobId: string, session: string | null, relativePath: string): Promise<string> {
-  return http<string>(
+  return jobOrchestratorHttp<string>(
     "/simulation-data/file",
     {
       method: "POST",

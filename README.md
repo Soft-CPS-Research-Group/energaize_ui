@@ -5,7 +5,7 @@ React + Vite + TypeScript frontend for EnergAIze, focused on:
 - Community selection flow
 - Shared shell (top navigation, entity tree, notifications, account, logs)
 - AI Manager module: `Jobs`, `Datasets`, `Experiment Configs`
-- Backend integration with `opeva_backend_api_training`
+- Backend integration with `opeva_backend_api_training` and `job_orchestrator_agent`
 
 ## Tech Stack
 - React 18
@@ -22,11 +22,17 @@ Create `.env` from `.env.example`:
 cp .env.example .env
 ```
 
-Default API base URL:
+Default API base URLs:
 
 ```bash
 VITE_API_BASE_URL=http://193.136.62.78:8000
+VITE_JOB_ORCHESTRATOR_API_URL=http://193.136.62.78:8011
 ```
+
+`VITE_API_BASE_URL` is still used for backend-owned deploy/Mongo/schema endpoints.
+Jobs, queues, hosts, configs, datasets and simulation-data calls use
+`VITE_JOB_ORCHESTRATOR_API_URL`. If it is not set, the UI derives it from
+`VITE_API_BASE_URL` by keeping the same host and switching the port to `8011`.
 
 ## Install and Run
 
@@ -64,6 +70,6 @@ docker run -d --name energaize_ui -p 8006:80 calof/energaize_ui:latest
 ## Notes
 - Community list is static in this version (as requested), but context switching is wired.
 - AI Manager bypasses community selection and lands directly in the training workspace.
-- API base URL is environment-driven to support local Docker networking.
+- API base URLs are environment-driven to support local Docker networking.
 - Institutional logos are placeholders in UI text blocks until final assets are provided.
 - On push to `main`, GitHub Actions builds and pushes `calof/energaize_ui:latest` to Docker Hub.
