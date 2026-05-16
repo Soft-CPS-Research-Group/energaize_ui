@@ -1,4 +1,5 @@
 import type { CommunityContext, UserRole } from "./types";
+import { communityContextsFromDomain } from "./data/communityDomain";
 
 export const APP_NAME = "EnergAIze";
 export const AI_AVATAR_URL =
@@ -50,35 +51,7 @@ export const MOCK_USERS: Record<
   }
 };
 
-export const INITIAL_COMMUNITIES: CommunityContext[] = [
-  {
-    id: "solar-community",
-    name: "Solar Community",
-    location: "Porto, PT",
-    description: "Residential microgrid with shared PV and EV assets.",
-    buildings: 11,
-    assets: 38,
-    status: "normal"
-  },
-  {
-    id: "river-grid",
-    name: "River Grid",
-    location: "Gaia, PT",
-    description: "Mixed-use energy community with BESS orchestration.",
-    buildings: 7,
-    assets: 22,
-    status: "alerts"
-  },
-  {
-    id: "wind-hub",
-    name: "Wind Hub",
-    location: "Braga, PT",
-    description: "Pilot site for distributed flexibility operations.",
-    buildings: 5,
-    assets: 17,
-    status: "offline"
-  }
-];
+export const INITIAL_COMMUNITIES: CommunityContext[] = communityContextsFromDomain();
 
 export const QUICK_PERIODS = ["Last 15m", "1h", "24h", "7d", "30d"];
 

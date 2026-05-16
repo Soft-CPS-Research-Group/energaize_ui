@@ -38,9 +38,13 @@ function iconForKind(kind: EnergyEntityKind): JSX.Element {
   if (kind === "building" || kind === "apartment") return <Building2 size={15} />;
   if (kind === "house") return <Home size={15} />;
   if (kind === "battery") return <Battery size={14} />;
+  if (kind === "ev_charger") return <PlugZap size={14} />;
   if (kind === "ev") return <Car size={14} />;
   if (kind === "pv" || kind === "solar_plant") return <Sun size={14} />;
-  if (kind === "transformer") return <PlugZap size={14} />;
+  if (kind === "transformer" || kind === "grid_meter") return <PlugZap size={14} />;
+  if (kind === "appliance" || kind === "heat_pump" || kind === "heater" || kind === "water_pump" || kind === "non_shiftable_load") {
+    return <CircleGauge size={14} />;
+  }
   if (kind === "group") return <CircleGauge size={14} />;
   return <Network size={15} />;
 }

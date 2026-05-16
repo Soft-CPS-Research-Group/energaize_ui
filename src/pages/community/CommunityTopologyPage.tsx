@@ -29,7 +29,21 @@ type Position = { x: number; y: number };
 type TopologyEdgeTone = "production" | "storage" | "demand" | "grid";
 type AddableKind = Extract<
   EnergyEntityKind,
-  "group" | "building" | "house" | "apartment" | "battery" | "ev" | "pv" | "solar_plant" | "transformer"
+  | "group"
+  | "building"
+  | "battery"
+  | "ev"
+  | "ev_charger"
+  | "pv"
+  | "solar_plant"
+  | "grid_meter"
+  | "appliance"
+  | "heat_pump"
+  | "heater"
+  | "water_pump"
+  | "micro_wind_turbine"
+  | "non_shiftable_load"
+  | "generic_device"
 >;
 type EntityOverrides = Record<string, Partial<Pick<EnergyEntity, "label" | "status" | "serial" | "capacity" | "description">>>;
 
@@ -48,15 +62,21 @@ interface GraphEdge {
 }
 
 const ADDABLE_ITEMS: Array<{ kind: AddableKind; label: string }> = [
-  { kind: "building", label: "Building" },
-  { kind: "house", label: "House" },
-  { kind: "apartment", label: "Apartment" },
-  { kind: "group", label: "Asset Group" },
+  { kind: "building", label: "Site / Building" },
+  { kind: "group", label: "Community Site" },
   { kind: "battery", label: "Battery" },
-  { kind: "ev", label: "EV Charger" },
-  { kind: "pv", label: "Rooftop PV" },
+  { kind: "ev_charger", label: "EV Charger" },
+  { kind: "ev", label: "Electric Vehicle" },
+  { kind: "pv", label: "PV System" },
   { kind: "solar_plant", label: "Solar Plant" },
-  { kind: "transformer", label: "Transformer" }
+  { kind: "grid_meter", label: "Grid Meter" },
+  { kind: "appliance", label: "Appliance" },
+  { kind: "heat_pump", label: "Heat Pump" },
+  { kind: "heater", label: "Heater" },
+  { kind: "water_pump", label: "Water Pump" },
+  { kind: "micro_wind_turbine", label: "Micro Wind Turbine" },
+  { kind: "non_shiftable_load", label: "Non-shiftable Load" },
+  { kind: "generic_device", label: "Generic Device" }
 ];
 
 function iconForKind(kind: EnergyEntityKind): JSX.Element {
@@ -64,9 +84,10 @@ function iconForKind(kind: EnergyEntityKind): JSX.Element {
   if (kind === "building" || kind === "apartment") return <Building2 size={15} />;
   if (kind === "house") return <Home size={15} />;
   if (kind === "battery") return <Battery size={14} />;
+  if (kind === "ev_charger") return <PlugZap size={14} />;
   if (kind === "ev") return <Car size={14} />;
   if (kind === "pv" || kind === "solar_plant") return <Sun size={14} />;
-  if (kind === "transformer") return <PlugZap size={14} />;
+  if (kind === "transformer" || kind === "grid_meter") return <PlugZap size={14} />;
   if (kind === "group") return <CircleGauge size={14} />;
   return <Network size={15} />;
 }
@@ -84,8 +105,9 @@ function nodeClass(entity: EnergyEntity, selected: boolean, draggable: boolean, 
 
 function edgeToneFor(entity: EnergyEntity): TopologyEdgeTone {
   if (entity.kind === "pv" || entity.kind === "solar_plant") return "production";
+  if (entity.kind === "micro_wind_turbine") return "production";
   if (entity.kind === "battery") return "storage";
-  if (entity.kind === "transformer" || entity.kind === "group") return "grid";
+  if (entity.kind === "transformer" || entity.kind === "grid_meter" || entity.kind === "group") return "grid";
   return "demand";
 }
 
@@ -99,17 +121,20 @@ function itemLabel(kind: AddableKind): string {
 
 function defaultSerial(kind: AddableKind): string | undefined {
   if (kind === "ev") return "EVSE-new";
+  if (kind === "ev_charger") return "EVSE-new";
   if (kind === "battery") return "BAT-new";
-  if (kind === "transformer") return "TRF-new";
+  if (kind === "grid_meter") return "GM-new";
   return undefined;
 }
 
 function defaultCapacity(kind: AddableKind): string | undefined {
-  if (kind === "ev") return "11 kW";
+  if (kind === "ev_charger") return "11 kW";
+  if (kind === "ev") return "50 kWh";
   if (kind === "battery") return "12 kWh";
   if (kind === "pv") return "5 kWp";
   if (kind === "solar_plant") return "250 kWp";
-  if (kind === "transformer") return "1.2 MW";
+  if (kind === "grid_meter") return "1.2 MW";
+  if (kind === "micro_wind_turbine") return "3 kW";
   return undefined;
 }
 

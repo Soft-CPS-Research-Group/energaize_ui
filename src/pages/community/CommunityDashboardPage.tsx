@@ -21,6 +21,7 @@ import {
   ExternalLink,
   Gauge,
   Leaf,
+  PlugZap,
   RefreshCcw,
   Sun,
   Zap
@@ -37,7 +38,8 @@ import {
   getEnergyEntity,
   getEntityKpis,
   getEntityLineage,
-  getProsumerBuildingScopes
+  getProsumerBuildingScopes,
+  getProsumerDefaultScope
 } from "../../data/energyCommunity";
 
 const RANGE_OPTIONS: Array<{ id: EnergyRange; label: string }> = [
@@ -51,9 +53,10 @@ const RANGE_OPTIONS: Array<{ id: EnergyRange; label: string }> = [
 
 function entityIcon(entity: EnergyEntity): JSX.Element {
   if (entity.kind === "battery") return <Battery size={18} />;
+  if (entity.kind === "ev_charger") return <PlugZap size={18} />;
   if (entity.kind === "ev") return <Car size={18} />;
   if (entity.kind === "pv" || entity.kind === "solar_plant") return <Sun size={18} />;
-  if (entity.kind === "transformer") return <Zap size={18} />;
+  if (entity.kind === "transformer" || entity.kind === "grid_meter") return <Zap size={18} />;
   return <Gauge size={18} />;
 }
 
@@ -156,7 +159,7 @@ function AssetDetail({ entity }: { entity: EnergyEntity }): JSX.Element {
         ))}
       </dl>
 
-      {entity.kind === "ev" ? (
+      {entity.kind === "ev" || entity.kind === "ev_charger" ? (
         <div className="energy-schedule-card">
           <span>Charging scheduled</span>
           <strong>08:00 - 14:00</strong>
@@ -172,12 +175,16 @@ function AssetDetail({ entity }: { entity: EnergyEntity }): JSX.Element {
 
 export function CommunityDashboardPage(): JSX.Element {
   const { session } = useAuth();
-  const { activeCommunity, selectedEntityId, setSelectedEntityId } = useUI();
+  const { communities, activeCommunity, selectedEntityId, setActiveCommunity, setSelectedEntityId } = useUI();
   const [range, setRange] = useState<EnergyRange>("live");
   const isProsumer = session?.role === "prosumer";
   const prosumerScopes = useMemo(
     () => (isProsumer ? getProsumerBuildingScopes(activeCommunity) : []),
     [activeCommunity, isProsumer]
+  );
+  const prosumerDefaultScope = useMemo(
+    () => (isProsumer ? getProsumerDefaultScope(communities) : null),
+    [communities, isProsumer]
   );
   const effectiveSelectedEntityId =
     isProsumer && selectedEntityId === "community" && prosumerScopes[0]
@@ -185,9 +192,24 @@ export function CommunityDashboardPage(): JSX.Element {
       : selectedEntityId;
 
   useEffect(() => {
-    if (!isProsumer || selectedEntityId !== "community" || !prosumerScopes[0]) return;
+    if (!isProsumer) return;
+
+    if (prosumerScopes.length === 0 && prosumerDefaultScope) {
+      setActiveCommunity(prosumerDefaultScope.community.id);
+      setSelectedEntityId(prosumerDefaultScope.scope.id);
+      return;
+    }
+
+    if (selectedEntityId !== "community" || !prosumerScopes[0]) return;
     setSelectedEntityId(prosumerScopes[0].id);
-  }, [isProsumer, prosumerScopes, selectedEntityId, setSelectedEntityId]);
+  }, [
+    isProsumer,
+    prosumerDefaultScope,
+    prosumerScopes,
+    selectedEntityId,
+    setActiveCommunity,
+    setSelectedEntityId
+  ]);
 
   const entity = getEnergyEntity(activeCommunity, session?.role, effectiveSelectedEntityId);
   const entities = getEnergyEntities(activeCommunity, session?.role);
@@ -197,9 +219,41 @@ export function CommunityDashboardPage(): JSX.Element {
   const children = entities.filter((item) => item.parentId === entity.id && item.kind !== "group");
   const visibleAssets = children.length > 0
     ? children
-    : entities.filter((item) => ["battery", "ev", "pv", "solar_plant", "transformer"].includes(item.kind)).slice(0, 6);
+    : entities.filter((item) =>
+        [
+          "battery",
+          "ev",
+          "ev_charger",
+          "pv",
+          "solar_plant",
+          "transformer",
+          "grid_meter",
+          "appliance",
+          "heat_pump",
+          "heater",
+          "water_pump",
+          "micro_wind_turbine",
+          "non_shiftable_load",
+          "generic_device"
+        ].includes(item.kind)
+      ).slice(0, 6);
   const latest = series[series.length - 1] || series[0];
-  const isAsset = ["battery", "ev", "pv", "solar_plant", "transformer"].includes(entity.kind);
+  const isAsset = [
+    "battery",
+    "ev",
+    "ev_charger",
+    "pv",
+    "solar_plant",
+    "transformer",
+    "grid_meter",
+    "appliance",
+    "heat_pump",
+    "heater",
+    "water_pump",
+    "micro_wind_turbine",
+    "non_shiftable_load",
+    "generic_device"
+  ].includes(entity.kind);
 
   return (
     <div className="page energy-console-page">

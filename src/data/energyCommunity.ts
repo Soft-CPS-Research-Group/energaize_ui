@@ -1,4 +1,5 @@
 import type { CommunityContext, LogEntry, UserRole } from "../types";
+import { energyEntitiesFromDomain } from "./communityDomain";
 
 export type EnergyEntityKind =
   | "community"
@@ -7,10 +8,19 @@ export type EnergyEntityKind =
   | "apartment"
   | "house"
   | "battery"
+  | "ev_charger"
   | "ev"
   | "pv"
   | "transformer"
-  | "solar_plant";
+  | "solar_plant"
+  | "grid_meter"
+  | "appliance"
+  | "heat_pump"
+  | "heater"
+  | "water_pump"
+  | "micro_wind_turbine"
+  | "non_shiftable_load"
+  | "generic_device";
 
 export type EnergyEntityStatus = "online" | "warning" | "offline";
 
@@ -64,6 +74,11 @@ export interface TopologyEdge {
 }
 
 export type EnergyRange = "live" | "1h" | "6h" | "24h" | "7d" | "30d";
+
+export interface ProsumerDefaultScope {
+  community: CommunityContext;
+  scope: EnergyEntity;
+}
 
 const BASE_ENTITIES: EnergyEntity[] = [
   {
@@ -237,6 +252,9 @@ function isBlankTopology(community: CommunityContext): boolean {
 }
 
 export function getEnergyEntities(community: CommunityContext, role: UserRole | null | undefined): EnergyEntity[] {
+  const domainEntities = energyEntitiesFromDomain(community, role);
+  if (domainEntities.length > 0) return domainEntities;
+
   if (isBlankTopology(community)) {
     return [entityWithCommunity(BASE_ENTITIES[0], community)];
   }
@@ -257,6 +275,15 @@ export function getProsumerBuildingScopes(community: CommunityContext): EnergyEn
   if (ownScopes.length > 0) return ownScopes;
 
   return entities.filter((entity) => entity.kind === "building" || entity.kind === "house" || entity.kind === "apartment");
+}
+
+export function getProsumerDefaultScope(communities: CommunityContext[]): ProsumerDefaultScope | null {
+  for (const community of communities) {
+    const scopes = getProsumerBuildingScopes(community);
+    if (scopes[0]) return { community, scope: scopes[0] };
+  }
+
+  return null;
 }
 
 export function getProsumerScopeForEntity(community: CommunityContext, entityId: string): EnergyEntity {
@@ -322,10 +349,13 @@ function baseLoadFor(kind: EnergyEntityKind): number {
   if (kind === "house") return 220;
   if (kind === "apartment") return 110;
   if (kind === "battery") return 38;
+  if (kind === "ev_charger") return 62;
   if (kind === "ev") return 78;
   if (kind === "pv") return 12;
   if (kind === "solar_plant") return 28;
-  if (kind === "transformer") return 1120;
+  if (kind === "transformer" || kind === "grid_meter") return 1120;
+  if (kind === "heat_pump" || kind === "heater" || kind === "water_pump") return 160;
+  if (kind === "appliance" || kind === "non_shiftable_load" || kind === "generic_device") return 120;
   return 320;
 }
 
@@ -336,6 +366,7 @@ function baseProductionFor(kind: EnergyEntityKind): number {
   if (kind === "apartment") return 46;
   if (kind === "pv") return 180;
   if (kind === "solar_plant") return 1780;
+  if (kind === "micro_wind_turbine") return 35;
   if (kind === "battery") return 72;
   return 0;
 }
@@ -406,12 +437,21 @@ export function getEntityKpis(entity: EnergyEntity, role: UserRole | null | unde
     ];
   }
 
+  if (entity.kind === "ev_charger") {
+    return [
+      { id: "plug", label: "Connector State", value: "Occupied", detail: "Vehicle connected", tone: "warning" },
+      { id: "charging", label: "Charge Power", value: "7.8 kW", detail: "Currently charging", tone: "warning" },
+      { id: "capacity", label: "Charger Capacity", value: entity.capacity || "11 kW", detail: entity.serial, tone: "neutral" },
+      { id: "flex", label: "Flexible Window", value: "08:00-14:00", detail: "Managed schedule", tone: "success" }
+    ];
+  }
+
   if (entity.kind === "ev") {
     return [
       { id: "soc", label: "Vehicle SoC", value: "78%", detail: "Target 85% by 14:00", tone: "success" },
-      { id: "charging", label: "Charging Power", value: "7.8 kW", detail: "Currently charging", tone: "warning" },
+      { id: "battery", label: "Battery Capacity", value: entity.capacity || "50 kWh", detail: entity.serial, tone: "neutral" },
       { id: "energy", label: "Energy Charged", value: "13.4 kWh", detail: "Today", tone: "info" },
-      { id: "flex", label: "Flexible Window", value: "08:00-14:00", detail: "Managed schedule", tone: "success" }
+      { id: "v2g", label: "V2G Ready", value: "Yes", detail: "Allowed by owner", tone: "success" }
     ];
   }
 
@@ -421,6 +461,15 @@ export function getEntityKpis(entity: EnergyEntity, role: UserRole | null | unde
       { id: "daily", label: "Daily Production", value: entity.kind === "solar_plant" ? "4.8 MWh" : "18.6 kWh", detail: "Forecast 92%", tone: "success" },
       { id: "capacity", label: "Capacity", value: entity.capacity || "4.2 kWp", detail: "Nominal", tone: "neutral" },
       { id: "availability", label: "Availability", value: "99.1%", detail: "Last 30 days", tone: "success" }
+    ];
+  }
+
+  if (entity.kind === "grid_meter") {
+    return [
+      { id: "import", label: "Grid Import", value: "320 kW", detail: "Live reading", tone: "info" },
+      { id: "export", label: "Grid Export", value: "480 kW", detail: "Live reading", tone: "success" },
+      { id: "capacity", label: "Meter Capacity", value: entity.capacity || "1.2 MW", detail: entity.serial, tone: "neutral" },
+      { id: "status", label: "Status", value: "Online", detail: "Last seen 5 min ago", tone: "success" }
     ];
   }
 

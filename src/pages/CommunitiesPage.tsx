@@ -7,7 +7,7 @@ import { UserMenu } from "../components/layout/UserMenu";
 import { ThemeToggle } from "../components/ui/ThemeToggle";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
-import { getProsumerBuildingScopes, type EnergyEntity } from "../data/energyCommunity";
+import { getProsumerBuildingScopes, getProsumerDefaultScope, type EnergyEntity } from "../data/energyCommunity";
 import type { CommunityContext } from "../types";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -38,6 +38,10 @@ export function CommunitiesPage(): JSX.Element {
     () => (isProsumer ? getProsumerBuildingScopes(activeCommunity) : []),
     [activeCommunity, isProsumer]
   );
+  const prosumerDefaultScope = useMemo(
+    () => (isProsumer ? getProsumerDefaultScope(communities) : null),
+    [communities, isProsumer]
+  );
 
   const filtered = useMemo(() => {
     const byQuery = communities.filter((community) => {
@@ -59,10 +63,27 @@ export function CommunitiesPage(): JSX.Element {
   }, [prosumerBuildings, search]);
 
   useEffect(() => {
-    if (!isProsumer || prosumerBuildings.length !== 1) return;
+    if (!isProsumer) return;
+
+    if (prosumerBuildings.length === 0 && prosumerDefaultScope) {
+      setActiveCommunity(prosumerDefaultScope.community.id);
+      setSelectedEntityId(prosumerDefaultScope.scope.id);
+      navigate(communityWorkspaceHomePath(session?.role), { replace: true });
+      return;
+    }
+
+    if (prosumerBuildings.length !== 1) return;
     setSelectedEntityId(prosumerBuildings[0].id);
     navigate(communityWorkspaceHomePath(session?.role), { replace: true });
-  }, [isProsumer, navigate, prosumerBuildings, session?.role, setSelectedEntityId]);
+  }, [
+    isProsumer,
+    navigate,
+    prosumerBuildings,
+    prosumerDefaultScope,
+    session?.role,
+    setActiveCommunity,
+    setSelectedEntityId
+  ]);
 
   function enterCommunity(community: CommunityContext): void {
     setActiveCommunity(community.id);

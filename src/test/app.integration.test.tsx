@@ -255,7 +255,7 @@ describe("App integration", () => {
     renderApp("/communities");
 
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByText(/Solar Community \/ Building B \/ House 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/Solar Community \/ House 1/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /choose a community/i })).not.toBeInTheDocument();
   });
 

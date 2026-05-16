@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { INITIAL_COMMUNITIES } from "../constants";
-import { buildEnergySeries, getEnergyEntity, getEnergyLogs, getEnergyTree, getProsumerBuildingScopes } from "./energyCommunity";
+import {
+  buildEnergySeries,
+  getEnergyEntity,
+  getEnergyLogs,
+  getEnergyTree,
+  getProsumerBuildingScopes,
+  getProsumerDefaultScope
+} from "./energyCommunity";
 
 describe("energy community demo data", () => {
   const community = INITIAL_COMMUNITIES[0];
@@ -19,7 +26,25 @@ describe("energy community demo data", () => {
     const scopes = getProsumerBuildingScopes(community);
 
     expect(scopes).toHaveLength(1);
-    expect(scopes[0].id).toBe("house-1");
+    expect(scopes[0].id).toBe("site-house-1");
+  });
+
+  it("finds the first available prosumer building when the active REC is blank", () => {
+    const defaultScope = getProsumerDefaultScope([
+      {
+        id: "new-rec",
+        name: "New REC",
+        location: "Porto, PT",
+        buildings: 0,
+        assets: 0,
+        status: "normal",
+        topologyPreset: "blank"
+      },
+      ...INITIAL_COMMUNITIES
+    ]);
+
+    expect(defaultScope?.community.id).toBe("solar-community");
+    expect(defaultScope?.scope.id).toBe("site-house-1");
   });
 
   it("starts blank communities with only the community root", () => {
