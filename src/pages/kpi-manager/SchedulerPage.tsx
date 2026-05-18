@@ -419,7 +419,7 @@ export function SchedulerPage() {
   const openEdit = (job: JobStatus) => { setEditJob(job); setModalOpen(true); };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }} className="page">
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", paddingBottom: "2rem" }} className="page">
       {/* Modal */}
       {modalOpen && (
         <JobFormModal

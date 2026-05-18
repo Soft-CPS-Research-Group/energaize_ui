@@ -1,8 +1,8 @@
 // Fallback used before API data loads (prevents empty selects on first render).
 // The API response at /api/v1/communities overrides these at runtime.
 export const COMMUNITY_FALLBACK: Record<string, string[]> = {
-  living_lab: ["building_R-H-01"],
-  "i-charging_headquarters": ["building_i-charging_headquarters_2"],
+  living_lab: ["building_R-H-01", "building_R-H-02", "building_R-H-03", "building_R-H-04"],
+  "i-charging_headquarters": ["building_i-charging_headquarters_3Phase"],
   sao_mamede: ["building_SaoMamede"],
 };
 

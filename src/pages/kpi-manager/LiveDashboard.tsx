@@ -1,51 +1,89 @@
 /**
  * LiveDashboard
  * =============
- * Polls GET /api/v1/live/{community} every 30 s and renders a real-time
- * state panel per building. Appears above the analytics form on Dashboard.tsx.
+ * Real-time telemetry panel shown in the "Live" tab of the Dashboard.
  *
- * Each building card shows the most recent LiveSnapshotKPI values:
- * - Grid import / export and net flow
- * - Solar generation
- * - Battery SoC
- * - EV charging power and active sessions
- * - Current energy price
- * - Per-payload data quality signals (authenticity, validity)
+ * Sections:
+ *  1. Building Cards  – polls GET /api/v1/live/{community} every 30 s.
+ *     Shows grid import/export, solar, battery, EV and per-payload quality badges.
  *
- * The panel only renders when there is at least one live document in the DB
- * (i.e. after the first Percepta payload arrives). Until then it shows a
- * subtle "waiting for first payload" hint so it doesn't alarm the user.
+ *  2. Quality KPI Charts – one ComposedChart per building showing:
+ *     - AuthenticityKPI (fraction of non-generated fields, 0–1) as an Area
+ *     - ValidityKPI     (physical sensor validity, 0–1)          as a Step-Line
+ *
+ *     Data is built from two sources merged together:
+ *       a. Historical backbone: GET /api/v1/kpis/{community}/history for today
+ *          (AuthenticityKPI + ValidityKPI scheduled hourly results)
+ *       b. Live tail: authenticity_ratio + is_physically_valid from each
+ *          live snapshot, appended every poll cycle
+ *
+ *     A dashed "Live" ReferenceLine separates the two data sources on the chart.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { fetchLiveState } from "../../api/kpiApi";
+import {
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer, ReferenceLine,
+} from "recharts";
+import { fetchLiveState, fetchKpiHistory } from "../../api/kpiApi";
 import type { LiveSnapshot } from "../../api/kpiApi";
 import {
   Zap, Sun, Battery, Car, DollarSign,
-  TrendingUp, TrendingDown, Minus, RefreshCw,
+  TrendingUp, TrendingDown, Minus, RefreshCw, Activity,
   ShieldCheck, ShieldAlert, AlertTriangle,
 } from "lucide-react";
 
-const POLL_INTERVAL_MS = 30_000;
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-const fmt = (v: number | null | undefined, decimals = 3) =>
+const POLL_INTERVAL_MS = 30_000;
+const QUALITY_KPIS = ["AuthenticityKPI", "ValidityKPI"] as const;
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+/** A single point on the quality chart for one building. */
+interface QualityPoint {
+  /** Full ISO timestamp — used as a stable sort/merge key. */
+  time: string;
+  /** HH:MM string rendered on the XAxis. */
+  timeLabel: string;
+  authenticity: number | null;
+  validity: number | null;
+  /** True when appended from a live snapshot, false/undefined for history. */
+  isLive?: boolean;
+}
+
+// ── Pure helpers ──────────────────────────────────────────────────────────────
+
+const fmt = (v: number | null | undefined, decimals = 3): string =>
   v == null || isNaN(Number(v)) ? "—" : Number(v).toFixed(decimals);
 
-const fmtTime = (iso: string) => {
+const fmtTime = (iso: string): string => {
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  } catch {
-    return iso;
-  }
+    return new Date(iso).toLocaleTimeString([], {
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+  } catch { return iso; }
 };
 
-// ── Tiny metric row ───────────────────────────────────────────────────────────
+const toHHMM = (iso: string): string => {
+  try {
+    return new Date(iso).toLocaleTimeString([], {
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return iso; }
+};
+
+/** Returns the ISO string for today at 00:00:00 local time. */
+const todayStartISO = (): string => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+};
+
+// ── MetricRow ─────────────────────────────────────────────────────────────────
+
 function MetricRow({
-  icon,
-  label,
-  value,
-  unit,
-  accent,
+  icon, label, value, unit, accent,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -68,26 +106,22 @@ function MetricRow({
   );
 }
 
-// ── Single building card ──────────────────────────────────────────────────────
+// ── BuildingCard ──────────────────────────────────────────────────────────────
+
 function BuildingCard({ snap }: { snap: LiveSnapshot }) {
   const netColor =
     snap.net_grid_kwh > 0 ? "var(--brand)" :
-    snap.net_grid_kwh < 0 ? "#22c55e" : "var(--text)";
+      snap.net_grid_kwh < 0 ? "#22c55e" : "var(--text)";
   const NetIcon = snap.net_grid_kwh > 0 ? TrendingUp : snap.net_grid_kwh < 0 ? TrendingDown : Minus;
 
   const qualityOk = snap.is_physically_valid && snap.authenticity_ratio >= 0.9;
-  const qualityWarn = !snap.is_physically_valid || snap.authenticity_ratio < 0.7;
+  const qualityWarn = !snap.is_physically_valid || snap.authenticity_ratio < 0.6;
 
   return (
     <div style={{
-      background: "var(--bg-elev)",
-      border: "1px solid var(--line)",
-      borderRadius: "0.75rem",
-      padding: "1rem",
-      display: "flex",
-      flexDirection: "column",
-      gap: "0.1rem",
-      minWidth: 0,
+      background: "var(--bg-elev)", border: "1px solid var(--line)",
+      borderRadius: "0.75rem", padding: "1rem",
+      display: "flex", flexDirection: "column", gap: "0.1rem", minWidth: 0,
     }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
@@ -111,7 +145,7 @@ function BuildingCard({ snap }: { snap: LiveSnapshot }) {
         </div>
       </div>
 
-      {/* Net grid — prominent */}
+      {/* Net grid – prominent */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "center",
         gap: "0.5rem", padding: "0.6rem 0", marginBottom: "0.35rem",
@@ -124,7 +158,6 @@ function BuildingCard({ snap }: { snap: LiveSnapshot }) {
         <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>kWh net</span>
       </div>
 
-      {/* Metric rows */}
       <MetricRow icon={<Zap size={12} />} label="Grid import" value={fmt(snap.grid_import_kwh)} unit="kWh" />
       <MetricRow icon={<Zap size={12} />} label="Grid export" value={fmt(snap.grid_export_kwh)} unit="kWh" accent="#22c55e" />
       <MetricRow icon={<Sun size={12} />} label="Solar" value={fmt(snap.solar_kwh)} unit="kWh" accent="#f59e0b" />
@@ -154,27 +187,292 @@ function BuildingCard({ snap }: { snap: LiveSnapshot }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── LiveQualityChart ──────────────────────────────────────────────────────────
+
+function LiveQualityChart({
+  building, points, liveFromTime,
+}: {
+  building: string;
+  points: QualityPoint[];
+  liveFromTime: string | null;
+}) {
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || payload.length === 0) return null;
+    // label is the full ISO timestamp (dataKey="time")
+    const pt = points.find(p => p.time === label);
+    return (
+      <div style={{
+        background: "var(--bg-elev)", border: "1px solid var(--line)",
+        borderRadius: 8, padding: "8px 12px", fontSize: "0.8rem",
+      }}>
+        <p style={{ margin: "0 0 6px", color: "var(--text-soft)", fontWeight: 500 }}>
+          {pt ? toHHMM(pt.time) : label}
+          {pt?.isLive && (
+            <span style={{ marginLeft: 6, color: "#22c55e", fontWeight: 600, fontSize: "0.7rem" }}>
+              ● Live
+            </span>
+          )}
+        </p>
+        {payload.map((p: any) => (
+          <p key={p.dataKey} style={{ margin: "2px 0", color: p.color }}>
+            {p.name}:{" "}
+            <strong>
+              {typeof p.value === "number" ? `${(p.value * 100).toFixed(1)}%` : "—"}
+            </strong>
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  // The ReferenceLine x must match the dataKey ("time" = full ISO string)
+  const liveFromKey = liveFromTime ?? null;
+
+  return (
+    <div className="panel" style={{ padding: "1rem" }}>
+      {/* Chart header */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{building}</span>
+        {liveFromLabel && (
+          <span style={{
+            fontSize: "0.7rem", padding: "0.15rem 0.45rem", borderRadius: "999px",
+            background: "rgba(34,197,94,0.12)", color: "#22c55e", fontWeight: 600,
+          }}>
+            ● Live since {liveFromLabel}
+          </span>
+        )}
+        {points.length === 0 && (
+          <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
+            Awaiting first payload…
+          </span>
+        )}
+      </div>
+
+      {points.length > 0 ? (
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={points} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" opacity={0.12} vertical={false} />
+            {/* Use the full ISO timestamp as dataKey so two points at the same
+                minute but different seconds never collapse onto the same position.
+                The tickFormatter converts it back to HH:MM for display. */}
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10, fill: "var(--text-soft)" }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+              height={18}
+              tickFormatter={toHHMM}
+            />
+            <YAxis
+              domain={[0, 1]}
+              tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`}
+              tick={{ fontSize: 10, fill: "var(--text-soft)" }}
+              tickLine={false}
+              axisLine={false}
+              width={42}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend verticalAlign="top" height={26} wrapperStyle={{ fontSize: "0.75rem" }} />
+
+            {/* Authenticity: Area (blue, 0–1) */}
+            <Area
+              type="monotone"
+              dataKey="authenticity"
+              name="Authenticity"
+              stroke="#3b82f6"
+              fill="#3b82f6"
+              fillOpacity={0.12}
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+
+            {/* Validity: Step line (green, binary 0/1) */}
+            <Line
+              type="stepAfter"
+              dataKey="validity"
+              name="Validity"
+              stroke="#22c55e"
+              strokeWidth={2}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+            />
+
+            {/* Dashed "Live" separator — x must match the full ISO timestamp dataKey */}
+            {liveFromKey && (
+              <ReferenceLine
+                x={liveFromKey}
+                stroke="var(--text-soft)"
+                strokeDasharray="4 4"
+                label={{
+                  value: "Live",
+                  fill: "var(--text-soft)",
+                  fontSize: 10,
+                  position: "insideTopRight",
+                }}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      ) : (
+        <div style={{
+          height: 60, display: "flex", alignItems: "center", justifyContent: "center",
+          color: "var(--text-soft)", fontSize: "0.8rem",
+        }}>
+          No quality data yet for today
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── LiveDashboard (main) ──────────────────────────────────────────────────────
+
 interface LiveDashboardProps {
   community: string;
   buildings: string[];
 }
 
 export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
+  // ── Snapshot state ──────────────────────────────────────────────────────────
   const [snapshots, setSnapshots] = useState<LiveSnapshot[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Quality chart state ─────────────────────────────────────────────────────
+  const [qualityData, setQualityData] = useState<Record<string, QualityPoint[]>>({});
+  const [liveFromTime, setLiveFromTime] = useState<Record<string, string>>({});
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Stable ref so the poll callback can read liveFromTime without stale closure
+  const liveFromRef = useRef<Record<string, string>>({});
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // ── Load historical quality backbone (today 00:00 → now) ───────────────────
+  const loadHistory = useCallback(async () => {
+    if (!community) return;
+    setHistoryLoading(true);
+    try {
+      const res = await fetchKpiHistory({
+        community,
+        buildings: buildings.length > 0 ? buildings : undefined,
+        startDate: todayStartISO(),
+        kpis: [...QUALITY_KPIS],
+        limit: 5000,
+      });
+
+      // Shape: { data: { [building]: { [kpiName]: [{ value, period_start, ... }] } } }
+      const histData: Record<string, Record<string, any[]>> =
+        (res as any).data ?? {};
+
+      const initial: Record<string, QualityPoint[]> = {};
+
+      for (const [building, kpis] of Object.entries(histData)) {
+        const authSeries: any[] = kpis["AuthenticityKPI"] ?? [];
+        const valSeries: any[] = kpis["ValidityKPI"] ?? [];
+
+        // Merge both series by period_start into a single point list
+        const mergedMap = new Map<string, QualityPoint>();
+
+        for (const pt of authSeries) {
+          const t = pt.period_start as string;
+          mergedMap.set(t, {
+            time: t, timeLabel: toHHMM(t),
+            authenticity: typeof pt.value === "number" ? pt.value : null,
+            validity: null,
+          });
+        }
+
+        for (const pt of valSeries) {
+          const t = pt.period_start as string;
+          const validity = typeof pt.value === "number" ? pt.value : null;
+          const existing = mergedMap.get(t);
+          if (existing) {
+            existing.validity = validity;
+          } else {
+            mergedMap.set(t, {
+              time: t, timeLabel: toHHMM(t),
+              authenticity: null, validity,
+            });
+          }
+        }
+
+        initial[building] = Array.from(mergedMap.values())
+          .sort((a, b) => a.time.localeCompare(b.time));
+      }
+
+      setQualityData(initial);
+      // Reset live markers so they re-anchor after a history reload
+      liveFromRef.current = {};
+      setLiveFromTime({});
+    } catch (e: any) {
+      // Non-fatal: chart shows "No data yet" without crashing
+      console.warn("[LiveDashboard] Failed to load quality history:", e?.message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [community, buildings]);
+
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  // ── Poll live snapshots & append to chart ───────────────────────────────────
   const poll = useCallback(async () => {
     if (!community) return;
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      const res = await fetchLiveState(community, buildings.length > 0 ? buildings : undefined);
-      setSnapshots(res.data ?? []);
+      const res = await fetchLiveState(
+        community,
+        buildings.length > 0 ? buildings : undefined,
+      );
+      const snaps = res.data ?? [];
+      setSnapshots(snaps);
       setLastUpdated(new Date());
+
+      // Append live quality points for each building
+      setQualityData(prev => {
+        const next = { ...prev };
+        const updatedLiveFrom = { ...liveFromRef.current };
+
+        for (const snap of snaps) {
+          const { building, timestamp } = snap;
+          const existing = next[building] ?? [];
+
+          // Skip if this snapshot timestamp is already the last point
+          if (
+            existing.length > 0 &&
+            existing[existing.length - 1].time >= timestamp
+          ) {
+            continue;
+          }
+
+          const newPoint: QualityPoint = {
+            time: timestamp,
+            timeLabel: toHHMM(timestamp),
+            authenticity: snap.authenticity_ratio ?? null,
+            // is_physically_valid is boolean → normalise to 0/1
+            validity: snap.is_physically_valid ? 1.0 : 0.0,
+            isLive: true,
+          };
+
+          // Record the first live-data timestamp for the ReferenceLine
+          if (!updatedLiveFrom[building]) {
+            updatedLiveFrom[building] = timestamp;
+          }
+
+          next[building] = [...existing, newPoint];
+        }
+
+        liveFromRef.current = updatedLiveFrom;
+        return next;
+      });
+
+      setLiveFromTime({ ...liveFromRef.current });
     } catch (e: any) {
       setError(e?.message ?? "Failed to fetch live state");
     } finally {
@@ -182,83 +480,122 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
     }
   }, [community, buildings]);
 
-  // Poll on mount and whenever community/buildings change
   useEffect(() => {
     poll();
     timerRef.current = setInterval(poll, POLL_INTERVAL_MS);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [poll]);
 
-  const countdown = POLL_INTERVAL_MS / 1000;
+  // Buildings to show charts for: prefer snapshot order, fall back to prop.
+  // Deduplicate so a building never appears twice even if the API returns
+  // multiple docs for the same building (e.g. concurrent messages).
+  const displayBuildings = Array.from(
+    new Set(snapshots.length > 0 ? snapshots.map(s => s.building) : buildings)
+  );
 
   return (
-    <div className="panel" style={{ marginBottom: "1rem" }}>
-      {/* Panel header */}
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: snapshots.length > 0 ? "1rem" : "0",
-        flexWrap: "wrap", gap: "0.5rem",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          {/* Live pulse dot */}
-          <span style={{
-            display: "inline-block", width: 8, height: 8, borderRadius: "50%",
-            background: error ? "#ef4444" : snapshots.length > 0 ? "#22c55e" : "#6b7280",
-            boxShadow: snapshots.length > 0 && !error ? "0 0 0 3px rgba(34,197,94,0.25)" : "none",
-            animation: snapshots.length > 0 && !error ? "pulse 2s infinite" : "none",
-          }} />
-          <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>Live Telemetry</span>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-            · refreshes every {countdown}s
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          {lastUpdated && (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+
+      {/* ── Header panel ──────────────────────────────────────────────────── */}
+      <div className="panel" style={{ marginBottom: 0 }}>
+        <div style={{
+          display: "flex", justifyContent: "space-between",
+          alignItems: "center", flexWrap: "wrap", gap: "0.5rem",
+          marginBottom: snapshots.length > 0 ? "1rem" : 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{
+              display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+              background: error ? "#ef4444" : snapshots.length > 0 ? "#22c55e" : "#6b7280",
+              boxShadow: snapshots.length > 0 && !error
+                ? "0 0 0 3px rgba(34,197,94,0.25)" : "none",
+              animation: snapshots.length > 0 && !error ? "pulse 2s infinite" : "none",
+            }} />
+            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>Live Telemetry</span>
             <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-              Updated {fmtTime(lastUpdated.toISOString())}
+              · refreshes every {POLL_INTERVAL_MS / 1000}s
             </span>
-          )}
-          <button
-            onClick={poll}
-            disabled={loading}
-            title="Refresh now"
-            style={{
-              display: "flex", alignItems: "center", gap: "0.3rem",
-              padding: "0.25rem 0.6rem", borderRadius: "0.4rem", fontSize: "0.75rem",
-              border: "1px solid var(--line)", background: "var(--bg-elev)",
-              color: "var(--text)", cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.5 : 1,
-            }}
-          >
-            <RefreshCw size={12} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
-            Refresh
-          </button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            {lastUpdated && (
+              <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
+                Updated {fmtTime(lastUpdated.toISOString())}
+              </span>
+            )}
+            <button
+              onClick={poll}
+              disabled={loading}
+              title="Refresh now"
+              style={{
+                display: "flex", alignItems: "center", gap: "0.3rem",
+                padding: "0.25rem 0.6rem", borderRadius: "0.4rem", fontSize: "0.75rem",
+                border: "1px solid var(--line)", background: "var(--bg-elev)",
+                color: "var(--text)", cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.5 : 1,
+              }}
+            >
+              <RefreshCw
+                size={12}
+                style={{ animation: loading ? "spin 1s linear infinite" : "none" }}
+              />
+              Refresh
+            </button>
+          </div>
         </div>
+
+        {error && (
+          <p style={{ color: "#ef4444", fontSize: "0.8rem", margin: 0 }}>{error}</p>
+        )}
+
+        {!error && snapshots.length === 0 && !loading && (
+          <p style={{ color: "var(--text-soft)", fontSize: "0.82rem", margin: 0 }}>
+            Waiting for first Percepta payload… Live data will appear here once the
+            RabbitMQ consumer receives a message.
+          </p>
+        )}
+
+        {/* ── Building cards ───────────────────────────────────────────────── */}
+        {snapshots.length > 0 && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+            gap: "0.75rem",
+          }}>
+            {snapshots.map(snap => (
+              <BuildingCard key={snap.building} snap={snap} />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div style={{ color: "#ef4444", fontSize: "0.8rem", padding: "0.5rem 0" }}>
-          {error}
-        </div>
-      )}
+      {/* ── Quality KPI charts ────────────────────────────────────────────── */}
+      {displayBuildings.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {/* Section header */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Activity size={16} />
+            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>
+              Data Quality — Today
+            </span>
+            {historyLoading && (
+              <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
+                Loading history…
+              </span>
+            )}
+            <span style={{ fontSize: "0.72rem", color: "var(--text-soft)", marginLeft: "auto" }}>
+              Historical (hourly) + Live (30 s)
+            </span>
+          </div>
 
-      {/* No data yet */}
-      {!error && snapshots.length === 0 && !loading && (
-        <div style={{ color: "var(--text-soft)", fontSize: "0.82rem", padding: "0.5rem 0" }}>
-          Waiting for first Percepta payload… Live data will appear here once the RabbitMQ consumer receives a message.
-        </div>
-      )}
-
-      {/* Building cards */}
-      {snapshots.length > 0 && (
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-          gap: "0.75rem",
-        }}>
-          {snapshots.map(snap => (
-            <BuildingCard key={snap.building} snap={snap} />
+          {displayBuildings.map(building => (
+            <LiveQualityChart
+              key={building}
+              building={building}
+              points={qualityData[building] ?? []}
+              liveFromTime={liveFromTime[building] ?? null}
+            />
           ))}
         </div>
       )}
@@ -266,11 +603,11 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
       <style>{`
         @keyframes pulse {
           0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,0.25); }
-          50% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+          50%       { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
         }
         @keyframes spin {
           from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
+          to   { transform: rotate(360deg); }
         }
       `}</style>
     </div>

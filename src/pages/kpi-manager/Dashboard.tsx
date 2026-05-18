@@ -4,7 +4,7 @@ import type { KpiDataPayload } from "../../types/kpi";
 import { KpiStats } from "../../components/kpi/KpiStats";
 import { KpiChart } from "../../components/kpi/KpiChart";
 import { Button } from "../../components/ui/Button";
-import { Activity, Calendar, MapPin, Building2, Search, Loader2 } from "lucide-react";
+import { Activity, Calendar, MapPin, Building2, Search, Loader2, BarChart2, Radio } from "lucide-react";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { useCommunities } from "../../hooks/useCommunities";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
@@ -50,6 +50,14 @@ const defaultEnd = new Date();
 const defaultStart = new Date();
 defaultStart.setDate(defaultStart.getDate() - 7);
 
+// ── Tab type ─────────────────────────────────────────────────────────────────
+type DashboardTab = "analytics" | "live";
+
+const TAB_LABELS: Record<DashboardTab, { label: string; icon: React.ReactNode }> = {
+  analytics: { label: "Analytics", icon: <BarChart2 size={15} /> },
+  live:      { label: "Live",      icon: <Radio      size={15} /> },
+};
+
 export interface DashboardProps {
   preselectedKpi?: string;
   onPreselectedConsumed?: () => void;
@@ -58,6 +66,9 @@ export interface DashboardProps {
 export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardProps) {
   const { communities } = useCommunities();
   const { kpis: kpiMeta } = useKpiMetadata();
+
+  // ── Tab state ─────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<DashboardTab>("analytics");
 
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
   const [community, setCommunity] = useState(defaultCommunity);
@@ -296,51 +307,91 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
       <header className="jobs-hero">
         <div>
           <h1>Dashboard</h1>
-          <p>Analyze KPI data across communities and buildings</p>
+          <p>{activeTab === "analytics" ? "Analyze KPI data across communities and buildings" : "Real-time telemetry and data quality signals"}</p>
         </div>
-      </header>
 
-      {/* LIVE TELEMETRY PANEL */}
-      <LiveDashboard key={community} community={community} buildings={buildings} />
-
-      {/* FILTERS */}
-      <div style={{ paddingBottom: "0.5rem" }}>
-        <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "1rem", width: "100%" }}>
-          
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
-            <div style={{ flex: "1 1 200px" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-                <MapPin size={16} /> Community
-              </label>
-              <select
-                style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                value={community}
-                onChange={(e) => {
-                  setCommunity(e.target.value);
-                  setBuildings([]);
+        {/* ── Tab switcher ── */}
+        <nav
+          role="tablist"
+          aria-label="Dashboard sections"
+          style={{ display: "flex", gap: "0.375rem", alignSelf: "flex-end" }}
+        >
+          {(Object.entries(TAB_LABELS) as [DashboardTab, { label: string; icon: React.ReactNode }][]).map(([key, { label, icon }]) => {
+            const isActive = activeTab === key;
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`tabpanel-${key}`}
+                id={`tab-${key}`}
+                onClick={() => setActiveTab(key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: "0.4rem",
+                  padding: "0.45rem 1rem", borderRadius: "0.6rem",
+                  border: `1px solid ${isActive ? "var(--brand)" : "var(--line)"}`,
+                  background: isActive ? "var(--brand)" : "var(--bg-elev)",
+                  color: isActive ? "#fff" : "var(--text)",
+                  fontWeight: isActive ? 700 : 500,
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
                 }}
               >
-                {Object.keys(communities).map((c) => (
-                  <option key={c} value={c}>
-                    {c.replace(/_/g, " ").toUpperCase()}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: "2 1 300px" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-                <Building2 size={16} /> Buildings
-              </label>
-              <MultiSelect
-                options={currentBuildings.map((b: string) => ({ label: b, value: b }))}
-                selected={buildings}
-                onChange={setBuildings}
-                placeholder="Select buildings..."
-              />
-            </div>
+                {icon}{label}
+              </button>
+            );
+          })}
+        </nav>
+      </header>
+
+      {/* ── Shared building selector (used by both tabs) ───────────────────── */}
+      <div style={{ paddingBottom: "0.5rem" }}>
+        <div className="panel" style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 200px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
+              <MapPin size={16} /> Community
+            </label>
+            <select
+              style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
+              value={community}
+              onChange={(e) => {
+                setCommunity(e.target.value);
+                setBuildings([]);
+              }}
+            >
+              {Object.keys(communities).map((c) => (
+                <option key={c} value={c}>
+                  {c.replace(/_/g, " ").toUpperCase()}
+                </option>
+              ))}
+            </select>
           </div>
-          
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
+          <div style={{ flex: "2 1 300px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
+              <Building2 size={16} /> Buildings
+            </label>
+            <MultiSelect
+              options={currentBuildings.map((b: string) => ({ label: b, value: b }))}
+              selected={buildings}
+              onChange={setBuildings}
+              placeholder="Select buildings..."
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Analytics tab panel ─────────────────────────────────────────────── */}
+      <div
+        id="tabpanel-analytics"
+        role="tabpanel"
+        aria-labelledby="tab-analytics"
+        hidden={activeTab !== "analytics"}
+      >
+        {/* Analytics-specific filters */}
+        <div style={{ paddingBottom: "0.5rem" }}>
+          <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "1rem", width: "100%" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
             <div style={{ flex: "1 1 300px" }}>
                <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
                   <Activity size={16} /> KPIs
@@ -453,119 +504,115 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         </div>
       </div>
 
-      <main className="page-content panel" style={{ padding: "1.5rem", flex: 1 }}>
-        {error && (
-          <div className="panel form-grid">
-            <Activity size={20} />
-            <p>{error}</p>
-          </div>
-        )}
-
-        {(loading || processing) && (
-           <div className="route-loading panel">
-             <Loader2 className="ev-loader" />
-             <p className="font-medium animate-pulse">{loading ? "Downloading data from MongoDB..." : "Running LTTB Downsampling Algorithm..."}</p>
-             <p>This may take a moment for large timeframes.</p>
-           </div>
-        )}
-
-        {/* SCHEDULED KPIs (Aggregates) */}
-        {!loading && !processing && scheduledChartData && scheduledChartData.stats && scheduledChartData.stats.length > 0 && (
-          <div style={{ marginBottom: "2rem" }}>
-            {/* Scope Tabs */}
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem", borderBottom: "1px solid var(--line)", paddingBottom: "1rem" }}>
-              {["All Scopes", ...Array.from(new Set(scheduledChartData.stats.map(s => s.scope)))].map((scopeName) => (
-                <button
-                  key={scopeName}
-                  onClick={() => setSelectedScopeTab(scopeName)}
-                  style={{
-                    padding: "0.5rem 1rem",
-                    borderRadius: "999px",
-                    fontSize: "0.85rem",
-                    fontWeight: selectedScopeTab === scopeName ? 600 : 400,
-                    cursor: "pointer",
-                    border: `1px solid ${selectedScopeTab === scopeName ? "var(--brand)" : "var(--line)"}`,
-                    background: selectedScopeTab === scopeName ? "var(--brand)" : "var(--bg-elev)",
-                    color: selectedScopeTab === scopeName ? "#fff" : "var(--text)",
-                    transition: "all 0.2s"
-                  }}
-                >
-                  {scopeName}
-                </button>
-              ))}
+        <main className="page-content panel" style={{ padding: "1.5rem", flex: 1 }}>
+          {error && (
+            <div className="panel form-grid">
+              <Activity size={20} />
+              <p>{error}</p>
             </div>
+          )}
 
-            {/* KPI Cards Grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px", alignItems: "stretch" }}>
-              {[...scheduledChartData.stats]
-                .sort((a, b) => a.kpiName.localeCompare(b.kpiName))
-                .filter(statItem => selectedScopeTab === "All Scopes" || statItem.scope === selectedScopeTab)
-                .map((statItem: any, idx: number) => {
-                  const { scope, kpiName, summary, timeseries, isStreaming } = statItem;
-                  let val: any = "N/A";
-                  let desc = isStreaming ? "Streaming (live)" : "Scheduled";
+          {(loading || processing) && (
+            <div className="route-loading panel">
+              <Loader2 className="ev-loader" />
+              <p className="font-medium animate-pulse">{loading ? "Downloading data from MongoDB..." : "Running LTTB Downsampling Algorithm..."}</p>
+              <p>This may take a moment for large timeframes.</p>
+            </div>
+          )}
 
-                  const formatSafeDate = (dStr: any) => {
-                    if (!dStr || typeof dStr !== 'string') return '';
-                    const parsed = new Date(dStr.replace(' ', 'T'));
-                    return isNaN(parsed.getTime()) ? dStr : parsed.toLocaleDateString();
-                  };
+          {/* SCHEDULED KPIs (Aggregates) */}
+          {!loading && !processing && scheduledChartData && scheduledChartData.stats && scheduledChartData.stats.length > 0 && (
+            <div style={{ marginBottom: "2rem" }}>
+              {/* Scope Tabs */}
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem", borderBottom: "1px solid var(--line)", paddingBottom: "1rem" }}>
+                {["All Scopes", ...Array.from(new Set(scheduledChartData.stats.map(s => s.scope)))].map((scopeName) => (
+                  <button
+                    key={scopeName}
+                    onClick={() => setSelectedScopeTab(scopeName)}
+                    style={{
+                      padding: "0.5rem 1rem", borderRadius: "999px", fontSize: "0.85rem",
+                      fontWeight: selectedScopeTab === scopeName ? 600 : 400, cursor: "pointer",
+                      border: `1px solid ${selectedScopeTab === scopeName ? "var(--brand)" : "var(--line)"}`,
+                      background: selectedScopeTab === scopeName ? "var(--brand)" : "var(--bg-elev)",
+                      color: selectedScopeTab === scopeName ? "#fff" : "var(--text)", transition: "all 0.2s",
+                    }}
+                  >
+                    {scopeName}
+                  </button>
+                ))}
+              </div>
 
-                  if (summary) {
-                    if (isStreaming) {
-                      val = summary.mean_value ?? summary.total_value ?? summary.value;
-                    } else {
-                      if ('total_value' in summary) val = summary.total_value;
-                      else if ('mean_value' in summary) val = summary.mean_value;
-                      else if ('value' in summary) val = summary.value;
+              {/* KPI Cards Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px", alignItems: "stretch" }}>
+                {[...scheduledChartData.stats]
+                  .sort((a, b) => a.kpiName.localeCompare(b.kpiName))
+                  .filter(statItem => selectedScopeTab === "All Scopes" || statItem.scope === selectedScopeTab)
+                  .map((statItem: any, idx: number) => {
+                    const { scope, kpiName, summary, timeseries, isStreaming } = statItem;
+                    let val: any = "N/A";
+                    let desc = isStreaming ? "Streaming (live)" : "Scheduled";
+                    const formatSafeDate = (dStr: any) => {
+                      if (!dStr || typeof dStr !== "string") return "";
+                      const parsed = new Date(dStr.replace(" ", "T"));
+                      return isNaN(parsed.getTime()) ? dStr : parsed.toLocaleDateString();
+                    };
+                    if (summary) {
+                      if (isStreaming) val = summary.mean_value ?? summary.total_value ?? summary.value;
+                      else if ("total_value" in summary) val = summary.total_value;
+                      else if ("mean_value" in summary) val = summary.mean_value;
+                      else if ("value" in summary) val = summary.value;
                     }
-                  }
-
-                  if (timeseries && Array.isArray(timeseries) && timeseries.length > 0) {
-                     const start = timeseries[0].period_start;
-                     const end = timeseries[timeseries.length - 1].period_end;
-                     desc = `${isStreaming ? "Avg · " : ""}${formatSafeDate(start)} - ${formatSafeDate(end)}`;
-                  }
-
-                  if (summary?.coverage_pct !== undefined && summary?.coverage_pct !== null) {
+                    if (timeseries && Array.isArray(timeseries) && timeseries.length > 0) {
+                      const start = timeseries[0].period_start;
+                      const end = timeseries[timeseries.length - 1].period_end;
+                      desc = `${isStreaming ? "Avg · " : ""}${formatSafeDate(start)} - ${formatSafeDate(end)}`;
+                    }
+                    if (summary?.coverage_pct !== undefined && summary?.coverage_pct !== null) {
                       desc += ` · Coverage: ${summary.coverage_pct}%`;
-                  }
-
-                  const isAllScopes = selectedScopeTab === "All Scopes";
-                  const meta = kpiMeta.find((m: any) => m.name === kpiName);
-                  const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
-
-                  return (
-                    <div key={`${scope}_${kpiName}_${idx}`} style={{ display: "flex", flexDirection: "column" }}>
-                      <KpiStats
-                        title={titleName}
-                        subtitle={isAllScopes ? scope : undefined}
-                        value={val != null && !isNaN(Number(val)) ? Number(val).toFixed(2) : "N/A"}
-                        unit={meta?.unit || ""}
-                        kpiName={kpiName}
-                        description={desc}
-                      />
-                    </div>
-                  );
-                })}
+                    }
+                    const isAllScopes = selectedScopeTab === "All Scopes";
+                    const meta = kpiMeta.find((m: any) => m.name === kpiName);
+                    const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
+                    return (
+                      <div key={`${scope}_${kpiName}_${idx}`} style={{ display: "flex", flexDirection: "column" }}>
+                        <KpiStats
+                          title={titleName}
+                          subtitle={isAllScopes ? scope : undefined}
+                          value={val != null && !isNaN(Number(val)) ? Number(val).toFixed(2) : "N/A"}
+                          unit={meta?.unit || ""}
+                          kpiName={kpiName}
+                          description={desc}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
+          {!loading && !processing && streamingCharts}
+          {!loading && !processing && scheduledCharts}
 
-        {!loading && !processing && streamingCharts}
+          {/* Empty State */}
+          {!loading && !processing && !error && !data?.scheduled && !data?.streaming && (
+            <div className="panel empty-state">
+              <Search size={48} style={{ opacity: 0.5, marginBottom: "1rem" }} />
+              <p style={{ fontSize: "1.2rem", fontWeight: "bold" }}>No results to display</p>
+              <p className="mt-1">Adjust your filters and click Analyze Data to view KPIs.</p>
+            </div>
+          )}
+        </main>
+      </div>
 
-        {!loading && !processing && scheduledCharts}
-
-        {/* Empty State */}
-        {!loading && !processing && !error && !data?.scheduled && !data?.streaming && (
-          <div className="panel empty-state" >
-             <Search size={48} style={{ opacity: 0.5, marginBottom: "1rem" }} />
-            <p style={{ fontSize: "1.2rem", fontWeight: "bold" }}>No results to display</p>
-            <p className="mt-1">Adjust your filters and click Analyze Data to view KPIs.</p>
-          </div>
-        )}
-      </main>
+      {/* ── Live tab panel ──────────────────────────────────────────────────── */}
+      <div
+        id="tabpanel-live"
+        role="tabpanel"
+        aria-labelledby="tab-live"
+        hidden={activeTab !== "live"}
+      >
+        <LiveDashboard key={community} community={community} buildings={buildings} />
+      </div>
     </div>
   );
 }

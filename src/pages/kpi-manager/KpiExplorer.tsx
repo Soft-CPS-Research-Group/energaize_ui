@@ -228,7 +228,7 @@ export function KpiExplorer() {
     : "Choose a community or building from the left panel";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", paddingBottom: 0 }} className="page">
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", paddingBottom: "2rem" }} className="page">
       {/* Header */}
       <header className="jobs-hero">
         <div>

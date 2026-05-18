@@ -73,7 +73,7 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
   const streamingTimelineMap: Record<string, any> = {};
   const streamingMetrics = new Set<string>();
   const streamingScopes = new Set<string>();
-  const statsList: any[] = [];  // shared by both streaming and scheduled sections
+  const statsList: any[] = [];  // populated after both sections below
 
   Object.entries(streaming ?? {}).forEach(([scope, kpis]) => {
     streamingScopes.add(scope);
@@ -93,7 +93,7 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
           .filter((v: number) => !isNaN(v));
         if (values.length > 0) {
           const total = values.reduce((a: number, b: number) => a + b, 0);
-          statsList.push({
+          streamingStatsList.push({
             scope,
             kpiName,
             isStreaming: true,
@@ -132,14 +132,15 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
   const scheduledSeriesByKpi: Record<string, any> = {};
   const scheduledMetrics = new Set<string>();
   const scheduledScopes = new Set<string>();
-  // statsList is declared above, shared with streaming section
+  const streamingStatsList: any[] = [];
+  const scheduledStatsList: any[] = [];
 
   Object.entries(scheduled ?? {}).forEach(([scope, kpis]) => {
     scheduledScopes.add(scope);
     Object.entries(kpis).forEach(([kpiName, result]) => {
       scheduledMetrics.add(kpiName);
       if (result?.summary) {
-        statsList.push({ scope, kpiName, summary: result.summary, timeseries: result.timeseries });
+        scheduledStatsList.push({ scope, kpiName, summary: result.summary, timeseries: result.timeseries });
       }
       if (Array.isArray(result?.timeseries)) {
         if (!scheduledSeriesByKpi[kpiName]) scheduledSeriesByKpi[kpiName] = {};
@@ -160,6 +161,20 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
     scheduledSortedByKpi[kpiName] = Object.values(tsMap as any)
       .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }
+
+  // Build final statsList: merge streaming + scheduled, deduplicate by
+  // scope+kpiName, preferring the scheduled entry (more precise aggregation).
+  const statsMap = new Map<string, any>();
+
+  // Add streaming stats first (lower priority)
+  for (const entry of streamingStatsList) {
+    statsMap.set(`${entry.scope}__${entry.kpiName}`, entry);
+  }
+  // Scheduled stats overwrite streaming ones for the same KPI+scope
+  for (const entry of scheduledStatsList) {
+    statsMap.set(`${entry.scope}__${entry.kpiName}`, entry);
+  }
+  const statsList = Array.from(statsMap.values());
 
   const response: ProcessResponse = {
     streamingChartData: {

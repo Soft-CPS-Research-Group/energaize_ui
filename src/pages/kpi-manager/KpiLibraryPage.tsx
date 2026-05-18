@@ -87,7 +87,7 @@ export function KpiLibraryPage() {
   };
 
   return (
-    <div className="page" style={{ height: "100%", overflowY: "auto", paddingBottom: 0 }}>
+    <div className="page" style={{ height: "100%", overflowY: "auto", paddingBottom: "2rem" }}>
       <header className="jobs-hero">
         <div>
           <h1>KPI Library</h1>
@@ -95,7 +95,7 @@ export function KpiLibraryPage() {
         </div>
       </header>
 
-      <div className="page-content" style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1.5rem 1.5rem 0 1.5rem" }}>
+      <div className="page-content" style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1.5rem" }}>
         
         {/* Filters */}
         <div style={{ 

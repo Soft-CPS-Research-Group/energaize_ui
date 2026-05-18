@@ -189,13 +189,8 @@ export function CorrelationPage() {
         </div>
       </header>
 
-      <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
+      <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)", paddingBottom: "3rem" }}>
 
-        {/* Info note */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.625rem", padding: "0.75rem 1rem", borderRadius: "0.75rem", background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.2)", fontSize: "0.8rem", color: "var(--text-soft)" }}>
-          <Info size={14} style={{ flexShrink: 0, marginTop: "1px", color: "#6366f1" }} />
-          <span>Correlations are computed on <strong>stored KPI windows</strong>. To update the data, run a calculation first from the <strong>Dashboard</strong> or trigger a run from the <strong>Scheduler</strong>.</span>
-        </div>
 
         {/* ── Filter panel ── */}
         <div style={{ backgroundColor: "var(--bg-elev)", padding: "20px", borderRadius: "12px", border: "1px solid var(--line)", boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: "16px" }}>
