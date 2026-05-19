@@ -8,7 +8,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
-  width?: "sm" | "md" | "lg";
+  width?: "sm" | "md" | "lg" | "xl";
   /** Optional panel that floats to the right of the modal, animating in/out independently. */
   adjacentPanel?: ReactNode;
 }
