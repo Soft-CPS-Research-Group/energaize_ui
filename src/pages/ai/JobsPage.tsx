@@ -27,6 +27,7 @@ import {
   listHosts,
   listJobImageVersions,
   listJobs,
+  listJobsInitialData,
   listQueue,
   opsCancelJob,
   opsCleanupJobs,
@@ -48,6 +49,7 @@ import { useApiFeedback } from "../../hooks/useApiFeedback";
 import { useJobLogsPolling } from "../../hooks/useJobLogsPolling";
 import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications";
 import type { HostInfo, JobItem } from "../../types";
+import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { isCompletedForResults } from "../../utils/jobStatus";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
@@ -496,6 +498,7 @@ export function JobsPage(): JSX.Element {
   const jobsQuery = useQuery({
     queryKey: ["jobs"],
     queryFn: listJobs,
+    initialData: listJobsInitialData,
     refetchInterval: JOB_POLL_MS,
     networkMode: "always"
   });
@@ -1708,7 +1711,7 @@ export function JobsPage(): JSX.Element {
               </span>
             </header>
             {!hostsLiveWindow ? (
-              <small className="jobs-live-reminder">No recent host heartbeat. Check VPN/backend connectivity.</small>
+              <small className="jobs-live-reminder">No recent host heartbeat. Check VPN/orchestrator connectivity.</small>
             ) : null}
             <ul className="jobs-host-list">
               {hostRows.length > 0 ? (
@@ -1733,19 +1736,7 @@ export function JobsPage(): JSX.Element {
                     cardActiveJobId,
                     typeof cardActiveJobName?.job_name === "string" ? cardActiveJobName.job_name : null
                   );
-                  const activeCount =
-                    typeof host.info?.active_job_count === "number" && Number.isFinite(host.info.active_job_count)
-                      ? host.info.active_job_count
-                      : Array.isArray(host.active_job_ids)
-                        ? host.active_job_ids.length
-                        : host.running || 0;
-                  const configuredMaxSlots =
-                    typeof host.info?.max_active_jobs === "number" && Number.isFinite(host.info.max_active_jobs)
-                      ? host.info.max_active_jobs
-                      : host.name === "deucalion"
-                        ? 3
-                        : 1;
-                  const maxSlots = Math.max(1, configuredMaxSlots, activeCount);
+                  const capacitySummary = resolveHostCapacitySummary(host.name, host);
                   return (
                     <li key={host.name}>
                       <button
@@ -1761,7 +1752,9 @@ export function JobsPage(): JSX.Element {
                           <small>{isLive ? "Live" : "Offline"}</small>
                           <Info size={13} />
                         </div>
-                        <small className="jobs-meta">Slots: {activeCount}/{maxSlots}</small>
+                        <small className={`jobs-capacity-line${capacitySummary.overCapacity ? " is-over-capacity" : ""}`}>
+                          {capacitySummary.label}
+                        </small>
                         {cardActiveJobId ? (
                           <small className="jobs-meta">
                             Active: {cardActiveJobLabel}
@@ -2446,19 +2439,7 @@ export function JobsPage(): JSX.Element {
               (typeof hostDetailsTarget.data.info?.active_job_status === "string"
                 ? hostDetailsTarget.data.info.active_job_status
                 : "-");
-            const activeCount =
-              typeof hostDetailsTarget.data.info?.active_job_count === "number" &&
-              Number.isFinite(hostDetailsTarget.data.info.active_job_count)
-                ? hostDetailsTarget.data.info.active_job_count
-                : activeJobs.length;
-            const configuredMaxSlots =
-              typeof hostDetailsTarget.data.info?.max_active_jobs === "number" &&
-              Number.isFinite(hostDetailsTarget.data.info.max_active_jobs)
-                ? hostDetailsTarget.data.info.max_active_jobs
-                : hostDetailsTarget.name === "deucalion"
-                  ? 3
-                  : 1;
-            const maxSlots = Math.max(1, configuredMaxSlots, activeCount);
+            const capacitySummary = resolveHostCapacitySummary(hostDetailsTarget.name, hostDetailsTarget.data);
             const lastJobId =
               typeof hostDetailsTarget.data.info?.last_job_id === "string" ? hostDetailsTarget.data.info.last_job_id : null;
             const lastTerminalStatus =
@@ -2517,7 +2498,9 @@ export function JobsPage(): JSX.Element {
               </div>
               <div>
                 <dt>Slots</dt>
-                <dd>{activeCount}/{maxSlots}</dd>
+                <dd className={capacitySummary.overCapacity ? "jobs-capacity-line is-over-capacity" : undefined}>
+                  {capacitySummary.label}
+                </dd>
               </div>
               <div>
                 <dt>Last terminal job</dt>

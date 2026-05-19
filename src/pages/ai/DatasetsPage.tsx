@@ -139,7 +139,7 @@ export function DatasetsPage(): JSX.Element {
       setLastCreateResponse(response);
       const warningCount = response.warnings?.length ?? 0;
       if (warningCount > 0) {
-        notifyInfo("Dataset created with warnings", `${warningCount} warning(s) returned by backend validation.`);
+        notifyInfo("Dataset created with warnings", `${warningCount} warning(s) returned by orchestrator validation.`);
       } else {
         notifySuccess("Dataset created", "The dataset request was completed.");
       }

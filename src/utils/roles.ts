@@ -12,6 +12,16 @@ export function isKpiManagerRole(role: UserRole | null | undefined): boolean {
   return role === "kpi_manager";
 }
 
+export function isCommunityUserRole(role: UserRole | null | undefined): boolean {
+  return role === "rec_manager" || role === "prosumer";
+}
+
+export function communityWorkspaceHomePath(role: UserRole | null | undefined): string {
+  if (role === "prosumer") return "/app/community/dashboard";
+  if (role === "rec_manager") return "/app/community/dashboard";
+  return roleHomePath(role);
+}
+
 export function roleHomePath(role: UserRole | null | undefined): string {
   if (isTrainingManagerRole(role)) return "/app/ai/jobs";
   if (isPredictorRole(role)) return "/app/predictor";

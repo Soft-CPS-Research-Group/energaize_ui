@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { API_BASE_URL } from "../api/client";
+import { API_BASE_URL, JOB_ORCHESTRATOR_API_URL } from "../api/client";
 
 type JobRecord = {
   job_id: string;
@@ -36,8 +36,10 @@ const deployTargets = [
     bundle_mount_path: "/data/bundles"
   }
 ];
-const api = API_BASE_URL.replace(/\/$/, "");
-const endpoint = (path: string) => `${api}${path}`;
+const backendApi = API_BASE_URL.replace(/\/$/, "");
+const jobOrchestratorApi = JOB_ORCHESTRATOR_API_URL.replace(/\/$/, "");
+const backendEndpoint = (path: string) => `${backendApi}${path}`;
+const endpoint = (path: string) => `${jobOrchestratorApi}${path}`;
 const DEMO_SIM_FILES = [
   "2026-03-20_10-00-00/exported_data_community_ep0.csv",
   "2026-03-20_10-00-00/exported_kpis.csv"
@@ -160,8 +162,8 @@ export const handlers = [
       }
     })
   ),
-  http.get(endpoint("/deploy/inferences"), () => HttpResponse.json(deployTargets)),
-  http.get(endpoint("/deploy/inferences/:targetId/health"), ({ params }) => {
+  http.get(backendEndpoint("/deploy/inferences"), () => HttpResponse.json(deployTargets)),
+  http.get(backendEndpoint("/deploy/inferences/:targetId/health"), ({ params }) => {
     const targetId = String(params.targetId || "");
     const target = deployTargets.find((item) => item.id === targetId);
     if (!target) {
@@ -175,7 +177,7 @@ export const handlers = [
       active_manifest_path: `/data/bundles/${deployBundles[0]?.storage_dir_name || deployBundles[0]?.bundle_id || "bundle_demo_001"}/artifact_manifest.json`
     });
   }),
-  http.post(endpoint("/deploy/inferences/:targetId/switch-bundle"), async ({ params, request }) => {
+  http.post(backendEndpoint("/deploy/inferences/:targetId/switch-bundle"), async ({ params, request }) => {
     const targetId = String(params.targetId || "");
     const target = deployTargets.find((item) => item.id === targetId);
     if (!target) {
@@ -202,10 +204,10 @@ export const handlers = [
       }
     });
   }),
-  http.get(endpoint("/deploy/inferences/:targetId/logs/stream"), ({ params }) =>
+  http.get(backendEndpoint("/deploy/inferences/:targetId/logs/stream"), ({ params }) =>
     HttpResponse.text(`[${params.targetId}] inference logs\\nline 2\\n`)
   ),
-  http.get(endpoint("/deploy/inferences/:targetId/logs/history/chunk"), ({ params, request }) => {
+  http.get(backendEndpoint("/deploy/inferences/:targetId/logs/history/chunk"), ({ params, request }) => {
     const url = new URL(request.url);
     const sinceTs = url.searchParams.get("since_ts");
     const untilTs = url.searchParams.get("until_ts") || new Date().toISOString();
@@ -263,8 +265,8 @@ export const handlers = [
       message: page.length === 0 ? "No logs found in this window." : null
     });
   }),
-  http.get(endpoint("/deploy/bundles"), () => HttpResponse.json(deployBundles)),
-  http.get(endpoint("/deploy/bundles/:bundleId/files"), ({ params }) => {
+  http.get(backendEndpoint("/deploy/bundles"), () => HttpResponse.json(deployBundles)),
+  http.get(backendEndpoint("/deploy/bundles/:bundleId/files"), ({ params }) => {
     const bundleId = String(params.bundleId || "");
     const exists = deployBundles.some((item) => item.bundle_id === bundleId);
     if (!exists) {
@@ -282,7 +284,7 @@ export const handlers = [
       files
     });
   }),
-  http.get(endpoint("/deploy/bundles/:bundleId/files/content"), ({ params, request }) => {
+  http.get(backendEndpoint("/deploy/bundles/:bundleId/files/content"), ({ params, request }) => {
     const bundleId = String(params.bundleId || "");
     const exists = deployBundles.some((item) => item.bundle_id === bundleId);
     if (!exists) {
@@ -307,7 +309,7 @@ export const handlers = [
       content: contentByPath[path] || ""
     });
   }),
-  http.post(endpoint("/deploy/bundles/upload-folder"), () => {
+  http.post(backendEndpoint("/deploy/bundles/upload-folder"), () => {
     const created = {
       bundle_id: `bundle_uploaded_${deployBundles.length + 1}`,
       name: "uploaded_bundle",
@@ -321,7 +323,7 @@ export const handlers = [
     deployBundles = [created, ...deployBundles];
     return HttpResponse.json({ created: true, bundle: created });
   }),
-  http.delete(endpoint("/deploy/bundles/:bundleId"), ({ params }) => {
+  http.delete(backendEndpoint("/deploy/bundles/:bundleId"), ({ params }) => {
     const bundleId = String(params.bundleId || "");
     deployBundles = deployBundles.filter((item) => item.bundle_id !== bundleId);
     return HttpResponse.json({ status: "deleted", bundle_id: bundleId });

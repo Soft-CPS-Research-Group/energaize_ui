@@ -3531,7 +3531,7 @@ export function JobDetailPage(): JSX.Element {
       {!isLoading && (statusQuery.isError || infoQuery.isError || resultQuery.isError) ? (
         <EmptyState
           title="Could not load job details"
-          message="Please retry from the Jobs page or check backend connectivity."
+          message="Please retry from the Jobs page or check orchestrator connectivity."
           action={
             <Button variant="secondary" onClick={() => navigate(backTarget)}>
               Back to Jobs
@@ -3769,7 +3769,7 @@ export function JobDetailPage(): JSX.Element {
               ) : simulationIndexQuery.isError ? (
                 <EmptyState
                   title="Could not load simulation files"
-                  message="Failed to load simulation-data index from backend bridge."
+                  message="Failed to load simulation-data index from the Job Orchestrator."
                 />
               ) : !simulationTree ? (
                 <EmptyState

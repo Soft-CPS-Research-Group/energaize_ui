@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "../api/client";
+import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
 
 const NESTED_RECORD_KEYS = ["details", "last_status_details", "job_info", "job_meta"] as const;
 
@@ -48,7 +48,7 @@ function extractRunIdentityFromRunUrl(value: string): { experimentId: string; ru
 }
 
 function deriveMlflowBaseUrlFromApi(): string | null {
-  const normalizedApi = normalizeMlflowBaseUrl(API_BASE_URL);
+  const normalizedApi = normalizeMlflowBaseUrl(JOB_ORCHESTRATOR_API_URL);
   if (!normalizedApi) return null;
   try {
     const parsed = new URL(normalizedApi);

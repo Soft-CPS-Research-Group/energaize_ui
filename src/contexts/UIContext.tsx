@@ -8,6 +8,7 @@ import {
   type ReactNode
 } from "react";
 import { INITIAL_COMMUNITIES } from "../constants";
+import { createDomainRec } from "../data/communityDomain";
 import type { CommunityContext, NotificationItem, ThemeMode, ToastItem } from "../types";
 import { createId } from "../utils/id";
 import { readStorage, STORAGE_KEYS, writeStorage } from "../utils/storage";
@@ -19,6 +20,7 @@ interface UIContextValue {
   communities: CommunityContext[];
   activeCommunity: CommunityContext;
   setActiveCommunity: (communityId: string) => void;
+  addCommunity: (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => CommunityContext;
   notifications: NotificationItem[];
   toasts: ToastItem[];
   unreadCount: number;
@@ -38,6 +40,16 @@ interface UIContextValue {
 
 const UIContext = createContext<UIContextValue | undefined>(undefined);
 
+function resolveInitialCommunities(): CommunityContext[] {
+  const domainCommunities = INITIAL_COMMUNITIES;
+  const persisted = readStorage<CommunityContext[] | null>(STORAGE_KEYS.communities, null);
+  if (!persisted || persisted.length === 0) return domainCommunities;
+
+  const domainIds = new Set(domainCommunities.map((community) => community.id));
+  const localDrafts = persisted.filter((community) => !domainIds.has(community.id));
+  return [...localDrafts, ...domainCommunities];
+}
+
 function resolvePreferredTheme(): ThemeMode {
   const persisted = readStorage<ThemeMode | null>(STORAGE_KEYS.theme, null);
   if (persisted) return persisted;
@@ -49,7 +61,7 @@ function resolvePreferredTheme(): ThemeMode {
 
 export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
   const [theme, setThemeState] = useState<ThemeMode>(resolvePreferredTheme);
-  const [communities] = useState<CommunityContext[]>(INITIAL_COMMUNITIES);
+  const [communities, setCommunities] = useState<CommunityContext[]>(resolveInitialCommunities);
 
   const [activeCommunityId, setActiveCommunityId] = useState<string>(() => {
     const persisted = readStorage<string | null>(STORAGE_KEYS.communityId, null);
@@ -84,6 +96,28 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
     setSelectedEntityId("community");
     writeStorage(STORAGE_KEYS.communityId, communityId);
   }, []);
+
+  const addCommunity = useCallback(
+    (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => {
+      const community = createDomainRec({
+        name: input.name,
+        location: input.location,
+        description: input.description,
+        action_frequency: "daily"
+      });
+
+      setCommunities((previous) => {
+        const next = [community, ...previous.filter((item) => item.id !== community.id)];
+        writeStorage(STORAGE_KEYS.communities, next);
+        return next;
+      });
+      setActiveCommunityId(community.id);
+      setSelectedEntityId("community");
+      writeStorage(STORAGE_KEYS.communityId, community.id);
+      return community;
+    },
+    []
+  );
 
   const pushNotification = useCallback(
     (input: Omit<NotificationItem, "id" | "timestamp" | "read">) => {
@@ -156,6 +190,7 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
       communities,
       activeCommunity,
       setActiveCommunity,
+      addCommunity,
       notifications,
       toasts,
       unreadCount,
@@ -179,6 +214,7 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
       communities,
       activeCommunity,
       setActiveCommunity,
+      addCommunity,
       notifications,
       toasts,
       unreadCount,

@@ -15,6 +15,10 @@ import { LogsPage } from "./pages/LogsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { PredictorWorkspacePage } from "./pages/PredictorWorkspacePage";
 import { RoleWorkspacePage } from "./pages/RoleWorkspacePage";
+import { CommunityDashboardPage } from "./pages/community/CommunityDashboardPage";
+import { CommunityLogsPage } from "./pages/community/CommunityLogsPage";
+import { CommunityTopologyPage } from "./pages/community/CommunityTopologyPage";
+import { ProsumerFlexibilityPage } from "./pages/community/ProsumerFlexibilityPage";
 import { ConfigsPage } from "./pages/ai/ConfigsPage";
 import { DatasetsPage } from "./pages/ai/DatasetsPage";
 import { DeployChartsPage } from "./pages/ai/DeployChartsPage";
@@ -40,6 +44,18 @@ export default function App(): JSX.Element {
           <Route path="logs" element={<LogsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="workspace" element={<RoleWorkspacePage />} />
+
+          <Route element={<RoleGuard allowed={["rec_manager", "prosumer"]} />}>
+            <Route path="community">
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<CommunityDashboardPage />} />
+              <Route path="topology" element={<CommunityTopologyPage />} />
+              <Route path="logs" element={<CommunityLogsPage />} />
+              <Route element={<RoleGuard allowed={["prosumer"]} />}>
+                <Route path="flexibility" element={<ProsumerFlexibilityPage />} />
+              </Route>
+            </Route>
+          </Route>
 
           <Route element={<RoleGuard allowed={["ai_manager", "training_manager"]} />}>
             <Route path="ai">

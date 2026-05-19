@@ -1,4 +1,4 @@
-import { http } from "../api/client";
+import { jobOrchestratorHttp } from "../api/client";
 
 export interface ExampleBundleManifestFile {
   content: string;
@@ -69,7 +69,7 @@ export function resolveExampleOnnxAssetUrl(jobId: string, relativePath: string):
 
 async function readBackendFileText(jobId: string, session: string | null, relativePath: string): Promise<string | null> {
   try {
-    return await http<string>(
+    return await jobOrchestratorHttp<string>(
       "/simulation-data/file",
       {
         method: "POST",
@@ -88,7 +88,7 @@ async function readBackendFileText(jobId: string, session: string | null, relati
 
 async function readBackendFileBlob(jobId: string, session: string | null, relativePath: string): Promise<Blob | null> {
   try {
-    return await http<Blob>(
+    return await jobOrchestratorHttp<Blob>(
       "/simulation-data/file",
       {
         method: "POST",

@@ -16,6 +16,7 @@ import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import { datasetSchemaPath } from "../../utils/datasetPath";
 import { useSearchParams } from "react-router-dom";
 
 type EditorMode = "create" | "edit";
@@ -161,7 +162,7 @@ const DEFAULT_VISUAL_MODEL: ConfigModel = {
   },
   simulator: {
     dataset_name: "citylearn_challenge_2022_phase_all_plus_evs",
-    dataset_path: "./datasets/citylearn_challenge_2022_phase_all_plus_evs/schema.json",
+    dataset_path: "/data/datasets/citylearn_challenge_2022_phase_all_plus_evs/schema.json",
     central_agent: false,
     reward_function: "RewardFunction",
     reward_function_kwargs: {},
@@ -315,10 +316,6 @@ function parseNumberArray(value: string, fallback: number[]): number[] {
   return parsed.length > 0 ? parsed : fallback;
 }
 
-function datasetSchemaPath(datasetName: string): string {
-  return `./datasets/${datasetName}/schema.json`;
-}
-
 export function ConfigsPage(): JSX.Element {
   const queryClient = useQueryClient();
   const { notifyError, notifySuccess, notifyInfo } = useApiFeedback();
@@ -360,7 +357,7 @@ export function ConfigsPage(): JSX.Element {
     onSuccess: (_, payload) => {
       notifySuccess(
         editorMode === "edit" ? "Experiment config updated" : "Experiment config saved",
-        `${payload.file_name} stored in backend.`
+        `${payload.file_name} stored in the Job Orchestrator.`
       );
       setEditorOpen(false);
       queryClient.invalidateQueries({ queryKey: ["configs"] });
@@ -371,7 +368,7 @@ export function ConfigsPage(): JSX.Element {
   const deleteMutation = useMutation({
     mutationFn: (target: string) => deleteExperimentConfig(target),
     onSuccess: () => {
-      notifyInfo("Experiment config deleted", "Experiment config removed from backend.");
+      notifyInfo("Experiment config deleted", "Experiment config removed from the Job Orchestrator.");
       queryClient.invalidateQueries({ queryKey: ["configs"] });
     },
     onError: (error) => notifyError("Failed to delete experiment config", error)
@@ -740,7 +737,7 @@ export function ConfigsPage(): JSX.Element {
                     placeholder="demo.yaml"
                   />
                   {editorMode === "edit" ? (
-                    <small className="jobs-meta">File name locked in edit mode (backend updates by file name).</small>
+                    <small className="jobs-meta">File name locked in edit mode (orchestrator updates by file name).</small>
                   ) : null}
                 </label>
 
@@ -907,7 +904,7 @@ export function ConfigsPage(): JSX.Element {
                         <h3>Simulator</h3>
                         <div className="config-visual-grid">
                           <label>
-                            <span>Dataset (from backend machine)</span>
+                            <span>Dataset (from orchestrator storage)</span>
                             <select
                               value={selectedDatasetName}
                               onChange={(event) => updateDatasetSelection(event.target.value)}
@@ -925,11 +922,11 @@ export function ConfigsPage(): JSX.Element {
                           </label>
 
                           <label>
-                            <span>Dataset path</span>
+                            <span>Dataset path inside job container</span>
                             <input
                               value={valueAsString(parsedModel, "simulator.dataset_path")}
                               onChange={(event) => updateVisualField("simulator.dataset_path", event.target.value)}
-                              placeholder="./datasets/<name>/schema.json"
+                              placeholder="/data/datasets/<name>/schema.json"
                             />
                           </label>
 

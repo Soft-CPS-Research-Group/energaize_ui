@@ -8,25 +8,22 @@ import {
   ChevronRight,
   CircleGauge,
   FileCog,
+  Home,
   ListOrdered,
   Network,
   PanelsTopLeft,
+  PlugZap,
   Server,
   Sun,
   X
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useUI } from "../../contexts/UIContext";
-import { isKpiManagerRole, isPredictorRole, isTrainingManagerRole, roleLabel } from "../../utils/roles";
-
-interface TreeNode {
-  id: string;
-  label: string;
-  icon: JSX.Element;
-  children?: TreeNode[];
-}
+import type { EnergyEntityKind, EnergyTreeNode } from "../../data/energyCommunity";
+import { getEnergyTree, getProsumerBuildingScopes } from "../../data/energyCommunity";
+import { isCommunityUserRole, isKpiManagerRole, isPredictorRole, isTrainingManagerRole, roleLabel } from "../../utils/roles";
 
 const AI_SIDE_LINKS = [
   { to: "/app/ai/datasets", label: "Datasets", icon: <Database size={14} /> },
@@ -36,48 +33,33 @@ const AI_SIDE_LINKS = [
   { to: "/app/ai/hosts", label: "Hosts", icon: <Server size={14} /> }
 ] as const;
 
-function useEntityTree(): TreeNode[] {
-  return useMemo(
-    () => [
-      {
-        id: "community",
-        label: "Community",
-        icon: <Network size={15} />,
-        children: [
-          {
-            id: "building-a",
-            label: "Building A",
-            icon: <Building2 size={15} />,
-            children: [
-              { id: "battery-a", label: "Battery", icon: <Battery size={14} /> },
-              { id: "ev-a1", label: "EV 1", icon: <Car size={14} /> },
-              { id: "pv-a", label: "PV", icon: <Sun size={14} /> }
-            ]
-          },
-          {
-            id: "building-b",
-            label: "Building B",
-            icon: <Building2 size={15} />,
-            children: [
-              { id: "ev-b1", label: "EV 1", icon: <Car size={14} /> },
-              { id: "bess-b", label: "BESS", icon: <Battery size={14} /> }
-            ]
-          },
-          {
-            id: "building-c",
-            label: "Building C",
-            icon: <Building2 size={15} />,
-            children: [{ id: "meter-c", label: "Main Meter", icon: <CircleGauge size={14} /> }]
-          }
-        ]
-      }
-    ],
-    []
-  );
+function iconForKind(kind: EnergyEntityKind): JSX.Element {
+  if (kind === "community") return <Network size={15} />;
+  if (kind === "building" || kind === "apartment") return <Building2 size={15} />;
+  if (kind === "house") return <Home size={15} />;
+  if (kind === "battery") return <Battery size={14} />;
+  if (kind === "ev_charger") return <PlugZap size={14} />;
+  if (kind === "ev") return <Car size={14} />;
+  if (kind === "pv" || kind === "solar_plant") return <Sun size={14} />;
+  if (kind === "transformer" || kind === "grid_meter") return <PlugZap size={14} />;
+  if (kind === "appliance" || kind === "heat_pump" || kind === "heater" || kind === "water_pump" || kind === "non_shiftable_load") {
+    return <CircleGauge size={14} />;
+  }
+  if (kind === "group") return <CircleGauge size={14} />;
+  return <Network size={15} />;
 }
 
-function TreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }): JSX.Element {
-  const { selectedEntityId, setSelectedEntityId } = useUI();
+function findTreeNode(nodes: EnergyTreeNode[], entityId: string): EnergyTreeNode | null {
+  for (const node of nodes) {
+    if (node.id === entityId) return node;
+    const child = findTreeNode(node.children, entityId);
+    if (child) return child;
+  }
+  return null;
+}
+
+function TreeItem({ node, depth = 0 }: { node: EnergyTreeNode; depth?: number }): JSX.Element {
+  const { selectedEntityId, setSelectedEntityId, treeCollapsed } = useUI();
   const [open, setOpen] = useState(true);
   const hasChildren = Boolean(node.children && node.children.length > 0);
 
@@ -85,7 +67,7 @@ function TreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }): JSX.
     <li>
       <div
         className={`tree-item${selectedEntityId === node.id ? " is-active" : ""}`}
-        style={{ paddingLeft: `${10 + depth * 14}px` }}
+        style={{ paddingLeft: treeCollapsed ? 0 : `${10 + depth * 14}px` }}
       >
         {hasChildren ? (
           <button className="tree-toggle" type="button" onClick={() => setOpen((prev) => !prev)}>
@@ -96,8 +78,9 @@ function TreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }): JSX.
         )}
 
         <button className="tree-target" type="button" onClick={() => setSelectedEntityId(node.id)}>
-          {node.icon}
+          {iconForKind(node.kind)}
           <span>{node.label}</span>
+          {node.status !== "online" ? <small className={`tree-status-dot is-${node.status}`} /> : null}
         </button>
       </div>
 
@@ -123,9 +106,17 @@ export function CommunityTree(): JSX.Element {
     mobileTreeOpen,
     setMobileTreeOpen
   } = useUI();
-  const tree = useEntityTree();
+  const tree = getEnergyTree(activeCommunity, session?.role);
   const isTrainingManager = isTrainingManagerRole(session?.role);
+  const isCommunityUser = isCommunityUserRole(session?.role);
+  const isProsumer = session?.role === "prosumer";
   const isRoleMockMenu = isPredictorRole(session?.role) || isKpiManagerRole(session?.role);
+  const visibleTree =
+    isProsumer
+      ? getProsumerBuildingScopes(activeCommunity)
+          .map((scope) => findTreeNode(tree, scope.id))
+          .filter((node): node is EnergyTreeNode => Boolean(node))
+      : tree;
   const roleKicker =
     session?.role && roleLabel(session.role) !== "unknown"
       ? roleLabel(session.role)
@@ -139,10 +130,18 @@ export function CommunityTree(): JSX.Element {
       <aside className={`community-tree${treeCollapsed ? " is-collapsed" : ""}${isTrainingManager ? " is-ai" : ""}`}>
         <header>
           <div>
-            <span className="section-kicker">{isTrainingManager ? "Training Manager" : roleKicker}</span>
-            {!treeCollapsed ? <strong>{activeCommunity.name}</strong> : null}
+            <span className="section-kicker">
+              {isTrainingManager ? "Training Manager" : isCommunityUser ? "Selected scope" : roleKicker}
+            </span>
+            {!treeCollapsed ? <strong>{isCommunityUser ? "Entity tree" : activeCommunity.name}</strong> : null}
           </div>
-          <button className="icon-btn" type="button" onClick={toggleTreeCollapsed} title="Toggle tree">
+          <button
+            className="icon-btn"
+            type="button"
+            onClick={toggleTreeCollapsed}
+            title={treeCollapsed ? "Expand entity tree" : "Collapse entity tree"}
+            aria-label={treeCollapsed ? "Expand entity tree" : "Collapse entity tree"}
+          >
             <PanelsTopLeft size={15} />
           </button>
         </header>
@@ -185,13 +184,13 @@ export function CommunityTree(): JSX.Element {
               </nav>
             ) : null}
 
-            {!isRoleMockMenu ? <div className="tree-section-head">Community Composition</div> : null}
+            {!isRoleMockMenu ? <div className="tree-section-head">{isProsumer ? "My buildings" : "Community Composition"}</div> : null}
           </section>
         ) : null}
 
         {!isRoleMockMenu ? (
           <ul className="tree-root">
-            {tree.map((node) => (
+            {visibleTree.map((node) => (
               <TreeItem key={node.id} node={node} />
             ))}
           </ul>
@@ -243,7 +242,7 @@ export function CommunityTree(): JSX.Element {
                     </NavLink>
                   ))}
                 </nav>
-                <div className="tree-section-head">Community Composition</div>
+                <div className="tree-section-head">{isProsumer ? "My buildings" : "Community Composition"}</div>
               </section>
             ) : isRoleMockMenu ? (
               <section className="tree-section">
@@ -255,7 +254,7 @@ export function CommunityTree(): JSX.Element {
 
             {!isRoleMockMenu ? (
               <ul className="tree-root">
-                {tree.map((node) => (
+                {visibleTree.map((node) => (
                   <TreeItem key={node.id} node={node} />
                 ))}
               </ul>

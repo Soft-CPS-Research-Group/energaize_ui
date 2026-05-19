@@ -5,7 +5,7 @@ import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import App from "../App";
-import { API_BASE_URL } from "../api/client";
+import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
 import { AuthProvider } from "../contexts/AuthContext";
 import { UIProvider } from "../contexts/UIContext";
 import { server } from "./server";
@@ -47,6 +47,19 @@ describe("App integration", () => {
     localStorage.setItem("energaize_active_community", JSON.stringify("solar-community"));
   }
 
+  function seedCommunitySession(role: "rec_manager" | "prosumer"): void {
+    localStorage.setItem(
+      "energaize_session",
+      JSON.stringify({
+        email: role === "prosumer" ? "prosumer@energaize.io" : "rec@energaize.io",
+        name: role === "prosumer" ? "Prosumer" : "REC Manager",
+        role,
+        remember: true
+      })
+    );
+    localStorage.setItem("energaize_active_community", JSON.stringify("solar-community"));
+  }
+
   it("logs in and lands in AI jobs page", async () => {
     const user = userEvent.setup();
     renderApp("/login");
@@ -80,7 +93,7 @@ describe("App integration", () => {
     seedAiSession();
     const user = userEvent.setup();
 
-    const api = API_BASE_URL.replace(/\/$/, "");
+    const api = JOB_ORCHESTRATOR_API_URL.replace(/\/$/, "");
     server.use(
       http.get(`${api}/logs-chunk/:jobId`, ({ request, params }) => {
         const url = new URL(request.url);
@@ -207,5 +220,50 @@ describe("App integration", () => {
     expect(await screen.findByRole("heading", { name: "Jobs" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/search jobs/i)).toHaveValue("job-completed");
     expect(screen.getByDisplayValue("completed")).toBeInTheDocument();
+  });
+
+  it("opens REC manager community dashboard from community selection", async () => {
+    seedCommunitySession("rec_manager");
+    const user = userEvent.setup();
+    renderApp("/communities");
+
+    expect(await screen.findByRole("heading", { name: /choose a community/i })).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: /view/i })[0]);
+
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Topology" })).toBeInTheDocument();
+  });
+
+  it("creates a blank community and opens the editable topology builder", async () => {
+    seedCommunitySession("rec_manager");
+    const user = userEvent.setup();
+    renderApp("/communities");
+
+    await user.click(await screen.findByRole("button", { name: /new community/i }));
+    await user.type(screen.getByLabelText(/^name$/i), "Pilot REC");
+    await user.type(screen.getByLabelText(/^location$/i), "Lisbon, PT");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    expect(await screen.findByRole("heading", { name: "Topology" })).toBeInTheDocument();
+    expect(screen.getByText(/start with the first building or shared asset/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add element/i })).toBeInTheDocument();
+    expect(screen.queryByText("Building A")).not.toBeInTheDocument();
+  });
+
+  it("sends a prosumer with one assigned building straight to that dashboard", async () => {
+    seedCommunitySession("prosumer");
+    renderApp("/communities");
+
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByText(/Solar Community \/ House 1/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /choose a community/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the prosumer flexibility workspace", async () => {
+    seedCommunitySession("prosumer");
+    renderApp("/app/community/flexibility");
+
+    expect(await screen.findByRole("heading", { name: "Flexibility" })).toBeInTheDocument();
+    expect(screen.getByText(/comfort limits are always enforced/i)).toBeInTheDocument();
   });
 });
