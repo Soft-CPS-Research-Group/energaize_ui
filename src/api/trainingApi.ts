@@ -38,6 +38,10 @@ export interface DatasetCreateResponse {
   message: string;
   name: string;
   description?: string;
+  format?: string;
+  type?: string;
+  formats?: string[];
+  format_counts?: Record<string, number>;
   warnings?: string[];
   validation?: Record<string, unknown>;
 }
@@ -101,11 +105,25 @@ export async function createDataset(payload: DatasetCreatePayload): Promise<Data
   });
 }
 
-export async function uploadDataset(payload: { file: File; name: string }): Promise<{ message: string; name: string }> {
+export async function uploadDataset(payload: { file: File; name: string }): Promise<{
+  message: string;
+  name: string;
+  format?: string;
+  type?: string;
+  formats?: string[];
+  format_counts?: Record<string, number>;
+}> {
   const formData = new FormData();
   formData.append("file", payload.file);
   formData.append("name", payload.name);
-  return jobOrchestratorHttp<{ message: string; name: string }>("/dataset/upload", {
+  return jobOrchestratorHttp<{
+    message: string;
+    name: string;
+    format?: string;
+    type?: string;
+    formats?: string[];
+    format_counts?: Record<string, number>;
+  }>("/dataset/upload", {
     method: "POST",
     body: formData
   });

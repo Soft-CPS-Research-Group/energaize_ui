@@ -16,6 +16,7 @@ import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import { getDatasetFormat, getDatasetFormatLabel } from "../../utils/datasetFormat";
 import { datasetSchemaPath } from "../../utils/datasetPath";
 import { useSearchParams } from "react-router-dom";
 
@@ -374,10 +375,11 @@ export function ConfigsPage(): JSX.Element {
     onError: (error) => notifyError("Failed to delete experiment config", error)
   });
 
-  const datasetNames = useMemo(
-    () => (datasetsQuery.data || []).map((dataset) => dataset.name).sort((left, right) => left.localeCompare(right)),
+  const sortedDatasets = useMemo(
+    () => [...(datasetsQuery.data || [])].sort((left, right) => left.name.localeCompare(right.name)),
     [datasetsQuery.data]
   );
+  const datasetNames = useMemo(() => sortedDatasets.map((dataset) => dataset.name), [sortedDatasets]);
 
   const visualTotalSteps = VISUAL_WIZARD_STEPS.length;
   const wizardProgressPercent =
@@ -394,6 +396,7 @@ export function ConfigsPage(): JSX.Element {
 
   const selectedDatasetName = valueAsString(parsedModel, "simulator.dataset_name");
   const datasetExists = selectedDatasetName ? datasetNames.includes(selectedDatasetName) : false;
+  const selectedDataset = sortedDatasets.find((dataset) => dataset.name === selectedDatasetName) || null;
 
   const visualStepValid = useMemo(() => {
     if (!parsedModel) return false;
@@ -912,12 +915,20 @@ export function ConfigsPage(): JSX.Element {
                               {selectedDatasetName && !datasetExists ? (
                                 <option value={selectedDatasetName}>{selectedDatasetName} (custom)</option>
                               ) : null}
-                              {datasetNames.map((name) => (
-                                <option key={name} value={name}>
-                                  {name}
-                                </option>
-                              ))}
+                              {sortedDatasets.map((dataset) => {
+                                const format = getDatasetFormat(dataset);
+                                return (
+                                  <option key={dataset.name} value={dataset.name}>
+                                    {dataset.name} - {getDatasetFormatLabel(format)}
+                                  </option>
+                                );
+                              })}
                             </select>
+                            {selectedDataset ? (
+                              <small className="jobs-meta">
+                                Type: {getDatasetFormatLabel(getDatasetFormat(selectedDataset))}
+                              </small>
+                            ) : null}
                             {datasetsQuery.isFetching ? <small className="jobs-meta">Refreshing datasets...</small> : null}
                           </label>
 
