@@ -224,95 +224,120 @@ interface KpiHighlightRow {
 
 const DISTRICT_HIGHLIGHTS: KpiHighlightConfig[] = [
   {
-    title: "Cost",
-    candidates: ["district_cost_ratio_to_baseline_total_ratio", "district_cost_total_control_eur"]
-  },
-  {
-    title: "Emissions",
-    candidates: ["district_emissions_ratio_to_baseline_total_ratio", "district_emissions_total_control_kgco2"]
-  },
-  {
-    title: "Grid Import",
+    title: "Community Cost",
     candidates: [
-      "district_energy_grid_ratio_to_baseline_import_total_ratio",
-      "district_energy_grid_total_import_control_kwh"
+      "district_community_settled_cost_total_eur",
+      "district_cost_total_control_eur",
+      "district_cost_ratio_to_business_as_usual_total_ratio"
     ]
   },
   {
-    title: "Peak Quality",
+    title: "EV Min SOC",
     candidates: [
-      "district_energy_grid_shape_quality_peak_daily_average_to_baseline_ratio",
-      "district_energy_grid_shape_quality_peak_all_time_average_to_baseline_ratio"
+      "district_ev_performance_departure_min_acceptable_feasible_ratio",
+      "district_ev_performance_departure_min_acceptable_ratio"
     ]
   },
   {
-    title: "Solar Self-Consumption",
+    title: "EV Target Band",
     candidates: [
-      "district_solar_self_consumption_ratio_self_consumption_ratio",
-      "district_solar_self_consumption_community_market_import_share_ratio"
-    ]
-  },
-  {
-    title: "EV Departure Success",
-    candidates: [
-      "district_ev_performance_departure_success_ratio",
+      "district_ev_performance_departure_within_tolerance_feasible_ratio",
       "district_ev_performance_departure_within_tolerance_ratio"
     ]
   },
   {
-    title: "Battery Capacity Fade",
+    title: "Grid Violations",
     candidates: [
-      "district_battery_health_capacity_fade_ratio",
+      "district_electrical_service_phase_violations_energy_total_kwh",
+      "district_electrical_service_phase_violations_event_count"
+    ]
+  },
+  {
+    title: "Peak",
+    candidates: [
+      "district_energy_grid_shape_quality_peak_daily_average_to_business_as_usual_ratio",
+      "district_energy_grid_shape_quality_peak_all_time_average_to_business_as_usual_ratio",
+      "district_energy_grid_shape_quality_peak_daily_average_control_kw"
+    ]
+  },
+  {
+    title: "Battery Throughput",
+    candidates: [
+      "district_battery_total_throughput_kwh",
+      "district_battery_ratio_to_business_as_usual_throughput_ratio",
       "district_battery_health_equivalent_full_cycles_count"
     ]
   },
   {
-    title: "Equity Gini",
+    title: "Net Exchange",
     candidates: [
-      "district_equity_distribution_gini_benefit_ratio",
-      "district_equity_distribution_top20_benefit_ratio"
+      "district_energy_grid_total_net_exchange_control_kwh",
+      "district_energy_grid_ratio_to_business_as_usual_net_exchange_total_ratio",
+      "district_energy_grid_total_import_control_kwh"
     ]
+  },
+  {
+    title: "V2G Export",
+    candidates: ["district_ev_total_v2g_export_kwh", "district_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
   }
 ];
 
 const BUILDING_HIGHLIGHTS: KpiHighlightConfig[] = [
   {
     title: "Cost",
-    candidates: ["building_cost_ratio_to_baseline_total_ratio", "building_cost_total_control_eur"]
+    candidates: [
+      "building_cost_total_control_eur",
+      "building_cost_ratio_to_business_as_usual_total_ratio",
+      "building_cost_daily_average_control_eur"
+    ]
   },
   {
-    title: "Emissions",
-    candidates: ["building_emissions_ratio_to_baseline_total_ratio", "building_emissions_total_control_kgco2"]
+    title: "EV Min SOC",
+    candidates: [
+      "building_ev_performance_departure_min_acceptable_feasible_ratio",
+      "building_ev_performance_departure_min_acceptable_ratio"
+    ]
+  },
+  {
+    title: "EV Target Band",
+    candidates: [
+      "building_ev_performance_departure_within_tolerance_feasible_ratio",
+      "building_ev_performance_departure_within_tolerance_ratio"
+    ]
+  },
+  {
+    title: "Grid Violations",
+    candidates: [
+      "building_electrical_service_phase_violations_energy_total_kwh",
+      "building_electrical_service_phase_violations_event_count"
+    ]
   },
   {
     title: "Grid Import",
     candidates: [
-      "building_energy_grid_ratio_to_baseline_import_total_ratio",
-      "building_energy_grid_total_import_control_kwh"
+      "building_energy_grid_total_import_control_kwh",
+      "building_energy_grid_ratio_to_business_as_usual_import_total_ratio"
     ]
   },
   {
-    title: "Solar Self-Consumption",
-    candidates: ["building_solar_self_consumption_ratio_self_consumption_ratio", "building_solar_self_consumption_total_generation_kwh"]
-  },
-  {
-    title: "EV Departure Success",
-    candidates: ["building_ev_performance_departure_success_ratio", "building_ev_performance_departure_within_tolerance_ratio"]
-  },
-  {
-    title: "Battery Capacity Fade",
-    candidates: ["building_battery_health_capacity_fade_ratio", "building_battery_health_equivalent_full_cycles_count"]
-  },
-  {
-    title: "Equity Benefit",
-    candidates: ["building_equity_benefit_relative_percent", "building_equity_distribution_top20_benefit_ratio"]
-  },
-  {
-    title: "Discomfort",
+    title: "Battery Throughput",
     candidates: [
-      "building_comfort_resilience_discomfort_overall_ratio",
-      "building_comfort_resilience_resilience_one_minus_thermal_ratio"
+      "building_battery_total_throughput_kwh",
+      "building_battery_ratio_to_business_as_usual_throughput_ratio",
+      "building_battery_health_equivalent_full_cycles_count"
     ]
+  },
+  {
+    title: "Deferrable Service",
+    candidates: [
+      "building_deferrable_appliance_service_service_level_ratio",
+      "building_deferrable_appliance_service_unserved_energy_total_kwh",
+      "building_deferrable_appliance_ratio_to_business_as_usual_service_level_ratio"
+    ]
+  },
+  {
+    title: "V2G Export",
+    candidates: ["building_ev_total_v2g_export_kwh", "building_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
   }
 ];
 
@@ -4737,7 +4762,7 @@ export function JobDetailPage(): JSX.Element {
                               </header>
                               <strong>{formatHighlightNumber(item.value)}</strong>
                               <footer>
-                                <small>{item.hasComparable ? `Δ ${formatHighlightNumber(item.delta)}` : "No baseline comparison"}</small>
+                                <small>{item.hasComparable ? `Δ ${formatHighlightNumber(item.delta)}` : "No BAU comparison"}</small>
                                 <small>{item.unit || "-"}</small>
                               </footer>
                             </article>
@@ -4783,7 +4808,7 @@ export function JobDetailPage(): JSX.Element {
                                         <tr>
                                           <th>KPI</th>
                                           <th>Control</th>
-                                          <th>Baseline</th>
+                                          <th>BAU</th>
                                           <th>Delta</th>
                                           <th>Delta %</th>
                                           <th>Primary</th>

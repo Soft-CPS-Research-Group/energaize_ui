@@ -87,6 +87,7 @@ const KPI_FAMILY_DEFS: KpiFamilyDef[] = [
 KPI_FAMILY_DEFS.sort((left, right) => right.tokens.length - left.tokens.length);
 
 const SUBFAMILY_TOKENS: string[][] = [
+  ["ratio", "to", "business", "as", "usual"],
   ["ratio", "to", "baseline"],
   ["daily", "average"],
   ["shape", "quality"],
@@ -250,6 +251,15 @@ function hasFiniteValue(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function removeTrailingTokens(tokens: string[], suffix: string[]): boolean {
+  if (suffix.length > tokens.length) return false;
+  const offset = tokens.length - suffix.length;
+  const hasSuffix = suffix.every((token, index) => tokens[offset + index] === token);
+  if (!hasSuffix) return false;
+  tokens.splice(offset, suffix.length);
+  return true;
+}
+
 function inferAggregation(meta: {
   key: string;
   subfamilyKey: string;
@@ -407,7 +417,11 @@ export function buildKpiMeta(keyRaw: string): KpiMetricMeta {
   }
 
   let variant: KpiVariant = "absolute";
-  if (semanticTokens.length > 0) {
+  if (removeTrailingTokens(semanticTokens, ["delta", "to", "business", "as", "usual"])) {
+    variant = "delta";
+  } else if (removeTrailingTokens(semanticTokens, ["business", "as", "usual"])) {
+    variant = "baseline";
+  } else if (semanticTokens.length > 0) {
     const candidate = semanticTokens[semanticTokens.length - 1] as KpiVariant;
     const previousToken = semanticTokens.length > 1 ? semanticTokens[semanticTokens.length - 2] : null;
     if (VARIANT_TOKENS.has(candidate) && previousToken !== "to") {
