@@ -37,6 +37,7 @@ const KPI_TABS = [
   { to: "/app/kpi-manager/compare", label: "Compare" },
   { to: "/app/kpi-manager/correlations", label: "Correlations" },
   { to: "/app/kpi-manager/scheduler", label: "Scheduler" },
+  { to: "/app/kpi-manager/thresholds", label: "Thresholds" },
   { to: "/app/kpi-manager/reports", label: "Reports" },
   { to: "/app/kpi-manager/data-health", label: "Data Health" },
   { to: "/app/kpi-manager/explorer", label: "Explorer" },

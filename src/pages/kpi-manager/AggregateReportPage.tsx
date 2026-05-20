@@ -3,6 +3,7 @@ import { fetchKpiAggregate, fetchKpis } from "../../api/kpiApi";
 import type { AggregatePeriod, AggregateBucket, KpiAggStats } from "../../api/kpiApi";
 import { Button } from "../../components/ui/Button";
 import { MultiSelect } from "../../components/ui/MultiSelect";
+import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { useCommunities } from "../../hooks/useCommunities";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import jsPDF from "jspdf";
@@ -56,8 +57,8 @@ function displayValue(name: string, stats: KpiAggStats, mode: "sum" | "mean"): s
 // ── Period selector ───────────────────────────────────────────────────────────
 
 const PERIODS: { label: string; value: AggregatePeriod }[] = [
-  { label: "Daily",   value: "daily" },
-  { label: "Weekly",  value: "weekly" },
+  { label: "Daily", value: "daily" },
+  { label: "Weekly", value: "weekly" },
   { label: "Monthly", value: "monthly" },
 ];
 
@@ -87,8 +88,8 @@ function PivotTable({ buckets, mode, onOpenChart }: PivotProps) {
   });
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+    <div style={{ overflowX: "auto", width: "100%" }}>
+      <table style={{ width: "max-content", minWidth: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
         <thead>
           <tr>
             <th style={thStyle}>Scope</th>
@@ -160,8 +161,8 @@ function PivotTable({ buckets, mode, onOpenChart }: PivotProps) {
             );
           })}
         </tbody>
-      </table>
-    </div>
+      </table >
+    </div >
   );
 }
 
@@ -207,10 +208,10 @@ function TotalsBar({ buckets }: { buckets: AggregateBucket[] }) {
       borderRadius: "0.75rem", padding: "1rem 1.25rem",
     }}>
       {[
-        { label: "Buckets",        value: buckets.length },
-        { label: "KPIs",           value: kpiSet.size },
-        { label: "Scopes",         value: scopeSet.size },
-        { label: "Total Windows",  value: totalWindows.toLocaleString() },
+        { label: "Buckets", value: buckets.length },
+        { label: "KPIs", value: kpiSet.size },
+        { label: "Scopes", value: scopeSet.size },
+        { label: "Total Windows", value: totalWindows.toLocaleString() },
       ].map(({ label, value }) => (
         <div key={label} style={{ display: "flex", flexDirection: "column", gap: "0.125rem", minWidth: "80px" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--text-soft)", fontWeight: 500 }}>{label}</span>
@@ -228,14 +229,14 @@ export function AggregateReportPage() {
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
 
   const [community, setCommunity] = useState(defaultCommunity);
-  const [period, setPeriod]       = useState<AggregatePeriod>("monthly");
+  const [period, setPeriod] = useState<AggregatePeriod>("monthly");
   const [startDate, setStartDate] = useState(getLocalDateString(defaultStart));
-  const [endDate, setEndDate]     = useState(getLocalDateString(defaultEnd));
-  const [mode, setMode]           = useState<"sum" | "mean">("sum");
+  const [endDate, setEndDate] = useState(getLocalDateString(defaultEnd));
+  const [mode, setMode] = useState<"sum" | "mean">("sum");
 
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
-  const [buckets,  setBuckets]  = useState<AggregateBucket[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [buckets, setBuckets] = useState<AggregateBucket[] | null>(null);
 
   const [activeChart, setActiveChart] = useState<{ scope: string; kpi: string } | null>(null);
   const [recompute, setRecompute] = useState(false);
@@ -268,7 +269,7 @@ export function AggregateReportPage() {
         community,
         period,
         startDate: new Date(startDate).toISOString(),
-        endDate:   new Date(endDate).toISOString(),
+        endDate: new Date(endDate).toISOString(),
       });
       setBuckets(res.buckets);
     } catch (e: any) {
@@ -280,7 +281,7 @@ export function AggregateReportPage() {
   };
 
   return (
-    <div className="page">
+    <div className="page" style={{ overflowX: "hidden", paddingBottom: "2rem" }}>
       <header className="jobs-hero">
         <div>
           <h1>Aggregate Report</h1>
@@ -370,12 +371,12 @@ export function AggregateReportPage() {
                   </div>
                 </label>
                 {recompute && (
-                   <MultiSelect
-                      options={(communities[community] || []).map(b => ({ label: b.replace(/_/g, " "), value: b }))}
-                      selected={selectedBuildings}
-                      onChange={setSelectedBuildings}
-                      placeholder="Select buildings"
-                   />
+                  <MultiSelect
+                    options={(communities[community] || []).map(b => ({ label: b.replace(/_/g, " "), value: b }))}
+                    selected={selectedBuildings}
+                    onChange={setSelectedBuildings}
+                    placeholder="Select buildings"
+                  />
                 )}
               </div>
 
@@ -509,7 +510,7 @@ export function AggregateReportPage() {
       </div>
 
       {/* ── Results ── */}
-      <main className="page-content" style={{ flex: 1, padding: "0 0 2rem" }}>
+      <main className="page-content" style={{ flex: 1, padding: "0 0 2rem", minWidth: 0, overflowX: "hidden" }}>
 
         {error && (
           <div style={{
@@ -522,20 +523,19 @@ export function AggregateReportPage() {
         )}
 
         {loading && (
-          <div className="route-loading panel">
-            <Loader2 className="ev-loader" />
-            <p className="font-medium animate-pulse">Aggregating KPI windows…</p>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem" }}>
+            <EVChargingLoader label="Aggregating KPI windows…" />
           </div>
         )}
 
         {!loading && buckets && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <TotalsBar buckets={buckets} />
-            <div className="panel" style={{ padding: 0, overflow: "hidden", minWidth: 0 }}>
+            <div className="panel" style={{ padding: 0, minWidth: 0, overflow: "hidden" }}>
               <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--line)", fontWeight: 600 }}>
                 KPI Values by {period.charAt(0).toUpperCase() + period.slice(1)} Period
               </div>
-              <div style={{ padding: "0.5rem" }}>
+              <div style={{ overflowX: "auto", width: "100%" }}>
                 <PivotTable buckets={buckets} mode={mode} onOpenChart={(s, k) => setActiveChart({ scope: s, kpi: k })} />
               </div>
             </div>
@@ -554,20 +554,20 @@ export function AggregateReportPage() {
       {activeChart && (() => {
         const chartData = buckets?.map(b => ({
           label: b.label,
-          value: b.scopes[activeChart.scope]?.[activeChart.kpi] ? 
-            ((mode === "sum" || isSumKpi(activeChart.kpi)) 
-              ? b.scopes[activeChart.scope][activeChart.kpi].sum 
-              : b.scopes[activeChart.scope][activeChart.kpi].mean) 
+          value: b.scopes[activeChart.scope]?.[activeChart.kpi] ?
+            ((mode === "sum" || isSumKpi(activeChart.kpi))
+              ? b.scopes[activeChart.scope][activeChart.kpi].sum
+              : b.scopes[activeChart.scope][activeChart.kpi].mean)
             : null
         })).filter(p => p.value != null) || [];
-        
+
         return (
           <div style={{
             position: "fixed", inset: 0, zIndex: 100,
             display: "flex", alignItems: "center", justifyContent: "center",
             background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)"
           }} onClick={() => setActiveChart(null)}>
-            <div 
+            <div
               style={{
                 background: "var(--bg)", border: "1px solid var(--line)", padding: "1.5rem",
                 borderRadius: "0.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
@@ -579,14 +579,14 @@ export function AggregateReportPage() {
                 <div style={{ fontSize: "1rem", fontWeight: "bold", color: "var(--text)" }}>
                   {activeChart.kpi.replace("KPI", "")} Trend
                 </div>
-                <button 
+                <button
                   onClick={() => setActiveChart(null)}
                   style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-soft)", fontSize: "1.2rem" }}
                 >
                   ✕
                 </button>
               </div>
-              
+
               {chartData.length < 2 ? (
                 <p style={{ color: "var(--text-soft)", fontSize: "0.875rem", textAlign: "center", padding: "2rem 0" }}>
                   Not enough data points to show trend.

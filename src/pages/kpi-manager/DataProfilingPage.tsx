@@ -3,12 +3,13 @@ import { fetchDataProfile } from "../../api/kpiApi";
 import type { BuildingProfile } from "../../api/kpiApi";
 import { Button } from "../../components/ui/Button";
 import { MultiSelect } from "../../components/ui/MultiSelect";
+import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { useCommunities } from "../../hooks/useCommunities";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import {
   MapPin, Building2, Calendar, Search, Loader2,
   AlertCircle, ShieldCheck, ShieldAlert, ShieldX,
-  XCircle, Clock,
+  XCircle, Clock, BarChart2, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -132,6 +133,45 @@ function BuildingProfileCard({ buildingId, profile }: { buildingId: string; prof
           </div>
         )}
 
+        {/* Outlier detection results */}
+        {profile.outlier_counts && Object.keys(profile.outlier_counts).length > 0 && (
+          <div>
+            <p style={{ fontSize: "0.75rem", color: "var(--text-soft)", fontWeight: 600, marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.375rem" }}>
+              <BarChart2 size={12} /> Outlier Detection
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.375rem" }}>
+              {Object.entries(profile.outlier_counts).map(([field, count]) => {
+                // Map field name → detection method label
+                const methodLabels: Record<string, string> = {
+                  grid_energy_in: "STL",
+                  grid_energy_out: "STL",
+                  solar_generation: "STL",
+                  battery_soc_drift: "CUSUM",
+                  battery_soc_spikes: "MAD",
+                };
+                const method = methodLabels[field] ?? "IQR";
+                const hasOutliers = count > 0;
+                return (
+                  <div key={field} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "0.3rem 0.6rem", borderRadius: "0.4rem", fontSize: "0.72rem",
+                    border: `1px solid ${hasOutliers ? "rgba(220,38,38,0.25)" : "var(--line)"}`,
+                    background: hasOutliers ? "rgba(220,38,38,0.05)" : "var(--bg)",
+                  }}>
+                    <span style={{ color: "var(--text-soft)" }}>
+                      {field.replace(/_/g, " ")}
+                      <span style={{ marginLeft: "0.3rem", opacity: 0.5, fontSize: "0.65rem" }}>[{method}]</span>
+                    </span>
+                    <span style={{ fontWeight: 700, color: hasOutliers ? "#dc2626" : "#16a34a" }}>
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Gaps */}
         <div>
           <button
@@ -185,6 +225,75 @@ function BuildingProfileCard({ buildingId, profile }: { buildingId: string; prof
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Outlier method explainer ──────────────────────────────────────────────────
+
+function OutlierMethodExplainer() {
+  const [open, setOpen] = useState(false);
+  const methods = [
+    {
+      name: "STL + MAD", field: "grid_energy_in/out, solar_generation",
+      color: "#6366f1",
+      desc: "Seasonal-Trend decomposition (Cleveland 1990) removes the daily usage pattern, then MAD scores the residuals. Flags genuine spikes without penalising normal daily peaks.",
+      threshold: "MAD score > 3.5",
+    },
+    {
+      name: "CUSUM", field: "battery_soc_drift",
+      color: "#d97706",
+      desc: "Cumulative Sum control chart (Page 1954). Detects sustained drift or a battery SoC stuck at a constant value — typical of sensor failure — not momentary spikes.",
+      threshold: "Cumulative deviation h=5, slack k=0.5",
+    },
+    {
+      name: "MAD", field: "battery_soc_spikes",
+      color: "#16a34a",
+      desc: "Median Absolute Deviation (Leys et al. 2013). More robust than z-score: a single extreme outlier does not inflate the spread estimate used to score the remaining points.",
+      threshold: "MAD score > 3.5 (Iglewicz & Hoaglin 1993)",
+    },
+    {
+      name: "Rolling IQR", field: "fallback when STL insufficient",
+      color: "#6b7280",
+      desc: "Tukey (1977) fences applied inside a sliding window. Context-aware: bounds adapt to the local neighbourhood, no historical data or model fitting required.",
+      threshold: "IQR × 3.0 fence",
+    },
+  ];
+  return (
+    <div style={{ background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: "0.75rem", overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0.75rem 1.25rem", background: "none", border: "none",
+          cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, color: "var(--text-soft)",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <BarChart2 size={14} style={{ color: "var(--brand)" }} />
+          How does outlier detection work? (STL · CUSUM · MAD · Rolling IQR)
+        </span>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+
+      {open && (
+        <div style={{ padding: "0 1.25rem 1.25rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-soft)", margin: 0 }}>
+            Each sensor field uses the method best suited to its statistical properties. Outlier counts appear in each building card.
+            Note: payloads are <strong>never removed</strong> — outlier flags annotate KPI confidence only.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "0.75rem" }}>
+            {methods.map(({ name, field, color, desc, threshold }) => (
+              <div key={name} style={{ padding: "0.75rem", borderRadius: "0.5rem", border: `1px solid ${color}25`, background: `${color}08` }}>
+                <div style={{ fontWeight: 700, color, fontSize: "0.8rem", marginBottom: "0.2rem" }}>{name}</div>
+                <div style={{ fontSize: "0.68rem", fontFamily: "monospace", color: "var(--text-soft)", marginBottom: "0.25rem", opacity: 0.8 }}>Used for: {field}</div>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-soft)", lineHeight: 1.5, marginBottom: "0.4rem" }}>{desc}</div>
+                <div style={{ fontSize: "0.68rem", fontFamily: "monospace", color, opacity: 0.8 }}>Threshold: {threshold}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -431,10 +540,9 @@ export function DataProfilingPage() {
 
         {/* Loading */}
         {loading && (
-          <div className="route-loading panel">
-            <Loader2 className="ev-loader" />
-            <p className="font-medium animate-pulse">Running data quality assessment…</p>
-            <p>Checking coverage, authenticity, validity, and gaps across selected buildings.</p>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "3rem" }}>
+            <EVChargingLoader label="Running data quality assessment…" />
+            <p style={{ fontSize: "0.8rem", color: "var(--text-soft)", marginTop: "0.5rem" }}>Checking coverage, authenticity, validity, and running outlier detection.</p>
           </div>
         )}
 
@@ -443,6 +551,7 @@ export function DataProfilingPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <SummaryBar profiles={profiles} />
             <FormulaExplainer />
+            <OutlierMethodExplainer />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "1rem" }}>
               {profiles.map(([buildingId, profile]) => (
                 <BuildingProfileCard key={buildingId} buildingId={buildingId} profile={profile} />

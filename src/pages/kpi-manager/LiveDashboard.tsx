@@ -25,7 +25,7 @@ import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from "recharts";
-import { fetchLiveState, fetchKpiHistory } from "../../api/kpiApi";
+import { fetchKpiHistory, KPI_API_BASE_URL } from "../../api/kpiApi";
 import type { LiveSnapshot } from "../../api/kpiApi";
 import {
   Zap, Sun, Battery, Car, DollarSign,
@@ -35,7 +35,6 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 30_000;
 const QUALITY_KPIS = ["AuthenticityKPI", "ValidityKPI"] as const;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -68,7 +67,7 @@ const fmtTime = (iso: string): string => {
 const toHHMM = (iso: string): string => {
   try {
     return new Date(iso).toLocaleTimeString([], {
-      hour: "2-digit", minute: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
     });
   } catch { return iso; }
 };
@@ -76,8 +75,9 @@ const toHHMM = (iso: string): string => {
 /** Returns the ISO string for today at 00:00:00 local time. */
 const todayStartISO = (): string => {
   const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
+  const offset = d.getTimezoneOffset() * 60000;
+  const localISOTime = new Date(d.getTime() - offset).toISOString().slice(0, 10);
+  return new Date(localISOTime).toISOString(); // YYYY-MM-DDT00:00:00.000Z
 };
 
 // ── MetricRow ─────────────────────────────────────────────────────────────────
@@ -227,6 +227,8 @@ function LiveQualityChart({
 
   // The ReferenceLine x must match the dataKey ("time" = full ISO string)
   const liveFromKey = liveFromTime ?? null;
+  // Human-readable label derived from the same timestamp
+  const liveFromLabel = liveFromTime ? toHHMM(liveFromTime) : null;
 
   return (
     <div className="panel" style={{ padding: "1rem" }}>
@@ -334,9 +336,10 @@ function LiveQualityChart({
 interface LiveDashboardProps {
   community: string;
   buildings: string[];
+  isActive?: boolean;
 }
 
-export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
+export function LiveDashboard({ community, buildings, isActive = true }: LiveDashboardProps) {
   // ── Snapshot state ──────────────────────────────────────────────────────────
   const [snapshots, setSnapshots] = useState<LiveSnapshot[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -351,8 +354,6 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
   // Stable ref so the poll callback can read liveFromTime without stale closure
   const liveFromRef = useRef<Record<string, string>>({});
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   // ── Load historical quality backbone (today 00:00 → now) ───────────────────
   const loadHistory = useCallback(async () => {
     if (!community) return;
@@ -360,7 +361,7 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
     try {
       const res = await fetchKpiHistory({
         community,
-        buildings: buildings.length > 0 ? buildings : undefined,
+        // Fetch for all buildings in community to avoid refetching on selection change
         startDate: todayStartISO(),
         kpis: [...QUALITY_KPIS],
         limit: 5000,
@@ -416,84 +417,105 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
     } finally {
       setHistoryLoading(false);
     }
-  }, [community, buildings]);
+  }, [community]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
-  // ── Poll live snapshots & append to chart ───────────────────────────────────
-  const poll = useCallback(async () => {
-    if (!community) return;
+  // ── Stream live snapshots & append to chart (SSE) ─────────────────────────
+  useEffect(() => {
+    if (!isActive || !community) return;
+
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetchLiveState(
-        community,
-        buildings.length > 0 ? buildings : undefined,
-      );
-      const snaps = res.data ?? [];
-      setSnapshots(snaps);
-      setLastUpdated(new Date());
 
-      // Append live quality points for each building
-      setQualityData(prev => {
-        const next = { ...prev };
-        const updatedLiveFrom = { ...liveFromRef.current };
+    // We subscribe to the whole community so the connection doesn't drop when selecting/unselecting buildings.
+    const url = `${KPI_API_BASE_URL}/api/v1/live/${community}/stream`;
+    
+    const es = new EventSource(url);
 
-        for (const snap of snaps) {
-          const { building, timestamp } = snap;
-          const existing = next[building] ?? [];
+    es.onmessage = (event) => {
+      try {
+        const snaps = JSON.parse(event.data) as LiveSnapshot[];
+        if (!snaps || snaps.length === 0) return;
+        
+        setSnapshots(prev => {
+          // Merge new snapshots into existing state by building
+          const map = new Map(prev.map(s => [s.building, s]));
+          for (const s of snaps) {
+            map.set(s.building, s);
+          }
+          return Array.from(map.values());
+        });
+        setLastUpdated(new Date());
+        setLoading(false);
 
-          // Skip if this snapshot timestamp is already the last point
-          if (
-            existing.length > 0 &&
-            existing[existing.length - 1].time >= timestamp
-          ) {
-            continue;
+        // Append live quality points for each building
+        setQualityData(prev => {
+          const next = { ...prev };
+          const updatedLiveFrom = { ...liveFromRef.current };
+
+          for (const snap of snaps) {
+            const { building, timestamp } = snap;
+            const existing = next[building] ?? [];
+
+            // Skip if this snapshot timestamp is already the last point
+            if (
+              existing.length > 0 &&
+              existing[existing.length - 1].time >= timestamp
+            ) {
+              continue;
+            }
+
+            const newPoint: QualityPoint = {
+              time: timestamp,
+              timeLabel: toHHMM(timestamp),
+              authenticity: snap.authenticity_ratio ?? null,
+              validity: snap.is_physically_valid ? 1.0 : 0.0,
+              isLive: true,
+            };
+
+            // Record the first live-data timestamp for the ReferenceLine
+            if (!updatedLiveFrom[building]) {
+              updatedLiveFrom[building] = timestamp;
+            }
+
+            next[building] = [...existing, newPoint];
           }
 
-          const newPoint: QualityPoint = {
-            time: timestamp,
-            timeLabel: toHHMM(timestamp),
-            authenticity: snap.authenticity_ratio ?? null,
-            // is_physically_valid is boolean → normalise to 0/1
-            validity: snap.is_physically_valid ? 1.0 : 0.0,
-            isLive: true,
-          };
+          liveFromRef.current = updatedLiveFrom;
+          return next;
+        });
 
-          // Record the first live-data timestamp for the ReferenceLine
-          if (!updatedLiveFrom[building]) {
-            updatedLiveFrom[building] = timestamp;
-          }
-
-          next[building] = [...existing, newPoint];
-        }
-
-        liveFromRef.current = updatedLiveFrom;
-        return next;
-      });
-
-      setLiveFromTime({ ...liveFromRef.current });
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to fetch live state");
-    } finally {
-      setLoading(false);
-    }
-  }, [community, buildings]);
-
-  useEffect(() => {
-    poll();
-    timerRef.current = setInterval(poll, POLL_INTERVAL_MS);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+        setLiveFromTime({ ...liveFromRef.current });
+      } catch (err) {
+        console.error("Error parsing SSE data", err);
+      }
     };
-  }, [poll]);
 
-  // Buildings to show charts for: prefer snapshot order, fall back to prop.
-  // Deduplicate so a building never appears twice even if the API returns
-  // multiple docs for the same building (e.g. concurrent messages).
-  const displayBuildings = Array.from(
-    new Set(snapshots.length > 0 ? snapshots.map(s => s.building) : buildings)
-  );
+    es.onerror = (err) => {
+      console.error("SSE Error", err);
+      // Wait for it to reconnect automatically, but we can set an error state if needed
+      // For now, let EventSource automatically reconnect.
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [community, isActive]);
+
+  if (buildings.length === 0) {
+    return (
+      <div className="panel empty-state">
+        <Activity size={48} style={{ opacity: 0.5, marginBottom: "1rem" }} />
+        <p style={{ fontSize: "1.2rem", fontWeight: "bold" }}>No buildings selected</p>
+        <p className="mt-1">Select at least one building to view live telemetry.</p>
+      </div>
+    );
+  }
+
+  // Filter snapshots and charts based on currently selected buildings
+  const displaySnapshots = snapshots.filter(s => buildings.includes(s.building));
+  const displayBuildings = buildings.filter(b => qualityData[b] || snapshots.some(s => s.building === b));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -515,7 +537,7 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
             }} />
             <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>Live Telemetry</span>
             <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-              · refreshes every {POLL_INTERVAL_MS / 1000}s
+              · streaming via Server-Sent Events (SSE)
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -524,24 +546,18 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
                 Updated {fmtTime(lastUpdated.toISOString())}
               </span>
             )}
-            <button
-              onClick={poll}
-              disabled={loading}
-              title="Refresh now"
-              style={{
-                display: "flex", alignItems: "center", gap: "0.3rem",
-                padding: "0.25rem 0.6rem", borderRadius: "0.4rem", fontSize: "0.75rem",
-                border: "1px solid var(--line)", background: "var(--bg-elev)",
-                color: "var(--text)", cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.5 : 1,
-              }}
-            >
+            <div style={{
+              display: "flex", alignItems: "center", gap: "0.3rem",
+              padding: "0.25rem 0.6rem", borderRadius: "0.4rem", fontSize: "0.75rem",
+              border: "1px solid var(--line)", background: "var(--bg-elev)",
+              color: "var(--text)", opacity: loading ? 0.5 : 1,
+            }}>
               <RefreshCw
                 size={12}
                 style={{ animation: loading ? "spin 1s linear infinite" : "none" }}
               />
-              Refresh
-            </button>
+              Live Connection
+            </div>
           </div>
         </div>
 
@@ -549,21 +565,21 @@ export function LiveDashboard({ community, buildings }: LiveDashboardProps) {
           <p style={{ color: "#ef4444", fontSize: "0.8rem", margin: 0 }}>{error}</p>
         )}
 
-        {!error && snapshots.length === 0 && !loading && (
+        {!error && displaySnapshots.length === 0 && !loading && (
           <p style={{ color: "var(--text-soft)", fontSize: "0.82rem", margin: 0 }}>
             Waiting for first Percepta payload… Live data will appear here once the
-            RabbitMQ consumer receives a message.
+            RabbitMQ consumer receives a message for the selected buildings.
           </p>
         )}
 
         {/* ── Building cards ───────────────────────────────────────────────── */}
-        {snapshots.length > 0 && (
+        {displaySnapshots.length > 0 && (
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
             gap: "0.75rem",
           }}>
-            {snapshots.map(snap => (
+            {displaySnapshots.map(snap => (
               <BuildingCard key={snap.building} snap={snap} />
             ))}
           </div>

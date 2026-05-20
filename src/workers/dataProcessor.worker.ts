@@ -73,7 +73,11 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
   const streamingTimelineMap: Record<string, any> = {};
   const streamingMetrics = new Set<string>();
   const streamingScopes = new Set<string>();
-  const statsList: any[] = [];  // populated after both sections below
+
+
+  // Stat card lists: streaming first, scheduled overwrites on dedup
+  const streamingStatsList: any[] = [];
+  const scheduledStatsList: any[] = [];
 
   Object.entries(streaming ?? {}).forEach(([scope, kpis]) => {
     streamingScopes.add(scope);
@@ -132,8 +136,6 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
   const scheduledSeriesByKpi: Record<string, any> = {};
   const scheduledMetrics = new Set<string>();
   const scheduledScopes = new Set<string>();
-  const streamingStatsList: any[] = [];
-  const scheduledStatsList: any[] = [];
 
   Object.entries(scheduled ?? {}).forEach(([scope, kpis]) => {
     scheduledScopes.add(scope);

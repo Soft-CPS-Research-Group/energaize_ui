@@ -332,3 +332,60 @@ export const fetchLiveState = async (
   );
   return response.data;
 };
+
+// ── KPI Alerts ───────────────────────────────────────────────────────────────
+
+export interface KpiAlert {
+  community: string;
+  kpi: string;
+  scope: string;
+  value: number;
+  threshold: number;
+  condition: "gt" | "gte" | "lt" | "lte";
+  severity: "info" | "warning" | "critical";
+  message: string;
+  period_start: string;
+  period_end: string;
+  triggered_at: string;
+}
+
+export interface AlertsResponse {
+  status: string;
+  total: number;
+  data: KpiAlert[];
+}
+
+export const fetchAlerts = async (
+  community: string,
+  params?: { severity?: string; kpi?: string; limit?: number },
+): Promise<AlertsResponse> => {
+  const p = new URLSearchParams();
+  if (params?.severity) p.append("severity", params.severity);
+  if (params?.kpi) p.append("kpi", params.kpi);
+  if (params?.limit) p.append("limit", String(params.limit));
+  const response = await api.get<AlertsResponse>(
+    `api/v1/alerts/${community}?${p.toString()}`,
+  );
+  return response.data;
+};
+
+/**
+ * Opens a persistent SSE connection for real-time alert delivery.
+ * Returns the EventSource so the caller can close it on unmount.
+ *
+ * Messages come in two shapes:
+ *   { type: "history", alerts: KpiAlert[] }   — initial burst on connect
+ *   { type: "alert",   alert:  KpiAlert  }    — individual push in real time
+ */
+export const streamAlerts = (
+  community: string,
+  onMessage: (msg: { type: "history"; alerts: KpiAlert[] } | { type: "alert"; alert: KpiAlert }) => void,
+  onError?: (e: Event) => void,
+): EventSource => {
+  const es = new EventSource(`${KPI_API_BASE_URL}/api/v1/alerts/${community}/stream`);
+  es.onmessage = (event) => {
+    try { onMessage(JSON.parse(event.data)); } catch { /* ignore parse errors */ }
+  };
+  if (onError) es.onerror = onError;
+  return es;
+};

@@ -11,6 +11,7 @@ import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { MultiSelect } from "../../components/ui/MultiSelect";
 import type { ProcessResponse } from "../../workers/dataProcessor.worker";
 import { LiveDashboard } from "./LiveDashboard";
+import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 
 
 // ── Chart data types produced by the data-processor worker ─────────────────
@@ -25,7 +26,7 @@ interface ScheduledStatItem {
   scope: string;
   kpiName: string;
   summary: Record<string, number> | null;
-  timeseries: Array<{ value: number; period_start: string; period_end: string; [key: string]: any }>;
+  timeseries: Array<{ value: number; period_start: string; period_end: string;[key: string]: any }>;
   isStreaming?: boolean;
 }
 
@@ -55,7 +56,7 @@ type DashboardTab = "analytics" | "live";
 
 const TAB_LABELS: Record<DashboardTab, { label: string; icon: React.ReactNode }> = {
   analytics: { label: "Analytics", icon: <BarChart2 size={15} /> },
-  live:      { label: "Live",      icon: <Radio      size={15} /> },
+  live:      { label: "Live",      icon: <Radio size={15} /> },
 };
 
 export interface DashboardProps {
@@ -73,9 +74,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
   const [community, setCommunity] = useState(defaultCommunity);
   const defaultBuildingsForCommunity = (COMMUNITY_FALLBACK[community] ?? [])[0];
-  const [buildings, setBuildings] = useState<string[]>(
-    defaultBuildingsForCommunity ? [defaultBuildingsForCommunity] : []
-  );
+  const [buildings, setBuildings] = useState<string[]>([]);
   const [startDate, setStartDate] = useState(getLocalDateString(defaultStart));
   const [endDate, setEndDate] = useState(getLocalDateString(defaultEnd));
   const [selectedKpis, setSelectedKpis] = useState<string[]>([]);
@@ -186,7 +185,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         for (const s of backendSummaries) {
           summaryMap[`${s.scope}_${s.kpi}`] = s.summary;
         }
-        
+
         const simulatedScheduled: Record<string, Record<string, any>> = {};
 
         Object.entries(histData).forEach(([scope, kpis]: [string, any]) => {
@@ -196,8 +195,8 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
             const backendSummary = summaryMap[`${scope}_${kpiName}`];
             if (!simulatedScheduled[scope][kpiName]) {
               simulatedScheduled[scope][kpiName] = {
-                  timeseries: arr,
-                  summary: backendSummary ?? null,
+                timeseries: arr,
+                summary: backendSummary ?? null,
               };
             } else {
               simulatedScheduled[scope][kpiName].timeseries.push(...arr);
@@ -219,9 +218,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
             const total = numeric.reduce((a: number, b: number) => a + b, 0);
             // Fall back: derive both, let the display logic pick
             entry.summary = {
-              mean_value:  total / numeric.length,
+              mean_value: total / numeric.length,
               total_value: total,
-              count:       numeric.length,
+              count: numeric.length,
               _derived_client_side: true,  // flag for debugging
             };
           });
@@ -243,7 +242,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
 
   const streamingCharts = useMemo(() => {
     if (!chartData || !chartData.series || chartData.series.length === 0) return null;
-    
+
     // Sort categories so order is consistent
     const sortedCategories = [...chartData.categories].sort((a: string, b: string) => a.localeCompare(b));
 
@@ -271,7 +270,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
     if (!scheduledChartData?.seriesByKpi) return null;
     const entries = Object.entries(scheduledChartData.seriesByKpi);
     if (entries.length === 0) return null;
-    
+
     // Sort entries so order is consistent
     entries.sort(([kpiA], [kpiB]) => kpiA.localeCompare(kpiB));
 
@@ -307,7 +306,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
       <header className="jobs-hero">
         <div>
           <h1>Dashboard</h1>
-          <p>{activeTab === "analytics" ? "Analyze KPI data across communities and buildings" : "Real-time telemetry and data quality signals"}</p>
+          <p>{activeTab === "analytics" ? "Analyze KPI data across communities and buildings" : activeTab === "live" ? "Real-time telemetry and data quality signals" : "KPI threshold alerts and notifications"}</p>
         </div>
 
         {/* ── Tab switcher ── */}
@@ -392,11 +391,11 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         <div style={{ paddingBottom: "0.5rem" }}>
           <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "1rem", width: "100%" }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
-            <div style={{ flex: "1 1 300px" }}>
-               <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
+              <div style={{ flex: "1 1 300px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
                   <Activity size={16} /> KPIs
-               </label>
-               <MultiSelect
+                </label>
+                <MultiSelect
                   options={availableKpis.map((k: string) => {
                     const meta = kpiMeta.find(m => m.name === k);
                     const label = meta?.display_name || meta?.canonical_name || meta?.name || k;
@@ -405,24 +404,24 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
                   selected={selectedKpis}
                   onChange={setSelectedKpis}
                   placeholder="Select KPIs..."
-               />
+                />
+              </div>
+              <div style={{ flex: "1 1 200px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
+                  <Activity size={16} /> Granularity Override <span style={{ opacity: 0.6, fontWeight: "normal", marginLeft: "0.25rem" }}>(comma-sep)</span>
+                </label>
+                <input
+                  type="text"
+                  style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
+                  value={windowOverrides}
+                  onChange={(e) => setWindowOverrides(e.target.value)}
+                  placeholder="e.g. EnergyCostKPI:1h:1h"
+                />
+              </div>
             </div>
-            <div style={{ flex: "1 1 200px" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-                <Activity size={16} /> Granularity Override <span style={{ opacity: 0.6, fontWeight: "normal", marginLeft: "0.25rem" }}>(comma-sep)</span>
-              </label>
-              <input
-                type="text"
-                style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                value={windowOverrides}
-                onChange={(e) => setWindowOverrides(e.target.value)}
-                placeholder="e.g. EnergyCostKPI:1h:1h"
-              />
-            </div>
-          </div>
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end", justifyContent: "space-between", borderTop: "1px solid var(--line)", paddingTop: "1rem", marginTop: "0.5rem" }}>
-             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end", justifyContent: "space-between", borderTop: "1px solid var(--line)", paddingTop: "1rem", marginTop: "0.5rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: "1rem" }}>
                 <div style={{ width: "150px" }}>
                   <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
                     <Calendar size={16} /> Start Date
@@ -458,51 +457,51 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
                   ))}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingBottom: "9px", paddingLeft: "0.5rem" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
-                      <input
-                        type="checkbox"
-                        checked={computeAggregated}
-                        onChange={(e) => setComputeAggregated(e.target.checked)}
-                        style={{ width: "1rem", height: "1rem" }}
-                      />
-                      Compute Aggregated Community Level
-                    </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={computeAggregated}
+                      onChange={(e) => setComputeAggregated(e.target.checked)}
+                      style={{ width: "1rem", height: "1rem" }}
+                    />
+                    Compute Aggregated Community Level
+                  </label>
                 </div>
-             </div>
+              </div>
 
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer", marginRight: "1rem" }} title="Check this to force recomputation from raw telemetry instead of using scheduled pre-calculated results">
-                <div style={{ position: "relative" }}>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={recompute}
-                    onChange={(e) => setRecompute(e.target.checked)}
-                    style={{ position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", borderWidth: 0 }}
-                  />
-                  <div style={{ width: "2.5rem", height: "1.5rem", borderRadius: "999px", background: recompute ? "var(--brand)" : "var(--line)", transition: "all 0.2s" }}></div>
-                  <div style={{ position: "absolute", left: "0.25rem", top: "0.25rem", width: "1rem", height: "1rem", background: "var(--bg-elev)", borderRadius: "50%", transition: "all 0.2s", transform: recompute ? "translateX(1rem)" : "none" }}></div>
-                </div>
-                <div style={{ marginLeft: "0.75rem", fontSize: "0.85rem", fontWeight: "bold" }}>
-                  Re-calculation
-                </div>
-              </label>
-            <Button
-              onClick={handleFetch}
-              disabled={loading || processing}
-              variant="primary"
-              iconLeft={
-                loading ? <Loader2 className="animate-spin" size={16} /> :
-                processing ? <Loader2 className="animate-spin" size={16} /> :
-                <Search size={16} />
-              }
-            >
-              {loading ? 'Fetching...' : processing ? 'Processing Data...' : 'Analyze Data'}
-            </Button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <label style={{ display: "flex", alignItems: "center", cursor: "pointer", marginRight: "1rem" }} title="Check this to force recomputation from raw telemetry instead of using scheduled pre-calculated results">
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={recompute}
+                      onChange={(e) => setRecompute(e.target.checked)}
+                      style={{ position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", borderWidth: 0 }}
+                    />
+                    <div style={{ width: "2.5rem", height: "1.5rem", borderRadius: "999px", background: recompute ? "var(--brand)" : "var(--line)", transition: "all 0.2s" }}></div>
+                    <div style={{ position: "absolute", left: "0.25rem", top: "0.25rem", width: "1rem", height: "1rem", background: "var(--bg-elev)", borderRadius: "50%", transition: "all 0.2s", transform: recompute ? "translateX(1rem)" : "none" }}></div>
+                  </div>
+                  <div style={{ marginLeft: "0.75rem", fontSize: "0.85rem", fontWeight: "bold" }}>
+                    Re-calculation
+                  </div>
+                </label>
+                <Button
+                  onClick={handleFetch}
+                  disabled={loading || processing}
+                  variant="primary"
+                  iconLeft={
+                    loading ? <Loader2 className="animate-spin" size={16} /> :
+                      processing ? <Loader2 className="animate-spin" size={16} /> :
+                        <Search size={16} />
+                  }
+                >
+                  {loading ? 'Fetching...' : processing ? 'Processing Data...' : 'Analyze Data'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
         <main className="page-content panel" style={{ padding: "1.5rem", flex: 1 }}>
           {error && (
@@ -513,10 +512,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
           )}
 
           {(loading || processing) && (
-            <div className="route-loading panel">
-              <Loader2 className="ev-loader" />
-              <p className="font-medium animate-pulse">{loading ? "Downloading data from MongoDB..." : "Running LTTB Downsampling Algorithm..."}</p>
-              <p>This may take a moment for large timeframes.</p>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", gap: "1rem" }}>
+              <EVChargingLoader label={loading ? "Downloading data from MongoDB…" : "Running LTTB Downsampling Algorithm…"} />
+              <p style={{ fontSize: "0.8rem", color: "var(--text-soft)", margin: 0 }}>This may take a moment for large timeframes.</p>
             </div>
           )}
 
@@ -611,7 +609,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         aria-labelledby="tab-live"
         hidden={activeTab !== "live"}
       >
-        <LiveDashboard key={community} community={community} buildings={buildings} />
+        <LiveDashboard key={community} community={community} buildings={buildings} isActive={activeTab === "live"} />
       </div>
     </div>
   );

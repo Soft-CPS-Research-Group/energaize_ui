@@ -228,7 +228,7 @@ export function KpiExplorer() {
     : "Choose a community or building from the left panel";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", paddingBottom: "2rem" }} className="page">
+    <div className="page">
       {/* Header */}
       <header className="jobs-hero">
         <div>
@@ -252,9 +252,9 @@ export function KpiExplorer() {
       )}
 
       {!isLoading && !commError && (
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }} >
           {/* ── Left Tree Panel ──────────────────────────────────────────── */}
-          <aside style={{ width: "16rem", flexShrink: 0, borderRight: "1px solid #e5e7eb", backgroundColor: "var(--bg-elev)", overflowY: "auto" }}>
+          < aside style={{ width: "16rem", flexShrink: 0, borderRight: "1px solid #e5e7eb", backgroundColor: "var(--bg-elev)", overflowY: "auto" }}>
             <div style={{ padding: "0.75rem" }}>
               <p style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-soft)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "0.25rem 0.5rem", margin: 0 }}>
                 Communities
@@ -367,7 +367,8 @@ export function KpiExplorer() {
             )}
           </main>
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 }
