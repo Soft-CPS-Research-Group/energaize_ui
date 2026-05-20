@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -57,6 +57,11 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { StatusPill } from "../../components/ui/StatusPill";
 import {
+  NetworkArchitectureGraph,
+  type NetworkArchitectureRow,
+  type NetworkArchitectureStat
+} from "../../components/ai/NetworkArchitectureGraph";
+import {
   findSimulationDataDir,
   findSimulationDataSessionDefault,
   getSimulationDataIndex,
@@ -81,11 +86,13 @@ import { isCompletedForResults } from "../../utils/jobStatus";
 import {
   buildKpiMeta,
   formatKpiFamilyLabel,
+  formatKpiReferenceLabel,
   groupRowsByFamilySubfamily,
   groupScopedKpis,
   isKpiGroupUsed,
   sortKpiFamilies,
   pickPrimaryValueForGroup,
+  resolveKpiReferenceSource,
   scoreKpiGroupTone,
   type KpiFamily,
   type KpiLevel,
@@ -119,6 +126,7 @@ import {
   type TimeseriesPreset
 } from "../../utils/timeseriesGranularity";
 import { formatDateTime, formatDurationSeconds } from "../../utils/time";
+import { parseOnnxGraph, type OnnxGraphSummary, type OnnxNodeSummary } from "../../utils/onnxGraph";
 import { DayPicker } from "react-day-picker";
 
 const DETAIL_TABS = ["overview", "timeseries", "kpis", "deploy"] as const;
@@ -182,7 +190,18 @@ interface DeployArtifactRow {
   buildingId: number | null;
   format: string | null;
   path: string;
+  observationDimension: number | null;
+  actionDimension: number | null;
+  actionNames: string[];
   onnxUrl: string | null;
+}
+
+interface DeployManifestContract {
+  observations: string[];
+  actions: string[];
+  rewardName: string | null;
+  rewardParamCount: number;
+  wrapperRewardEnabled: boolean | null;
 }
 
 interface KpiHighlightConfig {
@@ -201,101 +220,127 @@ interface KpiHighlightRow {
   control: number | null;
   baseline: number | null;
   delta: number | null;
+  referenceLabel: string;
   tone: "better" | "worse" | "neutral" | "unknown";
   hasComparable: boolean;
 }
 
 const DISTRICT_HIGHLIGHTS: KpiHighlightConfig[] = [
   {
-    title: "Cost",
-    candidates: ["district_cost_ratio_to_baseline_total_ratio", "district_cost_total_control_eur"]
-  },
-  {
-    title: "Emissions",
-    candidates: ["district_emissions_ratio_to_baseline_total_ratio", "district_emissions_total_control_kgco2"]
-  },
-  {
-    title: "Grid Import",
+    title: "Community Cost",
     candidates: [
-      "district_energy_grid_ratio_to_baseline_import_total_ratio",
-      "district_energy_grid_total_import_control_kwh"
+      "district_community_settled_cost_total_eur",
+      "district_cost_total_control_eur",
+      "district_cost_ratio_to_business_as_usual_total_ratio"
     ]
   },
   {
-    title: "Peak Quality",
+    title: "EV Min SOC",
     candidates: [
-      "district_energy_grid_shape_quality_peak_daily_average_to_baseline_ratio",
-      "district_energy_grid_shape_quality_peak_all_time_average_to_baseline_ratio"
+      "district_ev_performance_departure_min_acceptable_feasible_ratio",
+      "district_ev_performance_departure_min_acceptable_ratio"
     ]
   },
   {
-    title: "Solar Self-Consumption",
+    title: "EV Target Band",
     candidates: [
-      "district_solar_self_consumption_ratio_self_consumption_ratio",
-      "district_solar_self_consumption_community_market_import_share_ratio"
-    ]
-  },
-  {
-    title: "EV Departure Success",
-    candidates: [
-      "district_ev_performance_departure_success_ratio",
+      "district_ev_performance_departure_within_tolerance_feasible_ratio",
       "district_ev_performance_departure_within_tolerance_ratio"
     ]
   },
   {
-    title: "Battery Capacity Fade",
+    title: "Grid Violations",
     candidates: [
-      "district_battery_health_capacity_fade_ratio",
+      "district_electrical_service_phase_violations_energy_total_kwh",
+      "district_electrical_service_phase_violations_event_count"
+    ]
+  },
+  {
+    title: "Peak",
+    candidates: [
+      "district_energy_grid_shape_quality_peak_daily_average_to_business_as_usual_ratio",
+      "district_energy_grid_shape_quality_peak_all_time_average_to_business_as_usual_ratio",
+      "district_energy_grid_shape_quality_peak_daily_average_control_kw"
+    ]
+  },
+  {
+    title: "Battery Throughput",
+    candidates: [
+      "district_battery_total_throughput_kwh",
+      "district_battery_ratio_to_business_as_usual_throughput_ratio",
       "district_battery_health_equivalent_full_cycles_count"
     ]
   },
   {
-    title: "Equity Gini",
+    title: "Net Exchange",
     candidates: [
-      "district_equity_distribution_gini_benefit_ratio",
-      "district_equity_distribution_top20_benefit_ratio"
+      "district_energy_grid_total_net_exchange_control_kwh",
+      "district_energy_grid_ratio_to_business_as_usual_net_exchange_total_ratio",
+      "district_energy_grid_total_import_control_kwh"
     ]
+  },
+  {
+    title: "V2G Export",
+    candidates: ["district_ev_total_v2g_export_kwh", "district_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
   }
 ];
 
 const BUILDING_HIGHLIGHTS: KpiHighlightConfig[] = [
   {
     title: "Cost",
-    candidates: ["building_cost_ratio_to_baseline_total_ratio", "building_cost_total_control_eur"]
+    candidates: [
+      "building_cost_total_control_eur",
+      "building_cost_ratio_to_business_as_usual_total_ratio",
+      "building_cost_daily_average_control_eur"
+    ]
   },
   {
-    title: "Emissions",
-    candidates: ["building_emissions_ratio_to_baseline_total_ratio", "building_emissions_total_control_kgco2"]
+    title: "EV Min SOC",
+    candidates: [
+      "building_ev_performance_departure_min_acceptable_feasible_ratio",
+      "building_ev_performance_departure_min_acceptable_ratio"
+    ]
+  },
+  {
+    title: "EV Target Band",
+    candidates: [
+      "building_ev_performance_departure_within_tolerance_feasible_ratio",
+      "building_ev_performance_departure_within_tolerance_ratio"
+    ]
+  },
+  {
+    title: "Grid Violations",
+    candidates: [
+      "building_electrical_service_phase_violations_energy_total_kwh",
+      "building_electrical_service_phase_violations_event_count"
+    ]
   },
   {
     title: "Grid Import",
     candidates: [
-      "building_energy_grid_ratio_to_baseline_import_total_ratio",
-      "building_energy_grid_total_import_control_kwh"
+      "building_energy_grid_total_import_control_kwh",
+      "building_energy_grid_ratio_to_business_as_usual_import_total_ratio"
     ]
   },
   {
-    title: "Solar Self-Consumption",
-    candidates: ["building_solar_self_consumption_ratio_self_consumption_ratio", "building_solar_self_consumption_total_generation_kwh"]
-  },
-  {
-    title: "EV Departure Success",
-    candidates: ["building_ev_performance_departure_success_ratio", "building_ev_performance_departure_within_tolerance_ratio"]
-  },
-  {
-    title: "Battery Capacity Fade",
-    candidates: ["building_battery_health_capacity_fade_ratio", "building_battery_health_equivalent_full_cycles_count"]
-  },
-  {
-    title: "Equity Benefit",
-    candidates: ["building_equity_benefit_relative_percent", "building_equity_distribution_top20_benefit_ratio"]
-  },
-  {
-    title: "Discomfort",
+    title: "Battery Throughput",
     candidates: [
-      "building_comfort_resilience_discomfort_overall_ratio",
-      "building_comfort_resilience_resilience_one_minus_thermal_ratio"
+      "building_battery_total_throughput_kwh",
+      "building_battery_ratio_to_business_as_usual_throughput_ratio",
+      "building_battery_health_equivalent_full_cycles_count"
     ]
+  },
+  {
+    title: "Deferrable Service",
+    candidates: [
+      "building_deferrable_appliance_service_service_level_ratio",
+      "building_deferrable_appliance_service_unserved_energy_total_kwh",
+      "building_deferrable_appliance_ratio_to_business_as_usual_service_level_ratio"
+    ]
+  },
+  {
+    title: "V2G Export",
+    candidates: ["building_ev_total_v2g_export_kwh", "building_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
   }
 ];
 
@@ -396,6 +441,84 @@ function readNumberValue(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function readNumberArrayValue(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(readNumberValue).filter((item): item is number => item !== null);
+}
+
+function readStringArrayValue(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(readStringValue).filter((item): item is string => Boolean(item));
+}
+
+function readBooleanValue(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return null;
+}
+
+function formatDimensionValue(value: number | null | undefined, singular: string, plural: string = `${singular}s`): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  return `${value.toLocaleString("en-US")} ${value === 1 ? singular : plural}`;
+}
+
+function formatDimensionRange(values: number[], singular: string, plural: string = `${singular}s`): string | null {
+  const valid = values.filter((value) => Number.isFinite(value));
+  if (valid.length === 0) return null;
+  const min = Math.min(...valid);
+  const max = Math.max(...valid);
+  if (min === max) return formatDimensionValue(min, singular, plural);
+  return `${min.toLocaleString("en-US")}-${max.toLocaleString("en-US")} ${plural}`;
+}
+
+function compactFeatureName(value: string): string {
+  return value
+    .replace(/^connected_electric_vehicle_at_charger_/, "ev@")
+    .replace(/^incoming_electric_vehicle_at_charger_/, "incoming ev@")
+    .replace(/^electric_vehicle_charger_/, "charger ")
+    .replace(/^electric_vehicle_storage_/, "ev storage ")
+    .replace(/_predicted_/g, " t+")
+    .replace(/_/g, " ");
+}
+
+function shortNodeName(node: OnnxNodeSummary): string {
+  if (node.name.trim()) return node.name.trim().split("/").filter(Boolean).pop() || node.name.trim();
+  return node.outputs[0] || node.opType;
+}
+
+function visualOnnxLayers(graph: OnnxGraphSummary | undefined): NetworkArchitectureRow["layers"] {
+  if (!graph) return [];
+  const meaningful = graph.nodes.filter((node) => {
+    if (node.opType === "Constant" || node.opType === "Identity" || node.opType === "Shape") return false;
+    return true;
+  });
+  const nodes = meaningful.length > 0 ? meaningful : graph.nodes;
+  return nodes.slice(0, 14).map((node, index) => ({
+    label: node.opType || `Node ${index + 1}`,
+    size: node.inferredSize,
+    detail: shortNodeName(node)
+  }));
+}
+
+function topOperatorLabel(graph: OnnxGraphSummary | undefined): string {
+  if (!graph || graph.operatorCounts.length === 0) return "-";
+  return graph.operatorCounts
+    .slice(0, 4)
+    .map((entry) => `${entry.opType} x${entry.count}`)
+    .join(", ");
+}
+
+function readAgentStringArray(value: unknown, agentIndex: number | null): string[] {
+  if (agentIndex === null) return [];
+  if (Array.isArray(value)) return readStringArrayValue(value[agentIndex]);
+  const record = asRecord(value);
+  return readStringArrayValue(record?.[String(agentIndex)]);
 }
 
 function readStringFrom(source: Record<string, unknown> | null, keys: string[]): string | null {
@@ -1315,6 +1438,7 @@ function resolveScopeHighlights(rows: KpiMetricGroupRow[], level: KpiLevel | nul
       control: best?.control ?? null,
       baseline: best?.baseline ?? null,
       delta: best?.delta ?? null,
+      referenceLabel: formatKpiReferenceLabel(best ? resolveKpiReferenceSource(best) : null),
       tone,
       hasComparable
     };
@@ -1330,6 +1454,264 @@ function nodeIcon(kind: SimulationTreeNode["kind"]): JSX.Element {
   if (kind === "pricing") return <CircleDollarSign size={14} />;
   if (kind === "group") return <FolderTree size={14} />;
   return <ChevronRight size={14} />;
+}
+
+interface ManifestSignalGroup {
+  id: string;
+  title: string;
+  summary: string;
+  items: string[];
+  icon: ReactNode;
+}
+
+const OBSERVATION_GROUP_ORDER = ["time", "weather", "grid", "building", "storage", "ev", "deferrable", "other"];
+const ACTION_GROUP_ORDER = ["storage", "ev", "deferrable", "other"];
+
+function observationGroupId(value: string): string {
+  const normalized = value.toLowerCase();
+  if (/(^|_)month$|day_type|(^|_)hour$|time_step|timestamp/.test(normalized)) return "time";
+  if (normalized.includes("outdoor") || normalized.includes("temperature") || normalized.includes("humidity")) {
+    return "weather";
+  }
+  if (normalized.includes("irradiance")) return "weather";
+  if (normalized.includes("pricing") || normalized.includes("carbon") || normalized.includes("grid")) return "grid";
+  if (normalized.includes("net_electricity")) return "grid";
+  if (
+    normalized.includes("electric_vehicle") ||
+    normalized.includes("vehicle") ||
+    normalized.includes("charger") ||
+    normalized.includes("departure") ||
+    normalized.includes("arrival") ||
+    normalized.includes("required_soc")
+  ) {
+    return "ev";
+  }
+  if (normalized.includes("storage") || normalized.includes("battery") || normalized.endsWith("_soc")) return "storage";
+  if (
+    normalized.includes("washing") ||
+    normalized.includes("dishwasher") ||
+    normalized.includes("dryer") ||
+    normalized.includes("deferrable")
+  ) {
+    return "deferrable";
+  }
+  if (normalized.includes("load") || normalized.includes("solar_generation") || normalized.includes("building")) return "building";
+  return "other";
+}
+
+function actionGroupId(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("electric_vehicle") || normalized.includes("charger")) return "ev";
+  if (normalized.includes("storage") || normalized.includes("battery")) return "storage";
+  if (
+    normalized.includes("washing") ||
+    normalized.includes("dishwasher") ||
+    normalized.includes("dryer") ||
+    normalized.includes("deferrable")
+  ) {
+    return "deferrable";
+  }
+  return "other";
+}
+
+function signalGroupMeta(id: string, direction: "observations" | "actions"): Omit<ManifestSignalGroup, "items"> {
+  const common: Record<string, Omit<ManifestSignalGroup, "items">> = {
+    time: {
+      id,
+      title: "Time context",
+      summary: "Calendar and timestep signals",
+      icon: <CalendarDays size={15} />
+    },
+    weather: {
+      id,
+      title: "Weather and solar",
+      summary: "Outdoor conditions and forecasts",
+      icon: <Sun size={15} />
+    },
+    grid: {
+      id,
+      title: "Grid and market",
+      summary: "Pricing, carbon and net electricity",
+      icon: <Zap size={15} />
+    },
+    building: {
+      id,
+      title: "Building demand",
+      summary: "Load and local generation",
+      icon: <Building2 size={15} />
+    },
+    storage: {
+      id,
+      title: direction === "actions" ? "Storage control" : "Storage state",
+      summary: direction === "actions" ? "Battery dispatch actions" : "Battery and SOC signals",
+      icon: <BatteryCharging size={15} />
+    },
+    ev: {
+      id,
+      title: direction === "actions" ? "EV charging" : "EV and chargers",
+      summary: direction === "actions" ? "Vehicle charging commands" : "Connection, SOC and departure signals",
+      icon: <Car size={15} />
+    },
+    deferrable: {
+      id,
+      title: direction === "actions" ? "Deferrable loads" : "Flexible appliances",
+      summary: direction === "actions" ? "Start/stop load commands" : "Appliance windows and deadlines",
+      icon: <Gauge size={15} />
+    },
+    other: {
+      id,
+      title: direction === "actions" ? "Other controls" : "Other signals",
+      summary: "Manifest fields outside known groups",
+      icon: <FileText size={15} />
+    }
+  };
+  return common[id] || common.other;
+}
+
+function buildSignalGroups(items: string[], direction: "observations" | "actions"): ManifestSignalGroup[] {
+  const order = direction === "observations" ? OBSERVATION_GROUP_ORDER : ACTION_GROUP_ORDER;
+  const grouped = new Map<string, string[]>();
+  items.forEach((item) => {
+    const id = direction === "observations" ? observationGroupId(item) : actionGroupId(item);
+    grouped.set(id, [...(grouped.get(id) || []), item]);
+  });
+  return Array.from(grouped.entries())
+    .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
+    .map(([id, groupItems]) => ({
+      ...signalGroupMeta(id, direction),
+      items: groupItems
+    }));
+}
+
+function ManifestSignalPanel({
+  title,
+  subtitle,
+  items,
+  direction,
+  emptyLabel = "-"
+}: {
+  title: string;
+  subtitle?: string;
+  items: string[];
+  direction: "observations" | "actions";
+  emptyLabel?: string;
+}): JSX.Element {
+  const groups = buildSignalGroups(items, direction);
+  return (
+    <article className={`deploy-signal-panel is-${direction}`}>
+      <header className="deploy-signal-panel-head">
+        <div>
+          <h4>{title}</h4>
+          {subtitle ? <small>{subtitle}</small> : null}
+        </div>
+        <strong>{items.length}</strong>
+      </header>
+      {groups.length > 0 ? (
+        <div className="deploy-signal-groups">
+          {groups.map((group) => {
+            const visible = group.items.slice(0, 5);
+            const hidden = group.items.slice(5);
+            return (
+              <section key={group.id} className={`deploy-signal-group is-${group.id}`}>
+                <header>
+                  <span className="deploy-signal-icon">{group.icon}</span>
+                  <div>
+                    <h5>{group.title}</h5>
+                    <small>{group.summary}</small>
+                  </div>
+                  <strong>{group.items.length}</strong>
+                </header>
+                <ul>
+                  {visible.map((item, index) => (
+                    <li key={item}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <strong>{compactFeatureName(item)}</strong>
+                    </li>
+                  ))}
+                </ul>
+                {hidden.length > 0 ? (
+                  <details>
+                    <summary>Show {hidden.length} more</summary>
+                    <ul>
+                      {hidden.map((item, index) => (
+                        <li key={item}>
+                          <span>{String(index + visible.length + 1).padStart(2, "0")}</span>
+                          <strong>{compactFeatureName(item)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="jobs-meta">{emptyLabel}</p>
+      )}
+    </article>
+  );
+}
+
+function OnnxGraphDetails({
+  graph,
+  loading,
+  error
+}: {
+  graph: OnnxGraphSummary | undefined;
+  loading: boolean;
+  error: boolean;
+}): JSX.Element {
+  if (loading) {
+    return (
+      <section className="deploy-onnx-details">
+        <EVChargingLoader label="Inspecting ONNX graph..." />
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="deploy-onnx-details">
+        <p className="error-text">Could not inspect this ONNX graph.</p>
+      </section>
+    );
+  }
+
+  if (!graph || graph.nodes.length === 0) {
+    return (
+      <section className="deploy-onnx-details">
+        <p className="jobs-meta">No ONNX graph internals available for this model.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="deploy-onnx-details">
+      <header>
+        <h4>ONNX internals</h4>
+        <small>{graph.nodes.length} operators, {graph.initializers.length} tensors</small>
+      </header>
+      <div className="deploy-operator-strip">
+        {graph.operatorCounts.slice(0, 8).map((entry) => (
+          <span key={entry.opType}>
+            <strong>{entry.opType}</strong>
+            <small>x{entry.count}</small>
+          </span>
+        ))}
+      </div>
+      <ol className="deploy-node-list">
+        {graph.nodes.slice(0, 18).map((node, index) => (
+          <li key={`${node.opType}-${node.name}-${index}`}>
+            <span>{index + 1}</span>
+            <strong>{node.opType}</strong>
+            <small>{shortNodeName(node)}</small>
+            {node.inferredSize ? <em>{node.inferredSize.toLocaleString("en-US")}</em> : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
 }
 
 function TimeseriesTreeNode({
@@ -2594,6 +2976,9 @@ export function JobDetailPage(): JSX.Element {
           buildingId,
           format,
           path: normalizedPath,
+          observationDimension: readNumberValue(record.observation_dimension),
+          actionDimension: readNumberValue(record.action_dimension),
+          actionNames: readStringArrayValue(asRecord(config)?.action_order),
           onnxUrl: resolveExampleOnnxAssetUrl(jobId, normalizedPath)
         };
       })
@@ -2632,6 +3017,209 @@ export function JobDetailPage(): JSX.Element {
       modelCount: deployAgentArtifacts.length
     };
   }, [deployAgentArtifacts.length, deployManifestQuery.data?.manifest]);
+
+  const selectedOnnxGraphQuery = useQuery({
+    queryKey: [
+      "deploy-onnx-graph",
+      jobId,
+      selectedDeployOnnx?.path || "",
+      selectedDeployOnnx?.onnxUrl || "",
+      deployManifestQuery.data?.source || "none",
+      deployManifestQuery.data?.backendBasePrefix || "",
+      simulationIndexQuery.data?.session || "latest"
+    ],
+    queryFn: async (): Promise<OnnxGraphSummary> => {
+      if (!selectedDeployOnnx) {
+        return { nodes: [], initializers: [], inputs: [], outputs: [], operatorCounts: [] };
+      }
+
+      let buffer: ArrayBuffer | null = null;
+      if (selectedDeployOnnx.onnxUrl) {
+        const response = await fetch(selectedDeployOnnx.onnxUrl);
+        if (!response.ok) throw new Error("Could not fetch example ONNX model.");
+        buffer = await response.arrayBuffer();
+      } else if (deployManifestQuery.data?.source === "backend") {
+        const downloaded = await readBackendBundleFileAsBlob(
+          jobId,
+          simulationIndexQuery.data?.session || "latest",
+          selectedDeployOnnx.path,
+          deployManifestQuery.data.backendBasePrefix
+        );
+        if (!downloaded) throw new Error("Could not fetch backend ONNX model.");
+        buffer = await downloaded.blob.arrayBuffer();
+      }
+
+      if (!buffer) {
+        return { nodes: [], initializers: [], inputs: [], outputs: [], operatorCounts: [] };
+      }
+      return parseOnnxGraph(buffer);
+    },
+    enabled: Boolean(activeTab === "deploy" && isCompleted && selectedDeployScopeId !== "community" && selectedDeployOnnx),
+    staleTime: Infinity
+  });
+
+  const selectedDeployContract = useMemo<DeployManifestContract | null>(() => {
+    const manifest = deployManifestQuery.data?.manifest;
+    if (!manifest || !selectedDeployOnnx) return null;
+    const agentIndex = selectedDeployOnnx.agentIndex;
+    const environment = asRecord(manifest.environment);
+    const rewardFunction = asRecord(environment?.reward_function);
+    const wrapperReward = asRecord(environment?.wrapper_reward);
+    const rewardParams = asRecord(rewardFunction?.params);
+    const observations = readAgentStringArray(environment?.observation_names, agentIndex);
+    const manifestActions = readAgentStringArray(environment?.action_names_by_agent, agentIndex);
+    const actions = manifestActions.length > 0 ? manifestActions : selectedDeployOnnx.actionNames;
+
+    return {
+      observations,
+      actions,
+      rewardName: readStringValue(rewardFunction?.name),
+      rewardParamCount: rewardParams ? Object.keys(rewardParams).length : 0,
+      wrapperRewardEnabled: readBooleanValue(wrapperReward?.enabled)
+    };
+  }, [deployManifestQuery.data?.manifest, selectedDeployOnnx]);
+
+  const deployManifestVisualSummary = useMemo(() => {
+    const manifest = deployManifestQuery.data?.manifest;
+    if (!manifest) return null;
+    const topology = asRecord(manifest.topology);
+    const environment = asRecord(manifest.environment);
+    const rewardFunction = asRecord(environment?.reward_function);
+    const wrapperReward = asRecord(environment?.wrapper_reward);
+    const observationGroups = Array.isArray(environment?.observation_names)
+      ? environment.observation_names.map(readStringArrayValue)
+      : [];
+    const actionNamesByAgent = asRecord(environment?.action_names_by_agent);
+    const actionGroups = actionNamesByAgent
+      ? Object.values(actionNamesByAgent).map(readStringArrayValue)
+      : [];
+    const totalObservationNames = observationGroups.reduce((total, group) => total + group.length, 0);
+    const uniqueObservationNames = new Set(observationGroups.flat()).size;
+    const totalActionNames = actionGroups.reduce((total, group) => total + group.length, 0);
+    const rewardParams = asRecord(rewardFunction?.params);
+
+    return {
+      agents: readNumberValue(topology?.num_agents),
+      observationGroups: observationGroups.length,
+      totalObservationNames,
+      uniqueObservationNames,
+      totalActionNames,
+      rewardName: readStringValue(rewardFunction?.name),
+      rewardParamCount: rewardParams ? Object.keys(rewardParams).length : 0,
+      wrapperRewardEnabled: readBooleanValue(wrapperReward?.enabled)
+    };
+  }, [deployManifestQuery.data?.manifest]);
+
+  const deployArchitecture = useMemo<{
+    rows: NetworkArchitectureRow[];
+    stats: NetworkArchitectureStat[];
+    description: string;
+  }>(() => {
+    const manifest = deployManifestQuery.data?.manifest;
+    const topology = asRecord(manifest?.topology);
+    const observationDimensions = readNumberArrayValue(topology?.observation_dimensions);
+    const actionDimensions = readNumberArrayValue(topology?.action_dimensions);
+    const numAgents =
+      readNumberValue(topology?.num_agents) ||
+      deployAgentArtifacts.length ||
+      observationDimensions.length ||
+      actionDimensions.length ||
+      null;
+    const totalActionDimensions = actionDimensions.reduce((total, value) => total + value, 0);
+    const observationRange = formatDimensionRange(observationDimensions, "input dim", "input dims");
+    const actionRange = formatDimensionRange(actionDimensions, "action dim", "action dims");
+
+    if (selectedDeployScopeId !== "community" && selectedDeployOnnx) {
+      const agentIndex = selectedDeployOnnx.agentIndex;
+      const onnxLayers = visualOnnxLayers(selectedOnnxGraphQuery.data);
+      const observationDimension =
+        selectedDeployOnnx.observationDimension ??
+        (agentIndex !== null ? observationDimensions[agentIndex] : null) ??
+        null;
+      const actionDimension =
+        selectedDeployOnnx.actionDimension ??
+        (agentIndex !== null ? actionDimensions[agentIndex] : null) ??
+        null;
+      const fileName = selectedDeployOnnx.path.split("/").filter(Boolean).pop() || selectedDeployOnnx.path;
+      const rows: NetworkArchitectureRow[] = [
+        {
+          id: `agent-${agentIndex ?? selectedDeployOnnx.path}`,
+          label: selectedDeployBuildingScope?.label || `Agent ${agentIndex ?? "-"}`,
+          inputLabel: "Observations",
+          inputDetail: formatDimensionValue(observationDimension, "feature"),
+          outputLabel: "Actions",
+          outputDetail: formatDimensionValue(actionDimension, "control"),
+          accent: "#16a34a",
+          layers: onnxLayers.length > 0 ? onnxLayers : [
+            {
+              label: "ONNX policy",
+              detail: fileName,
+              size: null
+            }
+          ]
+        }
+      ];
+      return {
+        rows,
+        stats: [
+          { label: "Agent", value: agentIndex !== null ? agentIndex : "-" },
+          { label: "Input", value: formatDimensionValue(observationDimension, "dim") || "-" },
+          { label: "Output", value: formatDimensionValue(actionDimension, "dim") || "-" },
+          { label: "Operators", value: selectedOnnxGraphQuery.data?.nodes.length || "-" },
+          { label: "Top ops", value: topOperatorLabel(selectedOnnxGraphQuery.data) }
+        ],
+        description:
+          onnxLayers.length > 0
+            ? "Parsed from this building's ONNX graph, with manifest observation/action dimensions."
+            : "Loaded from this building's deployed artifact record."
+      };
+    }
+
+    if (!manifest && deployAgentArtifacts.length === 0) {
+      return { rows: [], stats: [], description: "" };
+    }
+
+    const rows: NetworkArchitectureRow[] = [
+      {
+        id: "community-policy-bundle",
+        label: "Policy bundle",
+        inputLabel: "Agents",
+        inputDetail: numAgents ? formatDimensionValue(numAgents, "agent") : null,
+        outputLabel: "Control actions",
+        outputDetail:
+          totalActionDimensions > 0
+            ? formatDimensionValue(totalActionDimensions, "dim")
+            : actionRange,
+        accent: "#16a34a",
+        layers: [
+          {
+            label: "ONNX policies",
+            size: deployAgentArtifacts.length || numAgents,
+            detail: "trained agents"
+          }
+        ]
+      }
+    ];
+
+    return {
+      rows,
+      stats: [
+        { label: "Algorithm", value: deployManifestSummary.algorithmName },
+        { label: "Models", value: deployAgentArtifacts.length || "-" },
+        { label: "Inputs", value: observationRange || "-" },
+        { label: "Actions", value: actionRange || "-" }
+      ],
+      description: "Post-job topology from artifact_manifest.json, using the real observation and action dimensions."
+    };
+  }, [
+    deployAgentArtifacts.length,
+    deployManifestQuery.data?.manifest,
+    deployManifestSummary.algorithmName,
+    selectedOnnxGraphQuery.data,
+    selectedDeployBuildingScope?.label,
+    selectedDeployOnnx,
+    selectedDeployScopeId
+  ]);
 
   const kpiScopes = useMemo<KpiEntityScope[]>(() => {
     if (kpiRows.length === 0) return [];
@@ -4178,7 +4766,11 @@ export function JobDetailPage(): JSX.Element {
                               </header>
                               <strong>{formatHighlightNumber(item.value)}</strong>
                               <footer>
-                                <small>{item.hasComparable ? `Δ ${formatHighlightNumber(item.delta)}` : "No baseline comparison"}</small>
+                                <small>
+                                  {item.hasComparable
+                                    ? `Δ vs ${item.referenceLabel} ${formatHighlightNumber(item.delta)}`
+                                    : `No ${item.referenceLabel} comparison`}
+                                </small>
                                 <small>{item.unit || "-"}</small>
                               </footer>
                             </article>
@@ -4224,7 +4816,7 @@ export function JobDetailPage(): JSX.Element {
                                         <tr>
                                           <th>KPI</th>
                                           <th>Control</th>
-                                          <th>Baseline</th>
+                                          <th>Reference</th>
                                           <th>Delta</th>
                                           <th>Delta %</th>
                                           <th>Primary</th>
@@ -4268,7 +4860,12 @@ export function JobDetailPage(): JSX.Element {
                                                 </div>
                                               </td>
                                               <td>{formatNumber(row.control)}</td>
-                                              <td>{formatNumber(row.baseline)}</td>
+                                              <td>
+                                                <strong>{formatNumber(row.baseline)}</strong>
+                                                <small className="job-compare-secondary">
+                                                  {formatKpiReferenceLabel(resolveKpiReferenceSource(row))}
+                                                </small>
+                                              </td>
                                               <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
                                                 {formatNumber(row.delta)}
                                               </td>
@@ -4455,6 +5052,47 @@ export function JobDetailPage(): JSX.Element {
                               <strong>{deployManifestQuery.data.source}</strong>
                             </article>
                           </div>
+
+                          {deployManifestVisualSummary ? (
+                            <section className="deploy-manifest-map">
+                              <article>
+                                <small>Topology</small>
+                                <strong>{deployManifestVisualSummary.agents ?? deployAgentArtifacts.length} agents</strong>
+                                <span>{deployAgentArtifacts.length} ONNX artifacts</span>
+                              </article>
+                              <article>
+                                <small>Observations</small>
+                                <strong>{deployManifestVisualSummary.totalObservationNames} mapped inputs</strong>
+                                <span>{deployManifestVisualSummary.uniqueObservationNames} unique names</span>
+                              </article>
+                              <article>
+                                <small>Actions</small>
+                                <strong>{deployManifestVisualSummary.totalActionNames || "-"} named outputs</strong>
+                                <span>Per-agent action contracts</span>
+                              </article>
+                              <article>
+                                <small>Reward</small>
+                                <strong>{deployManifestVisualSummary.rewardName || "-"}</strong>
+                                <span>
+                                  {deployManifestVisualSummary.rewardParamCount} params
+                                  {deployManifestVisualSummary.wrapperRewardEnabled !== null
+                                    ? `, wrapper ${deployManifestVisualSummary.wrapperRewardEnabled ? "on" : "off"}`
+                                    : ""}
+                                </span>
+                              </article>
+                            </section>
+                          ) : null}
+
+                          {deployArchitecture.rows.length > 0 ? (
+                            <NetworkArchitectureGraph
+                              eyebrow="Completed model"
+                              title="Policy topology"
+                              description={deployArchitecture.description}
+                              rows={deployArchitecture.rows}
+                              stats={deployArchitecture.stats}
+                              className="job-model-architecture"
+                            />
+                          ) : null}
                         </article>
                       ) : (
                         <EmptyState
@@ -4491,7 +5129,60 @@ export function JobDetailPage(): JSX.Element {
                               <dt>Format</dt>
                               <dd>{selectedDeployOnnx.format || "onnx"}</dd>
                             </div>
+                            <div>
+                              <dt>Observation dims</dt>
+                              <dd>{formatDimensionValue(selectedDeployOnnx.observationDimension, "dim") || "-"}</dd>
+                            </div>
+                            <div>
+                              <dt>Action dims</dt>
+                              <dd>{formatDimensionValue(selectedDeployOnnx.actionDimension, "dim") || "-"}</dd>
+                            </div>
                           </dl>
+
+                          {deployArchitecture.rows.length > 0 ? (
+                            <NetworkArchitectureGraph
+                              eyebrow="Completed model"
+                              title="Building policy shape"
+                              description={deployArchitecture.description}
+                              rows={deployArchitecture.rows}
+                              stats={deployArchitecture.stats}
+                              className="job-model-architecture"
+                            />
+                          ) : null}
+
+                          <section className="deploy-io-panel">
+                            <header>
+                              <div>
+                                <h3>Manifest I/O contract</h3>
+                                <small>Observation names and action names resolved for this deployed agent.</small>
+                              </div>
+                              {selectedDeployContract?.rewardName ? (
+                                <span>{selectedDeployContract.rewardName}</span>
+                              ) : null}
+                            </header>
+                            <div className="deploy-io-grid">
+                              <ManifestSignalPanel
+                                title="Observations in"
+                                subtitle={`${selectedDeployOnnx.observationDimension ?? selectedDeployContract?.observations.length ?? 0} encoded dimensions`}
+                                items={selectedDeployContract?.observations || []}
+                                direction="observations"
+                                emptyLabel="The manifest did not expose observation names for this agent."
+                              />
+                              <ManifestSignalPanel
+                                title="Actions out"
+                                subtitle={`${selectedDeployOnnx.actionDimension ?? selectedDeployContract?.actions.length ?? 0} action dimensions`}
+                                items={selectedDeployContract?.actions || []}
+                                direction="actions"
+                                emptyLabel="The manifest did not expose action names for this agent."
+                              />
+                            </div>
+                          </section>
+
+                          <OnnxGraphDetails
+                            graph={selectedOnnxGraphQuery.data}
+                            loading={selectedOnnxGraphQuery.isLoading || selectedOnnxGraphQuery.isFetching}
+                            error={selectedOnnxGraphQuery.isError}
+                          />
 
                           <div className="deploy-card-actions">
                             <Button

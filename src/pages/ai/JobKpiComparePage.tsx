@@ -28,6 +28,7 @@ import {
   buildGroupedKpiCompareRows,
   buildKpiMeta,
   formatKpiFamilyLabel,
+  formatKpiReferenceLabel,
   groupRowsByFamilySubfamily,
   sortKpiFamilies,
   stripKpiLevel,
@@ -91,95 +92,120 @@ interface HighlightRow {
 
 const DISTRICT_HIGHLIGHTS: HighlightConfig[] = [
   {
-    title: "Cost",
-    candidates: ["district_cost_ratio_to_baseline_total_ratio", "district_cost_total_control_eur"]
-  },
-  {
-    title: "Emissions",
-    candidates: ["district_emissions_ratio_to_baseline_total_ratio", "district_emissions_total_control_kgco2"]
-  },
-  {
-    title: "Grid Import",
+    title: "Community Cost",
     candidates: [
-      "district_energy_grid_ratio_to_baseline_import_total_ratio",
-      "district_energy_grid_total_import_control_kwh"
+      "district_community_settled_cost_total_eur",
+      "district_cost_total_control_eur",
+      "district_cost_ratio_to_business_as_usual_total_ratio"
     ]
   },
   {
-    title: "Peak Quality",
+    title: "EV Min SOC",
     candidates: [
-      "district_energy_grid_shape_quality_peak_daily_average_to_baseline_ratio",
-      "district_energy_grid_shape_quality_peak_all_time_average_to_baseline_ratio"
+      "district_ev_performance_departure_min_acceptable_feasible_ratio",
+      "district_ev_performance_departure_min_acceptable_ratio"
     ]
   },
   {
-    title: "Solar Self-Consumption",
+    title: "EV Target Band",
     candidates: [
-      "district_solar_self_consumption_ratio_self_consumption_ratio",
-      "district_solar_self_consumption_community_market_import_share_ratio"
-    ]
-  },
-  {
-    title: "EV Departure Success",
-    candidates: [
-      "district_ev_performance_departure_success_ratio",
+      "district_ev_performance_departure_within_tolerance_feasible_ratio",
       "district_ev_performance_departure_within_tolerance_ratio"
     ]
   },
   {
-    title: "Battery Capacity Fade",
+    title: "Grid Violations",
     candidates: [
-      "district_battery_health_capacity_fade_ratio",
+      "district_electrical_service_phase_violations_energy_total_kwh",
+      "district_electrical_service_phase_violations_event_count"
+    ]
+  },
+  {
+    title: "Peak",
+    candidates: [
+      "district_energy_grid_shape_quality_peak_daily_average_to_business_as_usual_ratio",
+      "district_energy_grid_shape_quality_peak_all_time_average_to_business_as_usual_ratio",
+      "district_energy_grid_shape_quality_peak_daily_average_control_kw"
+    ]
+  },
+  {
+    title: "Battery Throughput",
+    candidates: [
+      "district_battery_total_throughput_kwh",
+      "district_battery_ratio_to_business_as_usual_throughput_ratio",
       "district_battery_health_equivalent_full_cycles_count"
     ]
   },
   {
-    title: "Equity Gini",
+    title: "Net Exchange",
     candidates: [
-      "district_equity_distribution_gini_benefit_ratio",
-      "district_equity_distribution_top20_benefit_ratio"
+      "district_energy_grid_total_net_exchange_control_kwh",
+      "district_energy_grid_ratio_to_business_as_usual_net_exchange_total_ratio",
+      "district_energy_grid_total_import_control_kwh"
     ]
+  },
+  {
+    title: "V2G Export",
+    candidates: ["district_ev_total_v2g_export_kwh", "district_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
   }
 ];
 
 const BUILDING_HIGHLIGHTS: HighlightConfig[] = [
   {
     title: "Cost",
-    candidates: ["building_cost_ratio_to_baseline_total_ratio", "building_cost_total_control_eur"]
+    candidates: [
+      "building_cost_total_control_eur",
+      "building_cost_ratio_to_business_as_usual_total_ratio",
+      "building_cost_daily_average_control_eur"
+    ]
   },
   {
-    title: "Emissions",
-    candidates: ["building_emissions_ratio_to_baseline_total_ratio", "building_emissions_total_control_kgco2"]
+    title: "EV Min SOC",
+    candidates: [
+      "building_ev_performance_departure_min_acceptable_feasible_ratio",
+      "building_ev_performance_departure_min_acceptable_ratio"
+    ]
+  },
+  {
+    title: "EV Target Band",
+    candidates: [
+      "building_ev_performance_departure_within_tolerance_feasible_ratio",
+      "building_ev_performance_departure_within_tolerance_ratio"
+    ]
+  },
+  {
+    title: "Grid Violations",
+    candidates: [
+      "building_electrical_service_phase_violations_energy_total_kwh",
+      "building_electrical_service_phase_violations_event_count"
+    ]
   },
   {
     title: "Grid Import",
     candidates: [
-      "building_energy_grid_ratio_to_baseline_import_total_ratio",
-      "building_energy_grid_total_import_control_kwh"
+      "building_energy_grid_total_import_control_kwh",
+      "building_energy_grid_ratio_to_business_as_usual_import_total_ratio"
     ]
   },
   {
-    title: "Solar Self-Consumption",
-    candidates: ["building_solar_self_consumption_ratio_self_consumption_ratio", "building_solar_self_consumption_total_generation_kwh"]
-  },
-  {
-    title: "EV Departure Success",
-    candidates: ["building_ev_performance_departure_success_ratio", "building_ev_performance_departure_within_tolerance_ratio"]
-  },
-  {
-    title: "Battery Capacity Fade",
-    candidates: ["building_battery_health_capacity_fade_ratio", "building_battery_health_equivalent_full_cycles_count"]
-  },
-  {
-    title: "Equity Benefit",
-    candidates: ["building_equity_benefit_relative_percent", "building_equity_distribution_top20_benefit_ratio"]
-  },
-  {
-    title: "Discomfort",
+    title: "Battery Throughput",
     candidates: [
-      "building_comfort_resilience_discomfort_overall_ratio",
-      "building_comfort_resilience_resilience_one_minus_thermal_ratio"
+      "building_battery_total_throughput_kwh",
+      "building_battery_ratio_to_business_as_usual_throughput_ratio",
+      "building_battery_health_equivalent_full_cycles_count"
     ]
+  },
+  {
+    title: "Deferrable Service",
+    candidates: [
+      "building_deferrable_appliance_service_service_level_ratio",
+      "building_deferrable_appliance_service_unserved_energy_total_kwh",
+      "building_deferrable_appliance_ratio_to_business_as_usual_service_level_ratio"
+    ]
+  },
+  {
+    title: "V2G Export",
+    candidates: ["building_ev_total_v2g_export_kwh", "building_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
   }
 ];
 
@@ -575,7 +601,7 @@ export function JobKpiComparePage(): JSX.Element {
       {!missingSelection ? (
         <section className="job-compare-header panel">
           <article>
-            <small>Left job (baseline)</small>
+            <small>Left job (reference)</small>
             <strong>{leftId}</strong>
             <StatusPill status={leftStatusQuery.data?.status || "unknown"} />
           </article>
@@ -588,6 +614,9 @@ export function JobKpiComparePage(): JSX.Element {
             <input type="checkbox" checked={showAll} onChange={(event) => setShowAll(event.target.checked)} />
             <span>Show all KPIs (union)</span>
           </label>
+          <small className="job-compare-note">
+            Primary deltas compare right minus left. Secondary lines show each job against its own reference.
+          </small>
         </section>
       ) : null}
 
@@ -708,7 +737,7 @@ export function JobKpiComparePage(): JSX.Element {
                           <small>R</small>
                         </div>
                         <footer>
-                          <small>{item.hasComparable ? `Δ ${formatHighlightNumeric(item.delta)}` : "No pair to compare"}</small>
+                          <small>{item.hasComparable ? `R-L Δ ${formatHighlightNumeric(item.delta)}` : "No pair to compare"}</small>
                           <small>{item.unit || "-"}</small>
                         </footer>
                       </article>
@@ -787,7 +816,8 @@ export function JobKpiComparePage(): JSX.Element {
                                           <strong>{formatNumeric(row.leftPrimary)}</strong>
                                           {row.leftSecondary ? (
                                             <small className="job-compare-secondary">
-                                              B: {formatNumeric(row.leftSecondary.baseline)} · Δ: {formatNumeric(row.leftSecondary.delta)}
+                                              {formatKpiReferenceLabel(row.leftSecondary.referenceSource)}:{" "}
+                                              {formatNumeric(row.leftSecondary.baseline)} · Δ: {formatNumeric(row.leftSecondary.delta)}
                                             </small>
                                           ) : null}
                                         </td>
@@ -795,7 +825,8 @@ export function JobKpiComparePage(): JSX.Element {
                                           <strong>{formatNumeric(row.rightPrimary)}</strong>
                                           {row.rightSecondary ? (
                                             <small className="job-compare-secondary">
-                                              B: {formatNumeric(row.rightSecondary.baseline)} · Δ: {formatNumeric(row.rightSecondary.delta)}
+                                              {formatKpiReferenceLabel(row.rightSecondary.referenceSource)}:{" "}
+                                              {formatNumeric(row.rightSecondary.baseline)} · Δ: {formatNumeric(row.rightSecondary.delta)}
                                             </small>
                                           ) : null}
                                         </td>

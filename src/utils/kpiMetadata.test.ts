@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildGroupedKpiCompareRows,
   buildKpiMeta,
+  formatKpiReferenceLabel,
   groupRowsByFamilySubfamily,
   groupScopedKpis,
   isKpiGroupUsed,
   pickPrimaryValueForGroup,
+  resolveKpiReferenceSource,
   scoreKpiGroupTone
 } from "./kpiMetadata";
 
@@ -67,6 +69,57 @@ describe("kpiMetadata v2", () => {
     expect(grouped[0]?.delta).toBe(-20);
     expect(grouped[0]?.deltaPct).toBeCloseTo(-16.666, 2);
     expect(grouped[0]?.canonicalGroupId).toBe("district_cost_total_eur");
+    expect(resolveKpiReferenceSource(grouped[0]!)).toBe("baseline");
+  });
+
+  it("prefers business-as-usual reference rows when present", () => {
+    const grouped = groupScopedKpis([
+      {
+        key: "district_cost_total_baseline_eur",
+        label: "Baseline",
+        unit: "€",
+        value: 40,
+        breakdown: [{ entity: "District", value: 40 }]
+      },
+      {
+        key: "district_cost_total_business_as_usual_eur",
+        label: "Business as usual",
+        unit: "€",
+        value: 100,
+        breakdown: [{ entity: "District", value: 100 }]
+      },
+      {
+        key: "district_cost_total_control_eur",
+        label: "Control",
+        unit: "€",
+        value: 90,
+        breakdown: [{ entity: "District", value: 90 }]
+      },
+      {
+        key: "district_cost_total_delta_to_business_as_usual_eur",
+        label: "Delta to business as usual",
+        unit: "€",
+        value: -10,
+        breakdown: [{ entity: "District", value: -10 }]
+      }
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.baseline).toBe(100);
+    expect(grouped[0]?.delta).toBe(-10);
+    expect(grouped[0]?.deltaPct).toBeCloseTo(-10, 2);
+    expect(grouped[0]?.canonicalGroupId).toBe("district_cost_total_eur");
+    expect(resolveKpiReferenceSource(grouped[0]!)).toBe("business_as_usual");
+    expect(formatKpiReferenceLabel(resolveKpiReferenceSource(grouped[0]!))).toBe("BAU");
+  });
+
+  it("parses business-as-usual ratio KPIs as their own comparable group", () => {
+    const meta = buildKpiMeta("district_cost_ratio_to_business_as_usual_total_ratio");
+
+    expect(meta.family).toBe("cost");
+    expect(meta.subfamilyKey).toBe("ratio_to_business_as_usual");
+    expect(meta.metricKey).toBe("total");
+    expect(meta.canonicalGroupId).toBe("district_cost_ratio_to_business_as_usual_total_ratio");
   });
 
   it("marks rows without numeric values as N/A candidates", () => {

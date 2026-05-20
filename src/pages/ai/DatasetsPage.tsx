@@ -13,11 +13,13 @@ import {
   type DatasetCreateResponse
 } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
+import { Badge } from "../../components/ui/Badge";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import { getDatasetFormat, getDatasetFormatLabel, getDatasetFormatTone } from "../../utils/datasetFormat";
 
 const DEFAULT_ADVANCED_OVERRIDES = `{
   "schema_overrides": {},
@@ -294,33 +296,42 @@ export function DatasetsPage(): JSX.Element {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Type</th>
                   <th>Description</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {datasetsQuery.data.map((dataset) => (
-                  <tr key={dataset.name}>
-                    <td>{dataset.name}</td>
-                    <td>{dataset.description || "-"}</td>
-                    <td>
-                      <div className="table-actions">
-                        <a className="btn btn-ghost btn-sm" href={datasetDownloadUrl(dataset.name)}>
-                          <Download size={13} />
-                          Download
-                        </a>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          iconLeft={<Trash2 size={13} />}
-                          onClick={() => setDeleteTarget(dataset.name)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {datasetsQuery.data.map((dataset) => {
+                  const format = getDatasetFormat(dataset);
+                  return (
+                    <tr key={dataset.name}>
+                      <td>{dataset.name}</td>
+                      <td>
+                        <Badge tone={getDatasetFormatTone(format)}>
+                          {getDatasetFormatLabel(format)}
+                        </Badge>
+                      </td>
+                      <td>{dataset.description || "-"}</td>
+                      <td>
+                        <div className="table-actions">
+                          <a className="btn btn-ghost btn-sm" href={datasetDownloadUrl(dataset.name)}>
+                            <Download size={13} />
+                            Download
+                          </a>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            iconLeft={<Trash2 size={13} />}
+                            onClick={() => setDeleteTarget(dataset.name)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </section>

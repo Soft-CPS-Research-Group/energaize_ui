@@ -56,6 +56,12 @@ export interface LogEntry {
 export interface DatasetItem {
   name: string;
   description?: string;
+  format?: string;
+  type?: string;
+  dataset_type?: string;
+  file_format?: string;
+  data_format?: string;
+  formats?: string[];
 }
 
 export interface ExperimentConfigItem {

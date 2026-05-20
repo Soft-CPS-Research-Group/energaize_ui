@@ -1,6 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Eye, Plus, RefreshCcw, Trash2 } from "lucide-react";
+import {
+  Activity,
+  BrainCircuit,
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  Eye,
+  GitBranch,
+  Layers3,
+  Plus,
+  RefreshCcw,
+  Route,
+  ShieldCheck,
+  SlidersHorizontal,
+  Trash2,
+  Zap
+} from "lucide-react";
 import YAML from "yaml";
 import {
   deleteExperimentConfig,
@@ -15,26 +31,190 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
+import {
+  NetworkArchitectureGraph,
+  type NetworkArchitectureRow,
+  type NetworkArchitectureStat
+} from "../../components/ai/NetworkArchitectureGraph";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import { getDatasetFormat, getDatasetFormatLabel } from "../../utils/datasetFormat";
 import { datasetSchemaPath } from "../../utils/datasetPath";
 import { useSearchParams } from "react-router-dom";
 
 type EditorMode = "create" | "edit";
 type ConfigEditorView = "visual" | "yaml";
 type ConfigModel = Record<string, unknown>;
+type NetworkKind = "actor" | "critic";
+type AlgorithmSupport = "runtime" | "placeholder";
 
 const VISUAL_WIZARD_STEPS = [
   { id: "setup", label: "Setup" },
   { id: "metadata", label: "Metadata" },
-  { id: "simulator", label: "Simulator" },
+  { id: "simulator", label: "Dataset" },
   { id: "algorithm", label: "Algorithm" },
-  { id: "tracking", label: "Tracking" },
-  { id: "bundle", label: "Bundle" }
+  { id: "tracking", label: "Tracking" }
 ] as const;
 
 const TRACKING_LOG_LEVEL_OPTIONS = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR"];
 const SIMULATOR_EXPORT_MODES = ["none", "during", "end"];
-const REWARD_FUNCTION_OPTIONS = ["RewardFunction", "CostHardConstraintReward"];
+const REWARD_FUNCTION_OPTIONS = ["RewardFunction", "V2GPenaltyReward", "CostMinimizationReward", "CostHardConstraintReward"];
+const ENTITY_ENCODING_PROFILE_OPTIONS = ["minmax_space", "maddpg_v1", "maddpg_v2_compact"];
+
+const COST_REWARD_DEFAULTS: Record<string, unknown> = {
+  export_credit_ratio: 0.0,
+  grid_violation_penalty: 60.0,
+  power_outage_penalty: 120.0,
+  ev_departure_window_hours: 1.0,
+  ev_departure_service_tolerance: 0.05,
+  ev_connected_deficit_penalty: 30.0,
+  ev_schedule_deficit_penalty: 120.0,
+  ev_departure_deficit_penalty: 120.0,
+  ev_departure_missed_penalty: 250.0,
+  battery_soc_min: 0.0,
+  battery_soc_max: 1.0,
+  use_observed_storage_soc_limits: true,
+  battery_soc_violation_penalty: 30.0,
+  battery_throughput_penalty: 0.2,
+  deferrable_deadline_missed_penalty: 100.0,
+  deferrable_urgency_penalty: 10.0,
+  community_import_penalty: 0.01,
+  community_peak_import_penalty: 0.001,
+  community_export_penalty: 0.0,
+  community_penalty_divide_by_agents: true,
+  scale_state_penalties_by_time_step: true,
+  state_penalty_reference_seconds: 3600.0
+};
+
+const RULE_BASED_ALGORITHMS = [
+  "RuleBasedPolicy",
+  "RBCBasicPolicy",
+  "RBCSmartPolicy",
+  "RandomPolicy",
+  "NormalPolicy",
+  "NormalNoBatteryPolicy"
+];
+
+const RULE_BASED_HYPERPARAMETER_DEFAULTS: Record<string, unknown> = {
+  pv_charge_threshold: 2.0,
+  flexibility_hours: 3.0,
+  emergency_hours: 1.0,
+  pv_preferred_charge_rate: 0.7,
+  flex_trickle_charge: 0.0,
+  min_charge_rate: 0.0,
+  emergency_charge_rate: 1.0,
+  energy_epsilon: 0.001,
+  default_capacity_kwh: 60.0,
+  non_flexible_chargers: [],
+  control_storage: true,
+  control_evs: true,
+  control_deferrables: true,
+  allow_v2g: false,
+  deferrable_start_action: 1.0,
+  deferrable_urgency_threshold: 0.75,
+  deferrable_slack_threshold: 0.25,
+  deferrable_priority_threshold: 0.5,
+  storage_min_soc: 0.2,
+  storage_max_soc: 0.9,
+  storage_target_soc: 0.5,
+  storage_charge_rate: 0.35,
+  storage_discharge_rate: 0.35,
+  price_charge_rate: 0.6,
+  price_discharge_rate: 0.45,
+  pv_charge_rate: 0.75,
+  peak_discharge_rate: 0.65,
+  ev_normal_charge_rate: 1.0,
+  ev_normal_target_soc: 1.0,
+  ev_price_charge_rate: 0.7,
+  ev_pv_charge_rate: 0.85,
+  ev_v2g_discharge_rate: 0.3,
+  pv_surplus_threshold_kw: 0.25,
+  import_peak_threshold_kw: 7.0,
+  low_headroom_threshold_kw: 2.0,
+  ev_v2g_reserve_soc: 0.15,
+  ev_service_margin_rate: 0.05,
+  ev_service_floor_rate: 0.25,
+  ev_service_lookahead_hours: 4.0,
+  ev_service_target_soc: 0.0,
+  ev_deadline_buffer_hours: 0.25,
+  ev_v2g_min_departure_hours: 2.0,
+  ev_v2g_service_margin_soc: 0.05
+};
+
+interface AlgorithmOption {
+  id: string;
+  label: string;
+  family: "Learning" | "Rule based" | "Baseline" | "Experimental";
+  summary: string;
+  support: AlgorithmSupport;
+  icon: ReactNode;
+}
+
+const ALGORITHM_OPTIONS: AlgorithmOption[] = [
+  {
+    id: "MADDPG",
+    label: "MADDPG",
+    family: "Learning",
+    summary: "Multi-agent actor/critic training with replay memory and exploration noise.",
+    support: "runtime",
+    icon: <BrainCircuit size={17} />
+  },
+  {
+    id: "RBCSmartPolicy",
+    label: "RBC Smart",
+    family: "Rule based",
+    summary: "Solar, price, peak and EV-service aware baseline.",
+    support: "runtime",
+    icon: <ShieldCheck size={17} />
+  },
+  {
+    id: "RBCBasicPolicy",
+    label: "RBC Basic",
+    family: "Rule based",
+    summary: "Simple controllable EV/storage/deferrable baseline.",
+    support: "runtime",
+    icon: <Route size={17} />
+  },
+  {
+    id: "RuleBasedPolicy",
+    label: "RuleBased",
+    family: "Rule based",
+    summary: "Legacy heuristic controller that reads raw observations.",
+    support: "runtime",
+    icon: <SlidersHorizontal size={17} />
+  },
+  {
+    id: "RandomPolicy",
+    label: "Random",
+    family: "Baseline",
+    summary: "Runtime baseline for sanity checks and bounds.",
+    support: "runtime",
+    icon: <Activity size={17} />
+  },
+  {
+    id: "NormalPolicy",
+    label: "Normal",
+    family: "Baseline",
+    summary: "Normal-operation baseline with storage and demand behaviour.",
+    support: "runtime",
+    icon: <Zap size={17} />
+  },
+  {
+    id: "NormalNoBatteryPolicy",
+    label: "No Battery",
+    family: "Baseline",
+    summary: "Normal baseline without battery control.",
+    support: "runtime",
+    icon: <Cpu size={17} />
+  },
+  {
+    id: "SingleAgentRL",
+    label: "SingleAgentRL",
+    family: "Experimental",
+    summary: "Schema placeholder only; not backed by a runtime implementation yet.",
+    support: "placeholder",
+    icon: <GitBranch size={17} />
+  }
+];
 
 const ALGORITHM_PRESETS: Record<string, Record<string, unknown>> = {
   MADDPG: {
@@ -62,29 +242,104 @@ const ALGORITHM_PRESETS: Record<string, Record<string, unknown>> = {
     exploration: {
       strategy: "GaussianNoise",
       params: {
-        bias: 0.1,
+        bias: 0.0,
         sigma: 0.15,
-        decay: 0.99,
+        decay: 0.9995,
+        min_sigma: 0.03,
         noise_clip: 0.3,
         gamma: 0.99,
         tau: 0.001,
         end_initial_exploration_time_step: 96,
-        random_exploration_steps: 96
+        random_exploration_steps: 96,
+        initial_exploration_strategy: "uniform_full_range",
+        warm_start_policy: null,
+        warm_start_policy_deterministic: true,
+        warm_start_policy_noise_scale: 0.0,
+        noop_noise_scale: 0.15,
+        deferrable_on_probability: 0.2,
+        deferrable_trigger_threshold: 0.5,
+        noop_actor_initialization: false,
+        noop_actor_initialization_epsilon: 0.05,
+        critic_update_mode: "joint_mean",
+        actor_update_interval: 1,
+        target_policy_smoothing: false,
+        target_policy_noise: 0.05,
+        target_policy_noise_clip: 0.1,
+        actor_action_l2_penalty: 0.0,
+        actor_action_saturation_penalty: 0.0,
+        actor_action_saturation_threshold: 0.85,
+        reward_normalization: true,
+        reward_normalization_clip: 10.0,
+        reward_normalization_epsilon: 1.0e-8
       }
     }
   },
   RuleBasedPolicy: {
     name: "RuleBasedPolicy",
+    hyperparameters: RULE_BASED_HYPERPARAMETER_DEFAULTS,
+    networks: null,
+    replay_buffer: null,
+    exploration: null
+  },
+  RBCBasicPolicy: {
+    name: "RBCBasicPolicy",
     hyperparameters: {
-      pv_charge_threshold: 2.0,
-      flexibility_hours: 3.0,
-      emergency_hours: 1.0,
-      pv_preferred_charge_rate: 0.7,
-      flex_trickle_charge: 0.0,
-      min_charge_rate: 0.0,
-      emergency_charge_rate: 1.0,
-      default_capacity_kwh: 60.0,
-      non_flexible_chargers: []
+      ...RULE_BASED_HYPERPARAMETER_DEFAULTS,
+      allow_v2g: false,
+      ev_service_floor_rate: 1.0
+    },
+    networks: null,
+    replay_buffer: null,
+    exploration: null
+  },
+  RBCSmartPolicy: {
+    name: "RBCSmartPolicy",
+    hyperparameters: {
+      ...RULE_BASED_HYPERPARAMETER_DEFAULTS,
+      allow_v2g: true,
+      ev_service_floor_rate: 1.0,
+      ev_service_lookahead_hours: 24.0,
+      price_charge_rate: 0.0,
+      price_discharge_rate: 0.15,
+      pv_charge_rate: 0.2,
+      peak_discharge_rate: 0.2,
+      storage_min_soc: 0.3,
+      storage_max_soc: 0.85,
+      storage_target_soc: 0.6,
+      pv_surplus_threshold_kw: 0.5,
+      import_peak_threshold_kw: 10.0,
+      low_headroom_threshold_kw: 1.0,
+      deferrable_urgency_threshold: 0.6,
+      deferrable_slack_threshold: 0.4
+    },
+    networks: null,
+    replay_buffer: null,
+    exploration: null
+  },
+  RandomPolicy: {
+    name: "RandomPolicy",
+    hyperparameters: {
+      ...RULE_BASED_HYPERPARAMETER_DEFAULTS,
+      control_storage: true,
+      control_evs: true,
+      control_deferrables: true
+    },
+    networks: null,
+    replay_buffer: null,
+    exploration: null
+  },
+  NormalPolicy: {
+    name: "NormalPolicy",
+    hyperparameters: RULE_BASED_HYPERPARAMETER_DEFAULTS,
+    networks: null,
+    replay_buffer: null,
+    exploration: null
+  },
+  NormalNoBatteryPolicy: {
+    name: "NormalNoBatteryPolicy",
+    hyperparameters: {
+      ...RULE_BASED_HYPERPARAMETER_DEFAULTS,
+      control_storage: false
     },
     networks: null,
     replay_buffer: null,
@@ -140,7 +395,15 @@ const DEFAULT_VISUAL_MODEL: ConfigModel = {
     progress_updates_enabled: true,
     progress_update_interval: 5,
     system_metrics_enabled: false,
-    system_metrics_interval: 10
+    system_metrics_interval: 10,
+    action_diagnostics_enabled: false,
+    action_diagnostics_detail: "summary",
+    action_saturation_tolerance: 0.01,
+    action_idle_tolerance: 0.02,
+    training_diagnostics_enabled: true,
+    training_diagnostics_detail: "summary",
+    reward_diagnostics_enabled: true,
+    reward_diagnostics_detail: "summary"
   },
   checkpointing: {
     resume_training: false,
@@ -150,7 +413,9 @@ const DEFAULT_VISUAL_MODEL: ConfigModel = {
     reset_replay_buffer: false,
     freeze_pretrained_layers: false,
     fine_tune: false,
-    checkpoint_interval: 5000
+    checkpoint_interval: 5000,
+    require_update_step: true,
+    require_initial_exploration_done: true
   },
   bundle: {
     bundle_version: null,
@@ -164,8 +429,16 @@ const DEFAULT_VISUAL_MODEL: ConfigModel = {
     dataset_name: "citylearn_challenge_2022_phase_all_plus_evs",
     dataset_path: "/data/datasets/citylearn_challenge_2022_phase_all_plus_evs/schema.json",
     central_agent: false,
-    reward_function: "RewardFunction",
-    reward_function_kwargs: {},
+    interface: "entity",
+    topology_mode: "static",
+    entity_encoding: {
+      enabled: true,
+      normalization: "minmax_space",
+      profile: "maddpg_v2_compact",
+      clip: true
+    },
+    reward_function: "CostHardConstraintReward",
+    reward_function_kwargs: COST_REWARD_DEFAULTS,
     episodes: 1,
     simulation_start_time_step: null,
     simulation_end_time_step: null,
@@ -297,6 +570,14 @@ function valueAsArrayString(model: ConfigModel | null, path: string): string {
   return raw.map((item) => String(item)).join(", ");
 }
 
+function valueAsNumberArray(model: ConfigModel | null, path: string, fallback: number[]): number[] {
+  if (!model) return fallback;
+  const raw = getNestedValue(model, path);
+  if (!Array.isArray(raw)) return fallback;
+  const parsed = raw.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0);
+  return parsed.length > 0 ? parsed : fallback;
+}
+
 function parseNumberOrFallback(value: string, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -308,12 +589,255 @@ function parseOptionalNumber(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseNumberArray(value: string, fallback: number[]): number[] {
-  const parsed = value
-    .split(",")
-    .map((item) => Number(item.trim()))
-    .filter((item) => Number.isFinite(item) && item > 0);
-  return parsed.length > 0 ? parsed : fallback;
+function isRuleBasedAlgorithm(name: string): boolean {
+  return RULE_BASED_ALGORITHMS.includes(name);
+}
+
+function getAlgorithmOption(name: string): AlgorithmOption {
+  return ALGORITHM_OPTIONS.find((option) => option.id === name) || {
+    id: name || "unknown",
+    label: name || "Unknown",
+    family: "Experimental",
+    summary: "This algorithm is not present in the Algorithms runtime registry.",
+    support: "placeholder",
+    icon: <GitBranch size={17} />
+  };
+}
+
+function formatCompactNumber(value: unknown): string {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return "-";
+  if (Math.abs(numberValue) >= 1000000) return `${(numberValue / 1000000).toFixed(1)}M`;
+  if (Math.abs(numberValue) >= 1000) return `${Math.round(numberValue / 1000)}k`;
+  return String(numberValue);
+}
+
+function getConfigBaseName(path: string): string {
+  const normalized = path.split(/[\\/]/).filter(Boolean);
+  return normalized[normalized.length - 1] || path;
+}
+
+function NetworkStackBuilder({
+  kind,
+  layers,
+  lr,
+  onLayersChange,
+  onLrChange
+}: {
+  kind: NetworkKind;
+  layers: number[];
+  lr: string;
+  onLayersChange: (layers: number[]) => void;
+  onLrChange: (value: number) => void;
+}): JSX.Element {
+  const color = kind === "actor" ? "#8b5cf6" : "#2d90d7";
+  const label = kind === "actor" ? "Actor" : "Critic";
+  const presets = kind === "actor"
+    ? [
+        { label: "Compact", layers: [512, 256] },
+        { label: "Default", layers: [1024, 512, 256] },
+        { label: "Wide", layers: [2048, 1024, 512] }
+      ]
+    : [
+        { label: "Compact", layers: [512, 256] },
+        { label: "Default", layers: [1024, 512, 256] },
+        { label: "Deep", layers: [1024, 1024, 512, 256] }
+      ];
+
+  function updateLayer(index: number, rawValue: string): void {
+    const nextValue = parseNumberOrFallback(rawValue, layers[index] || 256);
+    onLayersChange(layers.map((layer, layerIndex) => (layerIndex === index ? nextValue : layer)));
+  }
+
+  return (
+    <section className="config-network-stack" style={{ "--network-color": color } as CSSProperties}>
+      <header className="config-network-stack-head">
+        <div>
+          <span className="config-mini-label">{label} network</span>
+          <strong>{layers.length} hidden layers</strong>
+        </div>
+        <label className="config-network-lr-field">
+          <span>Learning rate</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={lr}
+            onChange={(event) => onLrChange(parseNumberOrFallback(event.target.value, kind === "actor" ? 5.0e-5 : 5.0e-4))}
+          />
+        </label>
+      </header>
+
+      <div className="config-network-presets" aria-label={`${label} layer presets`}>
+        {presets.map((preset) => (
+          <button key={preset.label} type="button" onClick={() => onLayersChange(preset.layers)}>
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="config-network-flow">
+        <span className="config-network-terminal">Input</span>
+        {layers.map((layer, index) => {
+          const width = `${Math.min(100, Math.max(34, Math.log2(layer + 1) * 9))}%`;
+          return (
+            <div key={`${kind}-${index}`} className="config-network-layer">
+              <div className="config-network-layer-bar" style={{ width }}>
+                <Layers3 size={13} />
+                <span>Layer {index + 1}</span>
+              </div>
+              <input
+                type="number"
+                min={1}
+                value={layer}
+                onChange={(event) => updateLayer(index, event.target.value)}
+                aria-label={`${label} layer ${index + 1} size`}
+              />
+              <button
+                type="button"
+                disabled={layers.length <= 1}
+                onClick={() => onLayersChange(layers.filter((_, layerIndex) => layerIndex !== index))}
+                aria-label={`Remove ${label} layer ${index + 1}`}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          className="config-network-add"
+          onClick={() => onLayersChange([...layers, Math.max(64, Math.round((layers[layers.length - 1] || 256) / 2))])}
+        >
+          <Plus size={13} />
+          Add hidden layer
+        </button>
+        <span className="config-network-terminal">Action</span>
+      </div>
+    </section>
+  );
+}
+
+function AlgorithmOptionButton({
+  option,
+  selected,
+  onSelect
+}: {
+  option: AlgorithmOption;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}): JSX.Element {
+  const disabled = option.support === "placeholder";
+  return (
+    <button
+      type="button"
+      className={`config-algorithm-card${selected ? " is-selected" : ""}${disabled ? " is-disabled" : ""}`}
+      onClick={() => {
+        if (!disabled) onSelect(option.id);
+      }}
+      disabled={disabled}
+    >
+      <span className="config-algorithm-icon">{option.icon}</span>
+      <span className="config-algorithm-copy">
+        <strong>{option.label}</strong>
+        <small>{option.summary}</small>
+      </span>
+      <span className={`config-algorithm-support is-${option.support}`}>
+        {option.support === "runtime" ? "runtime" : "placeholder"}
+      </span>
+    </button>
+  );
+}
+
+function ConfigNetworkArchitecturePreview({
+  model
+}: {
+  model: ConfigModel | null;
+}): JSX.Element {
+  const actorLayers = valueAsNumberArray(model, "algorithm.networks.actor.layers", []);
+  const criticLayers = valueAsNumberArray(model, "algorithm.networks.critic.layers", []);
+  const replayCapacity = valueAsString(model, "algorithm.replay_buffer.capacity");
+  const batchSize = valueAsString(model, "algorithm.replay_buffer.batch_size");
+  const gamma = valueAsString(model, "algorithm.hyperparameters.gamma");
+  const rows: NetworkArchitectureRow[] = [
+    {
+      id: "actor",
+      label: "Actor",
+      inputLabel: "Observation",
+      inputDetail: "encoded state",
+      outputLabel: "Action",
+      outputDetail: "control vector",
+      accent: "#7c3aed",
+      layers: actorLayers.map((layer, index) => ({
+        label: `Hidden L${index + 1}`,
+        size: layer
+      }))
+    },
+    {
+      id: "critic",
+      label: "Critic",
+      inputLabel: "Obs + action",
+      inputDetail: "training signal",
+      outputLabel: "Q-value",
+      outputDetail: "expected return",
+      accent: "#0f8fcf",
+      layers: criticLayers.map((layer, index) => ({
+        label: `Hidden L${index + 1}`,
+        size: layer
+      }))
+    }
+  ];
+  const stats: NetworkArchitectureStat[] = [
+    {
+      label: "Replay",
+      value: `${formatCompactNumber(replayCapacity)} capacity`
+    },
+    {
+      label: "Batch",
+      value: batchSize || "-"
+    },
+    {
+      label: "Gamma",
+      value: gamma || "-"
+    }
+  ];
+
+  return (
+    <NetworkArchitectureGraph
+      eyebrow="Network view"
+      title="MADDPG actor and critic"
+      description="This mirrors the layer sizes that will be written into the Algorithms config."
+      rows={rows}
+      stats={stats}
+      className="config-network-architecture"
+    />
+  );
+}
+
+function ConfigStepShell({
+  eyebrow,
+  title,
+  description,
+  children,
+  className
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+  className?: string;
+}): JSX.Element {
+  return (
+    <section className={`config-step-shell${className ? ` ${className}` : ""}`}>
+      <div className="config-step-main">
+        <header className="config-step-titlebar">
+          <span className="config-mini-label">{eyebrow}</span>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </header>
+        {children}
+      </div>
+    </section>
+  );
 }
 
 export function ConfigsPage(): JSX.Element {
@@ -331,6 +855,7 @@ export function ConfigsPage(): JSX.Element {
   const [visualStep, setVisualStep] = useState(1);
   const [showSimulatorAdvanced, setShowSimulatorAdvanced] = useState(false);
   const [showAlgorithmAdvanced, setShowAlgorithmAdvanced] = useState(false);
+  const [showRewardParameters, setShowRewardParameters] = useState(false);
   const [showTrackingAdvanced, setShowTrackingAdvanced] = useState(false);
   const [parsedModel, setParsedModel] = useState<ConfigModel | null>(null);
   const [visualError, setVisualError] = useState<string | null>(null);
@@ -374,17 +899,25 @@ export function ConfigsPage(): JSX.Element {
     onError: (error) => notifyError("Failed to delete experiment config", error)
   });
 
-  const datasetNames = useMemo(
-    () => (datasetsQuery.data || []).map((dataset) => dataset.name).sort((left, right) => left.localeCompare(right)),
+  const sortedDatasets = useMemo(
+    () => [...(datasetsQuery.data || [])].sort((left, right) => left.name.localeCompare(right.name)),
     [datasetsQuery.data]
   );
+  const datasetNames = useMemo(() => sortedDatasets.map((dataset) => dataset.name), [sortedDatasets]);
 
   const visualTotalSteps = VISUAL_WIZARD_STEPS.length;
   const wizardProgressPercent =
     visualTotalSteps > 1 ? ((Math.max(1, visualStep) - 1) / (visualTotalSteps - 1)) * 100 : 0;
+  const visualStepId = VISUAL_WIZARD_STEPS[visualStep - 1]?.id || "setup";
   const currentStepLabel = VISUAL_WIZARD_STEPS[visualStep - 1]?.label || "Step";
 
   const selectedAlgorithmName = valueAsString(parsedModel, "algorithm.name") || "MADDPG";
+  const selectedAlgorithmOption = getAlgorithmOption(selectedAlgorithmName);
+  const simulatorInterface = valueAsString(parsedModel, "simulator.interface") || "flat";
+  const topologyMode = valueAsString(parsedModel, "simulator.topology_mode") || "static";
+  const dynamicTopologyNeedsEntity = topologyMode === "dynamic" && simulatorInterface !== "entity";
+  const maddpgDynamicTopologyBlocked =
+    selectedAlgorithmName === "MADDPG" && simulatorInterface === "entity" && topologyMode === "dynamic";
 
   const availableRewardFunctions = useMemo(() => {
     const current = valueAsString(parsedModel, "simulator.reward_function");
@@ -394,42 +927,54 @@ export function ConfigsPage(): JSX.Element {
 
   const selectedDatasetName = valueAsString(parsedModel, "simulator.dataset_name");
   const datasetExists = selectedDatasetName ? datasetNames.includes(selectedDatasetName) : false;
+  const selectedDataset = sortedDatasets.find((dataset) => dataset.name === selectedDatasetName) || null;
+  const configFiles = configsQuery.data || [];
 
   const visualStepValid = useMemo(() => {
     if (!parsedModel) return false;
 
-    if (visualStep === 1) {
+    if (visualStepId === "setup") {
       const trimmedName = fileName.trim();
       return Boolean(trimmedName) && /\.ya?ml$/i.test(trimmedName);
     }
 
-    if (visualStep === 2) {
+    if (visualStepId === "metadata") {
       return Boolean(valueAsString(parsedModel, "metadata.experiment_name").trim()) &&
         Boolean(valueAsString(parsedModel, "metadata.run_name").trim());
     }
 
-    if (visualStep === 3) {
+    if (visualStepId === "simulator") {
       return Boolean(valueAsString(parsedModel, "simulator.dataset_name").trim()) &&
         Boolean(valueAsString(parsedModel, "simulator.dataset_path").trim()) &&
-        Boolean(valueAsString(parsedModel, "simulator.reward_function").trim());
+        !dynamicTopologyNeedsEntity;
     }
 
-    if (visualStep === 4) {
-      return Boolean(valueAsString(parsedModel, "algorithm.name").trim());
+    if (visualStepId === "algorithm") {
+      return Boolean(valueAsString(parsedModel, "algorithm.name").trim()) &&
+        selectedAlgorithmOption.support === "runtime" &&
+        !maddpgDynamicTopologyBlocked;
     }
 
-    if (visualStep === 5) {
+    if (visualStepId === "tracking") {
       const logFrequency = Number(valueAsString(parsedModel, "tracking.log_frequency") || "0");
       return Boolean(valueAsString(parsedModel, "tracking.log_level").trim()) && Number.isFinite(logFrequency) && logFrequency >= 1;
     }
 
     return true;
-  }, [fileName, parsedModel, visualStep]);
+  }, [
+    dynamicTopologyNeedsEntity,
+    fileName,
+    maddpgDynamicTopologyBlocked,
+    parsedModel,
+    selectedAlgorithmOption.support,
+    visualStepId
+  ]);
 
   function resetVisualWizardState(): void {
     setVisualStep(1);
     setShowSimulatorAdvanced(false);
     setShowAlgorithmAdvanced(false);
+    setShowRewardParameters(false);
     setShowTrackingAdvanced(false);
   }
 
@@ -556,6 +1101,28 @@ export function ConfigsPage(): JSX.Element {
     });
   }
 
+  function updateSimulatorInterface(nextInterface: string): void {
+    updateVisualModel((model) => {
+      let next = setNestedValue(model, "simulator.interface", nextInterface);
+      next = setNestedValue(next, "simulator.entity_encoding.enabled", nextInterface === "entity");
+      if (nextInterface !== "entity") {
+        next = setNestedValue(next, "simulator.topology_mode", "static");
+      }
+      return next;
+    });
+  }
+
+  function updateTopologyMode(nextTopologyMode: string): void {
+    updateVisualModel((model) => {
+      let next = setNestedValue(model, "simulator.topology_mode", nextTopologyMode);
+      if (nextTopologyMode === "dynamic") {
+        next = setNestedValue(next, "simulator.interface", "entity");
+        next = setNestedValue(next, "simulator.entity_encoding.enabled", true);
+      }
+      return next;
+    });
+  }
+
   function updateAlgorithmPreset(algorithmName: string): void {
     const preset = ALGORITHM_PRESETS[algorithmName] || ALGORITHM_PRESETS.MADDPG;
     updateVisualField("algorithm", cloneValue(preset));
@@ -589,9 +1156,9 @@ export function ConfigsPage(): JSX.Element {
           </section>
         ) : null}
 
-        {configsQuery.data && configsQuery.data.length > 0 ? (
-          <section className="panel">
-            <table className="table">
+        {configFiles.length > 0 ? (
+          <section className="panel configs-list-panel">
+              <table className="table configs-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -599,9 +1166,17 @@ export function ConfigsPage(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {configsQuery.data.map((config) => (
+                {configFiles.map((config) => (
                   <tr key={config}>
-                    <td>{config}</td>
+                    <td>
+                      <div className="configs-name-cell">
+                        <span className="configs-file-icon"><SlidersHorizontal size={15} /></span>
+                        <span>
+                          <strong>{getConfigBaseName(config)}</strong>
+                          {config !== getConfigBaseName(config) ? <small>{config}</small> : null}
+                        </span>
+                      </div>
+                    </td>
                     <td className="configs-actions-col">
                       <div className="table-actions configs-table-actions">
                         <Button
@@ -625,7 +1200,7 @@ export function ConfigsPage(): JSX.Element {
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
           </section>
         ) : (
           <EmptyState
@@ -651,7 +1226,7 @@ export function ConfigsPage(): JSX.Element {
             setSearchParams(next, { replace: true });
           }
         }}
-        width="lg"
+        width="xl"
       >
         {editorLoading ? (
           <section className="datasets-loader-preview">
@@ -810,13 +1385,13 @@ export function ConfigsPage(): JSX.Element {
                   </div>
                 ) : (
                   <>
-                    {visualStep === 1 ? (
-                      <section className="config-visual-group">
-                        <h3>Setup</h3>
-                        <p className="config-section-hint">
-                          Escolhe o nome do ficheiro e, se quiseres, começa com um starter.
-                        </p>
-                        <div className="config-visual-grid">
+                    {visualStepId === "setup" ? (
+                      <ConfigStepShell
+                        eyebrow="File"
+                        title="Setup"
+                        description="Choose where this config will be stored and whether to start from an existing template."
+                      >
+                        <div className="config-visual-grid config-visual-grid--relaxed">
                           <label>
                             <span>File name</span>
                             <input
@@ -855,13 +1430,16 @@ export function ConfigsPage(): JSX.Element {
                             </label>
                           )}
                         </div>
-                      </section>
+                      </ConfigStepShell>
                     ) : null}
 
-                    {visualStep === 2 ? (
-                      <section className="config-visual-group">
-                        <h3>Metadata</h3>
-                        <div className="config-visual-grid">
+                    {visualStepId === "metadata" ? (
+                      <ConfigStepShell
+                        eyebrow="Run identity"
+                        title="Metadata"
+                        description="Name the experiment in the same language used later by MLflow, logs, bundles and job detail pages."
+                      >
+                        <div className="config-visual-grid config-visual-grid--relaxed">
                           <label>
                             <span>Experiment name</span>
                             <input
@@ -896,13 +1474,16 @@ export function ConfigsPage(): JSX.Element {
                             />
                           </label>
                         </div>
-                      </section>
+                      </ConfigStepShell>
                     ) : null}
 
-                    {visualStep === 3 ? (
-                      <section className="config-visual-group">
-                        <h3>Simulator</h3>
-                        <div className="config-visual-grid">
+                    {visualStepId === "simulator" ? (
+                      <ConfigStepShell
+                        eyebrow="Environment"
+                        title="Dataset"
+                        description="Pick the dataset used by the runner. Interface, topology and encoding usually come from the dataset contract and stay in advanced options."
+                      >
+                        <div className="config-visual-grid config-visual-grid--relaxed">
                           <label>
                             <span>Dataset (from orchestrator storage)</span>
                             <select
@@ -912,12 +1493,20 @@ export function ConfigsPage(): JSX.Element {
                               {selectedDatasetName && !datasetExists ? (
                                 <option value={selectedDatasetName}>{selectedDatasetName} (custom)</option>
                               ) : null}
-                              {datasetNames.map((name) => (
-                                <option key={name} value={name}>
-                                  {name}
-                                </option>
-                              ))}
+                              {sortedDatasets.map((dataset) => {
+                                const format = getDatasetFormat(dataset);
+                                return (
+                                  <option key={dataset.name} value={dataset.name}>
+                                    {dataset.name} - {getDatasetFormatLabel(format)}
+                                  </option>
+                                );
+                              })}
                             </select>
+                            {selectedDataset ? (
+                              <small className="jobs-meta">
+                                Type: {getDatasetFormatLabel(getDatasetFormat(selectedDataset))}
+                              </small>
+                            ) : null}
                             {datasetsQuery.isFetching ? <small className="jobs-meta">Refreshing datasets...</small> : null}
                           </label>
 
@@ -931,44 +1520,16 @@ export function ConfigsPage(): JSX.Element {
                           </label>
 
                           <label>
-                            <span>Reward function</span>
-                            <select
-                              value={valueAsString(parsedModel, "simulator.reward_function")}
-                              onChange={(event) => updateVisualField("simulator.reward_function", event.target.value)}
-                            >
-                              {availableRewardFunctions.map((rewardFn) => (
-                                <option key={rewardFn} value={rewardFn}>
-                                  {rewardFn}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <label>
-                            <span>Export mode</span>
-                            <select
-                              value={valueAsString(parsedModel, "simulator.export.mode") || "end"}
-                              onChange={(event) => updateVisualField("simulator.export.mode", event.target.value)}
-                            >
-                              {SIMULATOR_EXPORT_MODES.map((mode) => (
-                                <option key={mode} value={mode}>
-                                  {mode}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <label className="config-checkbox-row">
+                            <span>Episodes</span>
                             <input
-                              type="checkbox"
-                              checked={valueAsBoolean(parsedModel, "simulator.export.export_kpis_on_episode_end")}
+                              type="number"
+                              min={1}
+                              value={valueAsString(parsedModel, "simulator.episodes")}
                               onChange={(event) =>
-                                updateVisualField("simulator.export.export_kpis_on_episode_end", event.target.checked)
+                                updateVisualField("simulator.episodes", parseNumberOrFallback(event.target.value, 1))
                               }
                             />
-                            <span>Export KPIs at episode end</span>
                           </label>
-
                         </div>
 
                         <Button
@@ -982,6 +1543,39 @@ export function ConfigsPage(): JSX.Element {
                         {showSimulatorAdvanced ? (
                           <div className="config-visual-grid config-visual-advanced">
                             <label>
+                              <span>Interface</span>
+                              <select
+                                value={simulatorInterface}
+                                onChange={(event) => updateSimulatorInterface(event.target.value)}
+                              >
+                                <option value="flat">flat</option>
+                                <option value="entity">entity</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Topology mode</span>
+                              <select
+                                value={topologyMode}
+                                onChange={(event) => updateTopologyMode(event.target.value)}
+                              >
+                                <option value="static">static</option>
+                                <option value="dynamic">dynamic</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Export mode</span>
+                              <select
+                                value={valueAsString(parsedModel, "simulator.export.mode") || "end"}
+                                onChange={(event) => updateVisualField("simulator.export.mode", event.target.value)}
+                              >
+                                {SIMULATOR_EXPORT_MODES.map((mode) => (
+                                  <option key={mode} value={mode}>
+                                    {mode}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
                               <span>Export session name</span>
                               <input
                                 value={valueAsString(parsedModel, "simulator.export.session_name")}
@@ -992,17 +1586,6 @@ export function ConfigsPage(): JSX.Element {
                                   )
                                 }
                                 placeholder="optional session label"
-                              />
-                            </label>
-                            <label>
-                              <span>Episodes</span>
-                              <input
-                                type="number"
-                                min={1}
-                                value={valueAsString(parsedModel, "simulator.episodes")}
-                                onChange={(event) =>
-                                  updateVisualField("simulator.episodes", parseNumberOrFallback(event.target.value, 1))
-                                }
                               />
                             </label>
                             <label>
@@ -1056,288 +1639,866 @@ export function ConfigsPage(): JSX.Element {
                               />
                               <span>Central agent</span>
                             </label>
+                            <label className="config-checkbox-row">
+                              <input
+                                type="checkbox"
+                                checked={valueAsBoolean(parsedModel, "simulator.export.export_kpis_on_episode_end")}
+                                onChange={(event) =>
+                                  updateVisualField("simulator.export.export_kpis_on_episode_end", event.target.checked)
+                                }
+                              />
+                              <span>Export KPIs at episode end</span>
+                            </label>
                           </div>
                         ) : null}
-                      </section>
+                      </ConfigStepShell>
                     ) : null}
 
-                    {visualStep === 4 ? (
-                      <section className="config-visual-group">
-                        <h3>Algorithm</h3>
-                        <div className="config-visual-grid">
-                          <label>
-                            <span>Algorithm family</span>
-                            <select value={selectedAlgorithmName} onChange={(event) => updateAlgorithmPreset(event.target.value)}>
-                              <option value="MADDPG">MADDPG</option>
-                              <option value="RuleBasedPolicy">RuleBasedPolicy</option>
-                              <option value="SingleAgentRL">SingleAgentRL</option>
-                            </select>
-                          </label>
+                    {visualStepId === "algorithm" ? (
+                      <ConfigStepShell
+                        eyebrow="Policy"
+                        title="Algorithm"
+                        description="Pick a runtime algorithm from the Algorithms registry, then shape the important knobs visually."
+                        className="config-step-shell--algorithm"
+                      >
+                        <span className="config-algorithm-family-pill">{selectedAlgorithmOption.family}</span>
+                        <div className="config-algorithm-workspace config-algorithm-workspace--single">
+                          <div className="config-algorithm-main">
+                            <div className="config-algorithm-selector">
+                              {(["Learning", "Rule based", "Baseline", "Experimental"] as AlgorithmOption["family"][]).map((family) => {
+                                const options = ALGORITHM_OPTIONS.filter((option) => option.family === family);
+                                if (options.length === 0) return null;
+                                return (
+                                  <section key={family} className="config-algorithm-family">
+                                    <h4>{family}</h4>
+                                    <div className="config-algorithm-grid">
+                                      {options.map((option) => (
+                                        <AlgorithmOptionButton
+                                          key={option.id}
+                                          option={option}
+                                          selected={selectedAlgorithmName === option.id}
+                                          onSelect={updateAlgorithmPreset}
+                                        />
+                                      ))}
+                                    </div>
+                                  </section>
+                                );
+                              })}
+                            </div>
+
+                            {maddpgDynamicTopologyBlocked ? (
+                              <div className="config-compat-warning">
+                                MADDPG is intentionally blocked for entity + dynamic topology by the Algorithms schema.
+                                Switch topology to static or choose a dynamic-ready baseline.
+                              </div>
+                            ) : null}
+
+                            <section className="config-visual-subpanel">
+                              <header className="config-subpanel-head">
+                                <div>
+                                  <span className="config-mini-label">Input and objective</span>
+                                  <h4>Observation encoding and reward</h4>
+                                </div>
+                                {valueAsString(parsedModel, "simulator.reward_function") === "CostHardConstraintReward" ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setShowRewardParameters((state) => !state)}
+                                  >
+                                    {showRewardParameters ? "Hide reward params" : "Show reward params"}
+                                  </Button>
+                                ) : null}
+                              </header>
+                              <div className="config-param-grid">
+                                <label>
+                                  <span>Entity encoding profile</span>
+                                  <select
+                                    value={valueAsString(parsedModel, "simulator.entity_encoding.profile") || "minmax_space"}
+                                    disabled={simulatorInterface !== "entity"}
+                                    onChange={(event) => updateVisualField("simulator.entity_encoding.profile", event.target.value)}
+                                  >
+                                    {ENTITY_ENCODING_PROFILE_OPTIONS.map((option) => (
+                                      <option key={option} value={option}>
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label>
+                                  <span>Reward function</span>
+                                  <select
+                                    value={valueAsString(parsedModel, "simulator.reward_function")}
+                                    onChange={(event) => updateVisualField("simulator.reward_function", event.target.value)}
+                                  >
+                                    {availableRewardFunctions.map((rewardFn) => (
+                                      <option key={rewardFn} value={rewardFn}>
+                                        {rewardFn}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="config-toggle-card config-toggle-card--inline">
+                                  <input
+                                    type="checkbox"
+                                    checked={valueAsBoolean(parsedModel, "simulator.entity_encoding.clip")}
+                                    disabled={simulatorInterface !== "entity"}
+                                    onChange={(event) => updateVisualField("simulator.entity_encoding.clip", event.target.checked)}
+                                  />
+                                  <span>Clip encoded observations</span>
+                                </label>
+                              </div>
+
+                              {showRewardParameters && valueAsString(parsedModel, "simulator.reward_function") === "CostHardConstraintReward" ? (
+                                <div className="config-param-grid config-visual-advanced">
+                                  <label>
+                                    <span>Export credit ratio</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.export_credit_ratio")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.export_credit_ratio",
+                                          parseNumberOrFallback(event.target.value, 0.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>Grid violation penalty</span>
+                                    <input
+                                      type="number"
+                                      step="1"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.grid_violation_penalty")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.grid_violation_penalty",
+                                          parseNumberOrFallback(event.target.value, 60.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>Power outage penalty</span>
+                                    <input
+                                      type="number"
+                                      step="1"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.power_outage_penalty")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.power_outage_penalty",
+                                          parseNumberOrFallback(event.target.value, 120.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>EV window hours</span>
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.ev_departure_window_hours")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.ev_departure_window_hours",
+                                          parseNumberOrFallback(event.target.value, 1.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>EV deficit penalty</span>
+                                    <input
+                                      type="number"
+                                      step="1"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.ev_departure_deficit_penalty")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.ev_departure_deficit_penalty",
+                                          parseNumberOrFallback(event.target.value, 120.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>EV missed penalty</span>
+                                    <input
+                                      type="number"
+                                      step="1"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.ev_departure_missed_penalty")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.ev_departure_missed_penalty",
+                                          parseNumberOrFallback(event.target.value, 250.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>Battery min SOC</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.battery_soc_min")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.battery_soc_min",
+                                          parseNumberOrFallback(event.target.value, 0.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>Battery max SOC</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.battery_soc_max")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.battery_soc_max",
+                                          parseNumberOrFallback(event.target.value, 1.0)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span>Community peak penalty</span>
+                                    <input
+                                      type="number"
+                                      step="0.001"
+                                      min={0}
+                                      value={valueAsString(parsedModel, "simulator.reward_function_kwargs.community_peak_import_penalty")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.community_peak_import_penalty",
+                                          parseNumberOrFallback(event.target.value, 0.001)
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label className="config-toggle-card config-toggle-card--inline">
+                                    <input
+                                      type="checkbox"
+                                      checked={valueAsBoolean(parsedModel, "simulator.reward_function_kwargs.community_penalty_divide_by_agents")}
+                                      onChange={(event) =>
+                                        updateVisualField(
+                                          "simulator.reward_function_kwargs.community_penalty_divide_by_agents",
+                                          event.target.checked
+                                        )
+                                      }
+                                    />
+                                    <span>Divide community penalty by agents</span>
+                                  </label>
+                                </div>
+                              ) : null}
+                            </section>
+
+                            {selectedAlgorithmName === "MADDPG" ? (
+                              <div className="config-algorithm-tuning">
+                                <section className="config-visual-subpanel">
+                                  <header className="config-subpanel-head">
+                                    <div>
+                                      <span className="config-mini-label">Neural policy</span>
+                                      <h4>Actor / critic architecture</h4>
+                                    </div>
+                                  </header>
+                                  <ConfigNetworkArchitecturePreview model={parsedModel} />
+                                  <div className="config-network-grid">
+                                    <NetworkStackBuilder
+                                      kind="actor"
+                                      layers={valueAsNumberArray(parsedModel, "algorithm.networks.actor.layers", [1024, 512, 256])}
+                                      lr={valueAsString(parsedModel, "algorithm.networks.actor.lr")}
+                                      onLayersChange={(layers) => updateVisualField("algorithm.networks.actor.layers", layers)}
+                                      onLrChange={(value) => updateVisualField("algorithm.networks.actor.lr", value)}
+                                    />
+                                    <NetworkStackBuilder
+                                      kind="critic"
+                                      layers={valueAsNumberArray(parsedModel, "algorithm.networks.critic.layers", [1024, 512, 256])}
+                                      lr={valueAsString(parsedModel, "algorithm.networks.critic.lr")}
+                                      onLayersChange={(layers) => updateVisualField("algorithm.networks.critic.layers", layers)}
+                                      onLrChange={(value) => updateVisualField("algorithm.networks.critic.lr", value)}
+                                    />
+                                  </div>
+                                </section>
+
+                                <section className="config-visual-subpanel">
+                                  <header className="config-subpanel-head">
+                                    <div>
+                                      <span className="config-mini-label">Learning loop</span>
+                                      <h4>Replay, discount and exploration</h4>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setShowAlgorithmAdvanced((state) => !state)}
+                                    >
+                                      {showAlgorithmAdvanced ? "Hide advanced" : "Show advanced"}
+                                    </Button>
+                                  </header>
+
+                                  <div className="config-param-grid">
+                                    <label>
+                                      <span>Gamma</span>
+                                      <input
+                                        type="number"
+                                        step="0.0001"
+                                        value={valueAsString(parsedModel, "algorithm.hyperparameters.gamma")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.hyperparameters.gamma",
+                                            parseNumberOrFallback(event.target.value, 0.995)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Replay capacity</span>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={valueAsString(parsedModel, "algorithm.replay_buffer.capacity")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.replay_buffer.capacity",
+                                            parseNumberOrFallback(event.target.value, 200000)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Batch size</span>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={valueAsString(parsedModel, "algorithm.replay_buffer.batch_size")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.replay_buffer.batch_size",
+                                            parseNumberOrFallback(event.target.value, 256)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Sigma</span>
+                                      <input
+                                        type="number"
+                                        step="0.001"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.exploration.params.sigma")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.exploration.params.sigma",
+                                            parseNumberOrFallback(event.target.value, 0.15)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Decay</span>
+                                      <input
+                                        type="number"
+                                        step="0.0001"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.exploration.params.decay")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.exploration.params.decay",
+                                            parseNumberOrFallback(event.target.value, 0.9995)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Warm-up steps</span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.exploration.params.end_initial_exploration_time_step")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.exploration.params.end_initial_exploration_time_step",
+                                            parseNumberOrFallback(event.target.value, 96)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                  </div>
+
+                                  {showAlgorithmAdvanced ? (
+                                    <div className="config-param-grid config-visual-advanced">
+                                      <label>
+                                        <span>Min sigma</span>
+                                        <input
+                                          type="number"
+                                          step="0.001"
+                                          min={0}
+                                          value={valueAsString(parsedModel, "algorithm.exploration.params.min_sigma")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.exploration.params.min_sigma",
+                                              parseNumberOrFallback(event.target.value, 0.03)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Noise clip</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min={0}
+                                          value={valueAsString(parsedModel, "algorithm.exploration.params.noise_clip")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.exploration.params.noise_clip",
+                                              parseNumberOrFallback(event.target.value, 0.3)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Random exploration steps</span>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={valueAsString(parsedModel, "algorithm.exploration.params.random_exploration_steps")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.exploration.params.random_exploration_steps",
+                                              parseNumberOrFallback(event.target.value, 96)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Actor update interval</span>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          value={valueAsString(parsedModel, "algorithm.exploration.params.actor_update_interval")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.exploration.params.actor_update_interval",
+                                              parseNumberOrFallback(event.target.value, 1)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Critic update mode</span>
+                                        <select
+                                          value={valueAsString(parsedModel, "algorithm.exploration.params.critic_update_mode") || "joint_mean"}
+                                          onChange={(event) =>
+                                            updateVisualField("algorithm.exploration.params.critic_update_mode", event.target.value)
+                                          }
+                                        >
+                                          <option value="joint_mean">joint_mean</option>
+                                          <option value="per_agent">per_agent</option>
+                                        </select>
+                                      </label>
+                                      <label className="config-checkbox-row">
+                                        <input
+                                          type="checkbox"
+                                          checked={valueAsBoolean(parsedModel, "algorithm.exploration.params.reward_normalization")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.exploration.params.reward_normalization",
+                                              event.target.checked
+                                            )
+                                          }
+                                        />
+                                        <span>Reward normalization</span>
+                                      </label>
+                                    </div>
+                                  ) : null}
+                                </section>
+                              </div>
+                            ) : null}
+
+                            {isRuleBasedAlgorithm(selectedAlgorithmName) ? (
+                              <div className="config-algorithm-tuning">
+                                <section className="config-visual-subpanel">
+                                  <header className="config-subpanel-head">
+                                    <div>
+                                      <span className="config-mini-label">Heuristic control</span>
+                                      <h4>Assets and thresholds</h4>
+                                    </div>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setShowAlgorithmAdvanced((state) => !state)}
+                                    >
+                                      {showAlgorithmAdvanced ? "Hide advanced" : "Show advanced"}
+                                    </Button>
+                                  </header>
+
+                                  <div className="config-toggle-grid">
+                                    {[
+                                      ["control_storage", "Storage"],
+                                      ["control_evs", "EV charging"],
+                                      ["control_deferrables", "Deferrables"],
+                                      ["allow_v2g", "V2G"]
+                                    ].map(([key, label]) => (
+                                      <label key={key} className="config-toggle-card">
+                                        <input
+                                          type="checkbox"
+                                          checked={valueAsBoolean(parsedModel, `algorithm.hyperparameters.${key}`)}
+                                          onChange={(event) =>
+                                            updateVisualField(`algorithm.hyperparameters.${key}`, event.target.checked)
+                                          }
+                                        />
+                                        <span>{label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+
+                                  <div className="config-param-grid">
+                                    <label>
+                                      <span>Flexibility hours</span>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.hyperparameters.flexibility_hours")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.hyperparameters.flexibility_hours",
+                                            parseNumberOrFallback(event.target.value, 3.0)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Emergency hours</span>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.hyperparameters.emergency_hours")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.hyperparameters.emergency_hours",
+                                            parseNumberOrFallback(event.target.value, 1.0)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>EV service floor</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.hyperparameters.ev_service_floor_rate")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.hyperparameters.ev_service_floor_rate",
+                                            parseNumberOrFallback(event.target.value, 0.25)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>PV charge rate</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.hyperparameters.pv_charge_rate")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.hyperparameters.pv_charge_rate",
+                                            parseNumberOrFallback(event.target.value, 0.75)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Import peak threshold kW</span>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.hyperparameters.import_peak_threshold_kw")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.hyperparameters.import_peak_threshold_kw",
+                                            parseNumberOrFallback(event.target.value, 7.0)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label>
+                                      <span>Default EV capacity kWh</span>
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min={0}
+                                        value={valueAsString(parsedModel, "algorithm.hyperparameters.default_capacity_kwh")}
+                                        onChange={(event) =>
+                                          updateVisualField(
+                                            "algorithm.hyperparameters.default_capacity_kwh",
+                                            parseNumberOrFallback(event.target.value, 60.0)
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                  </div>
+
+                                  {showAlgorithmAdvanced ? (
+                                    <div className="config-param-grid config-visual-advanced">
+                                      <label>
+                                        <span>Storage min SOC</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min={0}
+                                          value={valueAsString(parsedModel, "algorithm.hyperparameters.storage_min_soc")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.hyperparameters.storage_min_soc",
+                                              parseNumberOrFallback(event.target.value, 0.2)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Storage max SOC</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min={0}
+                                          value={valueAsString(parsedModel, "algorithm.hyperparameters.storage_max_soc")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.hyperparameters.storage_max_soc",
+                                              parseNumberOrFallback(event.target.value, 0.9)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Price discharge rate</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min={0}
+                                          value={valueAsString(parsedModel, "algorithm.hyperparameters.price_discharge_rate")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.hyperparameters.price_discharge_rate",
+                                              parseNumberOrFallback(event.target.value, 0.45)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>V2G reserve SOC</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min={0}
+                                          value={valueAsString(parsedModel, "algorithm.hyperparameters.ev_v2g_reserve_soc")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.hyperparameters.ev_v2g_reserve_soc",
+                                              parseNumberOrFallback(event.target.value, 0.15)
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Non-flexible chargers</span>
+                                        <input
+                                          value={valueAsArrayString(parsedModel, "algorithm.hyperparameters.non_flexible_chargers")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.hyperparameters.non_flexible_chargers",
+                                              event.target.value
+                                                .split(",")
+                                                .map((item) => item.trim())
+                                                .filter(Boolean)
+                                            )
+                                          }
+                                          placeholder="charger_1_1, charger_4_1"
+                                        />
+                                      </label>
+                                      <label>
+                                        <span>Seed</span>
+                                        <input
+                                          type="number"
+                                          value={valueAsString(parsedModel, "algorithm.hyperparameters.seed")}
+                                          onChange={(event) =>
+                                            updateVisualField(
+                                              "algorithm.hyperparameters.seed",
+                                              event.target.value === ""
+                                                ? null
+                                                : parseNumberOrFallback(event.target.value, 123)
+                                            )
+                                          }
+                                          placeholder="optional"
+                                        />
+                                      </label>
+                                    </div>
+                                  ) : null}
+                                </section>
+                              </div>
+                            ) : null}
+
+                            <section className="config-visual-subpanel">
+                              <header className="config-subpanel-head">
+                                <div>
+                                  <span className="config-mini-label">Run mechanics</span>
+                                  <h4>Training cadence and checkpointing</h4>
+                                </div>
+                              </header>
+
+                              <div className="config-toggle-grid">
+                                {[
+                                  ["checkpointing.resume_training", "Resume training"],
+                                  ["checkpointing.reset_replay_buffer", "Reset replay buffer"],
+                                  ["checkpointing.freeze_pretrained_layers", "Freeze pretrained"],
+                                  ["checkpointing.fine_tune", "Fine tune"],
+                                  ["checkpointing.require_update_step", "Require update step"],
+                                  ["checkpointing.require_initial_exploration_done", "Require exploration done"]
+                                ].map(([path, label]) => (
+                                  <label key={path} className="config-toggle-card">
+                                    <input
+                                      type="checkbox"
+                                      checked={valueAsBoolean(parsedModel, path)}
+                                      onChange={(event) => updateVisualField(path, event.target.checked)}
+                                    />
+                                    <span>{label}</span>
+                                  </label>
+                                ))}
+                              </div>
+
+                              <div className="config-param-grid">
+                                <label>
+                                  <span>Seed</span>
+                                  <input
+                                    type="number"
+                                    value={valueAsString(parsedModel, "training.seed")}
+                                    onChange={(event) =>
+                                      updateVisualField("training.seed", parseNumberOrFallback(event.target.value, 123))
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>Steps between updates</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={valueAsString(parsedModel, "training.steps_between_training_updates")}
+                                    onChange={(event) =>
+                                      updateVisualField(
+                                        "training.steps_between_training_updates",
+                                        parseNumberOrFallback(event.target.value, 4)
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>Target update interval</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={valueAsString(parsedModel, "training.target_update_interval")}
+                                    onChange={(event) =>
+                                      updateVisualField(
+                                        "training.target_update_interval",
+                                        parseNumberOrFallback(event.target.value, 2)
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>Checkpoint interval</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={valueAsString(parsedModel, "checkpointing.checkpoint_interval")}
+                                    onChange={(event) =>
+                                      updateVisualField(
+                                        "checkpointing.checkpoint_interval",
+                                        event.target.value === ""
+                                          ? null
+                                          : parseNumberOrFallback(event.target.value, 5000)
+                                      )
+                                    }
+                                    placeholder="disabled"
+                                  />
+                                </label>
+                                <label>
+                                  <span>Checkpoint artifact</span>
+                                  <input
+                                    value={valueAsString(parsedModel, "checkpointing.checkpoint_artifact")}
+                                    onChange={(event) =>
+                                      updateVisualField("checkpointing.checkpoint_artifact", event.target.value)
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>Checkpoint run ID</span>
+                                  <input
+                                    value={valueAsString(parsedModel, "checkpointing.checkpoint_run_id")}
+                                    onChange={(event) =>
+                                      updateVisualField(
+                                        "checkpointing.checkpoint_run_id",
+                                        event.target.value === "" ? null : event.target.value
+                                      )
+                                    }
+                                    placeholder="optional"
+                                  />
+                                </label>
+                              </div>
+                            </section>
+                          </div>
+
+                        </div>
+                      </ConfigStepShell>
+                    ) : null}
+
+                    {visualStepId === "tracking" ? (
+                      <ConfigStepShell
+                        eyebrow="Observability"
+                        title="Tracking"
+                        description="Control MLflow, progress files and diagnostic streams without opening raw YAML."
+                      >
+                        <div className="config-toggle-grid config-toggle-grid--tracking">
+                          {[
+                            ["tracking.mlflow_enabled", "MLflow"],
+                            ["tracking.progress_updates_enabled", "Progress"],
+                            ["tracking.system_metrics_enabled", "System metrics"],
+                            ["tracking.action_diagnostics_enabled", "Action diagnostics"],
+                            ["tracking.training_diagnostics_enabled", "Training diagnostics"],
+                            ["tracking.reward_diagnostics_enabled", "Reward diagnostics"]
+                          ].map(([path, label]) => (
+                            <label key={path} className="config-toggle-card">
+                              <input
+                                type="checkbox"
+                                checked={valueAsBoolean(parsedModel, path)}
+                                onChange={(event) => updateVisualField(path, event.target.checked)}
+                              />
+                              <span>{label}</span>
+                            </label>
+                          ))}
                         </div>
 
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setShowAlgorithmAdvanced((state) => !state)}
-                        >
-                          {showAlgorithmAdvanced ? "Hide extra algorithm configs" : "Show extra algorithm configs"}
-                        </Button>
-
-                        {showAlgorithmAdvanced && selectedAlgorithmName === "MADDPG" ? (
-                          <div className="config-visual-grid config-visual-advanced">
-                            <label>
-                              <span>Gamma</span>
-                              <input
-                                type="number"
-                                step="0.0001"
-                                value={valueAsString(parsedModel, "algorithm.hyperparameters.gamma")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.gamma",
-                                    parseNumberOrFallback(event.target.value, 0.995)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Actor layers (comma separated)</span>
-                              <input
-                                value={valueAsArrayString(parsedModel, "algorithm.networks.actor.layers")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.networks.actor.layers",
-                                    parseNumberArray(event.target.value, [1024, 512, 256])
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Actor LR</span>
-                              <input
-                                type="number"
-                                step="0.00001"
-                                value={valueAsString(parsedModel, "algorithm.networks.actor.lr")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.networks.actor.lr",
-                                    parseNumberOrFallback(event.target.value, 5.0e-5)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Critic layers (comma separated)</span>
-                              <input
-                                value={valueAsArrayString(parsedModel, "algorithm.networks.critic.layers")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.networks.critic.layers",
-                                    parseNumberArray(event.target.value, [1024, 512, 256])
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Critic LR</span>
-                              <input
-                                type="number"
-                                step="0.00001"
-                                value={valueAsString(parsedModel, "algorithm.networks.critic.lr")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.networks.critic.lr",
-                                    parseNumberOrFallback(event.target.value, 5.0e-4)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Replay capacity</span>
-                              <input
-                                type="number"
-                                value={valueAsString(parsedModel, "algorithm.replay_buffer.capacity")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.replay_buffer.capacity",
-                                    parseNumberOrFallback(event.target.value, 200000)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Replay batch size</span>
-                              <input
-                                type="number"
-                                value={valueAsString(parsedModel, "algorithm.replay_buffer.batch_size")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.replay_buffer.batch_size",
-                                    parseNumberOrFallback(event.target.value, 256)
-                                  )
-                                }
-                              />
-                            </label>
-                          </div>
-                        ) : null}
-
-                        {showAlgorithmAdvanced && selectedAlgorithmName === "RuleBasedPolicy" ? (
-                          <div className="config-visual-grid config-visual-advanced">
-                            <label>
-                              <span>PV charge threshold</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={valueAsString(parsedModel, "algorithm.hyperparameters.pv_charge_threshold")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.pv_charge_threshold",
-                                    parseNumberOrFallback(event.target.value, 2.0)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Flexibility hours</span>
-                              <input
-                                type="number"
-                                step="0.1"
-                                value={valueAsString(parsedModel, "algorithm.hyperparameters.flexibility_hours")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.flexibility_hours",
-                                    parseNumberOrFallback(event.target.value, 3.0)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Emergency hours</span>
-                              <input
-                                type="number"
-                                step="0.1"
-                                value={valueAsString(parsedModel, "algorithm.hyperparameters.emergency_hours")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.emergency_hours",
-                                    parseNumberOrFallback(event.target.value, 1.0)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Preferred charge rate</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={valueAsString(parsedModel, "algorithm.hyperparameters.pv_preferred_charge_rate")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.pv_preferred_charge_rate",
-                                    parseNumberOrFallback(event.target.value, 0.7)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Default EV capacity (kWh)</span>
-                              <input
-                                type="number"
-                                step="0.1"
-                                value={valueAsString(parsedModel, "algorithm.hyperparameters.default_capacity_kwh")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.default_capacity_kwh",
-                                    parseNumberOrFallback(event.target.value, 60.0)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Non-flexible chargers (comma separated)</span>
-                              <input
-                                value={valueAsArrayString(parsedModel, "algorithm.hyperparameters.non_flexible_chargers")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.non_flexible_chargers",
-                                    event.target.value
-                                      .split(",")
-                                      .map((item) => item.trim())
-                                      .filter(Boolean)
-                                  )
-                                }
-                              />
-                            </label>
-                          </div>
-                        ) : null}
-
-                        {showAlgorithmAdvanced && selectedAlgorithmName === "SingleAgentRL" ? (
-                          <div className="config-visual-grid config-visual-advanced">
-                            <label>
-                              <span>Policy</span>
-                              <input
-                                value={valueAsString(parsedModel, "algorithm.policy")}
-                                onChange={(event) => updateVisualField("algorithm.policy", event.target.value)}
-                              />
-                            </label>
-                            <label>
-                              <span>Gamma</span>
-                              <input
-                                type="number"
-                                step="0.0001"
-                                value={valueAsString(parsedModel, "algorithm.hyperparameters.gamma")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.hyperparameters.gamma",
-                                    parseNumberOrFallback(event.target.value, 0.99)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Replay capacity</span>
-                              <input
-                                type="number"
-                                value={valueAsString(parsedModel, "algorithm.replay_buffer.capacity")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.replay_buffer.capacity",
-                                    parseNumberOrFallback(event.target.value, 50000)
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              <span>Replay batch size</span>
-                              <input
-                                type="number"
-                                value={valueAsString(parsedModel, "algorithm.replay_buffer.batch_size")}
-                                onChange={(event) =>
-                                  updateVisualField(
-                                    "algorithm.replay_buffer.batch_size",
-                                    parseNumberOrFallback(event.target.value, 64)
-                                  )
-                                }
-                              />
-                            </label>
-                          </div>
-                        ) : null}
-
-                      </section>
-                    ) : null}
-
-                    {visualStep === 5 ? (
-                      <section className="config-visual-group">
-                        <h3>Tracking</h3>
-                        <div className="config-visual-grid">
-                          <label className="config-checkbox-row">
-                            <input
-                              type="checkbox"
-                              checked={valueAsBoolean(parsedModel, "tracking.mlflow_enabled")}
-                              onChange={(event) => updateVisualField("tracking.mlflow_enabled", event.target.checked)}
-                            />
-                            <span>MLflow enabled</span>
-                          </label>
-
+                        <div className="config-visual-grid config-visual-grid--relaxed">
                           <label>
                             <span>Log level</span>
                             <select
@@ -1401,16 +2562,6 @@ export function ConfigsPage(): JSX.Element {
                                 <option value="curated">curated</option>
                               </select>
                             </label>
-                            <label className="config-checkbox-row">
-                              <input
-                                type="checkbox"
-                                checked={valueAsBoolean(parsedModel, "tracking.progress_updates_enabled")}
-                                onChange={(event) =>
-                                  updateVisualField("tracking.progress_updates_enabled", event.target.checked)
-                                }
-                              />
-                              <span>Progress updates enabled</span>
-                            </label>
                             <label>
                               <span>Progress update interval</span>
                               <input
@@ -1425,16 +2576,6 @@ export function ConfigsPage(): JSX.Element {
                                 }
                               />
                             </label>
-                            <label className="config-checkbox-row">
-                              <input
-                                type="checkbox"
-                                checked={valueAsBoolean(parsedModel, "tracking.system_metrics_enabled")}
-                                onChange={(event) =>
-                                  updateVisualField("tracking.system_metrics_enabled", event.target.checked)
-                                }
-                              />
-                              <span>System metrics enabled</span>
-                            </label>
                             <label>
                               <span>System metrics interval</span>
                               <input
@@ -1445,71 +2586,51 @@ export function ConfigsPage(): JSX.Element {
                                   updateVisualField(
                                     "tracking.system_metrics_interval",
                                     parseNumberOrFallback(event.target.value, 10)
-                                  )
+                                )
+                              }
+                            />
+                          </label>
+                            <label>
+                              <span>Action diagnostics detail</span>
+                              <select
+                                value={valueAsString(parsedModel, "tracking.action_diagnostics_detail") || "summary"}
+                                onChange={(event) =>
+                                  updateVisualField("tracking.action_diagnostics_detail", event.target.value)
                                 }
-                              />
+                              >
+                                <option value="summary">summary</option>
+                                <option value="per_action">per_action</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Training diagnostics detail</span>
+                              <select
+                                value={valueAsString(parsedModel, "tracking.training_diagnostics_detail") || "summary"}
+                                onChange={(event) =>
+                                  updateVisualField("tracking.training_diagnostics_detail", event.target.value)
+                                }
+                              >
+                                <option value="summary">summary</option>
+                                <option value="per_agent">per_agent</option>
+                              </select>
+                            </label>
+                            <label>
+                              <span>Reward diagnostics detail</span>
+                              <select
+                                value={valueAsString(parsedModel, "tracking.reward_diagnostics_detail") || "summary"}
+                                onChange={(event) =>
+                                  updateVisualField("tracking.reward_diagnostics_detail", event.target.value)
+                                }
+                              >
+                                <option value="summary">summary</option>
+                                <option value="per_agent">per_agent</option>
+                              </select>
                             </label>
                           </div>
                         ) : null}
-                      </section>
+                      </ConfigStepShell>
                     ) : null}
 
-                    {visualStep === 6 ? (
-                      <section className="config-visual-group">
-                        <h3>Bundle</h3>
-                        <div className="config-visual-grid">
-                          <label>
-                            <span>Bundle version</span>
-                            <input
-                              value={valueAsString(parsedModel, "bundle.bundle_version")}
-                              onChange={(event) =>
-                                updateVisualField(
-                                  "bundle.bundle_version",
-                                  event.target.value === "" ? null : event.target.value
-                                )
-                              }
-                              placeholder="v1.0.0"
-                            />
-                          </label>
-                          <label>
-                            <span>Alias mapping path</span>
-                            <input
-                              value={valueAsString(parsedModel, "bundle.alias_mapping_path")}
-                              onChange={(event) =>
-                                updateVisualField(
-                                  "bundle.alias_mapping_path",
-                                  event.target.value === "" ? null : event.target.value
-                                )
-                              }
-                              placeholder="config/alias_map.json"
-                            />
-                          </label>
-                          <label className="full-col">
-                            <span>Bundle description</span>
-                            <textarea
-                              rows={3}
-                              value={valueAsString(parsedModel, "bundle.description")}
-                              onChange={(event) =>
-                                updateVisualField(
-                                  "bundle.description",
-                                  event.target.value === "" ? null : event.target.value
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="config-checkbox-row">
-                            <input
-                              type="checkbox"
-                              checked={valueAsBoolean(parsedModel, "bundle.require_observations_envelope")}
-                              onChange={(event) =>
-                                updateVisualField("bundle.require_observations_envelope", event.target.checked)
-                              }
-                            />
-                            <span>Require observations envelope</span>
-                          </label>
-                        </div>
-                      </section>
-                    ) : null}
                   </>
                 )}
               </section>
