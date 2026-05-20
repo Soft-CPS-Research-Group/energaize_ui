@@ -25,7 +25,7 @@ export interface TimeseriesChartRow {
 }
 
 const PRESET_MIN_GRANULARITY_MS: Record<TimeseriesPreset, GranularityMs> = {
-  "1h": 1 * MINUTE_MS,
+  "1h": 15 * SECOND_MS,
   "6h": 1 * MINUTE_MS,
   "24h": 15 * MINUTE_MS,
   "7d": 1 * HOUR_MS,
