@@ -86,11 +86,13 @@ import { isCompletedForResults } from "../../utils/jobStatus";
 import {
   buildKpiMeta,
   formatKpiFamilyLabel,
+  formatKpiReferenceLabel,
   groupRowsByFamilySubfamily,
   groupScopedKpis,
   isKpiGroupUsed,
   sortKpiFamilies,
   pickPrimaryValueForGroup,
+  resolveKpiReferenceSource,
   scoreKpiGroupTone,
   type KpiFamily,
   type KpiLevel,
@@ -218,6 +220,7 @@ interface KpiHighlightRow {
   control: number | null;
   baseline: number | null;
   delta: number | null;
+  referenceLabel: string;
   tone: "better" | "worse" | "neutral" | "unknown";
   hasComparable: boolean;
 }
@@ -1435,6 +1438,7 @@ function resolveScopeHighlights(rows: KpiMetricGroupRow[], level: KpiLevel | nul
       control: best?.control ?? null,
       baseline: best?.baseline ?? null,
       delta: best?.delta ?? null,
+      referenceLabel: formatKpiReferenceLabel(best ? resolveKpiReferenceSource(best) : null),
       tone,
       hasComparable
     };
@@ -4762,7 +4766,11 @@ export function JobDetailPage(): JSX.Element {
                               </header>
                               <strong>{formatHighlightNumber(item.value)}</strong>
                               <footer>
-                                <small>{item.hasComparable ? `Δ ${formatHighlightNumber(item.delta)}` : "No BAU comparison"}</small>
+                                <small>
+                                  {item.hasComparable
+                                    ? `Δ vs ${item.referenceLabel} ${formatHighlightNumber(item.delta)}`
+                                    : `No ${item.referenceLabel} comparison`}
+                                </small>
                                 <small>{item.unit || "-"}</small>
                               </footer>
                             </article>
@@ -4808,7 +4816,7 @@ export function JobDetailPage(): JSX.Element {
                                         <tr>
                                           <th>KPI</th>
                                           <th>Control</th>
-                                          <th>BAU</th>
+                                          <th>Reference</th>
                                           <th>Delta</th>
                                           <th>Delta %</th>
                                           <th>Primary</th>
@@ -4852,7 +4860,12 @@ export function JobDetailPage(): JSX.Element {
                                                 </div>
                                               </td>
                                               <td>{formatNumber(row.control)}</td>
-                                              <td>{formatNumber(row.baseline)}</td>
+                                              <td>
+                                                <strong>{formatNumber(row.baseline)}</strong>
+                                                <small className="job-compare-secondary">
+                                                  {formatKpiReferenceLabel(resolveKpiReferenceSource(row))}
+                                                </small>
+                                              </td>
                                               <td className={tone === "better" ? "kpi-delta-better" : tone === "worse" ? "kpi-delta-worse" : ""}>
                                                 {formatNumber(row.delta)}
                                               </td>

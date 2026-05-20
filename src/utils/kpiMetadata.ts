@@ -20,6 +20,8 @@ export type KpiAggregation = "total" | "daily_average" | "instant" | "ratio";
 
 export type KpiDirection = "lower_better" | "higher_better" | "neutral" | "unknown";
 
+export type KpiReferenceSource = "business_as_usual" | "baseline";
+
 interface KpiFamilyDef {
   family: KpiFamily;
   label: string;
@@ -139,6 +141,7 @@ export interface KpiMetricMeta {
   metricKey: string;
   metricLabel: string;
   variant: KpiVariant;
+  referenceSource: KpiReferenceSource | null;
   aggregation: KpiAggregation;
   direction: KpiDirection;
   tooltip: KpiTooltipInfo;
@@ -173,7 +176,9 @@ export interface KpiMetricGroupRow {
   sourceKeys: string[];
   control: number | null;
   baseline: number | null;
+  referenceSource: KpiReferenceSource | null;
   delta: number | null;
+  deltaReferenceSource: KpiReferenceSource | null;
   normalized: number | null;
   absolute: number | null;
   deltaPct: number | null;
@@ -205,8 +210,8 @@ export interface KpiCompareGroupedRow {
   entity: string;
   leftPrimary: number | null;
   rightPrimary: number | null;
-  leftSecondary: { baseline: number | null; delta: number | null } | null;
-  rightSecondary: { baseline: number | null; delta: number | null } | null;
+  leftSecondary: { baseline: number | null; delta: number | null; referenceSource: KpiReferenceSource | null } | null;
+  rightSecondary: { baseline: number | null; delta: number | null; referenceSource: KpiReferenceSource | null } | null;
   leftHasValue: boolean;
   rightHasValue: boolean;
   deltaAbs: number | null;
@@ -333,6 +338,7 @@ function inferDirection(key: string): KpiDirection {
 function buildGenericTooltip(meta: {
   family: KpiFamily;
   variant: KpiVariant;
+  referenceSource: KpiReferenceSource | null;
   aggregation: KpiAggregation;
   metricLabel: string;
 }): KpiTooltipInfo {
@@ -340,10 +346,11 @@ function buildGenericTooltip(meta: {
   const familyHint = familyDef ? familyDef.description : "KPI from exported_kpis.csv.";
 
   let formula = `${meta.metricLabel} = exported_kpis[KPI]`;
-  if (meta.variant === "delta") formula = "delta = control - baseline";
-  if (meta.variant === "normalized") formula = "normalized = control / baseline";
+  const reference = formatKpiReferenceLabel(meta.referenceSource).toLowerCase();
+  if (meta.variant === "delta") formula = `delta = control - ${reference}`;
+  if (meta.variant === "normalized") formula = `normalized = control / ${reference}`;
   if (meta.variant === "control") formula = "control = scenario value";
-  if (meta.variant === "baseline") formula = "baseline = reference value";
+  if (meta.variant === "baseline") formula = `${reference} = reference value`;
   if (meta.aggregation === "daily_average") formula = `${formula}; daily_average = total / simulated_days`;
 
   return {
@@ -355,6 +362,18 @@ function buildGenericTooltip(meta: {
 function variantPriority(variant: KpiVariant): number {
   const index = KPI_VARIANT_ORDER.indexOf(variant);
   return index === -1 ? KPI_VARIANT_ORDER.length : index;
+}
+
+export function formatKpiReferenceLabel(source: KpiReferenceSource | null | undefined): string {
+  if (source === "business_as_usual") return "BAU";
+  if (source === "baseline") return "Baseline";
+  return "Reference";
+}
+
+export function resolveKpiReferenceSource(
+  row: Pick<KpiMetricGroupRow, "referenceSource" | "deltaReferenceSource">
+): KpiReferenceSource | null {
+  return row.deltaReferenceSource || row.referenceSource || null;
 }
 
 export function sortKpiFamilies(families: KpiFamily[]): KpiFamily[] {
@@ -417,16 +436,22 @@ export function buildKpiMeta(keyRaw: string): KpiMetricMeta {
   }
 
   let variant: KpiVariant = "absolute";
+  let referenceSource: KpiReferenceSource | null = null;
   if (removeTrailingTokens(semanticTokens, ["delta", "to", "business", "as", "usual"])) {
     variant = "delta";
+    referenceSource = "business_as_usual";
   } else if (removeTrailingTokens(semanticTokens, ["business", "as", "usual"])) {
     variant = "baseline";
+    referenceSource = "business_as_usual";
   } else if (semanticTokens.length > 0) {
     const candidate = semanticTokens[semanticTokens.length - 1] as KpiVariant;
     const previousToken = semanticTokens.length > 1 ? semanticTokens[semanticTokens.length - 2] : null;
     if (VARIANT_TOKENS.has(candidate) && previousToken !== "to") {
       variant = candidate;
       semanticTokens.pop();
+      if (variant === "baseline" || variant === "delta" || variant === "normalized") {
+        referenceSource = "baseline";
+      }
     }
   }
 
@@ -476,6 +501,7 @@ export function buildKpiMeta(keyRaw: string): KpiMetricMeta {
   const tooltip = buildGenericTooltip({
     family,
     variant,
+    referenceSource,
     aggregation,
     metricLabel
   });
@@ -489,6 +515,7 @@ export function buildKpiMeta(keyRaw: string): KpiMetricMeta {
     metricKey,
     metricLabel,
     variant,
+    referenceSource,
     aggregation,
     direction,
     tooltip,
@@ -539,7 +566,9 @@ export function groupScopedKpis(rows: KpiMetricInputRow[]): KpiMetricGroupRow[] 
         sourceKeys: [meta.key],
         control: null,
         baseline: null,
+        referenceSource: null,
         delta: null,
+        deltaReferenceSource: null,
         normalized: null,
         absolute: null,
         deltaPct: null,
@@ -581,11 +610,21 @@ export function groupScopedKpis(rows: KpiMetricInputRow[]): KpiMetricGroupRow[] 
       target.control = numericValue;
       target.breakdown.control = breakdown;
     } else if (meta.variant === "baseline") {
-      target.baseline = numericValue;
-      target.breakdown.baseline = breakdown;
+      const shouldReplaceReference =
+        target.referenceSource !== "business_as_usual" || meta.referenceSource === "business_as_usual";
+      if (shouldReplaceReference) {
+        target.baseline = numericValue;
+        target.referenceSource = meta.referenceSource;
+        target.breakdown.baseline = breakdown;
+      }
     } else if (meta.variant === "delta") {
-      target.delta = numericValue;
-      target.breakdown.delta = breakdown;
+      const shouldReplaceDelta =
+        target.deltaReferenceSource !== "business_as_usual" || meta.referenceSource === "business_as_usual";
+      if (shouldReplaceDelta) {
+        target.delta = numericValue;
+        target.deltaReferenceSource = meta.referenceSource;
+        target.breakdown.delta = breakdown;
+      }
     } else if (meta.variant === "normalized") {
       target.normalized = numericValue;
       target.breakdown.normalized = breakdown;
@@ -681,11 +720,14 @@ function parseCompareEntry(entry: Pick<KpiEntry, "key" | "source">): { metricKey
   return { metricKey: entry.key, entity: "global" };
 }
 
-function selectSecondaryForCompare(row: KpiMetricGroupRow | null): { baseline: number | null; delta: number | null } | null {
+function selectSecondaryForCompare(
+  row: KpiMetricGroupRow | null
+): { baseline: number | null; delta: number | null; referenceSource: KpiReferenceSource | null } | null {
   if (!row) return null;
   return {
     baseline: row.baseline,
-    delta: row.delta
+    delta: row.delta,
+    referenceSource: resolveKpiReferenceSource(row)
   };
 }
 

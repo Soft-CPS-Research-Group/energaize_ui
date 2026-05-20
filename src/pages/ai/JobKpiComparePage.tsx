@@ -28,6 +28,7 @@ import {
   buildGroupedKpiCompareRows,
   buildKpiMeta,
   formatKpiFamilyLabel,
+  formatKpiReferenceLabel,
   groupRowsByFamilySubfamily,
   sortKpiFamilies,
   stripKpiLevel,
@@ -613,6 +614,9 @@ export function JobKpiComparePage(): JSX.Element {
             <input type="checkbox" checked={showAll} onChange={(event) => setShowAll(event.target.checked)} />
             <span>Show all KPIs (union)</span>
           </label>
+          <small className="job-compare-note">
+            Primary deltas compare right minus left. Secondary lines show each job against its own reference.
+          </small>
         </section>
       ) : null}
 
@@ -733,7 +737,7 @@ export function JobKpiComparePage(): JSX.Element {
                           <small>R</small>
                         </div>
                         <footer>
-                          <small>{item.hasComparable ? `Δ ${formatHighlightNumeric(item.delta)}` : "No pair to compare"}</small>
+                          <small>{item.hasComparable ? `R-L Δ ${formatHighlightNumeric(item.delta)}` : "No pair to compare"}</small>
                           <small>{item.unit || "-"}</small>
                         </footer>
                       </article>
@@ -812,7 +816,8 @@ export function JobKpiComparePage(): JSX.Element {
                                           <strong>{formatNumeric(row.leftPrimary)}</strong>
                                           {row.leftSecondary ? (
                                             <small className="job-compare-secondary">
-                                              BAU: {formatNumeric(row.leftSecondary.baseline)} · Δ: {formatNumeric(row.leftSecondary.delta)}
+                                              {formatKpiReferenceLabel(row.leftSecondary.referenceSource)}:{" "}
+                                              {formatNumeric(row.leftSecondary.baseline)} · Δ: {formatNumeric(row.leftSecondary.delta)}
                                             </small>
                                           ) : null}
                                         </td>
@@ -820,7 +825,8 @@ export function JobKpiComparePage(): JSX.Element {
                                           <strong>{formatNumeric(row.rightPrimary)}</strong>
                                           {row.rightSecondary ? (
                                             <small className="job-compare-secondary">
-                                              BAU: {formatNumeric(row.rightSecondary.baseline)} · Δ: {formatNumeric(row.rightSecondary.delta)}
+                                              {formatKpiReferenceLabel(row.rightSecondary.referenceSource)}:{" "}
+                                              {formatNumeric(row.rightSecondary.baseline)} · Δ: {formatNumeric(row.rightSecondary.delta)}
                                             </small>
                                           ) : null}
                                         </td>

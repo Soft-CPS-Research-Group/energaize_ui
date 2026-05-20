@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildGroupedKpiCompareRows,
   buildKpiMeta,
+  formatKpiReferenceLabel,
   groupRowsByFamilySubfamily,
   groupScopedKpis,
   isKpiGroupUsed,
   pickPrimaryValueForGroup,
+  resolveKpiReferenceSource,
   scoreKpiGroupTone
 } from "./kpiMetadata";
 
@@ -67,6 +69,7 @@ describe("kpiMetadata v2", () => {
     expect(grouped[0]?.delta).toBe(-20);
     expect(grouped[0]?.deltaPct).toBeCloseTo(-16.666, 2);
     expect(grouped[0]?.canonicalGroupId).toBe("district_cost_total_eur");
+    expect(resolveKpiReferenceSource(grouped[0]!)).toBe("baseline");
   });
 
   it("prefers business-as-usual reference rows when present", () => {
@@ -106,6 +109,8 @@ describe("kpiMetadata v2", () => {
     expect(grouped[0]?.delta).toBe(-10);
     expect(grouped[0]?.deltaPct).toBeCloseTo(-10, 2);
     expect(grouped[0]?.canonicalGroupId).toBe("district_cost_total_eur");
+    expect(resolveKpiReferenceSource(grouped[0]!)).toBe("business_as_usual");
+    expect(formatKpiReferenceLabel(resolveKpiReferenceSource(grouped[0]!))).toBe("BAU");
   });
 
   it("parses business-as-usual ratio KPIs as their own comparable group", () => {
