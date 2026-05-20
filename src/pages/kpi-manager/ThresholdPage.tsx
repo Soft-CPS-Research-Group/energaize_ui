@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "../../components/ui/Button";
 import {
   Plus, Trash2, Edit2, X, Loader2, AlertCircle,
@@ -72,7 +72,7 @@ const modalStyle: React.CSSProperties = {
 
 function ThresholdModal({
   initial,
-  community,
+  community: _community,
   availableKpis,
   onClose,
   onSave,

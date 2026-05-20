@@ -73,7 +73,6 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
 
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
   const [community, setCommunity] = useState(defaultCommunity);
-  const defaultBuildingsForCommunity = (COMMUNITY_FALLBACK[community] ?? [])[0];
   const [buildings, setBuildings] = useState<string[]>([]);
   const [startDate, setStartDate] = useState(getLocalDateString(defaultStart));
   const [endDate, setEndDate] = useState(getLocalDateString(defaultEnd));
