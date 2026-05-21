@@ -147,7 +147,7 @@ function AnalysisPanel({ slot, scheduledKpis, scopeOptions, kpiMeta, inputStyle,
         <span style={{ flex: 1, fontWeight: 600, fontSize: "0.875rem" }}>{summaryTitle}</span>
         {slot.result && (
           <span style={{ fontSize: "0.85rem", fontWeight: 700, color: rColor }}>
-            r = {r! > 0 ? "+" : ""}{r!.toFixed(3)}
+            {r === null ? "r = N/A" : `r = ${r > 0 ? "+" : ""}${r.toFixed(3)}`}
           </span>
         )}
         {slot.loading && <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />}

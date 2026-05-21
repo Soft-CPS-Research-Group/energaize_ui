@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-export const KPI_API_BASE_URL = import.meta.env.VITE_KPI_API_URL?.replace(/\/$/, "") || 'http://193.136.62.78:8007';
-//export const KPI_API_BASE_URL = "http://localhost:8000";
+//export const KPI_API_BASE_URL = import.meta.env.VITE_KPI_API_URL?.replace(/\/$/, "") || 'http://193.136.62.78:8007';
+export const KPI_API_BASE_URL = "http://localhost:8000";
 export const api = axios.create({ baseURL: `${KPI_API_BASE_URL}/` });
 import type { ApiResponse } from "../types/kpi";
 

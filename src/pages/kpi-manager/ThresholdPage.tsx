@@ -13,6 +13,7 @@ import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Threshold {
+  id?: string;          // MongoDB _id as string — present after first load
   community: string;
   kpi: string;
   scope: string;
@@ -507,7 +508,12 @@ export function ThresholdPage() {
 
   const handleDelete = async (t: Threshold) => {
     if (!confirm(`Delete threshold for "${t.kpi}" [${t.scope}]?`)) return;
-    await axios.delete(`api/v1/thresholds/${community}/${t.kpi}?scope=${t.scope}`);
+    if (t.id) {
+      // Precise delete by MongoDB _id — safe when duplicate kpi/scope rules exist
+      await axios.delete(`api/v1/thresholds/${community}/by-id/${t.id}`);
+    } else {
+      await axios.delete(`api/v1/thresholds/${community}/${t.kpi}?scope=${t.scope}`);
+    }
     await load();
   };
 
