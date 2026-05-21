@@ -31,6 +31,15 @@ describe("timeseriesGranularity utils", () => {
   it("resolves context minimum granularity by preset and custom span", () => {
     expect(
       resolveContextMinGranularityMs({
+        timePreset: "1h",
+        useCustomRange: false,
+        rangeStart: null,
+        rangeEnd: null
+      })
+    ).toBe(15 * SECOND_MS);
+
+    expect(
+      resolveContextMinGranularityMs({
         timePreset: "7d",
         useCustomRange: false,
         rangeStart: null,
