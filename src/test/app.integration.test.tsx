@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
 import { AuthProvider } from "../contexts/AuthContext";
@@ -31,6 +31,15 @@ function renderApp(initialRoute: string) {
       </AuthProvider>
     </QueryClientProvider>
   );
+}
+
+function readBlobAsText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(reader.error || new Error("Could not read blob."));
+    reader.readAsText(blob);
+  });
 }
 
 describe("App integration", () => {
@@ -135,6 +144,70 @@ describe("App integration", () => {
 
     expect(await screen.findByRole("heading", { name: /logs: job-completed-001/i })).toBeInTheDocument();
     expect(await screen.findByText(/fallback logs content/i)).toBeInTheDocument();
+  });
+
+  it("downloads the complete job log file instead of the visible preview buffer", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    const api = JOB_ORCHESTRATOR_API_URL.replace(/\/$/, "");
+    const createdUrls: Blob[] = [];
+
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn((blob: Blob) => {
+        createdUrls.push(blob);
+        return "blob:job-logs";
+      })
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn()
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    server.use(
+      http.get(`${api}/logs-chunk/:jobId`, ({ params }) =>
+        HttpResponse.json({
+          job_id: params.jobId,
+          text: "visible preview only",
+          next_offset: "visible preview only".length,
+          truncated: true,
+          available: true,
+          message: null
+        })
+      ),
+      http.get(`${api}/file-logs/:jobId`, () => HttpResponse.text("complete file logs\nline 2\n"))
+    );
+
+    try {
+      renderApp("/app/ai/jobs");
+
+      await user.click(
+        await screen.findByRole("button", {
+          name: /open logs for job-completed-001/i
+        })
+      );
+
+      expect(await screen.findByText(/visible preview only/i)).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /^download$/i }));
+
+      await waitFor(() => expect(clickSpy).toHaveBeenCalled());
+      expect(createdUrls).toHaveLength(1);
+      await expect(readBlobAsText(createdUrls[0])).resolves.toBe("complete file logs\nline 2\n");
+    } finally {
+      clickSpy.mockRestore();
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: originalCreateObjectURL
+      });
+      Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: originalRevokeObjectURL
+      });
+    }
   });
 
   it("selects two completed jobs and opens KPI compare page", async () => {

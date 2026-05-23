@@ -21,6 +21,7 @@ import {
 import {
   deleteJob,
   getExperimentConfig,
+  getJobFileLogs,
   getJobProgress,
   getJobResolvedConfig,
   listExperimentConfigs,
@@ -467,6 +468,7 @@ export function JobsPage(): JSX.Element {
   const [logsOpen, setLogsOpen] = useState(false);
   const [logsJobId, setLogsJobId] = useState("");
   const [logsSearch, setLogsSearch] = useState("");
+  const [logsDownloading, setLogsDownloading] = useState(false);
   const [configPreviewOpen, setConfigPreviewOpen] = useState(false);
   const [configPreviewTarget, setConfigPreviewTarget] = useState("");
   const [configPreviewLabel, setConfigPreviewLabel] = useState("");
@@ -1199,16 +1201,29 @@ export function JobsPage(): JSX.Element {
     }
   }
 
-  function downloadLogs(): void {
-    if (!logsQuery.text || !logsJobId) return;
+  async function downloadLogs(): Promise<void> {
+    if (!logsJobId || logsDownloading) return;
 
-    const blob = new Blob([logsQuery.text], { type: "text/plain;charset=utf-8" });
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = `${logsJobId}.log`;
-    anchor.click();
-    URL.revokeObjectURL(objectUrl);
+    const jobId = logsJobId;
+    setLogsDownloading(true);
+    try {
+      const fullLogs = await getJobFileLogs(jobId);
+      if (!fullLogs) {
+        throw new Error("No log file content was returned for this job.");
+      }
+
+      const blob = new Blob([fullLogs], { type: "text/plain;charset=utf-8" });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${jobId}.log`;
+      anchor.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      notifyError("Failed to download logs", error);
+    } finally {
+      setLogsDownloading(false);
+    }
   }
 
   const matchedRunConfig =
@@ -2347,9 +2362,9 @@ export function JobsPage(): JSX.Element {
                 variant="ghost"
                 iconLeft={<Download size={13} />}
                 onClick={downloadLogs}
-                disabled={!hasRawLogs}
+                disabled={!hasRawLogs || logsDownloading}
               >
-                Download
+                {logsDownloading ? "Downloading..." : "Download"}
               </Button>
             </div>
 
