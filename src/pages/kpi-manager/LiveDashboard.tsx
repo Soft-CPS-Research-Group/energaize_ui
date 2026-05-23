@@ -430,14 +430,14 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
 
     // We subscribe to the whole community so the connection doesn't drop when selecting/unselecting buildings.
     const url = `${KPI_API_BASE_URL}/api/v1/live/${community}/stream`;
-    
+
     const es = new EventSource(url);
 
     es.onmessage = (event) => {
       try {
         const snaps = JSON.parse(event.data) as LiveSnapshot[];
         if (!snaps || snaps.length === 0) return;
-        
+
         setSnapshots(prev => {
           // Merge new snapshots into existing state by building
           const map = new Map(prev.map(s => [s.building, s]));
@@ -536,9 +536,6 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
               animation: snapshots.length > 0 && !error ? "pulse 2s infinite" : "none",
             }} />
             <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>Live Telemetry</span>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-              · streaming via Server-Sent Events (SSE)
-            </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             {lastUpdated && (

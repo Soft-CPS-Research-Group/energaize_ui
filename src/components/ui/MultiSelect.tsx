@@ -25,6 +25,17 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
   const toggle = (val: string) =>
     onChange(selected.includes(val) ? selected.filter(s => s !== val) : [...selected, val]);
 
+  const allSelected = options.length > 0 && selected.length === options.length;
+  const someSelected = selected.length > 0 && !allSelected;
+
+  const toggleAll = () => {
+    if (allSelected) {
+      onChange([]); // deselect all
+    } else {
+      onChange(options.map(o => o.value)); // select all
+    }
+  };
+
   return (
     <div ref={ref} style={{ position: "relative", width: "100%" }}>
       <button
@@ -40,13 +51,15 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
         <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {selected.length === 0
             ? placeholder
-            : `${selected.length} selected`}
+            : allSelected
+              ? "All selected"
+              : `${selected.length} selected`}
         </span>
         <ChevronDown style={{ width: "16px", height: "16px", color: "var(--text-muted)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
       </button>
 
       {/* Selected pills */}
-      {selected.length > 0 && (
+      {selected.length > 0 && !allSelected && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "6px" }}>
           {selected.map(val => {
             const opt = options.find(o => o.value === val);
@@ -65,21 +78,45 @@ export function MultiSelect({ options, selected, onChange, placeholder = "Select
           {options.length === 0 ? (
             <div style={{ padding: "8px 12px", fontSize: "14px", color: "var(--text-muted)" }}>No options.</div>
           ) : (
-            options.map(opt => {
-              const isSelected = selected.includes(opt.value);
-              return (
-                <div
-                  key={opt.value}
-                  onClick={() => toggle(opt.value)}
-                  style={{ display: "flex", alignItems: "center", padding: "8px 12px", fontSize: "14px", cursor: "pointer", borderBottom: "1px solid var(--line)" }}
-                >
-                  <div style={{ width: "16px", height: "16px", borderRadius: "4px", border: isSelected ? "1px solid var(--accent)" : "1px solid var(--line-heavy)", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "8px", backgroundColor: isSelected ? "var(--accent)" : "transparent" }}>
-                    {isSelected && <Check style={{ width: "12px", height: "12px", color: "var(--bg-elev)" }} />}
-                  </div>
-                  {opt.label}
+            <>
+              {/* Select All row */}
+              <div
+                onClick={toggleAll}
+                style={{
+                  display: "flex", alignItems: "center", padding: "8px 12px", fontSize: "14px",
+                  cursor: "pointer", borderBottom: "2px solid var(--line)",
+                  fontWeight: 600, color: "var(--text)", backgroundColor: "var(--bg-elev)",
+                }}
+              >
+                <div style={{
+                  width: "16px", height: "16px", borderRadius: "4px", marginRight: "8px",
+                  border: allSelected || someSelected ? "1px solid var(--accent)" : "1px solid var(--line-heavy)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  backgroundColor: allSelected ? "var(--accent)" : someSelected ? "var(--accent-muted)" : "transparent",
+                }}>
+                  {allSelected && <Check style={{ width: "12px", height: "12px", color: "var(--bg-elev)" }} />}
+                  {someSelected && <span style={{ width: "8px", height: "2px", backgroundColor: "var(--accent)", display: "block", borderRadius: "1px" }} />}
                 </div>
-              );
-            })
+                {allSelected ? "Deselect all" : "Select all"}
+              </div>
+
+              {/* Individual options */}
+              {options.map(opt => {
+                const isSelected = selected.includes(opt.value);
+                return (
+                  <div
+                    key={opt.value}
+                    onClick={() => toggle(opt.value)}
+                    style={{ display: "flex", alignItems: "center", padding: "8px 12px", fontSize: "14px", cursor: "pointer", borderBottom: "1px solid var(--line)" }}
+                  >
+                    <div style={{ width: "16px", height: "16px", borderRadius: "4px", border: isSelected ? "1px solid var(--accent)" : "1px solid var(--line-heavy)", display: "flex", alignItems: "center", justifyContent: "center", marginRight: "8px", backgroundColor: isSelected ? "var(--accent)" : "transparent" }}>
+                      {isSelected && <Check style={{ width: "12px", height: "12px", color: "var(--bg-elev)" }} />}
+                    </div>
+                    {opt.label}
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
       )}

@@ -94,9 +94,7 @@ export function ComparePage() {
 
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
   const [community, setCommunity] = useState(defaultCommunity);
-  const [buildings, setBuildings] = useState<string[]>(
-    (Object.values(COMMUNITY_FALLBACK)[0] as string[]) ?? []
-  );
+  const [buildings, setBuildings] = useState<string[]>([]);
 
   // KPIs appropriate for baseline vs real comparison (exclude per-building meter KPIs)
   const comparableKpis = kpiMeta

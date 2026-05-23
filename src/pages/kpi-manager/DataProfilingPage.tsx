@@ -407,10 +407,7 @@ export function DataProfilingPage() {
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
 
   const [community, setCommunity] = useState(defaultCommunity);
-  const [buildings, setBuildings] = useState<string[]>(() => {
-    const first = (COMMUNITY_FALLBACK[defaultCommunity] ?? [])[0];
-    return first ? [first] : [];
-  });
+  const [buildings, setBuildings] = useState<string[]>([]);
   const [startDate, setStartDate] = useState(getLocalDateString(defaultStart));
   const [endDate, setEndDate]     = useState(getLocalDateString(defaultEnd));
 
