@@ -242,8 +242,14 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
   const streamingCharts = useMemo(() => {
     if (!chartData || !chartData.series || chartData.series.length === 0) return null;
 
-    // Sort categories so order is consistent
-    const sortedCategories = [...chartData.categories].sort((a: string, b: string) => a.localeCompare(b));
+    // Data-quality KPIs go last; everything else sorts alphabetically
+    const DATA_QUALITY_KPIS = new Set(["AuthenticityKPI", "ValidityKPI", "CoverageKPI", "DataQualityKPI"]);
+    const sortedCategories = [...chartData.categories].sort((a: string, b: string) => {
+      const aIsQuality = DATA_QUALITY_KPIS.has(a) ? 1 : 0;
+      const bIsQuality = DATA_QUALITY_KPIS.has(b) ? 1 : 0;
+      if (aIsQuality !== bIsQuality) return aIsQuality - bIsQuality;
+      return a.localeCompare(b);
+    });
 
     return (
       <div className="kpi-grid" >
@@ -254,7 +260,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
           return (
             <KpiChart
               key={`streaming_${kpiName}`}
-              title={`${titleName} (Streaming)`}
+              title={titleName}
               kpiName={kpiName}
               data={chartData.series}
               lines={lines}
@@ -270,8 +276,14 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
     const entries = Object.entries(scheduledChartData.seriesByKpi);
     if (entries.length === 0) return null;
 
-    // Sort entries so order is consistent
-    entries.sort(([kpiA], [kpiB]) => kpiA.localeCompare(kpiB));
+    // Data-quality KPIs go last; everything else sorts alphabetically
+    const DATA_QUALITY_KPIS = new Set(["AuthenticityKPI", "ValidityKPI", "CoverageKPI", "DataQualityKPI"]);
+    entries.sort(([kpiA], [kpiB]) => {
+      const aIsQuality = DATA_QUALITY_KPIS.has(kpiA) ? 1 : 0;
+      const bIsQuality = DATA_QUALITY_KPIS.has(kpiB) ? 1 : 0;
+      if (aIsQuality !== bIsQuality) return aIsQuality - bIsQuality;
+      return kpiA.localeCompare(kpiB);
+    });
 
     return (
       <div className="kpi-grid" >
@@ -282,7 +294,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
           return (
             <KpiChart
               key={`scheduled_${kpiName}`}
-              title={`${titleName} (Scheduled Temporal Series)`}
+              title={titleName}
               kpiName={kpiName}
               data={series as any[]}
               lines={lines}

@@ -407,13 +407,27 @@ export function SchedulerPage() {
   };
 
   const handleSaveJob = async (data: typeof EMPTY_FORM) => {
+    // Backend expects lookback_hours / lookback_days as separate ints
+    const lb = data.lookback.trim().toLowerCase();
+    const num = parseInt(lb, 10);
+    const isHours = lb.endsWith("h");
+    const payload = {
+      id:             data.id,
+      community:      data.community,
+      buildings:      data.buildings,
+      kpis:           data.kpis,
+      cron:           data.cron,
+      lookback_hours: isHours ? num : 0,
+      lookback_days:  isHours ? 0 : num,
+    };
     if (editJob) {
-      await axios.put(`/api/v1/scheduler/jobs/${data.id}`, data);
+      await axios.put(`/api/v1/scheduler/jobs/${data.id}`, payload);
     } else {
-      await axios.post("/api/v1/scheduler/jobs", data);
+      await axios.post("/api/v1/scheduler/jobs", payload);
     }
     await fetchStatus();
   };
+
 
   const openCreate = () => { setEditJob(null); setModalOpen(true); };
   const openEdit = (job: JobStatus) => { setEditJob(job); setModalOpen(true); };

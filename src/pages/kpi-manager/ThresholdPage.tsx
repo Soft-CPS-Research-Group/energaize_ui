@@ -75,6 +75,8 @@ function ThresholdModal({
   initial,
   community: _community,
   availableKpis,
+  communitiesList,
+  buildingsMap,
   onClose,
   onSave,
   isEdit,
@@ -82,6 +84,8 @@ function ThresholdModal({
   initial: Omit<Threshold, "community">;
   community: string;
   availableKpis: string[];
+  communitiesList: string[];
+  buildingsMap: Record<string, string[]>;
   onClose: () => void;
   onSave: (data: Omit<Threshold, "community">) => Promise<void>;
   isEdit: boolean;
@@ -89,6 +93,25 @@ function ThresholdModal({
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Derive community/building from form.scope
+  const [scopeCommunity, setScopeCommunity] = useState<string>("*");
+  const [scopeBuilding, setScopeBuilding] = useState<string>(form.scope);
+
+  const availableBuildings = scopeCommunity === "*"
+    ? Object.values(buildingsMap).flat()
+    : (buildingsMap[scopeCommunity] ?? []);
+
+  const handleScopeCommunityChange = (c: string) => {
+    setScopeCommunity(c);
+    setScopeBuilding("*");
+    setForm(f => ({ ...f, scope: "*" }));
+  };
+
+  const handleScopeBuildingChange = (b: string) => {
+    setScopeBuilding(b);
+    setForm(f => ({ ...f, scope: b }));
+  };
 
   const handleSave = async () => {
     setErr(null);
@@ -131,14 +154,32 @@ function ThresholdModal({
         {/* Scope */}
         <div>
           <label style={labelStyle}>Scope</label>
-          <input
-            style={inputStyle}
-            value={form.scope}
-            placeholder="* (all scopes) or a specific building ID"
-            onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}
-          />
+          <div style={{ display: "flex", gap: "0.6rem" }}>
+            <select
+              style={{ ...inputStyle, flex: 1 }}
+              value={scopeCommunity}
+              disabled={isEdit}
+              onChange={e => handleScopeCommunityChange(e.target.value)}
+            >
+              <option value="*">All communities</option>
+              {communitiesList.map(c => (
+                <option key={c} value={c}>{c.replace(/_/g, " ").toUpperCase()}</option>
+              ))}
+            </select>
+            <select
+              style={{ ...inputStyle, flex: 1 }}
+              value={scopeBuilding}
+              disabled={isEdit}
+              onChange={e => handleScopeBuildingChange(e.target.value)}
+            >
+              <option value="*">All buildings</option>
+              {availableBuildings.map(b => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
+          </div>
           <p style={{ fontSize: "0.72rem", color: "var(--text-soft)", marginTop: "0.25rem" }}>
-            Use <code>*</code> to match any scope/building, or enter a specific building ID.
+            Select a community and building, or leave both as "All" to match every scope.
           </p>
         </div>
 
@@ -635,10 +676,12 @@ export function ThresholdPage() {
 
       {/* Modal */}
       {modal.open && (
-        <ThresholdModal
+      <ThresholdModal
           isEdit={!!modal.editing}
           community={community}
           availableKpis={availableKpis}
+          communitiesList={communityList}
+          buildingsMap={communities ?? COMMUNITY_FALLBACK}
           initial={modal.editing ? {
             kpi: modal.editing.kpi,
             scope: modal.editing.scope,

@@ -164,13 +164,32 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
       .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }
 
+  // --- Prioritise scheduled over streaming ---
+  // If a KPI has scheduled results, remove it from the streaming chart entirely
+  // so it is never shown twice. Authenticity / Validity are computed as
+  // scheduled KPIs and must not appear in the streaming panel.
+  const scheduledKpiNames = new Set(Object.keys(scheduledSortedByKpi));
+  const filteredStreamingMetrics = Array.from(streamingMetrics).filter(
+    (k) => !scheduledKpiNames.has(k)
+  );
+  // Remove entries for suppressed KPIs from the timeline rows
+  for (const row of streamingSorted) {
+    for (const kpi of scheduledKpiNames) {
+      for (const scope of Array.from(streamingScopes)) {
+        delete (row as any)[`${scope}_${kpi}`];
+      }
+    }
+  }
+
   // Build final statsList: merge streaming + scheduled, deduplicate by
   // scope+kpiName, preferring the scheduled entry (more precise aggregation).
   const statsMap = new Map<string, any>();
 
   // Add streaming stats first (lower priority)
   for (const entry of streamingStatsList) {
-    statsMap.set(`${entry.scope}__${entry.kpiName}`, entry);
+    if (!scheduledKpiNames.has(entry.kpiName)) {
+      statsMap.set(`${entry.scope}__${entry.kpiName}`, entry);
+    }
   }
   // Scheduled stats overwrite streaming ones for the same KPI+scope
   for (const entry of scheduledStatsList) {
@@ -181,7 +200,7 @@ self.onmessage = (e: MessageEvent<ProcessRequest>) => {
   const response: ProcessResponse = {
     streamingChartData: {
       series: streamingSorted,
-      categories: Array.from(streamingMetrics),
+      categories: filteredStreamingMetrics,
       buildings: Array.from(streamingScopes),
     },
     scheduledChartData: {
