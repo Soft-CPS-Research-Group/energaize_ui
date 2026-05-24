@@ -32,6 +32,11 @@ export function useAlerts({
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
+  const onNewAlertRef = useRef(onNewAlert);
+  useEffect(() => {
+    onNewAlertRef.current = onNewAlert;
+  }, [onNewAlert]);
+
   const markAllRead = useCallback(() => setUnreadCount(0), []);
 
   useEffect(() => {
@@ -41,24 +46,33 @@ export function useAlerts({
       community,
       (msg) => {
         if (msg.type === "history") {
+          console.log("[SSE] History received:", msg.alerts.length);
           setAlerts(msg.alerts);
           setConnected(true);
         } else if (msg.type === "alert") {
+          console.log("[SSE] New alert received:", msg.alert);
           setAlerts((prev) => [msg.alert, ...prev]);
           setUnreadCount((n) => n + 1);
-          onNewAlert?.(msg.alert);
+          if (onNewAlertRef.current) {
+            try {
+              onNewAlertRef.current(msg.alert);
+            } catch (err) {
+              console.error("[SSE] onNewAlert callback failed:", err);
+            }
+          }
         }
       },
-      () => setConnected(false),
+      () => setConnected(false)
     );
 
     esRef.current = es;
+
     return () => {
       es.close();
       esRef.current = null;
       setConnected(false);
     };
-  }, [community, enabled]); // onNewAlert intentionally omitted — stable ref not needed
+  }, [community, enabled]);
 
   return { alerts, unreadCount, markAllRead, connected };
 }

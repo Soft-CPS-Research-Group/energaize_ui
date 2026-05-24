@@ -135,33 +135,33 @@ export interface CommunityDomainSnapshot {
   assetOwnerships: AssetOwnership[];
 }
 
-const COMMUNITY_DOMAIN_STORAGE_KEY = "energaize:community-domain:v1";
+const COMMUNITY_DOMAIN_STORAGE_KEY = "energaize:community-domain:v2";
 const PROSUMER_USER_ID = "user-prosumer-01";
 
 const INITIAL_DOMAIN: CommunityDomainSnapshot = {
   recs: [
     {
-      id: "solar-community",
-      name: "Solar Community",
-      description: "Residential REC with local PV, storage and flexible EV charging.",
+      id: "living_lab",
+      name: "Living Lab",
+      description: "Living Lab community with R-H buildings.",
       action_frequency: "daily",
       localization: { name: "Porto, PT", latitude: 41.1579, longitude: -8.6291 },
       power_limit_export: { megawatts: 5 },
       power_limit_import: { megawatts: 3 }
     },
     {
-      id: "river-grid",
-      name: "River Grid",
-      description: "Mixed-use REC with shared BESS orchestration.",
+      id: "sao_mamede",
+      name: "São Mamede",
+      description: "São Mamede community.",
       action_frequency: "hourly",
       localization: { name: "Gaia, PT", latitude: 41.1239, longitude: -8.6118 },
       power_limit_export: { megawatts: 3.2 },
       power_limit_import: { megawatts: 4.4 }
     },
     {
-      id: "wind-hub",
-      name: "Wind Hub",
-      description: "Pilot site for distributed flexibility operations.",
+      id: "i-charging_headquarters",
+      name: "i-charging HQ",
+      description: "i-charging Headquarters.",
       action_frequency: "daily",
       localization: { name: "Braga, PT", latitude: 41.5454, longitude: -8.4265 },
       power_limit_export: { megawatts: 1.8 },
@@ -174,7 +174,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "Community Site",
       site_type: "community",
       objective_preference: "flexibility",
-      assigned_rec_id: "solar-community",
+      assigned_rec_id: "living_lab",
       location: "Shared infrastructure",
       is_community_site: true
     },
@@ -183,7 +183,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "Building A",
       site_type: "commercial",
       objective_preference: "self_consumption",
-      assigned_rec_id: "solar-community",
+      assigned_rec_id: "living_lab",
       location: "North block"
     },
     {
@@ -191,7 +191,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "House 1",
       site_type: "residential",
       objective_preference: "self_consumption",
-      assigned_rec_id: "solar-community",
+      assigned_rec_id: "living_lab",
       location: "Rua do Sol 12"
     },
     {
@@ -199,7 +199,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "House 2",
       site_type: "residential",
       objective_preference: "cost",
-      assigned_rec_id: "solar-community",
+      assigned_rec_id: "living_lab",
       location: "Rua do Sol 16"
     },
     {
@@ -207,7 +207,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "Community Site",
       site_type: "community",
       objective_preference: "reliability",
-      assigned_rec_id: "river-grid",
+      assigned_rec_id: "sao_mamede",
       location: "Shared infrastructure",
       is_community_site: true
     },
@@ -216,7 +216,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "Campus Building",
       site_type: "commercial",
       objective_preference: "reliability",
-      assigned_rec_id: "river-grid",
+      assigned_rec_id: "sao_mamede",
       location: "West campus"
     },
     {
@@ -224,7 +224,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "Community Site",
       site_type: "community",
       objective_preference: "flexibility",
-      assigned_rec_id: "wind-hub",
+      assigned_rec_id: "i-charging_headquarters",
       location: "Shared infrastructure",
       is_community_site: true
     },
@@ -233,7 +233,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       name: "Living Lab",
       site_type: "public",
       objective_preference: "flexibility",
-      assigned_rec_id: "wind-hub",
+      assigned_rec_id: "i-charging_headquarters",
       location: "Pilot building"
     }
   ],
@@ -396,7 +396,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
       id: "grant-rec-manager-solar",
       role_id: "role-rec-manager",
       user_id: "user-rec-manager-01",
-      scope: { scope_type: "rec", scope_id: "solar-community" },
+      scope: { scope_type: "rec", scope_id: "living_lab" },
       grant_status: "active"
     },
     {
@@ -411,7 +411,7 @@ const INITIAL_DOMAIN: CommunityDomainSnapshot = {
     {
       id: "membership-prosumer-solar",
       user_id: PROSUMER_USER_ID,
-      rec_id: "solar-community",
+      rec_id: "living_lab",
       member_type: "individual",
       membership_status: "active"
     }
