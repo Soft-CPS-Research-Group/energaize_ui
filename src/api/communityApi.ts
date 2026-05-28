@@ -20,13 +20,21 @@ import type { CommunityContext } from "../types";
 type CommunityApiMode = "mock" | "backend";
 
 export const COMMUNITY_API_MODE: CommunityApiMode =
-  import.meta.env.VITE_COMMUNITY_API_MODE === "backend" ? "backend" : "mock";
-export const COMMUNITY_API_URL =
-  import.meta.env.VITE_COMMUNITY_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
-export const ACCESS_API_URL =
-  import.meta.env.VITE_ACCESS_API_URL?.replace(/\/$/, "") || "http://localhost:8001";
-export const TELEMETRY_PROFILE_API_URL =
-  import.meta.env.VITE_TELEMETRY_PROFILE_API_URL?.replace(/\/$/, "") || "http://localhost:8002";
+  import.meta.env.MODE === "test" ? "mock" : import.meta.env.VITE_COMMUNITY_API_MODE === "backend" ? "backend" : "mock";
+
+function normalizeBaseUrl(value: string | undefined, fallback: string): string {
+  return (value?.trim() || fallback).replace(/\/$/, "");
+}
+
+export const COMMUNITY_API_URL = normalizeBaseUrl(import.meta.env.VITE_COMMUNITY_API_URL, "/community-api");
+export const ACCESS_API_URL = normalizeBaseUrl(import.meta.env.VITE_ACCESS_API_URL, "/access-api");
+export const TELEMETRY_PROFILE_API_URL = normalizeBaseUrl(
+  import.meta.env.VITE_TELEMETRY_PROFILE_API_URL,
+  "/telemetry-api"
+);
+export const FLEXIBILITY_API_URL = normalizeBaseUrl(import.meta.env.VITE_FLEXIBILITY_API_URL, "/flexibility-api");
+export const COMMUNITY_BACKEND_FALLBACK_TO_MOCK =
+  import.meta.env.VITE_COMMUNITY_BACKEND_FALLBACK_TO_MOCK !== "false";
 
 async function request<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}${path.startsWith("/") ? path : `/${path}`}`, {
@@ -38,7 +46,14 @@ async function request<T>(baseUrl: string, path: string, init?: RequestInit): Pr
   });
 
   if (!response.ok) {
-    throw new Error(`Community API request failed (${response.status})`);
+    let message = `Community API request failed (${response.status})`;
+    try {
+      const data = await response.json();
+      message = data.detail || data.message || message;
+    } catch {
+      message = response.statusText || message;
+    }
+    throw new Error(message);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
@@ -109,8 +124,96 @@ function assetSiteId(asset: CommunityAsset): string | undefined {
   return asset.site_Id || asset.site_id;
 }
 
+function normalizeAsset(input: unknown): CommunityAsset {
+  const raw = input as CommunityAsset & { data?: Partial<CommunityAsset> };
+  if (raw && typeof raw === "object" && raw.data && raw.asset_type) {
+    return {
+      ...raw.data,
+      id: raw.id,
+      asset_type: raw.asset_type,
+      site_Id: raw.data.site_Id || raw.data.site_id
+    } as CommunityAsset;
+  }
+  return raw as CommunityAsset;
+}
+
+function normalizeRole(input: unknown): CommunityRole {
+  const raw = input as CommunityRole & { role_id?: string };
+  return {
+    ...raw,
+    id: raw.id || raw.role_id || ""
+  };
+}
+
+function normalizeGrant(input: unknown): CommunityGrant {
+  const raw = input as CommunityGrant & { grant_id?: string };
+  return {
+    ...raw,
+    id: raw.id || raw.grant_id || ""
+  };
+}
+
+function normalizeUser(input: unknown): CommunityUser {
+  const raw = input as CommunityUser;
+  return {
+    ...raw,
+    rec_memberships: raw.rec_memberships || [],
+    site_accesses: raw.site_accesses || [],
+    asset_ownerships: raw.asset_ownerships || []
+  };
+}
+
+function recMembershipsFromUsers(users: CommunityUser[]): RecMembership[] {
+  return users.flatMap((user) =>
+    (user.rec_memberships || []).map((membership) => ({
+      id: membership.id || `${user.id}:${membership.rec_id}`,
+      user_id: user.id,
+      rec_id: membership.rec_id,
+      member_type: membership.member_type,
+      membership_status: membership.membership_status
+    }))
+  );
+}
+
+function siteAccessesFromUsers(users: CommunityUser[]): SiteAccess[] {
+  return users.flatMap((user) =>
+    (user.site_accesses || []).map((access) => ({
+      id: access.id || `${user.id}:${access.site_id}`,
+      user_id: user.id,
+      site_id: access.site_id,
+      relation: access.relation,
+      validity_start: access.validity_start,
+      validity_end: access.validity_end
+    }))
+  );
+}
+
+function assetOwnershipsFromUsers(users: CommunityUser[]): AssetOwnership[] {
+  return users.flatMap((user) =>
+    (user.asset_ownerships || []).map((ownership) => ({
+      id: ownership.id || `${user.id}:${ownership.energy_asset_id}`,
+      user_id: user.id,
+      energy_asset_id: ownership.energy_asset_id,
+      ownership_type: ownership.ownership_type
+    }))
+  );
+}
+
+async function optionalBackendList<T>(loader: () => Promise<T[]>, label: string): Promise<T[]> {
+  try {
+    return await loader();
+  } catch (error) {
+    console.warn(`${label} could not be loaded from backend`, error);
+    return [];
+  }
+}
+
+export function isCommunityBackendMode(): boolean {
+  return COMMUNITY_API_MODE === "backend";
+}
+
 export async function listRecs(): Promise<CommunityRec[]> {
-  if (COMMUNITY_API_MODE === "backend") return request<CommunityRec[]>(COMMUNITY_API_URL, "/api/recs");
+  if (COMMUNITY_API_MODE === "backend") return request<CommunityRec[]>(COMMUNITY_API_URL, "/api/recs/");
   return snapshot().recs;
 }
 
@@ -120,7 +223,7 @@ export async function getRec(recId: string): Promise<CommunityRec> {
 }
 
 export async function listSites(): Promise<CommunitySite[]> {
-  if (COMMUNITY_API_MODE === "backend") return request<CommunitySite[]>(COMMUNITY_API_URL, "/api/sites");
+  if (COMMUNITY_API_MODE === "backend") return request<CommunitySite[]>(COMMUNITY_API_URL, "/api/sites/");
   return snapshot().sites;
 }
 
@@ -130,27 +233,42 @@ export async function getSite(siteId: string): Promise<CommunitySite> {
 }
 
 export async function listAssets(): Promise<CommunityAsset[]> {
-  if (COMMUNITY_API_MODE === "backend") return request<CommunityAsset[]>(COMMUNITY_API_URL, "/api/assets");
+  if (COMMUNITY_API_MODE === "backend") {
+    const response = await request<unknown[]>(COMMUNITY_API_URL, "/api/assets/");
+    return response.map(normalizeAsset);
+  }
   return snapshot().assets;
 }
 
 export async function getAsset(assetId: string): Promise<CommunityAsset> {
-  if (COMMUNITY_API_MODE === "backend") return request<CommunityAsset>(COMMUNITY_API_URL, `/api/assets/${assetId}`);
+  if (COMMUNITY_API_MODE === "backend") {
+    const response = await request<unknown>(COMMUNITY_API_URL, `/api/assets/${assetId}`);
+    return normalizeAsset(response);
+  }
   return requireEntity(snapshot().assets.find((asset) => asset.id === assetId), "Asset");
 }
 
 export async function listUsers(): Promise<CommunityUser[]> {
-  if (COMMUNITY_API_MODE === "backend") return request<CommunityUser[]>(COMMUNITY_API_URL, "/api/users");
+  if (COMMUNITY_API_MODE === "backend") {
+    const response = await request<unknown[]>(COMMUNITY_API_URL, "/api/users/");
+    return response.map(normalizeUser);
+  }
   return snapshot().users;
 }
 
 export async function listRoles(): Promise<CommunityRole[]> {
-  if (COMMUNITY_API_MODE === "backend") return request<CommunityRole[]>(ACCESS_API_URL, "/api/roles");
+  if (COMMUNITY_API_MODE === "backend") {
+    const response = await request<unknown[]>(ACCESS_API_URL, "/api/roles/");
+    return response.map(normalizeRole);
+  }
   return snapshot().roles;
 }
 
 export async function listGrants(): Promise<CommunityGrant[]> {
-  if (COMMUNITY_API_MODE === "backend") return request<CommunityGrant[]>(ACCESS_API_URL, "/api/grants");
+  if (COMMUNITY_API_MODE === "backend") {
+    const response = await request<unknown[]>(ACCESS_API_URL, "/api/grants/");
+    return response.map(normalizeGrant);
+  }
   return snapshot().grants;
 }
 
@@ -166,15 +284,40 @@ export async function listAssetOwnerships(): Promise<AssetOwnership[]> {
   return snapshot().assetOwnerships;
 }
 
+export async function loadCommunityDomainSnapshot(): Promise<CommunityDomainSnapshot> {
+  if (COMMUNITY_API_MODE !== "backend") return snapshot();
+
+  const [recs, sites, assets, users, roles, grants] = await Promise.all([
+    optionalBackendList(listRecs, "RECs"),
+    optionalBackendList(listSites, "sites"),
+    optionalBackendList(listAssets, "assets"),
+    optionalBackendList(listUsers, "users"),
+    optionalBackendList(listRoles, "roles"),
+    optionalBackendList(listGrants, "grants")
+  ]);
+
+  return {
+    recs,
+    sites,
+    assets,
+    users,
+    roles,
+    grants,
+    recMemberships: recMembershipsFromUsers(users),
+    siteAccesses: siteAccessesFromUsers(users),
+    assetOwnerships: assetOwnershipsFromUsers(users)
+  };
+}
+
 export async function listCommunityContexts(): Promise<CommunityContext[]> {
   if (COMMUNITY_API_MODE === "backend") {
-    const [recs, sites, assets] = await Promise.all([listRecs(), listSites(), listAssets()]);
-    return communityContextsFromDomain({
-      ...snapshot(),
-      recs,
-      sites,
-      assets
-    });
+    const remoteSnapshot = await loadCommunityDomainSnapshot();
+    if (remoteSnapshot.recs.length === 0 && COMMUNITY_BACKEND_FALLBACK_TO_MOCK) {
+      return communityContextsFromDomain();
+    }
+
+    writeCommunityDomainSnapshot(remoteSnapshot);
+    return communityContextsFromDomain(remoteSnapshot);
   }
 
   return communityContextsFromDomain();
@@ -182,10 +325,14 @@ export async function listCommunityContexts(): Promise<CommunityContext[]> {
 
 export async function createRec(payload: CreateRecPayload): Promise<CommunityRec> {
   if (COMMUNITY_API_MODE === "backend") {
-    return request<CommunityRec>(COMMUNITY_API_URL, "/api/recs", {
+    const rec = await request<CommunityRec>(COMMUNITY_API_URL, "/api/recs/", {
       method: "POST",
       body: JSON.stringify(payload)
     });
+    updateSnapshot((current) => {
+      current.recs = [rec, ...current.recs.filter((item) => item.id !== rec.id)];
+    });
+    return rec;
   }
 
   const context = createDomainRec({
@@ -252,10 +399,14 @@ export async function deleteRec(recId: string): Promise<void> {
 
 export async function createSite(payload: CreateSitePayload): Promise<CommunitySite> {
   if (COMMUNITY_API_MODE === "backend") {
-    return request<CommunitySite>(COMMUNITY_API_URL, "/api/sites", {
+    const site = await request<CommunitySite>(COMMUNITY_API_URL, "/api/sites/", {
       method: "POST",
       body: JSON.stringify(payload)
     });
+    updateSnapshot((current) => {
+      current.sites = [site, ...current.sites.filter((item) => item.id !== site.id)];
+    });
+    return site;
   }
 
   const site: CommunitySite = { id: makeId("site"), ...payload };
@@ -306,10 +457,14 @@ export async function deleteSite(siteId: string): Promise<void> {
 
 export async function createAsset(assetType: CommunityAssetType, payload: CreateAssetPayload): Promise<CommunityAsset> {
   if (COMMUNITY_API_MODE === "backend") {
-    return request<CommunityAsset>(COMMUNITY_API_URL, assertAssetEndpoint(assetType), {
+    const asset = normalizeAsset(await request<unknown>(COMMUNITY_API_URL, assertAssetEndpoint(assetType), {
       method: "POST",
       body: JSON.stringify(payload)
+    }));
+    updateSnapshot((current) => {
+      current.assets = [asset, ...current.assets.filter((item) => item.id !== asset.id)];
     });
+    return asset;
   }
 
   const asset: CommunityAsset = { id: makeId("asset"), asset_type: assetType, ...payload };
@@ -325,10 +480,14 @@ export async function updateAsset(
   payload: UpdateAssetPayload
 ): Promise<CommunityAsset> {
   if (COMMUNITY_API_MODE === "backend") {
-    return request<CommunityAsset>(COMMUNITY_API_URL, `${assertAssetEndpoint(assetType)}/${assetId}`, {
+    const asset = normalizeAsset(await request<unknown>(COMMUNITY_API_URL, `${assertAssetEndpoint(assetType)}/${assetId}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
+    }));
+    updateSnapshot((current) => {
+      current.assets = current.assets.map((item) => (item.id === asset.id ? asset : item));
     });
+    return asset;
   }
 
   let updated: CommunityAsset | undefined;

@@ -20,13 +20,21 @@ type FilterMode = "all" | "normal" | "alerts" | "offline";
 
 export function CommunitiesPage(): JSX.Element {
   const { session } = useAuth();
-  const { communities, activeCommunity, setActiveCommunity, addCommunity, setSelectedEntityId } = useUI();
+  const {
+    communities,
+    activeCommunity,
+    setActiveCommunity,
+    addCommunity,
+    setSelectedEntityId,
+    pushNotification
+  } = useUI();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortMode>("name");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [userOpen, setUserOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [creatingCommunity, setCreatingCommunity] = useState(false);
   const [draftCommunity, setDraftCommunity] = useState({
     name: "",
     location: "",
@@ -101,21 +109,33 @@ export function CommunitiesPage(): JSX.Element {
     return <CheckCircle2 size={14} />;
   }
 
-  function createCommunity(): void {
+  async function createCommunity(): Promise<void> {
     const name = draftCommunity.name.trim();
-    if (!name) return;
-    const community = addCommunity({
-      name,
-      location: draftCommunity.location.trim() || "Location not set",
-      description: draftCommunity.description.trim() || "New energy community.",
-      buildings: 0,
-      assets: 0,
-      topologyPreset: "blank"
-    });
-    setCreateOpen(false);
-    setDraftCommunity({ name: "", location: "", description: "" });
-    setActiveCommunity(community.id);
-    navigate("/app/community/topology");
+    if (!name || creatingCommunity) return;
+    setCreatingCommunity(true);
+    try {
+      const community = await addCommunity({
+        name,
+        location: draftCommunity.location.trim() || "Location not set",
+        description: draftCommunity.description.trim() || "New energy community.",
+        buildings: 0,
+        assets: 0,
+        topologyPreset: "blank"
+      });
+      setCreateOpen(false);
+      setDraftCommunity({ name: "", location: "", description: "" });
+      setActiveCommunity(community.id);
+      navigate("/app/community/topology");
+    } catch (error) {
+      pushNotification({
+        title: "Community could not be created",
+        message: error instanceof Error ? error.message : "The backend rejected the community request.",
+        severity: "error",
+        source: "api"
+      });
+    } finally {
+      setCreatingCommunity(false);
+    }
   }
 
   if (isProsumer) {
@@ -343,7 +363,7 @@ export function CommunitiesPage(): JSX.Element {
           className="community-create-form"
           onSubmit={(event) => {
             event.preventDefault();
-            createCommunity();
+            void createCommunity();
           }}
         >
           <label>
@@ -378,8 +398,8 @@ export function CommunitiesPage(): JSX.Element {
             <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" iconLeft={<Plus size={14} />} disabled={!draftCommunity.name.trim()}>
-              Create
+            <Button variant="primary" iconLeft={<Plus size={14} />} disabled={!draftCommunity.name.trim() || creatingCommunity}>
+              {creatingCommunity ? "Creating..." : "Create"}
             </Button>
           </div>
         </form>

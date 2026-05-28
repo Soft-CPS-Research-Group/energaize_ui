@@ -7,8 +7,8 @@ import {
   useState,
   type ReactNode
 } from "react";
+import { createRec, isCommunityBackendMode, listCommunityContexts } from "../api/communityApi";
 import { INITIAL_COMMUNITIES } from "../constants";
-import { createDomainRec } from "../data/communityDomain";
 import type { CommunityContext, NotificationItem, ThemeMode, ToastItem } from "../types";
 import { createId } from "../utils/id";
 import { readStorage, STORAGE_KEYS, writeStorage } from "../utils/storage";
@@ -20,7 +20,9 @@ interface UIContextValue {
   communities: CommunityContext[];
   activeCommunity: CommunityContext;
   setActiveCommunity: (communityId: string) => void;
-  addCommunity: (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => CommunityContext;
+  addCommunity: (
+    input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }
+  ) => Promise<CommunityContext>;
   notifications: NotificationItem[];
   toasts: ToastItem[];
   unreadCount: number;
@@ -79,6 +81,31 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
     writeStorage(STORAGE_KEYS.theme, theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (!isCommunityBackendMode()) return;
+
+    let cancelled = false;
+    listCommunityContexts()
+      .then((nextCommunities) => {
+        if (cancelled || nextCommunities.length === 0) return;
+        setCommunities(nextCommunities);
+        writeStorage(STORAGE_KEYS.communities, nextCommunities);
+        if (!nextCommunities.some((community) => community.id === activeCommunityId)) {
+          const nextActive = nextCommunities[0];
+          setActiveCommunityId(nextActive.id);
+          setSelectedEntityId("community");
+          writeStorage(STORAGE_KEYS.communityId, nextActive.id);
+        }
+      })
+      .catch((error) => {
+        console.warn("Community contexts could not be loaded from backend", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCommunityId]);
+
   const setTheme = useCallback((mode: ThemeMode) => {
     setThemeState(mode);
   }, []);
@@ -98,16 +125,33 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
   }, []);
 
   const addCommunity = useCallback(
-    (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => {
-      const community = createDomainRec({
+    async (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => {
+      const rec = await createRec({
         name: input.name,
-        location: input.location,
+        localization: { name: input.location },
         description: input.description,
-        action_frequency: "daily"
+        action_frequency: "daily",
+        power_limit_export: { megawatts: 0 },
+        power_limit_import: { megawatts: 0 }
       });
+      const nextCommunities = await listCommunityContexts();
+      const community =
+        nextCommunities.find((item) => item.id === rec.id) || {
+          id: rec.id,
+          name: rec.name,
+          location: rec.localization.name,
+          description: rec.description,
+          buildings: 0,
+          assets: 0,
+          status: "normal" as const,
+          topologyPreset: "blank" as const
+        };
 
       setCommunities((previous) => {
-        const next = [community, ...previous.filter((item) => item.id !== community.id)];
+        const next =
+          nextCommunities.length > 0
+            ? nextCommunities
+            : [community, ...previous.filter((item) => item.id !== community.id)];
         writeStorage(STORAGE_KEYS.communities, next);
         return next;
       });
