@@ -638,7 +638,7 @@ export function AggregateReportPage() {
                         contentStyle={{ borderRadius: "8px", border: "1px solid var(--line)", background: "var(--bg)", fontSize: "12px", color: "var(--text)" }}
                         itemStyle={{ color: "var(--brand)", fontWeight: "bold" }}
                         labelStyle={{ color: "var(--text-soft)", marginBottom: "4px" }}
-                        formatter={(value: number) => [`${fmt(value)}${unit(activeChart.kpi)}`, activeChart.kpi.replace("KPI", "")]}
+                        formatter={(value: any) => [`${fmt(Number(value))}${unit(activeChart.kpi)}`, activeChart.kpi.replace("KPI", "")]}
                       />
                       <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
                     </LineChart>
