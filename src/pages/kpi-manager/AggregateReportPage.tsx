@@ -8,7 +8,7 @@ import { useCommunities } from "../../hooks/useCommunities";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { LineChart, Line, XAxis } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import {
   BarChart3, MapPin, Calendar,
   Search, Loader2, AlertCircle, TrendingUp, TrendingDown,
@@ -142,18 +142,18 @@ function PivotTable({ buckets, mode, onOpenChart }: PivotProps) {
                   const isMax = val === globalMax && defined.length > 1;
                   const isMin = val === globalMin && defined.length > 1;
                   return (
-                    <td key={bi} style={{
-                      ...tdStyle, textAlign: "right", fontWeight: isMax || isMin ? 700 : 400,
-                      color: isMax ? "#16a34a" : isMin ? "#dc2626" : "var(--text)",
-                      whiteSpace: "nowrap",
-                    }}>
+                    <td 
+                      key={bi} 
+                      title={`${stats.count} windows aggregated`}
+                      style={{
+                        ...tdStyle, textAlign: "right", fontWeight: isMax || isMin ? 700 : 400,
+                        color: isMax ? "#16a34a" : isMin ? "#dc2626" : "var(--text)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {isMax && <TrendingUp size={11} style={{ marginRight: "2px", display: "inline" }} />}
                       {isMin && <TrendingDown size={11} style={{ marginRight: "2px", display: "inline" }} />}
                       {displayValue(kpi, stats, mode)}
-                      <br />
-                      <span style={{ fontSize: "0.68rem", opacity: 0.55, fontWeight: 400 }}>
-                        n={stats.count}
-                      </span>
                     </td>
                   );
                 })}
@@ -452,13 +452,23 @@ export function AggregateReportPage() {
               <button
                 onClick={() => {
                   if (!buckets) return;
-                  const doc = new jsPDF("landscape", "pt", "a4");
-                  doc.text(`KPI Report — ${community} — ${period} — ${startDate} → ${endDate}`, 40, 40);
+                  // Column widths (pt)
+                  const MARGIN = 40;
+                  const SCOPE_COL_W = 115;
+                  const KPI_COL_W = 95;
+                  const DATA_COL_W = 90;   // per bucket — wide enough for value + date label
+
+                  // Compute the total width needed and make the page that wide
+                  const contentWidth = SCOPE_COL_W + KPI_COL_W + DATA_COL_W * buckets.length;
+                  const pageWidth = Math.max(841.89, contentWidth + MARGIN * 2); // never smaller than A4 landscape
+                  const pageHeight = 595.28; // A4 landscape height
+
+                  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: [pageWidth, pageHeight] });
+                  doc.text(`KPI Report - ${community} - ${period} - ${startDate} -> ${endDate}`, MARGIN, 40);
 
                   const keys = new Set<string>();
                   for (const b of buckets) for (const sc of Object.keys(b.scopes)) for (const kpi of Object.keys(b.scopes[sc])) keys.add(`${sc}||${kpi}`);
                   const rows = Array.from(keys).sort().map(k => { const [sc, kpi] = k.split("||"); return { sc, kpi }; });
-
                   const header = ["Scope", "KPI", ...buckets.map(b => b.label)];
                   const dataRows = rows.map(({ sc, kpi }) => {
                     const vals = buckets.map(b => {
@@ -473,6 +483,23 @@ export function AggregateReportPage() {
                     startY: 60,
                     head: [header],
                     body: dataRows,
+                    margin: { left: MARGIN, right: MARGIN },
+                    tableWidth: contentWidth,
+                    columnStyles: {
+                      0: { cellWidth: SCOPE_COL_W, overflow: "ellipsize" },
+                      1: { cellWidth: KPI_COL_W, fontStyle: "bold" },
+                      ...Object.fromEntries(
+                        buckets.map((_, i) => [i + 2, { cellWidth: DATA_COL_W, halign: "right" }])
+                      ),
+                    },
+                    headStyles: {
+                      fillColor: [30, 41, 59],
+                      textColor: 255,
+                      fontStyle: "bold",
+                      halign: "center",
+                    },
+                    alternateRowStyles: { fillColor: [248, 250, 252] },
+                    showHead: "everyPage",
                     didParseCell: (data) => {
                       if (data.section === "body" && data.column.index >= 2) {
                         const rowIdx = data.row.index;
@@ -481,7 +508,6 @@ export function AggregateReportPage() {
                         const allVals = rowStats.map(v => (mode === "sum" || isSumKpi(kpi)) ? v.sum : v.mean);
                         const globalMax = allVals.length ? Math.max(...allVals) : 0;
                         const globalMin = allVals.length ? Math.min(...allVals) : 0;
-
                         const colIdx = data.column.index - 2;
                         const stats = buckets[colIdx].scopes[sc]?.[kpi];
                         if (stats && allVals.length > 1) {
@@ -490,10 +516,11 @@ export function AggregateReportPage() {
                           else if (v === globalMin) data.cell.styles.textColor = "#dc2626";
                         }
                       }
-                    }
+                    },
                   });
 
                   doc.save(`kpi_report_${community}_${period}_${startDate}_${endDate}.pdf`);
+
                 }}
                 style={{
                   padding: "0.25rem 0.875rem", borderRadius: "9999px", fontSize: "0.8rem", fontWeight: 600,
@@ -592,10 +619,31 @@ export function AggregateReportPage() {
                   Not enough data points to show trend.
                 </p>
               ) : (
-                <LineChart width={350} height={200} data={chartData} style={{ margin: "0 auto" }}>
-                  <XAxis dataKey="label" fontSize={10} tickMargin={5} stroke="var(--text-soft)" />
-                  <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} isAnimationActive={false} />
-                </LineChart>
+                <div style={{ width: "100%", height: 220, marginTop: "1rem" }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ left: -10, right: 10, top: 10, bottom: 0 }}>
+                      <XAxis dataKey="label" fontSize={10} tickMargin={8} stroke="var(--text-soft)" />
+                      <YAxis 
+                        fontSize={10} 
+                        tickMargin={5} 
+                        stroke="var(--text-soft)"
+                        width={60}
+                        tickFormatter={(val) => {
+                           if (Math.abs(val) >= 1000) return (val / 1000).toFixed(1) + "k";
+                           if (Math.abs(val) < 0.01 && val !== 0) return val.toExponential(1);
+                           return val.toString();
+                        }}
+                      />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: "8px", border: "1px solid var(--line)", background: "var(--bg)", fontSize: "12px", color: "var(--text)" }}
+                        itemStyle={{ color: "var(--brand)", fontWeight: "bold" }}
+                        labelStyle={{ color: "var(--text-soft)", marginBottom: "4px" }}
+                        formatter={(value: number) => [`${fmt(value)}${unit(activeChart.kpi)}`, activeChart.kpi.replace("KPI", "")]}
+                      />
+                      <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               )}
             </div>
           </div>
