@@ -30,7 +30,7 @@ import type { LiveSnapshot } from "../../api/kpiApi";
 import {
   Zap, Sun, Battery, Car, DollarSign,
   TrendingUp, TrendingDown, Minus, RefreshCw, Activity,
-  ShieldCheck, ShieldAlert, AlertTriangle,
+  ShieldCheck, ShieldAlert, AlertTriangle, Wifi, WifiOff,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -78,6 +78,19 @@ const todayStartISO = (): string => {
   const offset = d.getTimezoneOffset() * 60000;
   const localISOTime = new Date(d.getTime() - offset).toISOString().slice(0, 10);
   return new Date(localISOTime).toISOString(); // YYYY-MM-DDT00:00:00.000Z
+};
+
+/** Returns true if the given ISO timestamp is from today (local date). */
+const isToday = (isoTs: string): boolean => {
+  try {
+    const d = new Date(isoTs);
+    const now = new Date();
+    return (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth()    === now.getMonth()    &&
+      d.getDate()     === now.getDate()
+    );
+  } catch { return false; }
 };
 
 // ── MetricRow ─────────────────────────────────────────────────────────────────
@@ -345,6 +358,7 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sseStatus, setSseStatus] = useState<"connecting" | "connected" | "error">("connecting");
 
   // ── Quality chart state ─────────────────────────────────────────────────────
   const [qualityData, setQualityData] = useState<Record<string, QualityPoint[]>>({});
@@ -427,17 +441,23 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
 
     setLoading(true);
     setError(null);
+    setSseStatus("connecting");
 
     // We subscribe to the whole community so the connection doesn't drop when selecting/unselecting buildings.
     const url = `${KPI_API_BASE_URL}/api/v1/live/${community}/stream`;
 
     const es = new EventSource(url);
 
+    es.onopen = () => {
+      setSseStatus("connected");
+    };
+
     es.onmessage = (event) => {
       try {
         const snaps = JSON.parse(event.data) as LiveSnapshot[];
         if (!snaps || snaps.length === 0) return;
 
+        setSseStatus("connected");
         setSnapshots(prev => {
           // Merge new snapshots into existing state by building
           const map = new Map(prev.map(s => [s.building, s]));
@@ -456,6 +476,10 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
 
           for (const snap of snaps) {
             const { building, timestamp } = snap;
+
+            // Skip stale snapshots from previous days — only append today's live data
+            if (!isToday(timestamp)) continue;
+
             const existing = next[building] ?? [];
 
             // Skip if this snapshot timestamp is already the last point
@@ -494,12 +518,14 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
 
     es.onerror = (err) => {
       console.error("SSE Error", err);
-      // Wait for it to reconnect automatically, but we can set an error state if needed
-      // For now, let EventSource automatically reconnect.
+      setSseStatus("error");
+      // EventSource will auto-reconnect; reset to connecting after a short delay
+      setTimeout(() => setSseStatus(s => s === "error" ? "connecting" : s), 3000);
     };
 
     return () => {
       es.close();
+      setSseStatus("connecting");
     };
   }, [community, isActive]);
 
@@ -514,8 +540,13 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
   }
 
   // Filter snapshots and charts based on currently selected buildings
-  const displaySnapshots = snapshots.filter(s => buildings.includes(s.building));
-  const displayBuildings = buildings.filter(b => qualityData[b] || snapshots.some(s => s.building === b));
+  // Only show cards for snapshots that arrived today — stale cached state from
+  // previous days is excluded to avoid showing outdated readings as "live".
+  const displaySnapshots = snapshots.filter(
+    s => buildings.includes(s.building) && isToday(s.timestamp)
+  );
+  // Only show quality chart section for buildings that actually have data points
+  const displayBuildings = buildings.filter(b => (qualityData[b]?.length ?? 0) > 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -543,17 +574,21 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
                 Updated {fmtTime(lastUpdated.toISOString())}
               </span>
             )}
-            <div style={{
+          <div style={{
               display: "flex", alignItems: "center", gap: "0.3rem",
               padding: "0.25rem 0.6rem", borderRadius: "0.4rem", fontSize: "0.75rem",
-              border: "1px solid var(--line)", background: "var(--bg-elev)",
-              color: "var(--text)", opacity: loading ? 0.5 : 1,
+              border: `1px solid ${sseStatus === "error" ? "#ef4444" : sseStatus === "connected" ? "rgba(34,197,94,0.4)" : "var(--line)"}`,
+              background: sseStatus === "error" ? "rgba(239,68,68,0.08)" : sseStatus === "connected" ? "rgba(34,197,94,0.08)" : "var(--bg-elev)",
+              color: sseStatus === "error" ? "#ef4444" : sseStatus === "connected" ? "#22c55e" : "var(--text-soft)",
             }}>
-              <RefreshCw
-                size={12}
-                style={{ animation: loading ? "spin 1s linear infinite" : "none" }}
-              />
-              Live Connection
+              {sseStatus === "connected" ? (
+                <Wifi size={12} />
+              ) : sseStatus === "error" ? (
+                <WifiOff size={12} />
+              ) : (
+                <RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }} />
+              )}
+              {sseStatus === "connected" ? "Connected" : sseStatus === "error" ? "Connection Error" : "Connecting…"}
             </div>
           </div>
         </div>
