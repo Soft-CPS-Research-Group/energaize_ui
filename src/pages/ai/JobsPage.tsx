@@ -12,6 +12,9 @@ import {
   FileText,
   FlaskConical,
   Info,
+  MailCheck,
+  MailQuestion,
+  MailWarning,
   Play,
   RefreshCcw,
   Search,
@@ -49,7 +52,7 @@ import { StatusPill } from "../../components/ui/StatusPill";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
 import { useJobLogsPolling } from "../../hooks/useJobLogsPolling";
 import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications";
-import type { HostInfo, JobItem } from "../../types";
+import type { HostInfo, JobEmailNotificationAttempt, JobItem } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { isCompletedForResults } from "../../utils/jobStatus";
@@ -120,6 +123,12 @@ interface HostActiveJobSnapshot {
 
 type DeucalionRuntimeProfile = "cpu" | "gpu";
 type RunWizardStep = { id: string; label: string };
+type DeucalionPartitionLimit = {
+  partition: string;
+  profile: DeucalionRuntimeProfile;
+  label: string;
+  maxSeconds: number;
+};
 
 const RUN_WIZARD_BASE_STEPS: RunWizardStep[] = [
   { id: "config", label: "Config" },
@@ -147,6 +156,96 @@ const DEUCALION_PROFILE_DEFAULTS: Record<
     gpus: "1"
   }
 };
+
+const DEUCALION_PARTITION_LIMITS: DeucalionPartitionLimit[] = [
+  { partition: "dev-arm", profile: "cpu", label: "ARM dev", maxSeconds: 4 * 60 * 60 },
+  { partition: "normal-arm", profile: "cpu", label: "ARM normal", maxSeconds: 48 * 60 * 60 },
+  { partition: "large-arm", profile: "cpu", label: "ARM large", maxSeconds: 72 * 60 * 60 },
+  { partition: "dev-x86", profile: "cpu", label: "x86 dev", maxSeconds: 4 * 60 * 60 },
+  { partition: "normal-x86", profile: "cpu", label: "x86 normal", maxSeconds: 48 * 60 * 60 },
+  { partition: "large-x86", profile: "cpu", label: "x86 large", maxSeconds: 72 * 60 * 60 },
+  { partition: "dev-a100-40", profile: "gpu", label: "A100 40GB dev", maxSeconds: 4 * 60 * 60 },
+  { partition: "normal-a100-40", profile: "gpu", label: "A100 40GB normal", maxSeconds: 48 * 60 * 60 },
+  { partition: "dev-a100-80", profile: "gpu", label: "A100 80GB dev", maxSeconds: 4 * 60 * 60 },
+  { partition: "normal-a100-80", profile: "gpu", label: "A100 80GB normal", maxSeconds: 48 * 60 * 60 }
+];
+
+function formatWalltimeLimit(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  if (minutes === 0 && secs === 0) return `${hours}h`;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function parseSlurmWalltimeSeconds(raw: string): number | null {
+  const text = raw.trim();
+  if (!text) return null;
+
+  let days = 0;
+  let timePart = text;
+  const hasDays = text.includes("-");
+  if (hasDays) {
+    const dashIndex = text.indexOf("-");
+    const dayPart = text.slice(0, dashIndex);
+    const rest = text.slice(dashIndex + 1);
+    if (!/^\d+$/.test(dayPart) || !rest) return null;
+    days = Number(dayPart);
+    timePart = rest;
+  }
+
+  const parts = timePart.split(":");
+  if (parts.length < 1 || parts.length > 3 || parts.some((part) => !/^\d+$/.test(part))) return null;
+  const values = parts.map(Number);
+
+  let hours = 0;
+  let minutes = 0;
+  let seconds = 0;
+  if (hasDays) {
+    hours = values[0] || 0;
+    minutes = values[1] || 0;
+    seconds = values[2] || 0;
+  } else if (values.length === 1) {
+    minutes = values[0];
+  } else if (values.length === 2) {
+    minutes = values[0];
+    seconds = values[1];
+  } else {
+    hours = values[0];
+    minutes = values[1];
+    seconds = values[2];
+  }
+
+  if (minutes >= 60 || seconds >= 60) return null;
+  const total = days * 24 * 3600 + hours * 3600 + minutes * 60 + seconds;
+  return total > 0 ? total : null;
+}
+
+function deucalionPartitionLimit(partition: string, limits: DeucalionPartitionLimit[] = DEUCALION_PARTITION_LIMITS) {
+  const normalized = partition.trim().toLowerCase();
+  return limits.find((entry) => entry.partition === normalized) || null;
+}
+
+function validateDeucalionWalltime(
+  timeLimit: string,
+  partition: string,
+  limits: DeucalionPartitionLimit[] = DEUCALION_PARTITION_LIMITS
+): string | null {
+  const text = timeLimit.trim();
+  if (!text) return null;
+
+  const requestedSeconds = parseSlurmWalltimeSeconds(text);
+  if (requestedSeconds === null) {
+    return "Use Slurm walltime format, for example 04:00:00 or 2-00:00:00.";
+  }
+
+  const limit = deucalionPartitionLimit(partition, limits);
+  if (!limit) return "Choose a known Deucalion partition.";
+  if (requestedSeconds > limit.maxSeconds) {
+    return `Max walltime for ${limit.partition} is ${formatWalltimeLimit(limit.maxSeconds)}.`;
+  }
+  return null;
+}
 
 const defaultRunForm: RunForm = {
   configPath: "",
@@ -181,6 +280,26 @@ function inferComputeProfile(entry: HostActiveJobSnapshot): "GPU" | "CPU" | null
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function normalizeDeucalionPartitionLimits(value: unknown): DeucalionPartitionLimit[] {
+  const payload = asRecord(value);
+  const rows = Array.isArray(payload?.partitions) ? payload.partitions : [];
+  const normalized = rows
+    .map((row) => {
+      const record = asRecord(row);
+      const partition = readString(record, "partition");
+      const maxSeconds = asNumber(record?.time_limit_seconds);
+      if (!partition || typeof maxSeconds !== "number" || maxSeconds <= 0) return null;
+      return {
+        partition,
+        profile: isGpuLikePartition(partition) ? "gpu" : "cpu",
+        label: partition,
+        maxSeconds
+      } satisfies DeucalionPartitionLimit;
+    })
+    .filter((entry): entry is DeucalionPartitionLimit => Boolean(entry));
+  return normalized.length > 0 ? normalized : DEUCALION_PARTITION_LIMITS;
 }
 
 function readString(record: Record<string, unknown> | null, key: string): string | null {
@@ -364,6 +483,75 @@ function computeUserInitials(label: string): string {
     .slice(0, 2);
 }
 
+function normalizeEmailNotificationAttempt(value: unknown): JobEmailNotificationAttempt | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const recipients = Array.isArray(record.recipients)
+    ? record.recipients.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  return {
+    ...record,
+    recipients
+  } as JobEmailNotificationAttempt;
+}
+
+function readEmailNotificationHistory(job: JobItem): JobEmailNotificationAttempt[] {
+  const rawHistory =
+    (Array.isArray(job.job_info.email_notifications) ? job.job_info.email_notifications : null) ||
+    (Array.isArray(job.job_meta?.email_notifications) ? job.job_meta.email_notifications : null) ||
+    [];
+
+  const history = rawHistory
+    .map((entry) => normalizeEmailNotificationAttempt(entry))
+    .filter((entry): entry is JobEmailNotificationAttempt => Boolean(entry));
+
+  const last =
+    normalizeEmailNotificationAttempt(job.job_info.last_email_notification) ||
+    normalizeEmailNotificationAttempt(job.job_meta?.last_email_notification);
+  if (last && history.length === 0) return [last];
+  return history;
+}
+
+function readLastEmailNotification(job: JobItem): JobEmailNotificationAttempt | null {
+  const history = readEmailNotificationHistory(job);
+  if (history.length > 0) return history[history.length - 1] || null;
+  return (
+    normalizeEmailNotificationAttempt(job.job_info.last_email_notification) ||
+    normalizeEmailNotificationAttempt(job.job_meta?.last_email_notification)
+  );
+}
+
+function emailRecipientsLabel(entry: JobEmailNotificationAttempt | null): string {
+  const recipients = entry?.recipients || [];
+  if (recipients.length === 0) return "No recipient";
+  if (recipients.length === 1) return recipients[0] || "No recipient";
+  return `${recipients[0]} +${recipients.length - 1}`;
+}
+
+function emailOutcomeLabel(entry: JobEmailNotificationAttempt | null): string {
+  if (!entry) return "-";
+  if (entry.outcome === "published" || entry.published) return "Queued";
+  if (entry.outcome === "failed") return "Failed";
+  if (entry.reason === "no_recipient") return "No recipient";
+  return entry.outcome || entry.reason || "Skipped";
+}
+
+function emailOutcomeClass(entry: JobEmailNotificationAttempt | null): string {
+  if (!entry) return "";
+  if (entry.outcome === "published" || entry.published) return "is-published";
+  if (entry.outcome === "failed") return "is-failed";
+  return "is-skipped";
+}
+
+function emailNotificationTitle(entry: JobEmailNotificationAttempt | null): string {
+  if (!entry) return "No email notification recorded";
+  const recipients = emailRecipientsLabel(entry);
+  const status = entry.status ? ` for ${entry.status}` : "";
+  const at = entry.attempted_at ? ` at ${formatDateTime(entry.attempted_at)}` : "";
+  const reason = entry.reason ? ` (${entry.reason})` : "";
+  return `${emailOutcomeLabel(entry)} email${status} to ${recipients}${at}${reason}`;
+}
+
 function hasAnyStatus(status: string, tokens: string[]): boolean {
   const key = status.toLowerCase();
   return tokens.some((token) => key.includes(token));
@@ -475,6 +663,7 @@ export function JobsPage(): JSX.Element {
   const [configPreviewMode, setConfigPreviewMode] = useState<"base" | "resolved">("base");
   const [configPreviewJobId, setConfigPreviewJobId] = useState("");
   const [dispatchDetailsTarget, setDispatchDetailsTarget] = useState<JobItem | null>(null);
+  const [emailDetailsTarget, setEmailDetailsTarget] = useState<JobItem | null>(null);
   const [hostDetailsTarget, setHostDetailsTarget] = useState<{ name: string; data: HostInfo } | null>(null);
   const [hostDetailsOpen, setHostDetailsOpen] = useState(false);
   const [adminConfirm, setAdminConfirm] = useState<AdminConfirmState | null>(null);
@@ -768,6 +957,17 @@ export function JobsPage(): JSX.Element {
   const deucalionAutoPartition = deucalionProfile === "gpu" ? "normal-a100-80" : "normal-x86";
   const effectiveDeucalionAccount = runForm.deucalionOptions.account.trim() || deucalionAutoAccount;
   const effectiveDeucalionPartition = runForm.deucalionOptions.partition.trim() || deucalionAutoPartition;
+  const deucalionPartitionLimits = useMemo(
+    () => normalizeDeucalionPartitionLimits(hostsQuery.data?.hosts?.deucalion?.info?.partition_limits),
+    [hostsQuery.data?.hosts?.deucalion?.info?.partition_limits]
+  );
+  const effectiveDeucalionPartitionLimit = deucalionPartitionLimit(
+    effectiveDeucalionPartition,
+    deucalionPartitionLimits
+  );
+  const deucalionWalltimeError = isRunHostDeucalion
+    ? validateDeucalionWalltime(runForm.deucalionOptions.timeLimit, effectiveDeucalionPartition, deucalionPartitionLimits)
+    : null;
   const showDeucalionGpuField =
     deucalionProfile === "gpu" || isGpuLikePartition(runForm.deucalionOptions.partition);
 
@@ -1239,7 +1439,8 @@ export function JobsPage(): JSX.Element {
   const runCanGoToReview =
     Boolean(matchedRunConfig) &&
     runTagExists &&
-    runTagIsReadyForDeucalion;
+    runTagIsReadyForDeucalion &&
+    !deucalionWalltimeError;
   const runStepDefinitions = useMemo(() => {
     if (!isRunHostDeucalion) return RUN_WIZARD_BASE_STEPS;
     return [...RUN_WIZARD_BASE_STEPS.slice(0, 3), RUN_WIZARD_DEUCALION_STEP, RUN_WIZARD_BASE_STEPS[3]];
@@ -1288,6 +1489,11 @@ export function JobsPage(): JSX.Element {
       setRunStep(3);
       return;
     }
+    if (isRunHostDeucalion && deucalionWalltimeError) {
+      notifyError("Invalid Deucalion walltime", new Error(deucalionWalltimeError));
+      setRunStep(4);
+      return;
+    }
 
     const payload: RunSimulationPayload = {
       target_host: runForm.targetHost || undefined,
@@ -1321,6 +1527,10 @@ export function JobsPage(): JSX.Element {
         );
         return;
       }
+    }
+    if (isRunHostDeucalion && runStep === 4 && deucalionWalltimeError) {
+      notifyError("Invalid Deucalion walltime", new Error(deucalionWalltimeError));
+      return;
     }
     setRunStep((previous) => Math.min(runTotalSteps, previous + 1));
   }
@@ -1435,6 +1645,7 @@ export function JobsPage(): JSX.Element {
                     <th>Experiment Config</th>
                     <th>Progress</th>
                     <th>Status</th>
+                    <th>Email</th>
                     <th className="jobs-host-col">Host</th>
                     <th className="jobs-actions-col">Actions</th>
                   </tr>
@@ -1462,6 +1673,10 @@ export function JobsPage(): JSX.Element {
                       : "Show Slurm queue details";
                     const hostLabel = resolveJobTargetHost(job);
                     const deucalionRuntime = inferDeucalionJobRuntime(job, hostLabel);
+                    const lastEmailNotification = readLastEmailNotification(job);
+                    const emailOutcome = emailOutcomeLabel(lastEmailNotification);
+                    const emailRecipients = emailRecipientsLabel(lastEmailNotification);
+                    const emailClass = emailOutcomeClass(lastEmailNotification);
 
                     return (
                       <tr
@@ -1568,6 +1783,33 @@ export function JobsPage(): JSX.Element {
                               <StatusPill status={job.status} />
                             )}
                           </div>
+                        </td>
+                        <td>
+                          {lastEmailNotification ? (
+                            <button
+                              type="button"
+                              className={`jobs-email-trigger ${emailClass}`}
+                              title={emailNotificationTitle(lastEmailNotification)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setEmailDetailsTarget(job);
+                              }}
+                            >
+                              {lastEmailNotification.outcome === "published" || lastEmailNotification.published ? (
+                                <MailCheck size={14} />
+                              ) : lastEmailNotification.outcome === "failed" ? (
+                                <MailWarning size={14} />
+                              ) : (
+                                <MailQuestion size={14} />
+                              )}
+                              <span>
+                                <strong>{emailOutcome}</strong>
+                                <small>{emailRecipients}</small>
+                              </span>
+                            </button>
+                          ) : (
+                            <small className="jobs-meta">-</small>
+                          )}
                         </td>
                         <td className="jobs-host-col">
                           <div className="jobs-host-cell">
@@ -2151,6 +2393,14 @@ export function JobsPage(): JSX.Element {
                     <dt>Partition</dt>
                     <dd>{effectiveDeucalionPartition}</dd>
                   </div>
+                  <div>
+                    <dt>Max walltime</dt>
+                    <dd>
+                      {effectiveDeucalionPartitionLimit
+                        ? formatWalltimeLimit(effectiveDeucalionPartitionLimit.maxSeconds)
+                        : "-"}
+                    </dd>
+                  </div>
                 </dl>
 
                 <div className="run-deucalion-core-grid">
@@ -2166,6 +2416,12 @@ export function JobsPage(): JSX.Element {
                         }))
                       }
                     />
+                    <small className={deucalionWalltimeError ? "jobs-meta is-danger" : "jobs-meta"}>
+                      {deucalionWalltimeError ||
+                        (effectiveDeucalionPartitionLimit
+                          ? `Max ${formatWalltimeLimit(effectiveDeucalionPartitionLimit.maxSeconds)} for ${effectiveDeucalionPartition}.`
+                          : "Choose a known partition to validate walltime.")}
+                    </small>
                   </label>
                   <label>
                     <span>CPUs per task</span>
@@ -2257,8 +2513,7 @@ export function JobsPage(): JSX.Element {
                     </label>
                     <label>
                       <span>Partition override (optional)</span>
-                      <input
-                        placeholder={`Auto: ${deucalionAutoPartition}`}
+                      <select
                         value={runForm.deucalionOptions.partition}
                         onChange={(event) =>
                           setRunForm((previous) => ({
@@ -2266,7 +2521,14 @@ export function JobsPage(): JSX.Element {
                             deucalionOptions: { ...previous.deucalionOptions, partition: event.target.value }
                           }))
                         }
-                      />
+                      >
+                        <option value="">Auto: {deucalionAutoPartition}</option>
+                        {deucalionPartitionLimits.filter((entry) => entry.profile === deucalionProfile).map((entry) => (
+                          <option key={entry.partition} value={entry.partition}>
+                            {entry.partition} · {entry.label} · max {formatWalltimeLimit(entry.maxSeconds)}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <small className="jobs-meta">
                       Dataset sync é inferido automaticamente do teu config (`simulator.dataset_path` / `dataset_name`).
@@ -2306,6 +2568,15 @@ export function JobsPage(): JSX.Element {
                       <div>
                         <dt>Account / partition</dt>
                         <dd>{`${effectiveDeucalionAccount || deucalionAutoAccountDisplay} / ${effectiveDeucalionPartition}`}</dd>
+                      </div>
+                      <div>
+                        <dt>Walltime</dt>
+                        <dd>
+                          {(runForm.deucalionOptions.timeLimit.trim() || deucalionDefaults.timeLimit) +
+                            (effectiveDeucalionPartitionLimit
+                              ? ` (max ${formatWalltimeLimit(effectiveDeucalionPartitionLimit.maxSeconds)})`
+                              : "")}
+                        </dd>
                       </div>
                     </>
                   ) : null}
@@ -2630,6 +2901,83 @@ export function JobsPage(): JSX.Element {
               <pre className="json-view compact">{JSON.stringify(hostDetailsTarget.data.info || {}, null, 2)}</pre>
             </section>
           </section>
+            );
+          })()
+        ) : null}
+      </Modal>
+
+      <Modal
+        title={`Email notifications: ${emailDetailsTarget?.job_id || "-"}`}
+        open={Boolean(emailDetailsTarget)}
+        onClose={() => setEmailDetailsTarget(null)}
+        width="md"
+      >
+        {emailDetailsTarget ? (
+          (() => {
+            const history = readEmailNotificationHistory(emailDetailsTarget);
+            const last = readLastEmailNotification(emailDetailsTarget);
+            const lastRabbit = last?.rabbitmq;
+            const rabbitTarget = lastRabbit
+              ? `${lastRabbit.host || "-"}:${lastRabbit.port || "-"} / ${lastRabbit.queue || "-"}`
+              : "-";
+            return (
+              <section className="host-details-modal jobs-email-modal">
+                <dl className="host-details-grid">
+                  <div>
+                    <dt>Job</dt>
+                    <dd>{resolveJobDisplayName(emailDetailsTarget)}</dd>
+                  </div>
+                  <div>
+                    <dt>Last outcome</dt>
+                    <dd>{emailOutcomeLabel(last)}</dd>
+                  </div>
+                  <div>
+                    <dt>Recipients</dt>
+                    <dd>{emailRecipientsLabel(last)}</dd>
+                  </div>
+                  <div>
+                    <dt>Attempted at</dt>
+                    <dd>{last?.attempted_at ? formatDateTime(last.attempted_at) : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{last?.status || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>RabbitMQ</dt>
+                    <dd>{rabbitTarget}</dd>
+                  </div>
+                </dl>
+
+                <section className="jobs-email-history">
+                  <h4>History</h4>
+                  {history.length > 0 ? (
+                    <div className="jobs-email-history-list">
+                      {history
+                        .slice()
+                        .reverse()
+                        .map((entry, index) => {
+                          const recipients = entry.recipients && entry.recipients.length > 0 ? entry.recipients.join(", ") : "No recipient";
+                          return (
+                            <article key={`${entry.attempted_at || "email"}-${index}`} className={`jobs-email-history-item ${emailOutcomeClass(entry)}`}>
+                              <div className="jobs-email-history-main">
+                                <strong>{emailOutcomeLabel(entry)}</strong>
+                                <span>{recipients}</span>
+                              </div>
+                              <small className="jobs-meta">
+                                {entry.status || "-"} - {entry.attempted_at ? formatDateTime(entry.attempted_at) : "-"}
+                              </small>
+                              {entry.subject ? <small className="jobs-meta">{entry.subject}</small> : null}
+                              {entry.error ? <small className="jobs-meta is-danger">{entry.error}</small> : null}
+                            </article>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <p className="jobs-meta">No email notification attempts recorded for this job.</p>
+                  )}
+                </section>
+              </section>
             );
           })()
         ) : null}

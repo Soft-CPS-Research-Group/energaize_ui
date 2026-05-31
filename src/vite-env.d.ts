@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_COMMUNITY_API_URL: string
   readonly VITE_ACCESS_API_URL: string
   readonly VITE_TELEMETRY_PROFILE_API_URL: string
+  readonly VITE_FLEXIBILITY_API_URL: string
+  readonly VITE_COMMUNITY_BACKEND_FALLBACK_TO_MOCK: string
   readonly VITE_SIMULATION_DATA_PROVIDER: string
   readonly VITE_PREDICTOR_API_URL: string
   readonly VITE_KPI_API_URL: string

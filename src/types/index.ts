@@ -70,6 +70,28 @@ export interface ExperimentConfigItem {
 
 export type JobStatus = string;
 
+export interface JobEmailNotificationAttempt {
+  job_id?: string;
+  status?: string;
+  previous_status?: string | null;
+  attempted_at?: number | string | null;
+  submitted_by?: string | null;
+  attempted?: boolean;
+  published?: boolean;
+  outcome?: "published" | "failed" | "skipped" | string;
+  reason?: string | null;
+  recipients?: string[];
+  subject?: string | null;
+  error?: string | null;
+  rabbitmq?: {
+    host?: string;
+    port?: number;
+    queue?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 export interface JobInfo {
   job_id: string;
   job_name?: string;
@@ -95,6 +117,8 @@ export interface JobInfo {
   queue_wait_seconds?: number | null;
   run_duration_seconds?: number | null;
   total_duration_seconds?: number | null;
+  last_email_notification?: JobEmailNotificationAttempt | null;
+  email_notifications?: JobEmailNotificationAttempt[];
   [key: string]: unknown;
 }
 
@@ -114,7 +138,10 @@ export interface JobItem {
   total_duration_seconds?: number | null;
   requeue_count?: number | null;
   attempt_number?: number | null;
-  job_meta?: Record<string, unknown>;
+  job_meta?: Record<string, unknown> & {
+    last_email_notification?: JobEmailNotificationAttempt | null;
+    email_notifications?: JobEmailNotificationAttempt[];
+  };
 }
 
 export interface JobResultViewModel {

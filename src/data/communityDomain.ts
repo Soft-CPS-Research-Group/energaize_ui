@@ -75,6 +75,9 @@ export interface CommunityUser {
   name: string;
   email: string;
   timezone: string;
+  rec_memberships?: RecMembership[];
+  site_accesses?: SiteAccess[];
+  asset_ownerships?: AssetOwnership[];
 }
 
 export interface CommunityRole {
@@ -137,6 +140,7 @@ export interface CommunityDomainSnapshot {
 
 const COMMUNITY_DOMAIN_STORAGE_KEY = "energaize:community-domain:v2";
 const PROSUMER_USER_ID = "user-prosumer-01";
+const PROSUMER_EMAIL = "prosumer@energaize.io";
 
 const INITIAL_DOMAIN: CommunityDomainSnapshot = {
   recs: [
@@ -596,10 +600,15 @@ function siteName(site: CommunitySite): string {
   return site.name || `${site.site_type.charAt(0).toUpperCase()}${site.site_type.slice(1)} site`;
 }
 
+function resolveProsumerUserId(snapshot: CommunityDomainSnapshot): string {
+  return snapshot.users.find((user) => user.email.toLowerCase() === PROSUMER_EMAIL)?.id || PROSUMER_USER_ID;
+}
+
 function siteOwnerScope(site: CommunitySite, role: UserRole | null | undefined, snapshot: CommunityDomainSnapshot): EnergyEntity["ownerScope"] {
   if (role !== "prosumer") return "community";
+  const prosumerUserId = resolveProsumerUserId(snapshot);
   return snapshot.siteAccesses.some(
-    (access) => access.user_id === PROSUMER_USER_ID && access.site_id === site.id
+    (access) => access.user_id === prosumerUserId && access.site_id === site.id
   )
     ? "prosumer"
     : "community";
@@ -607,15 +616,17 @@ function siteOwnerScope(site: CommunitySite, role: UserRole | null | undefined, 
 
 function assetOwnerScope(asset: CommunityAsset, siteOwner: EnergyEntity["ownerScope"], snapshot: CommunityDomainSnapshot): EnergyEntity["ownerScope"] {
   if (siteOwner === "prosumer") return "prosumer";
+  const prosumerUserId = resolveProsumerUserId(snapshot);
   return snapshot.assetOwnerships.some(
-    (ownership) => ownership.user_id === PROSUMER_USER_ID && ownership.energy_asset_id === asset.id
+    (ownership) => ownership.user_id === prosumerUserId && ownership.energy_asset_id === asset.id
   )
     ? "prosumer"
     : "community";
 }
 
 function prosumerAllowedSiteIds(snapshot: CommunityDomainSnapshot): Set<string> {
-  return new Set(snapshot.siteAccesses.filter((access) => access.user_id === PROSUMER_USER_ID).map((access) => access.site_id));
+  const prosumerUserId = resolveProsumerUserId(snapshot);
+  return new Set(snapshot.siteAccesses.filter((access) => access.user_id === prosumerUserId).map((access) => access.site_id));
 }
 
 export function energyEntitiesFromDomain(

@@ -3490,7 +3490,7 @@ button {
 }
 
 .jobs-table {
-  min-width: 840px;
+  min-width: 980px;
 }
 
 .jobs-row {
@@ -3612,6 +3612,114 @@ button {
   outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
   outline-offset: 2px;
   border-radius: 999px;
+}
+
+.jobs-email-trigger {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 170px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.jobs-email-trigger svg {
+  flex: 0 0 auto;
+}
+
+.jobs-email-trigger span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.jobs-email-trigger strong,
+.jobs-email-trigger small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobs-email-trigger strong {
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.1;
+}
+
+.jobs-email-trigger small {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
+.jobs-email-trigger.is-published svg {
+  color: color-mix(in srgb, #059669 82%, var(--text));
+}
+
+.jobs-email-trigger.is-failed svg {
+  color: color-mix(in srgb, #dc2626 86%, var(--text));
+}
+
+.jobs-email-trigger.is-skipped svg {
+  color: var(--text-soft);
+}
+
+.jobs-email-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.jobs-email-history {
+  display: grid;
+  gap: 10px;
+}
+
+.jobs-email-history h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.jobs-email-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.jobs-email-history-item {
+  border-left: 3px solid var(--line);
+  padding: 4px 0 4px 10px;
+  display: grid;
+  gap: 3px;
+}
+
+.jobs-email-history-item.is-published {
+  border-left-color: color-mix(in srgb, #059669 72%, var(--line));
+}
+
+.jobs-email-history-item.is-failed {
+  border-left-color: color-mix(in srgb, #dc2626 76%, var(--line));
+}
+
+.jobs-email-history-main {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.jobs-email-history-main span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .slurm-details-grid dt {
@@ -3776,6 +3884,11 @@ button {
 .jobs-meta {
   color: var(--text-soft);
   font-size: 0.8rem;
+}
+
+.jobs-meta.is-danger {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .jobs-capacity-line {
