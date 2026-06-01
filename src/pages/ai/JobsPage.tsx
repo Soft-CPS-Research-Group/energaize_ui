@@ -1567,9 +1567,9 @@ export function JobsPage(): JSX.Element {
                 <thead>
                   <tr>
                     {compareMode ? <th>Compare</th> : null}
-                    <th>Job</th>
+                    <th className="jobs-job-col">Job</th>
                     <th>By</th>
-                    <th>Experiment Config</th>
+                    <th className="jobs-config-col">Experiment Config</th>
                     <th>Progress</th>
                     <th>Status</th>
                     <th className="jobs-host-col">Host</th>
@@ -1599,6 +1599,15 @@ export function JobsPage(): JSX.Element {
                       : "Show Slurm queue details";
                     const hostLabel = resolveJobTargetHost(job);
                     const deucalionRuntime = inferDeucalionJobRuntime(job, hostLabel);
+                    const jobDisplayName = resolveJobDisplayName(job);
+                    const resolvedConfigLabel = job.job_info.resolved_config_file || "config.resolved.yaml";
+                    const baseConfigLabel = resolveConfigName(baseConfigPath);
+                    const configTooltip = [
+                      resolvedConfigAvailable ? `Resolved: ${resolvedConfigLabel}` : null,
+                      baseConfigPath ? `Base: ${baseConfigPath}` : null
+                    ]
+                      .filter(Boolean)
+                      .join("\n");
 
                     return (
                       <tr
@@ -1626,9 +1635,9 @@ export function JobsPage(): JSX.Element {
                             />
                           </td>
                         ) : null}
-                        <td>
-                          <div className="jobs-id-cell">
-                            <strong>{resolveJobDisplayName(job)}</strong>
+                        <td className="jobs-job-col">
+                          <div className="jobs-id-cell" title={`${jobDisplayName}\n${job.job_id}`}>
+                            <strong className="jobs-truncate-start">{jobDisplayName}</strong>
                             <small>{job.job_id}</small>
                           </div>
                         </td>
@@ -1643,36 +1652,36 @@ export function JobsPage(): JSX.Element {
                             <small className="jobs-meta">-</small>
                           )}
                         </td>
-                        <td>
-                          <div className="jobs-config-cell">
+                        <td className="jobs-config-col">
+                          <div className="jobs-config-cell" title={configTooltip || undefined}>
                             {resolvedConfigAvailable ? (
-                              <strong>
+                              <strong className="jobs-config-line">
                                 <button
                                   type="button"
-                                  className="btn-link jobs-config-link"
+                                  className="btn-link jobs-config-link jobs-truncate-start"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     openResolvedConfigPreview(job);
                                   }}
-                                  title="Preview resolved config"
+                                  title={`Preview resolved config: ${resolvedConfigLabel}`}
                                 >
-                                  {job.job_info.resolved_config_file || "config.resolved.yaml"}
+                                  {resolvedConfigLabel}
                                 </button>
                               </strong>
                             ) : null}
                             {baseConfigPath ? (
-                              <small>
-                                {resolvedConfigAvailable ? "Based on " : ""}
+                              <small className="jobs-config-line">
+                                {resolvedConfigAvailable ? <span className="jobs-config-prefix">Based on</span> : null}
                                 <button
                                   type="button"
-                                  className="btn-link jobs-config-link"
+                                  className="btn-link jobs-config-link jobs-truncate-start"
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     openBaseConfigPreview(baseConfigPath);
                                   }}
-                                  title="Preview experiment config"
+                                  title={`Preview experiment config: ${baseConfigPath}`}
                                 >
-                                  {resolveConfigName(baseConfigPath)}
+                                  {baseConfigLabel}
                                 </button>
                               </small>
                             ) : null}

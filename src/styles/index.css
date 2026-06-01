@@ -3500,6 +3500,7 @@ button {
 
 .jobs-table {
   min-width: 980px;
+  table-layout: fixed;
 }
 
 .jobs-row {
@@ -3517,6 +3518,24 @@ button {
 .jobs-status-cell {
   display: grid;
   gap: 2px;
+  min-width: 0;
+}
+
+.jobs-table th,
+.jobs-table td {
+  vertical-align: middle;
+}
+
+.table th.jobs-job-col,
+.table td.jobs-job-col {
+  width: 26%;
+  min-width: 0;
+}
+
+.table th.jobs-config-col,
+.table td.jobs-config-col {
+  width: 38%;
+  min-width: 0;
 }
 
 .jobs-host-cell {
@@ -3736,16 +3755,42 @@ button {
 }
 
 .jobs-id-cell strong {
+  min-width: 0;
   font-size: 0.99rem;
   font-family: var(--font-heading);
 }
 
 .jobs-config-cell strong {
+  min-width: 0;
   font-size: 0.9rem;
 }
 
+.jobs-config-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.jobs-config-prefix {
+  flex: 0 0 auto;
+}
+
 .jobs-config-link {
+  display: block;
+  min-width: 0;
   font-weight: 700;
+}
+
+.jobs-truncate-start {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .configs-file-icon {
