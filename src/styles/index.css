@@ -3499,7 +3499,7 @@ button {
 }
 
 .jobs-table {
-  min-width: 980px;
+  min-width: 1180px;
   table-layout: fixed;
 }
 
@@ -3526,15 +3526,50 @@ button {
   vertical-align: middle;
 }
 
-.table th.jobs-job-col,
-.table td.jobs-job-col {
-  width: 26%;
-  min-width: 0;
+.jobs-table col.jobs-compare-col {
+  width: 72px;
 }
 
+.jobs-table col.jobs-job-col {
+  width: 31%;
+}
+
+.jobs-table col.jobs-submitter-col {
+  width: 62px;
+}
+
+.jobs-table col.jobs-progress-col {
+  width: 146px;
+}
+
+.jobs-table col.jobs-status-col {
+  width: 130px;
+}
+
+.jobs-table col.jobs-host-col {
+  width: 128px;
+}
+
+.jobs-table col.jobs-actions-col {
+  width: 168px;
+}
+
+.table th.jobs-compare-col,
+.table td.jobs-compare-col,
+.table th.jobs-job-col,
+.table td.jobs-job-col,
+.table th.jobs-submitter-col,
+.table td.jobs-submitter-col,
 .table th.jobs-config-col,
-.table td.jobs-config-col {
-  width: 38%;
+.table td.jobs-config-col,
+.table th.jobs-progress-col,
+.table td.jobs-progress-col,
+.table th.jobs-status-col,
+.table td.jobs-status-col,
+.table th.jobs-host-col,
+.table td.jobs-host-col,
+.table th.jobs-actions-col,
+.table td.jobs-actions-col {
   min-width: 0;
 }
 
@@ -3543,11 +3578,15 @@ button {
   align-items: center;
   gap: 6px;
   justify-content: center;
-  min-width: 120px;
+  min-width: 0;
+  max-width: 100%;
   white-space: nowrap;
 }
 
 .jobs-host-cell strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.9rem;
   font-weight: 600;
 }
@@ -3556,7 +3595,10 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  width: fit-content;
+  flex: 0 0 auto;
+  max-width: 42px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 0;
   border-radius: 0;
   padding: 0;
@@ -3586,7 +3628,8 @@ button {
 }
 
 .jobs-status-cell .status-pill {
-  min-width: 112px;
+  width: 112px;
+  max-width: 100%;
 }
 
 .submitted-by-cell {
@@ -3882,7 +3925,7 @@ button {
 .jobs-progress-cell {
   display: grid;
   gap: 4px;
-  min-width: 130px;
+  min-width: 0;
 }
 
 .progress-track {

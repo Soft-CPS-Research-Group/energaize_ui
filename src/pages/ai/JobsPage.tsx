@@ -1564,14 +1564,24 @@ export function JobsPage(): JSX.Element {
           ) : (
             <div className="jobs-table-wrap">
               <table className="table jobs-table">
+                <colgroup>
+                  {compareMode ? <col className="jobs-compare-col" /> : null}
+                  <col className="jobs-job-col" />
+                  <col className="jobs-submitter-col" />
+                  <col className="jobs-config-col" />
+                  <col className="jobs-progress-col" />
+                  <col className="jobs-status-col" />
+                  <col className="jobs-host-col" />
+                  <col className="jobs-actions-col" />
+                </colgroup>
                 <thead>
                   <tr>
-                    {compareMode ? <th>Compare</th> : null}
+                    {compareMode ? <th className="jobs-compare-col">Compare</th> : null}
                     <th className="jobs-job-col">Job</th>
-                    <th>By</th>
+                    <th className="jobs-submitter-col">By</th>
                     <th className="jobs-config-col">Experiment Config</th>
-                    <th>Progress</th>
-                    <th>Status</th>
+                    <th className="jobs-progress-col">Progress</th>
+                    <th className="jobs-status-col">Status</th>
                     <th className="jobs-host-col">Host</th>
                     <th className="jobs-actions-col">Actions</th>
                   </tr>
@@ -1617,7 +1627,7 @@ export function JobsPage(): JSX.Element {
                         onDoubleClick={() => openJobDetails(job.job_id, "overview")}
                       >
                         {compareMode ? (
-                          <td>
+                          <td className="jobs-compare-col">
                             <input
                               type="checkbox"
                               aria-label={`Select ${job.job_id} for comparison`}
@@ -1641,7 +1651,7 @@ export function JobsPage(): JSX.Element {
                             <small>{job.job_id}</small>
                           </div>
                         </td>
-                        <td>
+                        <td className="jobs-submitter-col">
                           {submittedBy ? (
                             <div className="submitted-by-cell" title={`Submitted by: ${submittedBy}`}>
                               <span className="submitted-by-avatar" aria-label={`Submitted by ${submittedBy}`}>
@@ -1688,7 +1698,7 @@ export function JobsPage(): JSX.Element {
                             {!resolvedConfigAvailable && !baseConfigPath ? <small className="jobs-meta">-</small> : null}
                           </div>
                         </td>
-                        <td>
+                        <td className="jobs-progress-col">
                           <div className="jobs-progress-cell">
                             <strong>{progress !== null ? `${Math.round(progress)}%` : "-"}</strong>
                             <div className="progress-track">
@@ -1696,7 +1706,7 @@ export function JobsPage(): JSX.Element {
                             </div>
                           </div>
                         </td>
-                        <td>
+                        <td className="jobs-status-col">
                           <div className="jobs-status-cell">
                             {dispatchedStatus ? (
                               <button
