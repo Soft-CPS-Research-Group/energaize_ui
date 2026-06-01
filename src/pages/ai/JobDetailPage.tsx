@@ -75,6 +75,7 @@ import {
   resolveExampleOnnxAssetUrl
 } from "../../services/deployBundleService";
 import type {
+  JobEmailNotificationAttempt,
   KpiEntry,
   KpiMatrixRow,
   SimulationSeries,
@@ -451,6 +452,51 @@ function readNumberArrayValue(value: unknown): number[] {
 function readStringArrayValue(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map(readStringValue).filter((item): item is string => Boolean(item));
+}
+
+function normalizeEmailNotificationAttempt(value: unknown): JobEmailNotificationAttempt | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const recipients = Array.isArray(record.recipients)
+    ? record.recipients.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  return {
+    ...record,
+    recipients
+  } as JobEmailNotificationAttempt;
+}
+
+function readEmailNotificationHistory(info: unknown): JobEmailNotificationAttempt[] {
+  const record = asRecord(info);
+  const rawHistory = Array.isArray(record?.email_notifications) ? record.email_notifications : [];
+  const history = rawHistory
+    .map((entry) => normalizeEmailNotificationAttempt(entry))
+    .filter((entry): entry is JobEmailNotificationAttempt => Boolean(entry));
+
+  const last = normalizeEmailNotificationAttempt(record?.last_email_notification);
+  if (last && history.length === 0) return [last];
+  return history;
+}
+
+function emailRecipientsLabel(entry: JobEmailNotificationAttempt | null): string {
+  const recipients = entry?.recipients || [];
+  if (recipients.length === 0) return "No recipient";
+  return recipients.join(", ");
+}
+
+function emailOutcomeLabel(entry: JobEmailNotificationAttempt | null): string {
+  if (!entry) return "-";
+  if (entry.outcome === "published" || entry.published) return "Queued";
+  if (entry.outcome === "failed") return "Failed";
+  if (entry.reason === "no_recipient") return "No recipient";
+  return entry.outcome || entry.reason || "Skipped";
+}
+
+function emailOutcomeClass(entry: JobEmailNotificationAttempt | null): string {
+  if (!entry) return "";
+  if (entry.outcome === "published" || entry.published) return "is-published";
+  if (entry.outcome === "failed") return "is-failed";
+  return "is-skipped";
 }
 
 function readBooleanValue(value: unknown): boolean | null {
@@ -3809,6 +3855,12 @@ export function JobDetailPage(): JSX.Element {
   const availableConfigs = configsQuery.data || [];
 
   const hasOverviewLogs = overviewLogs.text.trim().length > 0;
+  const emailHistory = readEmailNotificationHistory(infoQuery.data);
+  const lastEmailNotification = emailHistory.length > 0 ? emailHistory[emailHistory.length - 1] || null : null;
+  const lastEmailRabbit = lastEmailNotification?.rabbitmq;
+  const lastEmailRabbitTarget = lastEmailRabbit
+    ? `${lastEmailRabbit.host || "-"}:${lastEmailRabbit.port || "-"} / ${lastEmailRabbit.queue || "-"}`
+    : "-";
 
   const mlflowUrl = resolveMlflowRunUrl(infoQuery.data);
   const jobDescription =
@@ -4325,6 +4377,58 @@ export function JobDetailPage(): JSX.Element {
                       ) : null}
                       {!canOpenResolvedConfig && !baseConfigPath ? <small className="jobs-meta">-</small> : null}
                     </div>
+                  </article>
+
+                  <article className="job-overview-section jobs-email-history">
+                    <header>
+                      <h3>Email notifications</h3>
+                    </header>
+                    {lastEmailNotification ? (
+                      <dl className="job-overview-list">
+                        <div>
+                          <dt>Last outcome</dt>
+                          <dd>{emailOutcomeLabel(lastEmailNotification)}</dd>
+                        </div>
+                        <div>
+                          <dt>Recipients</dt>
+                          <dd>{emailRecipientsLabel(lastEmailNotification)}</dd>
+                        </div>
+                        <div>
+                          <dt>Attempted at</dt>
+                          <dd>{lastEmailNotification.attempted_at ? formatDateTime(lastEmailNotification.attempted_at) : "-"}</dd>
+                        </div>
+                        <div>
+                          <dt>RabbitMQ</dt>
+                          <dd>{lastEmailRabbitTarget}</dd>
+                        </div>
+                      </dl>
+                    ) : null}
+
+                    {emailHistory.length > 0 ? (
+                      <div className="jobs-email-history-list">
+                        {emailHistory
+                          .slice()
+                          .reverse()
+                          .map((entry, index) => (
+                            <article
+                              key={`${entry.attempted_at || "email"}-${index}`}
+                              className={`jobs-email-history-item ${emailOutcomeClass(entry)}`}
+                            >
+                              <div className="jobs-email-history-main">
+                                <strong>{emailOutcomeLabel(entry)}</strong>
+                                <span>{emailRecipientsLabel(entry)}</span>
+                              </div>
+                              <small className="jobs-meta">
+                                {entry.status || "-"} - {entry.attempted_at ? formatDateTime(entry.attempted_at) : "-"}
+                              </small>
+                              {entry.subject ? <small className="jobs-meta">{entry.subject}</small> : null}
+                              {entry.error ? <small className="jobs-meta is-danger">{entry.error}</small> : null}
+                            </article>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="jobs-meta">No email notification attempts recorded for this job.</p>
+                    )}
                   </article>
                 </div>
               </section>

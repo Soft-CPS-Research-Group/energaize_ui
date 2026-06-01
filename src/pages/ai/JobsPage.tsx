@@ -12,9 +12,6 @@ import {
   FileText,
   FlaskConical,
   Info,
-  MailCheck,
-  MailQuestion,
-  MailWarning,
   Play,
   RefreshCcw,
   Search,
@@ -52,7 +49,7 @@ import { StatusPill } from "../../components/ui/StatusPill";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
 import { useJobLogsPolling } from "../../hooks/useJobLogsPolling";
 import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications";
-import type { HostInfo, JobEmailNotificationAttempt, JobItem } from "../../types";
+import type { HostInfo, JobItem } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { isCompletedForResults } from "../../utils/jobStatus";
@@ -483,75 +480,6 @@ function computeUserInitials(label: string): string {
     .slice(0, 2);
 }
 
-function normalizeEmailNotificationAttempt(value: unknown): JobEmailNotificationAttempt | null {
-  const record = asRecord(value);
-  if (!record) return null;
-  const recipients = Array.isArray(record.recipients)
-    ? record.recipients.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    : [];
-  return {
-    ...record,
-    recipients
-  } as JobEmailNotificationAttempt;
-}
-
-function readEmailNotificationHistory(job: JobItem): JobEmailNotificationAttempt[] {
-  const rawHistory =
-    (Array.isArray(job.job_info.email_notifications) ? job.job_info.email_notifications : null) ||
-    (Array.isArray(job.job_meta?.email_notifications) ? job.job_meta.email_notifications : null) ||
-    [];
-
-  const history = rawHistory
-    .map((entry) => normalizeEmailNotificationAttempt(entry))
-    .filter((entry): entry is JobEmailNotificationAttempt => Boolean(entry));
-
-  const last =
-    normalizeEmailNotificationAttempt(job.job_info.last_email_notification) ||
-    normalizeEmailNotificationAttempt(job.job_meta?.last_email_notification);
-  if (last && history.length === 0) return [last];
-  return history;
-}
-
-function readLastEmailNotification(job: JobItem): JobEmailNotificationAttempt | null {
-  const history = readEmailNotificationHistory(job);
-  if (history.length > 0) return history[history.length - 1] || null;
-  return (
-    normalizeEmailNotificationAttempt(job.job_info.last_email_notification) ||
-    normalizeEmailNotificationAttempt(job.job_meta?.last_email_notification)
-  );
-}
-
-function emailRecipientsLabel(entry: JobEmailNotificationAttempt | null): string {
-  const recipients = entry?.recipients || [];
-  if (recipients.length === 0) return "No recipient";
-  if (recipients.length === 1) return recipients[0] || "No recipient";
-  return `${recipients[0]} +${recipients.length - 1}`;
-}
-
-function emailOutcomeLabel(entry: JobEmailNotificationAttempt | null): string {
-  if (!entry) return "-";
-  if (entry.outcome === "published" || entry.published) return "Queued";
-  if (entry.outcome === "failed") return "Failed";
-  if (entry.reason === "no_recipient") return "No recipient";
-  return entry.outcome || entry.reason || "Skipped";
-}
-
-function emailOutcomeClass(entry: JobEmailNotificationAttempt | null): string {
-  if (!entry) return "";
-  if (entry.outcome === "published" || entry.published) return "is-published";
-  if (entry.outcome === "failed") return "is-failed";
-  return "is-skipped";
-}
-
-function emailNotificationTitle(entry: JobEmailNotificationAttempt | null): string {
-  if (!entry) return "No email notification recorded";
-  const recipients = emailRecipientsLabel(entry);
-  const status = entry.status ? ` for ${entry.status}` : "";
-  const at = entry.attempted_at ? ` at ${formatDateTime(entry.attempted_at)}` : "";
-  const reason = entry.reason ? ` (${entry.reason})` : "";
-  return `${emailOutcomeLabel(entry)} email${status} to ${recipients}${at}${reason}`;
-}
-
 function hasAnyStatus(status: string, tokens: string[]): boolean {
   const key = status.toLowerCase();
   return tokens.some((token) => key.includes(token));
@@ -663,7 +591,6 @@ export function JobsPage(): JSX.Element {
   const [configPreviewMode, setConfigPreviewMode] = useState<"base" | "resolved">("base");
   const [configPreviewJobId, setConfigPreviewJobId] = useState("");
   const [dispatchDetailsTarget, setDispatchDetailsTarget] = useState<JobItem | null>(null);
-  const [emailDetailsTarget, setEmailDetailsTarget] = useState<JobItem | null>(null);
   const [hostDetailsTarget, setHostDetailsTarget] = useState<{ name: string; data: HostInfo } | null>(null);
   const [hostDetailsOpen, setHostDetailsOpen] = useState(false);
   const [adminConfirm, setAdminConfirm] = useState<AdminConfirmState | null>(null);
@@ -1645,7 +1572,6 @@ export function JobsPage(): JSX.Element {
                     <th>Experiment Config</th>
                     <th>Progress</th>
                     <th>Status</th>
-                    <th>Email</th>
                     <th className="jobs-host-col">Host</th>
                     <th className="jobs-actions-col">Actions</th>
                   </tr>
@@ -1673,10 +1599,6 @@ export function JobsPage(): JSX.Element {
                       : "Show Slurm queue details";
                     const hostLabel = resolveJobTargetHost(job);
                     const deucalionRuntime = inferDeucalionJobRuntime(job, hostLabel);
-                    const lastEmailNotification = readLastEmailNotification(job);
-                    const emailOutcome = emailOutcomeLabel(lastEmailNotification);
-                    const emailRecipients = emailRecipientsLabel(lastEmailNotification);
-                    const emailClass = emailOutcomeClass(lastEmailNotification);
 
                     return (
                       <tr
@@ -1783,33 +1705,6 @@ export function JobsPage(): JSX.Element {
                               <StatusPill status={job.status} />
                             )}
                           </div>
-                        </td>
-                        <td>
-                          {lastEmailNotification ? (
-                            <button
-                              type="button"
-                              className={`jobs-email-trigger ${emailClass}`}
-                              title={emailNotificationTitle(lastEmailNotification)}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setEmailDetailsTarget(job);
-                              }}
-                            >
-                              {lastEmailNotification.outcome === "published" || lastEmailNotification.published ? (
-                                <MailCheck size={14} />
-                              ) : lastEmailNotification.outcome === "failed" ? (
-                                <MailWarning size={14} />
-                              ) : (
-                                <MailQuestion size={14} />
-                              )}
-                              <span>
-                                <strong>{emailOutcome}</strong>
-                                <small>{emailRecipients}</small>
-                              </span>
-                            </button>
-                          ) : (
-                            <small className="jobs-meta">-</small>
-                          )}
                         </td>
                         <td className="jobs-host-col">
                           <div className="jobs-host-cell">
@@ -2901,83 +2796,6 @@ export function JobsPage(): JSX.Element {
               <pre className="json-view compact">{JSON.stringify(hostDetailsTarget.data.info || {}, null, 2)}</pre>
             </section>
           </section>
-            );
-          })()
-        ) : null}
-      </Modal>
-
-      <Modal
-        title={`Email notifications: ${emailDetailsTarget?.job_id || "-"}`}
-        open={Boolean(emailDetailsTarget)}
-        onClose={() => setEmailDetailsTarget(null)}
-        width="md"
-      >
-        {emailDetailsTarget ? (
-          (() => {
-            const history = readEmailNotificationHistory(emailDetailsTarget);
-            const last = readLastEmailNotification(emailDetailsTarget);
-            const lastRabbit = last?.rabbitmq;
-            const rabbitTarget = lastRabbit
-              ? `${lastRabbit.host || "-"}:${lastRabbit.port || "-"} / ${lastRabbit.queue || "-"}`
-              : "-";
-            return (
-              <section className="host-details-modal jobs-email-modal">
-                <dl className="host-details-grid">
-                  <div>
-                    <dt>Job</dt>
-                    <dd>{resolveJobDisplayName(emailDetailsTarget)}</dd>
-                  </div>
-                  <div>
-                    <dt>Last outcome</dt>
-                    <dd>{emailOutcomeLabel(last)}</dd>
-                  </div>
-                  <div>
-                    <dt>Recipients</dt>
-                    <dd>{emailRecipientsLabel(last)}</dd>
-                  </div>
-                  <div>
-                    <dt>Attempted at</dt>
-                    <dd>{last?.attempted_at ? formatDateTime(last.attempted_at) : "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{last?.status || "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>RabbitMQ</dt>
-                    <dd>{rabbitTarget}</dd>
-                  </div>
-                </dl>
-
-                <section className="jobs-email-history">
-                  <h4>History</h4>
-                  {history.length > 0 ? (
-                    <div className="jobs-email-history-list">
-                      {history
-                        .slice()
-                        .reverse()
-                        .map((entry, index) => {
-                          const recipients = entry.recipients && entry.recipients.length > 0 ? entry.recipients.join(", ") : "No recipient";
-                          return (
-                            <article key={`${entry.attempted_at || "email"}-${index}`} className={`jobs-email-history-item ${emailOutcomeClass(entry)}`}>
-                              <div className="jobs-email-history-main">
-                                <strong>{emailOutcomeLabel(entry)}</strong>
-                                <span>{recipients}</span>
-                              </div>
-                              <small className="jobs-meta">
-                                {entry.status || "-"} - {entry.attempted_at ? formatDateTime(entry.attempted_at) : "-"}
-                              </small>
-                              {entry.subject ? <small className="jobs-meta">{entry.subject}</small> : null}
-                              {entry.error ? <small className="jobs-meta is-danger">{entry.error}</small> : null}
-                            </article>
-                          );
-                        })}
-                    </div>
-                  ) : (
-                    <p className="jobs-meta">No email notification attempts recorded for this job.</p>
-                  )}
-                </section>
-              </section>
             );
           })()
         ) : null}

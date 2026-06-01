@@ -265,6 +265,27 @@ describe("App integration", () => {
     expect(screen.getByDisplayValue("completed")).toBeInTheDocument();
   });
 
+  it("keeps email notification metadata out of the jobs table and shows it in job details", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    renderApp("/app/ai/jobs");
+
+    expect(await screen.findByRole("heading", { name: "Jobs" })).toBeInTheDocument();
+    expect(await screen.findByText("job-completed-001")).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Email" })).not.toBeInTheDocument();
+    expect(screen.queryByText("calof@isep.ipp.pt")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /see more about job-completed-001/i
+      })
+    );
+
+    expect(await screen.findByRole("heading", { name: /email notifications/i })).toBeInTheDocument();
+    expect((await screen.findAllByText("calof@isep.ipp.pt")).length).toBeGreaterThan(0);
+    expect(screen.getByText("[EnergAIze] Job completed: Baseline Alpha")).toBeInTheDocument();
+  });
+
   it("returns from KPI compare and restores jobs filters from querystring", async () => {
     seedAiSession();
     const user = userEvent.setup();

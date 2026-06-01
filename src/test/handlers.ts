@@ -63,7 +63,39 @@ export function resetMockState(): void {
         target_host: "worker-a",
         run_name: "alpha-run",
         config_path: "alpha.yaml",
-        mlflow_run_url: "http://mlflow.local/run/alpha"
+        mlflow_run_url: "http://mlflow.local/run/alpha",
+        last_email_notification: {
+          status: "completed",
+          previous_status: "running",
+          attempted_at: 1770000000,
+          attempted: true,
+          published: true,
+          outcome: "published",
+          recipients: ["calof@isep.ipp.pt"],
+          subject: "[EnergAIze] Job completed: Baseline Alpha",
+          rabbitmq: {
+            host: "smtp-service",
+            port: 8016,
+            queue: "email_requests"
+          }
+        },
+        email_notifications: [
+          {
+            status: "completed",
+            previous_status: "running",
+            attempted_at: 1770000000,
+            attempted: true,
+            published: true,
+            outcome: "published",
+            recipients: ["calof@isep.ipp.pt"],
+            subject: "[EnergAIze] Job completed: Baseline Alpha",
+            rabbitmq: {
+              host: "smtp-service",
+              port: 8016,
+              queue: "email_requests"
+            }
+          }
+        ]
       }
     },
     {
