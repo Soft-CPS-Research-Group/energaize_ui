@@ -3248,7 +3248,7 @@ export function JobDetailPage(): JSX.Element {
   );
   const kpiCostSavingSignal = kpiDecisionSignals.find((signal) => signal.definition.id === "cost-saving-reference") || null;
   const kpiReferenceCostContextSignal =
-    kpiCostContextSignal.value !== null && kpiCostSavingSignal?.value !== null
+    kpiCostContextSignal.value !== null && kpiCostSavingSignal !== null && kpiCostSavingSignal.value !== null
       ? {
           ...kpiCostContextSignal,
           value: kpiCostContextSignal.value + kpiCostSavingSignal.value,
