@@ -113,6 +113,39 @@ describe("kpiMetadata v2", () => {
     expect(formatKpiReferenceLabel(resolveKpiReferenceSource(grouped[0]!))).toBe("BAU");
   });
 
+  it("groups solar self-consumption BAU rows with the current simulator value", () => {
+    const grouped = groupScopedKpis([
+      {
+        key: "building_solar_self_consumption_ratio_self_consumption_ratio",
+        label: "Self consumption",
+        unit: "%",
+        value: 0.6,
+        breakdown: [{ entity: "Building_1", value: 0.6 }]
+      },
+      {
+        key: "building_solar_self_consumption_ratio_self_consumption_business_as_usual_ratio",
+        label: "Self consumption BAU",
+        unit: "%",
+        value: 0.45,
+        breakdown: [{ entity: "Building_1", value: 0.45 }]
+      },
+      {
+        key: "building_solar_self_consumption_ratio_self_consumption_delta_to_business_as_usual_ratio",
+        label: "Self consumption delta",
+        unit: "%",
+        value: 0.15,
+        breakdown: [{ entity: "Building_1", value: 0.15 }]
+      }
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.absolute).toBe(0.6);
+    expect(grouped[0]?.baseline).toBe(0.45);
+    expect(grouped[0]?.delta).toBe(0.15);
+    expect(grouped[0]?.canonicalGroupId).toBe("building_solar_self_consumption_ratio_self_consumption_ratio");
+    expect(resolveKpiReferenceSource(grouped[0]!)).toBe("business_as_usual");
+  });
+
   it("parses business-as-usual ratio KPIs as their own comparable group", () => {
     const meta = buildKpiMeta("district_cost_ratio_to_business_as_usual_total_ratio");
 

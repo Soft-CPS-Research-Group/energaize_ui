@@ -77,6 +77,7 @@ import {
 import type {
   JobEmailNotificationAttempt,
   KpiEntry,
+  KpiImprovementTone,
   KpiMatrixRow,
   SimulationSeries,
   SimulationSeriesPoint,
@@ -85,7 +86,6 @@ import type {
 import { extractKpis } from "../../utils/jobResult";
 import { isCompletedForResults } from "../../utils/jobStatus";
 import {
-  buildKpiMeta,
   formatKpiFamilyLabel,
   formatKpiReferenceLabel,
   groupRowsByFamilySubfamily,
@@ -97,9 +97,16 @@ import {
   scoreKpiGroupTone,
   type KpiFamily,
   type KpiLevel,
-  type KpiMetricGroupRow,
-  stripKpiLevel
+  type KpiReferenceSource
 } from "../../utils/kpiMetadata";
+import {
+  formatKpiScorecardValue,
+  KPI_COST_CONTEXT,
+  resolveKpiScorecardSignal,
+  resolveKpiScorecardSections,
+  resolveKpiScorecardSignals,
+  type KpiScorecardSignal
+} from "../../utils/kpiScorecard";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import {
   buildSimulationTree,
@@ -204,146 +211,6 @@ interface DeployManifestContract {
   rewardParamCount: number;
   wrapperRewardEnabled: boolean | null;
 }
-
-interface KpiHighlightConfig {
-  title: string;
-  candidates: string[];
-}
-
-interface KpiHighlightRow {
-  key: string;
-  title: string;
-  metricLabel: string;
-  description: string;
-  formula: string;
-  unit?: string;
-  value: number | null;
-  control: number | null;
-  baseline: number | null;
-  delta: number | null;
-  referenceLabel: string;
-  tone: "better" | "worse" | "neutral" | "unknown";
-  hasComparable: boolean;
-}
-
-const DISTRICT_HIGHLIGHTS: KpiHighlightConfig[] = [
-  {
-    title: "Community Cost",
-    candidates: [
-      "district_community_settled_cost_total_eur",
-      "district_cost_total_control_eur",
-      "district_cost_ratio_to_business_as_usual_total_ratio"
-    ]
-  },
-  {
-    title: "EV Min SOC",
-    candidates: [
-      "district_ev_performance_departure_min_acceptable_feasible_ratio",
-      "district_ev_performance_departure_min_acceptable_ratio"
-    ]
-  },
-  {
-    title: "EV Target Band",
-    candidates: [
-      "district_ev_performance_departure_within_tolerance_feasible_ratio",
-      "district_ev_performance_departure_within_tolerance_ratio"
-    ]
-  },
-  {
-    title: "Grid Violations",
-    candidates: [
-      "district_electrical_service_phase_violations_energy_total_kwh",
-      "district_electrical_service_phase_violations_event_count"
-    ]
-  },
-  {
-    title: "Peak",
-    candidates: [
-      "district_energy_grid_shape_quality_peak_daily_average_to_business_as_usual_ratio",
-      "district_energy_grid_shape_quality_peak_all_time_average_to_business_as_usual_ratio",
-      "district_energy_grid_shape_quality_peak_daily_average_control_kw"
-    ]
-  },
-  {
-    title: "Battery Throughput",
-    candidates: [
-      "district_battery_total_throughput_kwh",
-      "district_battery_ratio_to_business_as_usual_throughput_ratio",
-      "district_battery_health_equivalent_full_cycles_count"
-    ]
-  },
-  {
-    title: "Net Exchange",
-    candidates: [
-      "district_energy_grid_total_net_exchange_control_kwh",
-      "district_energy_grid_ratio_to_business_as_usual_net_exchange_total_ratio",
-      "district_energy_grid_total_import_control_kwh"
-    ]
-  },
-  {
-    title: "V2G Export",
-    candidates: ["district_ev_total_v2g_export_kwh", "district_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
-  }
-];
-
-const BUILDING_HIGHLIGHTS: KpiHighlightConfig[] = [
-  {
-    title: "Cost",
-    candidates: [
-      "building_cost_total_control_eur",
-      "building_cost_ratio_to_business_as_usual_total_ratio",
-      "building_cost_daily_average_control_eur"
-    ]
-  },
-  {
-    title: "EV Min SOC",
-    candidates: [
-      "building_ev_performance_departure_min_acceptable_feasible_ratio",
-      "building_ev_performance_departure_min_acceptable_ratio"
-    ]
-  },
-  {
-    title: "EV Target Band",
-    candidates: [
-      "building_ev_performance_departure_within_tolerance_feasible_ratio",
-      "building_ev_performance_departure_within_tolerance_ratio"
-    ]
-  },
-  {
-    title: "Grid Violations",
-    candidates: [
-      "building_electrical_service_phase_violations_energy_total_kwh",
-      "building_electrical_service_phase_violations_event_count"
-    ]
-  },
-  {
-    title: "Grid Import",
-    candidates: [
-      "building_energy_grid_total_import_control_kwh",
-      "building_energy_grid_ratio_to_business_as_usual_import_total_ratio"
-    ]
-  },
-  {
-    title: "Battery Throughput",
-    candidates: [
-      "building_battery_total_throughput_kwh",
-      "building_battery_ratio_to_business_as_usual_throughput_ratio",
-      "building_battery_health_equivalent_full_cycles_count"
-    ]
-  },
-  {
-    title: "Deferrable Service",
-    candidates: [
-      "building_deferrable_appliance_service_service_level_ratio",
-      "building_deferrable_appliance_service_unserved_energy_total_kwh",
-      "building_deferrable_appliance_ratio_to_business_as_usual_service_level_ratio"
-    ]
-  },
-  {
-    title: "V2G Export",
-    candidates: ["building_ev_total_v2g_export_kwh", "building_ev_ratio_to_business_as_usual_v2g_export_total_ratio"]
-  }
-];
 
 const KPI_FAMILY_ICONS: Record<KpiFamily, LucideIcon> = {
   cost: CircleDollarSign,
@@ -611,13 +478,6 @@ function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
   if (Math.abs(value) >= 1000) return value.toFixed(2);
   return value.toFixed(4);
-}
-
-function formatHighlightNumber(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "-";
-  const abs = Math.abs(value);
-  if (abs >= 100) return value.toFixed(2);
-  return value.toFixed(3);
 }
 
 function formatYAxisTick(value: number): string {
@@ -1418,77 +1278,6 @@ function triggerBlobDownload(blob: Blob, fileName: string): void {
 
 function isCommunityEntity(entity: string): boolean {
   return /(community|overall|global|rec|microgrid|district)/i.test(entity);
-}
-
-function hasComparableSignal(
-  row: Pick<KpiMetricGroupRow, "control" | "baseline" | "delta" | "normalized">
-): boolean {
-  if (typeof row.delta === "number" && Number.isFinite(row.delta)) return true;
-  if (
-    typeof row.control === "number" &&
-    Number.isFinite(row.control) &&
-    typeof row.baseline === "number" &&
-    Number.isFinite(row.baseline)
-  ) {
-    return true;
-  }
-  return typeof row.normalized === "number" && Number.isFinite(row.normalized);
-}
-
-function resolveHighlightCandidates(rows: KpiMetricGroupRow[], candidateKey: string): KpiMetricGroupRow[] {
-  const targetMeta = buildKpiMeta(candidateKey);
-  const targetCanonical = targetMeta.canonicalGroupId;
-  const targetCanonicalNoLevel = stripKpiLevel(targetCanonical);
-
-  return rows.filter((row) => {
-    if (row.canonicalGroupId === targetCanonical) return true;
-    if (stripKpiLevel(row.canonicalGroupId) === targetCanonicalNoLevel) return true;
-    return row.metricLabel.toLowerCase() === targetMeta.metricLabel.toLowerCase() && row.family === targetMeta.family;
-  });
-}
-
-function resolveScopeHighlights(rows: KpiMetricGroupRow[], level: KpiLevel | null): KpiHighlightRow[] {
-  const source = level === "district" ? DISTRICT_HIGHLIGHTS : level === "building" ? BUILDING_HIGHLIGHTS : [];
-  return source.map((item) => {
-    const rankedCandidates = item.candidates.flatMap((candidateKey, candidateIndex) =>
-      resolveHighlightCandidates(rows, candidateKey).map((row) => ({
-        row,
-        candidateIndex
-      }))
-    );
-
-    const best = rankedCandidates
-      .sort((left, right) => {
-        const leftComparable = Number(hasComparableSignal(left.row));
-        const rightComparable = Number(hasComparableSignal(right.row));
-        if (leftComparable !== rightComparable) return rightComparable - leftComparable;
-        const leftUsed = Number(isKpiGroupUsed(left.row));
-        const rightUsed = Number(isKpiGroupUsed(right.row));
-        if (leftUsed !== rightUsed) return rightUsed - leftUsed;
-        return left.candidateIndex - right.candidateIndex;
-      })
-      .map((item) => item.row)[0];
-
-    const primaryMeta = buildKpiMeta(item.candidates[0] || "legacy_kpi");
-    const hasComparable = best ? hasComparableSignal(best) : false;
-    const tone = best && hasComparable ? scoreKpiGroupTone(best) : "unknown";
-
-    return {
-      key: best?.canonicalGroupId || primaryMeta.canonicalGroupId,
-      title: item.title,
-      metricLabel: best?.label || primaryMeta.metricLabel,
-      description: best?.tooltip.shortDescription || primaryMeta.tooltip.shortDescription,
-      formula: best?.tooltip.formulaShort || primaryMeta.tooltip.formulaShort,
-      unit: best?.unit,
-      value: best ? pickPrimaryValueForGroup(best) : null,
-      control: best?.control ?? null,
-      baseline: best?.baseline ?? null,
-      delta: best?.delta ?? null,
-      referenceLabel: formatKpiReferenceLabel(best ? resolveKpiReferenceSource(best) : null),
-      tone,
-      hasComparable
-    };
-  });
 }
 
 function nodeIcon(kind: SimulationTreeNode["kind"]): JSX.Element {
@@ -3438,6 +3227,41 @@ export function JobDetailPage(): JSX.Element {
     return collected.sort((a, b) => a.label.localeCompare(b.label));
   }, [kpiRows, selectedKpiScope]);
 
+  const flatKpiScorecardRows = useMemo(
+    () =>
+      displayKpis.map((kpi) => ({
+        key: kpi.key,
+        label: kpi.label,
+        unit: kpi.unit,
+        value: kpi.value
+      })),
+    [displayKpis]
+  );
+  const activeKpiScorecardRows = scopedKpiRows.length > 0 ? scopedKpiRows : flatKpiScorecardRows;
+  const kpiDecisionSignals = useMemo(
+    () => resolveKpiScorecardSignals(activeKpiScorecardRows),
+    [activeKpiScorecardRows]
+  );
+  const kpiCostContextSignal = useMemo(
+    () => resolveKpiScorecardSignal(activeKpiScorecardRows, KPI_COST_CONTEXT),
+    [activeKpiScorecardRows]
+  );
+  const kpiCostSavingSignal = kpiDecisionSignals.find((signal) => signal.definition.id === "cost-saving-reference") || null;
+  const kpiReferenceCostContextSignal =
+    kpiCostContextSignal.value !== null && kpiCostSavingSignal?.value !== null
+      ? {
+          ...kpiCostContextSignal,
+          value: kpiCostContextSignal.value + kpiCostSavingSignal.value,
+          sourceKey: null,
+          sourceLabel: null,
+          tone: "neutral" as const
+        }
+      : null;
+  const kpiImportantSections = useMemo(
+    () => resolveKpiScorecardSections(activeKpiScorecardRows, undefined, selectedKpiScope?.group),
+    [activeKpiScorecardRows, selectedKpiScope?.group]
+  );
+
   const groupedKpiRows = useMemo(() => groupScopedKpis(scopedKpiRows), [scopedKpiRows]);
   const selectedKpiLevel = useMemo<KpiLevel | null>(() => {
     if (!selectedKpiScope) return null;
@@ -3477,11 +3301,6 @@ export function JobDetailPage(): JSX.Element {
   const kpiSemanticSections = useMemo(
     () => groupRowsByFamilySubfamily(visibleKpiGroupRows),
     [visibleKpiGroupRows]
-  );
-
-  const kpiHighlightRows = useMemo(
-    () => resolveScopeHighlights(filteredKpiGroupRows, selectedKpiLevel),
-    [filteredKpiGroupRows, selectedKpiLevel]
   );
 
   const filteredKpis = useMemo(() => {
@@ -4139,8 +3958,354 @@ export function JobDetailPage(): JSX.Element {
     });
   }
 
+  const hasKpiScorecard =
+    kpiDecisionSignals.some((signal) => signal.value !== null) || kpiImportantSections.length > 0;
+  function isFiniteKpiValue(value: number | null | undefined): value is number {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+
+  function formatSignalOverride(signal: KpiScorecardSignal, value: number, unit?: string): string {
+    return formatKpiScorecardValue({
+      ...signal,
+      value,
+      unit: unit || signal.unit
+    });
+  }
+
+  function inferSignalReferenceSource(
+    signal: KpiScorecardSignal,
+    fallback?: KpiReferenceSource | null
+  ): KpiReferenceSource | null {
+    const key = (signal.sourceKey || "").toLowerCase();
+    if (key.includes("business_as_usual") || key.includes("vs_bau") || key.includes("_to_bau")) {
+      return "business_as_usual";
+    }
+    if (key.includes("baseline") || key.includes("to_baseline")) return "baseline";
+    return fallback || null;
+  }
+
+  function scoreKpiScorecardComparison(
+    signal: KpiScorecardSignal,
+    policyValue: number | null,
+    referenceValue: number | null,
+    deltaValue: number | null
+  ): KpiImprovementTone {
+    if (signal.definition.referenceMode === "none") return signal.tone;
+    if (signal.definition.valueStyle === "ratio") return signal.tone;
+    if (signal.definition.toneRule === "positive-saving" || signal.definition.toneRule === "service-rate") {
+      return signal.tone;
+    }
+
+    const direction = signal.definition.comparisonDirection || "neutral";
+    if (direction === "neutral") return signal.tone;
+
+    if (direction === "closer-to-zero") {
+      if (!isFiniteKpiValue(policyValue) || !isFiniteKpiValue(referenceValue)) return signal.tone;
+      const policyDistance = Math.abs(policyValue);
+      const referenceDistance = Math.abs(referenceValue);
+      if (Math.abs(policyDistance - referenceDistance) < 1e-9) return "neutral";
+      return policyDistance < referenceDistance ? "better" : "worse";
+    }
+
+    if (!isFiniteKpiValue(deltaValue)) return signal.tone;
+    if (Math.abs(deltaValue) < 1e-9) return "neutral";
+    if (direction === "lower-is-better") return deltaValue < 0 ? "better" : "worse";
+    if (direction === "higher-is-better") return deltaValue > 0 ? "better" : "worse";
+    return signal.tone;
+  }
+
+  function formatKpiScorecardToneLabel(
+    signal: KpiScorecardSignal,
+    comparison: { tone: KpiImprovementTone; hasReference: boolean; isEqual: boolean },
+    options?: { hideUnknown?: boolean }
+  ): string | null {
+    if (comparison.isEqual) return "Equal";
+
+    if (signal.definition.referenceMode === "none" || !comparison.hasReference) {
+      if (comparison.tone === "better") return "Good";
+      if (comparison.tone === "neutral") return "OK";
+      if (comparison.tone === "worse") return "!";
+      return options?.hideUnknown ? null : "Unknown";
+    }
+
+    if (comparison.tone === "neutral") return null;
+    return formatToneLabel(comparison.tone, options);
+  }
+
+  function resolveKpiComparison(signal: KpiScorecardSignal): {
+    policyLabel: string;
+    policy: string;
+    reference: string;
+    referenceLabel: string;
+    delta: string;
+    deltaLabel: string;
+    hasReference: boolean;
+    tone: KpiImprovementTone;
+    isEqual: boolean;
+  } {
+    const sourceGroup = signal.sourceKey
+      ? groupedKpiRows.find(
+          (row) =>
+            row.sourceKeys.includes(signal.sourceKey || "") ||
+            row.canonicalGroupId === signal.sourceKey ||
+            row.comparisonKey === signal.sourceKey
+        ) || null
+      : null;
+
+    const policyFromGroup =
+      sourceGroup && isFiniteKpiValue(sourceGroup.control)
+        ? sourceGroup.control
+        : sourceGroup && isFiniteKpiValue(sourceGroup.absolute)
+          ? sourceGroup.absolute
+          : sourceGroup && isFiniteKpiValue(sourceGroup.normalized)
+            ? sourceGroup.normalized
+            : null;
+
+    const deltaText =
+      sourceGroup && isFiniteKpiValue(sourceGroup.delta)
+        ? `${formatSignalOverride(signal, sourceGroup.delta, sourceGroup.unit)}${
+            isFiniteKpiValue(sourceGroup.deltaPct) ? ` (${sourceGroup.deltaPct.toFixed(1)}%)` : ""
+          }`
+        : signal.value !== null
+          ? formatKpiScorecardValue(signal)
+          : "-";
+
+    const sourceReference = sourceGroup ? resolveKpiReferenceSource(sourceGroup) : null;
+    const signalReference = inferSignalReferenceSource(signal, sourceReference);
+    const referenceLabel = formatKpiReferenceLabel(signalReference);
+    const sourceDelta =
+      sourceGroup && isFiniteKpiValue(sourceGroup.delta)
+        ? sourceGroup.delta
+        : sourceGroup && isFiniteKpiValue(policyFromGroup) && isFiniteKpiValue(sourceGroup.baseline)
+          ? policyFromGroup - sourceGroup.baseline
+          : null;
+    const isEqual =
+      signal.definition.valueStyle === "ratio" && signal.value !== null
+        ? Math.abs(signal.value - 1) < 1e-9
+        : isFiniteKpiValue(sourceDelta)
+          ? Math.abs(sourceDelta) < 1e-9
+          : signal.definition.id === "cost-saving-reference" && signal.value !== null
+            ? Math.abs(signal.value) < 1e-9
+            : false;
+
+    const base = {
+      policyLabel: "Policy",
+      policy: policyFromGroup !== null ? formatSignalOverride(signal, policyFromGroup, sourceGroup?.unit) : formatKpiScorecardValue(signal),
+      reference:
+        sourceGroup && isFiniteKpiValue(sourceGroup.baseline)
+          ? formatSignalOverride(signal, sourceGroup.baseline, sourceGroup.unit)
+          : "Not exported",
+      referenceLabel,
+      delta: deltaText,
+      deltaLabel:
+        signal.definition.id.endsWith("-reference") || signal.definition.id.includes("ratio")
+          ? "Comparison"
+          : signalReference
+            ? `Δ vs ${referenceLabel}`
+            : "Delta",
+      hasReference: Boolean(sourceGroup && isFiniteKpiValue(sourceGroup.baseline)),
+      tone: scoreKpiScorecardComparison(
+        signal,
+        policyFromGroup,
+        sourceGroup && isFiniteKpiValue(sourceGroup.baseline) ? sourceGroup.baseline : null,
+        sourceDelta
+      ),
+      isEqual
+    };
+
+    if (signal.definition.referenceMode === "none") {
+      return {
+        ...base,
+        reference: "Not compared",
+        referenceLabel: "Reference",
+        delta: "-",
+        deltaLabel: "Comparison",
+        hasReference: false,
+        tone: signal.tone,
+        isEqual: false
+      };
+    }
+
+    if (signal.definition.id === "cost-saving-reference") {
+      const costReferenceSource = inferSignalReferenceSource(signal, base.hasReference ? sourceReference : null);
+      const costReferenceLabel = formatKpiReferenceLabel(costReferenceSource);
+      return {
+        policyLabel: "Policy",
+        policy: kpiCostContextSignal.value !== null ? formatKpiScorecardValue(kpiCostContextSignal) : base.policy,
+        reference: kpiReferenceCostContextSignal
+          ? formatKpiScorecardValue(kpiReferenceCostContextSignal)
+          : base.reference,
+        referenceLabel: `${costReferenceLabel} total`,
+        delta: signal.value !== null ? formatKpiScorecardValue(signal) : "-",
+        deltaLabel: `Saving vs ${costReferenceLabel}`,
+        hasReference: Boolean(kpiReferenceCostContextSignal || base.hasReference),
+        tone: signal.tone,
+        isEqual
+      };
+    }
+
+    if (signal.definition.valueStyle === "ratio" && signal.value !== null) {
+      const ratioReferenceLabel = formatKpiReferenceLabel(signalReference);
+      const ratioDelta = (signal.value - 1) * 100;
+      const ratioDeltaLabel = `${ratioDelta > 0 ? "+" : ""}${ratioDelta.toFixed(Math.abs(ratioDelta) >= 10 ? 1 : 2)}%`;
+      return {
+        ...base,
+        policyLabel: "Ratio",
+        policy: formatKpiScorecardValue(signal),
+        reference: "1x",
+        referenceLabel: `${ratioReferenceLabel} parity`,
+        delta: ratioDeltaLabel,
+        deltaLabel: "Δ vs parity",
+        hasReference: true,
+        tone: signal.tone,
+        isEqual
+      };
+    }
+
+    return base;
+  }
+
+  const kpiScorecardContent = hasKpiScorecard ? (
+    <>
+      <section className="kpi-priority-board panel">
+        <header className="kpi-section-header">
+          <div>
+            <h3>Decision scorecard</h3>
+            <small>
+              {selectedKpiScope?.label || "Job result"} · cost, EV service, battery behaviour, grid safety and solar use
+            </small>
+          </div>
+        </header>
+        <div className="kpi-priority-grid">
+          {kpiDecisionSignals.map((signal) => {
+            const comparison = resolveKpiComparison(signal);
+            const toneLabel = formatKpiScorecardToneLabel(signal, comparison, { hideUnknown: true });
+            const showComparisonContext = signal.definition.referenceMode !== "none";
+            return (
+              <article
+                key={signal.definition.id}
+                className={`kpi-priority-tile tone-${comparison.tone}${signal.value === null ? " is-missing" : ""}`}
+              >
+                <header>
+                  <span className="kpi-title-with-help">
+                    <small>{signal.definition.title}</small>
+                    {signal.definition.tooltip ? (
+                      <button type="button" className="kpi-help" aria-label={`About ${signal.definition.title}`}>
+                        <Info size={12} />
+                        <span role="tooltip" className="kpi-help-tooltip">
+                          <strong>{signal.definition.title}</strong>
+                          <small>{signal.definition.tooltip}</small>
+                        </span>
+                      </button>
+                    ) : null}
+                  </span>
+                  {toneLabel ? <span className={`kpi-tone kpi-tone-${comparison.tone}`}>{toneLabel}</span> : null}
+                </header>
+                <strong>{formatKpiScorecardValue(signal)}</strong>
+                {showComparisonContext ? (
+                  <dl className="kpi-priority-context">
+                    <div>
+                      <dt>{comparison.policyLabel}</dt>
+                      <dd>{comparison.policy}</dd>
+                    </div>
+                    <div className={comparison.hasReference ? "" : "is-missing"}>
+                      <dt>{comparison.referenceLabel}</dt>
+                      <dd>{comparison.reference}</dd>
+                    </div>
+                  </dl>
+                ) : null}
+                <p>{signal.definition.description}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      {kpiImportantSections.length > 0 ? (
+        <section className="kpi-focus-sections">
+          {kpiImportantSections.map((section) => (
+            <article key={section.id} className={`panel kpi-focus-section is-${section.id}`}>
+              <header className="kpi-section-header">
+                <div>
+                  <h3>{section.title}</h3>
+                  <small>{section.subtitle}</small>
+                </div>
+                <span className="kpi-family-pill">
+                  {section.reportedCount}/{section.signals.length} reported
+                </span>
+              </header>
+              <div className="kpi-focus-list">
+                {section.signals.map((signal) => {
+                  const comparison = resolveKpiComparison(signal);
+                  const toneLabel = formatKpiScorecardToneLabel(signal, comparison, { hideUnknown: true });
+                  const showComparisonContext = signal.definition.referenceMode !== "none";
+                  const showTrailingHelp = signal.definition.id === "v2g-export" && Boolean(signal.definition.tooltip);
+                  return (
+                    <div
+                      key={`${section.id}:${signal.definition.id}`}
+                      className={`kpi-focus-row tone-${comparison.tone}${showComparisonContext ? "" : " is-absolute"}${signal.value === null ? " is-missing" : ""}`}
+                    >
+                      <div className="kpi-focus-row-main">
+                        <span className="kpi-focus-title">
+                          <strong>{signal.definition.title}</strong>
+                          {signal.definition.tooltip ? (
+                            <button type="button" className="kpi-help" aria-label={`About ${signal.definition.title}`}>
+                              <Info size={12} />
+                              <span role="tooltip" className="kpi-help-tooltip">
+                                <strong>{signal.definition.title}</strong>
+                                <small>{signal.definition.tooltip}</small>
+                              </span>
+                            </button>
+                          ) : null}
+                        </span>
+                        <small>{signal.definition.description}</small>
+                      </div>
+                      {showComparisonContext ? (
+                        <>
+                          <div className="kpi-compare-cell">
+                            <small>{comparison.policyLabel}</small>
+                            <strong>{comparison.policy}</strong>
+                          </div>
+                          <div className={`kpi-compare-cell ${comparison.hasReference ? "" : "is-missing"}`}>
+                            <small>{comparison.referenceLabel}</small>
+                            <strong>{comparison.reference}</strong>
+                          </div>
+                          <div className="kpi-compare-cell">
+                            <small>{comparison.deltaLabel}</small>
+                            <strong>{comparison.delta}</strong>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="kpi-compare-cell kpi-final-cell">
+                          <small>Value</small>
+                          <strong>{formatKpiScorecardValue(signal)}</strong>
+                        </div>
+                      )}
+                      <div className="kpi-focus-row-value">
+                        {toneLabel ? <span className={`kpi-tone kpi-tone-${comparison.tone}`}>{toneLabel}</span> : null}
+                        {showTrailingHelp ? (
+                          <button type="button" className="kpi-help" aria-label={`About ${signal.definition.title}`}>
+                            <Info size={12} />
+                            <span role="tooltip" className="kpi-help-tooltip">
+                              <strong>{signal.definition.title}</strong>
+                              <small>{signal.definition.tooltip}</small>
+                            </span>
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : null}
+    </>
+  ) : null;
+
   return (
-    <div className="page job-detail-page">
+    <div className={`page job-detail-page${activeTab === "kpis" ? " is-kpis-tab" : ""}`}>
       <h1 className="sr-only">{jobId}</h1>
 
       <div className="job-subnav-row">
@@ -4773,7 +4938,7 @@ export function JobDetailPage(): JSX.Element {
           ) : null}
 
           {activeTab === "kpis" ? (
-            <section className="panel">
+            <section className="panel job-kpis-panel">
               <h2>KPIs</h2>
               {!isCompleted ? (
                 <EmptyState
@@ -4802,99 +4967,67 @@ export function JobDetailPage(): JSX.Element {
                     onSelectCommunity={() => setSelectedKpiScopeId("community")}
                     onSelect={(id) => setSelectedKpiScopeId(id)}
                     onToggle={() => {}}
-                  />
+	                  />
 
-                  <section className="kpi-main">
-                    <section className="kpi-toolbar panel">
-                      <div className="kpi-toolbar-main">
-                        <label className="kpi-filter">
-                          <select
-                            aria-label="Filter KPI family"
-                            value={kpiFamilyFilter}
-                            onChange={(event) => setKpiFamilyFilter(event.target.value as KpiFamily | "all")}
-                          >
-                            <option value="all">All families</option>
-                            {kpiFamilyOptions.map((option) => (
-                              <option key={option} value={option}>
-                                {formatKpiFamilyLabel(option)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="checkbox-inline kpi-toggle-chip">
-                          <input
-                            type="checkbox"
-                            checked={showKpiNa}
-                            onChange={(event) => setShowKpiNa(event.target.checked)}
-                          />
-                          <span>Show N/A</span>
-                        </label>
-                      </div>
-                      <div className="kpi-toolbar-main kpi-toolbar-main--stretch">
-                        <label className="search-inline kpi-search">
-                          <input
-                            value={kpiSearch}
-                            onChange={(event) => setKpiSearch(event.target.value)}
-                            placeholder="Search KPI..."
-                          />
-                        </label>
-                      </div>
-                    </section>
+	                  <section className="kpi-main">
+	                    {kpiScorecardContent}
 
-                    {kpiHighlightRows.length > 0 ? (
-                      <section className="kpi-highlights-strip panel">
-                        <header className="kpi-section-header">
-                          <h3>Curated Highlights</h3>
-                          <small>Fixed KPI bar for quick checks in this scope.</small>
-                        </header>
-                        <div className="kpi-highlight-grid">
-                          {kpiHighlightRows.map((item) => (
-                            <article key={item.key} className={`kpi-highlight-card tone-${item.tone} ${item.hasComparable ? "" : "is-static"}`}>
-                              <header>
-                                <div className="kpi-highlight-title">
-                                  <small>{item.title}</small>
-                                  <button type="button" className="kpi-help" aria-label={`About ${item.metricLabel}`}>
-                                    <Info size={12} />
-                                    <span role="tooltip" className="kpi-help-tooltip">
-                                      <strong>{item.metricLabel}</strong>
-                                      <small>{item.description}</small>
-                                      <small>{item.formula}</small>
-                                    </span>
-                                  </button>
-                                </div>
-                                {formatToneLabel(item.tone, { hideUnknown: true }) ? (
-                                  <span className={`kpi-tone kpi-tone-${item.tone}`}>
-                                    {formatToneLabel(item.tone, { hideUnknown: true })}
-                                  </span>
-                                ) : null}
-                              </header>
-                              <strong>{formatHighlightNumber(item.value)}</strong>
-                              <footer>
-                                <small>
-                                  {item.hasComparable
-                                    ? `Δ vs ${item.referenceLabel} ${formatHighlightNumber(item.delta)}`
-                                    : `No ${item.referenceLabel} comparison`}
-                                </small>
-                                <small>{item.unit || "-"}</small>
-                              </footer>
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-                    ) : null}
-
-                    {visibleKpiGroupRows.length === 0 ? (
-                      <EmptyState
-                        title="No KPIs in selected scope"
-                        message="Try another scope, family filter, search term, or enable Show N/A."
-                      />
-                    ) : (
-                      kpiSemanticSections.map((familySection) => {
-                        const FamilyIcon = resolveFamilyIcon(familySection.family);
-                        return (
-                        <details key={familySection.family} className="panel kpi-family-panel">
-                          <summary className="kpi-family-summary">
-                            <span className="kpi-family-heading">
+	                    <details className="panel kpi-drilldown-panel">
+	                      <summary className="kpi-drilldown-summary">
+	                        <span>
+	                          <strong>All KPI drill-down</strong>
+	                          <small>Complete grouped KPI table for the selected scope.</small>
+	                        </span>
+	                        <span className="kpi-family-pill">{visibleKpiGroupRows.length} KPIs</span>
+	                      </summary>
+	                      <div className="kpi-drilldown-body">
+	                        <section className="kpi-toolbar kpi-drilldown-toolbar">
+	                          <div className="kpi-toolbar-main">
+	                            <label className="kpi-filter">
+	                              <select
+	                                aria-label="Filter KPI family"
+	                                value={kpiFamilyFilter}
+	                                onChange={(event) => setKpiFamilyFilter(event.target.value as KpiFamily | "all")}
+	                              >
+	                                <option value="all">All families</option>
+	                                {kpiFamilyOptions.map((option) => (
+	                                  <option key={option} value={option}>
+	                                    {formatKpiFamilyLabel(option)}
+	                                  </option>
+	                                ))}
+	                              </select>
+	                            </label>
+	                            <label className="checkbox-inline kpi-toggle-chip">
+	                              <input
+	                                type="checkbox"
+	                                checked={showKpiNa}
+	                                onChange={(event) => setShowKpiNa(event.target.checked)}
+	                              />
+	                              <span>Show N/A</span>
+	                            </label>
+	                          </div>
+	                          <div className="kpi-toolbar-main kpi-toolbar-main--stretch">
+	                            <label className="search-inline kpi-search">
+	                              <input
+	                                value={kpiSearch}
+	                                onChange={(event) => setKpiSearch(event.target.value)}
+	                                placeholder="Search KPI..."
+	                              />
+	                            </label>
+	                          </div>
+	                        </section>
+	                        {visibleKpiGroupRows.length === 0 ? (
+	                          <EmptyState
+	                            title="No KPIs in selected scope"
+	                            message="Try another scope, family filter, search term, or enable Show N/A."
+	                          />
+	                        ) : (
+	                          kpiSemanticSections.map((familySection) => {
+	                            const FamilyIcon = resolveFamilyIcon(familySection.family);
+	                            return (
+	                        <details key={familySection.family} className="kpi-family-panel">
+	                          <summary className="kpi-family-summary">
+	                            <span className="kpi-family-heading">
                               <span className={`kpi-family-icon family-${familySection.family}`}>
                                 <FamilyIcon size={14} />
                               </span>
@@ -5006,59 +5139,73 @@ export function JobDetailPage(): JSX.Element {
                               ))}
                             </div>
                           </div>
-                        </details>
-                        );
-                      })
-                    )}
-                  </section>
-                </div>
-              ) : (
-                <>
-                  <section className="kpi-toolbar">
-                    <label className="search-inline kpi-search">
-                      <input
-                        value={kpiSearch}
-                        onChange={(event) => setKpiSearch(event.target.value)}
-                        placeholder="Search KPI or entity..."
-                      />
-                    </label>
-                    <small>
-                      {filteredKpis.length} entries
-                      {kpiRows.length > 0 ? ` · ${kpiRows.length} KPI rows from exported_kpis.csv` : ""}
-                    </small>
-                  </section>
+	                        </details>
+	                            );
+	                          })
+	                        )}
+	                      </div>
+	                    </details>
+	                  </section>
+	                </div>
+	              ) : (
+	                <>
+	                  {kpiScorecardContent}
 
-                  {filteredKpis.length === 0 ? (
-                    <EmptyState
-                      title="No KPIs found"
-                      message="No KPI entries match the current search."
-                    />
-                  ) : (
-                    <div className="job-kpi-table-wrap kpi-list-wrap">
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th>KPI</th>
-                            <th>Entity</th>
-                            <th>Value</th>
-                            <th>Unit</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredKpis.map((kpi) => (
-                            <tr key={kpi.key}>
-                              <td>{kpi.label}</td>
-                              <td>{kpi.source || "-"}</td>
-                              <td>{formatNumber(kpi.value)}</td>
-                              <td>{kpi.unit || "-"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </>
-              )}
+	                  <details className="panel kpi-drilldown-panel">
+	                    <summary className="kpi-drilldown-summary">
+	                      <span>
+	                        <strong>All KPI drill-down</strong>
+	                        <small>Raw KPI entries from the job result.</small>
+	                      </span>
+	                      <span className="kpi-family-pill">{filteredKpis.length} entries</span>
+	                    </summary>
+	                    <div className="kpi-drilldown-body">
+	                      <section className="kpi-toolbar kpi-drilldown-toolbar">
+	                        <label className="search-inline kpi-search">
+	                          <input
+	                            value={kpiSearch}
+	                            onChange={(event) => setKpiSearch(event.target.value)}
+	                            placeholder="Search KPI or entity..."
+	                          />
+	                        </label>
+	                        <small>
+	                          {filteredKpis.length} entries
+	                          {kpiRows.length > 0 ? ` · ${kpiRows.length} KPI rows from exported_kpis.csv` : ""}
+	                        </small>
+	                      </section>
+	                      {filteredKpis.length === 0 ? (
+	                        <EmptyState
+	                          title="No KPIs found"
+	                          message="No KPI entries match the current search."
+	                        />
+	                      ) : (
+	                        <div className="job-kpi-table-wrap kpi-list-wrap">
+	                          <table className="table">
+	                            <thead>
+	                              <tr>
+	                                <th>KPI</th>
+	                                <th>Entity</th>
+	                                <th>Value</th>
+	                                <th>Unit</th>
+	                              </tr>
+	                            </thead>
+	                            <tbody>
+	                              {filteredKpis.map((kpi) => (
+	                                <tr key={kpi.key}>
+	                                  <td>{kpi.label}</td>
+	                                  <td>{kpi.source || "-"}</td>
+	                                  <td>{formatNumber(kpi.value)}</td>
+	                                  <td>{kpi.unit || "-"}</td>
+	                                </tr>
+	                              ))}
+	                            </tbody>
+	                          </table>
+	                        </div>
+	                      )}
+	                    </div>
+	                  </details>
+	                </>
+	              )}
             </section>
           ) : null}
 

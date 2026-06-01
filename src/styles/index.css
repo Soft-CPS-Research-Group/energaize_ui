@@ -1492,6 +1492,15 @@ button {
   overflow: auto;
 }
 
+@media (min-width: 1151px) {
+  .workspace-main:has(> .job-detail-page.is-kpis-tab) {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+    padding-bottom: 88px;
+  }
+}
+
 .page {
   display: grid;
   gap: 14px;
@@ -5982,6 +5991,10 @@ button {
   justify-content: flex-end;
 }
 
+.kpi-drilldown-toolbar {
+  margin-bottom: 0;
+}
+
 .kpi-search {
   min-width: min(380px, 100%);
 }
@@ -6036,6 +6049,48 @@ button {
   padding-right: 2px;
   padding-bottom: 0;
   scroll-padding-bottom: 0;
+}
+
+@media (min-width: 1151px) {
+  .job-detail-page.is-kpis-tab {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: stretch;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+
+  .job-detail-page.is-kpis-tab .job-kpis-panel {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .job-detail-page.is-kpis-tab .job-kpis-panel:has(> .kpi-layout) {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .job-detail-page.is-kpis-tab .kpi-layout {
+    height: 100%;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .job-detail-page.is-kpis-tab .sim-tree-panel,
+  .job-detail-page.is-kpis-tab .kpi-main {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .job-detail-page.is-kpis-tab .kpi-main {
+    align-content: start;
+    overflow: auto;
+    padding-right: 2px;
+    scroll-padding-bottom: 12px;
+  }
 }
 
 .kpi-filter-row {
@@ -6135,6 +6190,291 @@ button {
 .kpi-section-header small {
   color: var(--text-soft);
   font-size: 0.74rem;
+}
+
+.kpi-priority-board {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--line));
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 5%);
+  display: grid;
+  gap: 10px;
+}
+
+.kpi-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kpi-priority-tile {
+  min-height: 166px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  padding: 10px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 8px;
+  overflow: visible;
+}
+
+.kpi-priority-tile header {
+  min-height: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kpi-priority-tile header small {
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.kpi-title-with-help,
+.kpi-focus-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kpi-title-with-help small,
+.kpi-focus-title strong {
+  min-width: 0;
+}
+
+.kpi-priority-tile > strong {
+  font-family: var(--font-heading);
+  font-size: 1.08rem;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.kpi-priority-tile p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.kpi-priority-context {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.kpi-priority-context div {
+  min-width: 0;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 6%);
+  padding: 5px 6px;
+}
+
+.kpi-priority-context div.is-missing {
+  border-style: dashed;
+  opacity: 0.68;
+}
+
+.kpi-priority-context dt {
+  color: var(--text-soft);
+  font-size: 0.65rem;
+  line-height: 1.15;
+}
+
+.kpi-priority-context dd {
+  margin: 2px 0 0;
+  font-family: var(--font-heading);
+  font-size: 0.76rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.kpi-priority-tile.tone-better {
+  border-color: color-mix(in srgb, var(--ok) 34%, var(--line));
+}
+
+.kpi-priority-tile.tone-worse {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--danger) 7%, transparent), transparent 68%),
+    var(--bg-elev);
+}
+
+.kpi-priority-tile.is-missing {
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.kpi-focus-sections {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.kpi-focus-section {
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.kpi-focus-section.is-v2g-risk {
+  border-color: color-mix(in srgb, var(--danger) 20%, var(--line));
+}
+
+.kpi-focus-list {
+  display: grid;
+  gap: 7px;
+}
+
+.kpi-focus-row {
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  padding: 8px 9px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.45fr) repeat(3, minmax(112px, 0.55fr)) minmax(72px, auto);
+  align-items: center;
+  gap: 8px;
+}
+
+.kpi-focus-row.is-absolute {
+  grid-template-columns: minmax(220px, 1.45fr) repeat(3, minmax(112px, 0.55fr)) minmax(72px, auto);
+}
+
+.kpi-focus-row.is-absolute .kpi-final-cell {
+  grid-column: 4;
+}
+
+.kpi-focus-row.is-absolute .kpi-focus-row-value {
+  grid-column: 5;
+}
+
+.kpi-focus-row.tone-worse {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
+}
+
+.kpi-focus-row.tone-better {
+  border-color: color-mix(in srgb, var(--ok) 28%, var(--line));
+}
+
+.kpi-focus-row.is-missing {
+  border-style: dashed;
+  opacity: 0.66;
+}
+
+.kpi-focus-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.kpi-focus-row-main strong {
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.kpi-focus-row-main small {
+  color: var(--text-soft);
+  font-size: 0.71rem;
+  line-height: 1.25;
+}
+
+.kpi-compare-cell {
+  min-height: 48px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-elev-2), transparent 6%);
+  padding: 7px 8px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.kpi-compare-cell small {
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  line-height: 1.1;
+}
+
+.kpi-compare-cell strong {
+  font-family: var(--font-heading);
+  font-size: 0.82rem;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.kpi-compare-cell.is-missing {
+  border-style: dashed;
+  opacity: 0.66;
+}
+
+.kpi-final-cell {
+  min-width: 128px;
+}
+
+.kpi-focus-row-value {
+  min-width: 72px;
+  display: flex;
+  justify-items: end;
+  justify-content: flex-end;
+  gap: 5px;
+  text-align: right;
+}
+
+.kpi-drilldown-panel {
+  padding: 0;
+  min-height: 58px;
+  overflow: hidden;
+}
+
+.kpi-drilldown-summary {
+  list-style: none;
+  cursor: pointer;
+  min-height: 58px;
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kpi-drilldown-summary::-webkit-details-marker {
+  display: none;
+}
+
+.kpi-drilldown-summary > span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.kpi-drilldown-summary strong {
+  font-size: 0.9rem;
+}
+
+.kpi-drilldown-summary small {
+  color: var(--text-soft);
+  font-size: 0.73rem;
+  line-height: 1.25;
+}
+
+.kpi-drilldown-body {
+  border-top: 1px solid var(--line);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.kpi-drilldown-body .kpi-family-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elev);
 }
 
 .kpi-highlight-grid {
@@ -6264,7 +6604,7 @@ button {
   font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
   color: var(--text-soft);
   background: var(--bg-elev-2);
 }
@@ -9806,6 +10146,18 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .kpi-priority-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .kpi-focus-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-focus-row {
+    grid-template-columns: minmax(200px, 1fr) repeat(3, minmax(100px, 0.5fr)) minmax(68px, auto);
+  }
+
   .kpi-toolbar-main--stretch {
     margin-left: 0;
     justify-content: flex-start;
@@ -9904,6 +10256,7 @@ button {
 
   .kpi-grid,
   .energy-kpi-grid,
+  .kpi-priority-grid,
   .energy-lower-grid,
   .prosumer-flex-grid,
   .job-overview-metrics,
@@ -9913,6 +10266,29 @@ button {
   .account-form-grid,
   .job-overview-list {
     grid-template-columns: 1fr;
+  }
+
+  .kpi-focus-row {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-focus-row.is-absolute {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-focus-row.is-absolute .kpi-final-cell,
+  .kpi-focus-row.is-absolute .kpi-focus-row-value {
+    grid-column: auto;
+  }
+
+  .kpi-priority-context {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-focus-row-value {
+    min-width: 0;
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .community-select-page {
