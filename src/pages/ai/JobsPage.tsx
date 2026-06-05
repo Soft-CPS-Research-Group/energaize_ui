@@ -52,7 +52,7 @@ import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications
 import type { HostInfo, JobItem } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
-import { isCompletedForResults } from "../../utils/jobStatus";
+import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "../../utils/jobsListState";
 import { formatDateTime } from "../../utils/time";
@@ -1011,7 +1011,7 @@ export function JobsPage(): JSX.Element {
   useEffect(() => {
     const eligible = new Set((jobsQuery.data || []).filter((job) => isCompletedForResults(job.status)).map((job) => job.job_id));
 
-    setCompareSelection((previous) => previous.filter((jobId) => eligible.has(jobId)).slice(0, 2));
+    setCompareSelection((previous) => previous.filter((jobId) => eligible.has(jobId)));
 
     if (selectedJobId && !(jobsQuery.data || []).some((job) => job.job_id === selectedJobId)) {
       setSelectedJobId("");
@@ -1117,11 +1117,6 @@ export function JobsPage(): JSX.Element {
         return previous.filter((id) => id !== jobId);
       }
 
-      if (previous.length >= 2) {
-        notifyInfo("Comparison limit", "Select only two completed jobs.");
-        return previous;
-      }
-
       return [...previous, jobId];
     });
   }
@@ -1184,10 +1179,13 @@ export function JobsPage(): JSX.Element {
   }
 
   function openComparePage(): void {
-    if (compareSelection.length !== 2) return;
+    if (compareSelection.length < 2) return;
 
-    const [left, right] = compareSelection;
-    const params = new URLSearchParams({ left, right });
+    const params = new URLSearchParams({ jobs: compareSelection.join(",") });
+    if (compareSelection.length === 2) {
+      params.set("left", compareSelection[0]!);
+      params.set("right", compareSelection[1]!);
+    }
     if (location.search) {
       params.set("from", location.search);
     }
@@ -1591,9 +1589,10 @@ export function JobsPage(): JSX.Element {
                     const selected = selectedJobId === job.job_id;
                     const progressInfo = progressMap.get(job.job_id);
                     const progress = progressInfo?.percent ?? null;
+                    const displayStatus = resolveDisplayJobStatus(job.status, progress);
                     const isCompleted = isCompletedForResults(job.status);
                     const isChecked = compareSelection.includes(job.job_id);
-                    const checkboxDisabled = !isCompleted || (!isChecked && compareSelection.length >= 2);
+                    const checkboxDisabled = !isCompleted;
                     const submittedBy =
                       resolveSubmittedByLabel(job.job_info.submitted_by) ||
                       resolveSubmittedByLabel(job.job_meta?.submitted_by);
@@ -1636,9 +1635,7 @@ export function JobsPage(): JSX.Element {
                               title={
                                 !isCompleted
                                   ? "Comparison available only for completed jobs"
-                                  : checkboxDisabled
-                                    ? "Only two jobs can be selected"
-                                    : "Select for KPI comparison"
+                                  : "Select for KPI comparison"
                               }
                               onClick={(event) => event.stopPropagation()}
                               onChange={() => toggleCompareSelection(job.job_id)}
@@ -1718,10 +1715,10 @@ export function JobsPage(): JSX.Element {
                                   setDispatchDetailsTarget(job);
                                 }}
                               >
-                                <StatusPill status={job.status} />
+                                <StatusPill status={displayStatus} />
                               </button>
                             ) : (
-                              <StatusPill status={job.status} />
+                              <StatusPill status={displayStatus} />
                             )}
                           </div>
                         </td>
@@ -1806,14 +1803,14 @@ export function JobsPage(): JSX.Element {
 
           {compareMode ? (
             <section className="jobs-compare-bar">
-              <strong>{compareSelection.length}/2 selected for KPI compare</strong>
+              <strong>{compareSelection.length} selected for KPI compare</strong>
               <div className="jobs-command-group">
                 <Button variant="ghost" onClick={() => setCompareSelection([])} disabled={compareSelection.length === 0}>
                   Clear selection
                 </Button>
                 <Button
                   variant="primary"
-                  disabled={compareSelection.length !== 2}
+                  disabled={compareSelection.length < 2}
                   onClick={openComparePage}
                 >
                   Open KPI Compare

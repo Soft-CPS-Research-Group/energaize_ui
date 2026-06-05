@@ -84,7 +84,7 @@ import type {
   SimulationTreeNode
 } from "../../types";
 import { extractKpis } from "../../utils/jobResult";
-import { isCompletedForResults } from "../../utils/jobStatus";
+import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import {
   formatKpiFamilyLabel,
   formatKpiReferenceLabel,
@@ -2388,6 +2388,8 @@ export function JobDetailPage(): JSX.Element {
   const [selectedKpiScopeId, setSelectedKpiScopeId] = useState("community");
   const [kpiFamilyFilter, setKpiFamilyFilter] = useState<KpiFamily | "all">("all");
   const [showKpiNa, setShowKpiNa] = useState(false);
+  const [kpiDrilldownOpen, setKpiDrilldownOpen] = useState(false);
+  const kpiDrilldownRef = useRef<HTMLElement | null>(null);
   const [selectedDeployScopeId, setSelectedDeployScopeId] = useState("community");
   const [deployManifestPreviewOpen, setDeployManifestPreviewOpen] = useState(false);
   const [deployActionError, setDeployActionError] = useState<string | null>(null);
@@ -3623,6 +3625,19 @@ export function JobDetailPage(): JSX.Element {
     }
     return null;
   }, [progressQuery.data]);
+  const displayStatus = resolveDisplayJobStatus(status, progressPercent);
+
+  function toggleKpiDrilldown(): void {
+    setKpiDrilldownOpen((previous) => {
+      const next = !previous;
+      if (next && typeof window !== "undefined") {
+        window.requestAnimationFrame(() => {
+          kpiDrilldownRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+        });
+      }
+      return next;
+    });
+  }
 
   const imageName =
     readStringValue(infoQuery.data?.image) ||
@@ -4356,7 +4371,7 @@ export function JobDetailPage(): JSX.Element {
                   <small className="job-overview-jobid">{jobId}</small>
                 </div>
                 <div className="job-overview-hero-status">
-                  <StatusPill status={status} />
+                  <StatusPill status={displayStatus} />
                   <small className="jobs-meta">Last update: {formatDateTime(updatedAt)}</small>
                   <div className="job-overview-hero-actions">
                     <Button
@@ -4972,15 +4987,21 @@ export function JobDetailPage(): JSX.Element {
 	                  <section className="kpi-main">
 	                    {kpiScorecardContent}
 
-	                    <details className="panel kpi-drilldown-panel">
-	                      <summary className="kpi-drilldown-summary">
+	                    <section ref={kpiDrilldownRef} className={`panel kpi-drilldown-panel${kpiDrilldownOpen ? " is-open" : ""}`}>
+	                      <button
+	                        type="button"
+	                        className="kpi-drilldown-summary"
+	                        aria-expanded={kpiDrilldownOpen}
+	                        onClick={toggleKpiDrilldown}
+	                      >
 	                        <span>
 	                          <strong>All KPI drill-down</strong>
 	                          <small>Complete grouped KPI table for the selected scope.</small>
 	                        </span>
 	                        <span className="kpi-family-pill">{visibleKpiGroupRows.length} KPIs</span>
-	                      </summary>
-	                      <div className="kpi-drilldown-body">
+	                      </button>
+	                      {kpiDrilldownOpen ? (
+	                        <div className="kpi-drilldown-body">
 	                        <section className="kpi-toolbar kpi-drilldown-toolbar">
 	                          <div className="kpi-toolbar-main">
 	                            <label className="kpi-filter">
@@ -5143,23 +5164,30 @@ export function JobDetailPage(): JSX.Element {
 	                            );
 	                          })
 	                        )}
-	                      </div>
-	                    </details>
+	                        </div>
+	                      ) : null}
+	                    </section>
 	                  </section>
 	                </div>
 	              ) : (
 	                <>
 	                  {kpiScorecardContent}
 
-	                  <details className="panel kpi-drilldown-panel">
-	                    <summary className="kpi-drilldown-summary">
+	                  <section ref={kpiDrilldownRef} className={`panel kpi-drilldown-panel${kpiDrilldownOpen ? " is-open" : ""}`}>
+	                    <button
+	                      type="button"
+	                      className="kpi-drilldown-summary"
+	                      aria-expanded={kpiDrilldownOpen}
+	                      onClick={toggleKpiDrilldown}
+	                    >
 	                      <span>
 	                        <strong>All KPI drill-down</strong>
 	                        <small>Raw KPI entries from the job result.</small>
 	                      </span>
 	                      <span className="kpi-family-pill">{filteredKpis.length} entries</span>
-	                    </summary>
-	                    <div className="kpi-drilldown-body">
+	                    </button>
+	                    {kpiDrilldownOpen ? (
+	                      <div className="kpi-drilldown-body">
 	                      <section className="kpi-toolbar kpi-drilldown-toolbar">
 	                        <label className="search-inline kpi-search">
 	                          <input
@@ -5202,8 +5230,9 @@ export function JobDetailPage(): JSX.Element {
 	                          </table>
 	                        </div>
 	                      )}
-	                    </div>
-	                  </details>
+	                      </div>
+	                    ) : null}
+	                  </section>
 	                </>
 	              )}
             </section>

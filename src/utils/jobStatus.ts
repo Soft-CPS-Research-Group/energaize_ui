@@ -33,6 +33,7 @@ export function jobStatusTone(status: JobStatus): "info" | "success" | "warning"
 
   if (
     key.includes("queue") ||
+    key.includes("export") ||
     key.includes("launch") ||
     key.includes("dispatch") ||
     key.includes("progress") ||
@@ -47,6 +48,14 @@ export function jobStatusTone(status: JobStatus): "info" | "success" | "warning"
 
 export function prettyJobStatus(status: JobStatus): string {
   return status.replaceAll("_", " ");
+}
+
+export function resolveDisplayJobStatus(status: JobStatus, progressPercent?: number | null): JobStatus {
+  const key = status.toLowerCase();
+  if (key === "running" && typeof progressPercent === "number" && progressPercent >= 99.5) {
+    return "exporting";
+  }
+  return status;
 }
 
 export function isCompletedForResults(status: JobStatus): boolean {
