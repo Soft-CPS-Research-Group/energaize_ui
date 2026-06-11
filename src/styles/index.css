@@ -8521,6 +8521,25 @@ button {
   vertical-align: bottom;
 }
 
+.deploy-placeholder-row {
+  background: color-mix(in srgb, var(--bg-elev-2) 34%, transparent);
+}
+
+.deploy-placeholder-row .deploy-target-name small,
+.deploy-active-bundle-placeholder {
+  color: var(--text-soft);
+}
+
+.deploy-active-bundle-placeholder {
+  display: inline-block;
+  max-width: 100%;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
 .deploy-data-cell {
   text-align: right;
 }
@@ -8607,6 +8626,12 @@ button {
   border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.deploy-health-pill.is-placeholder {
+  border-color: color-mix(in srgb, var(--brand) 28%, var(--line));
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
 }
 
 .deploy-logs-modal-content {
@@ -10343,10 +10368,6 @@ button {
   display: inline-block;
 }
 
-.dock-logo-opeva {
-  height: 18px;
-}
-
 .dock-logo-softcps {
   height: 15px;
 }
@@ -10354,10 +10375,6 @@ button {
 .dock-logo-isep {
   height: 21px;
   max-width: 108px;
-}
-
-.dock-logo-icharging {
-  height: 17px;
 }
 
 .dock-logo-cw {

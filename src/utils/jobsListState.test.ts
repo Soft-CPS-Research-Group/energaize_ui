@@ -7,6 +7,20 @@ describe("jobsListState helpers", () => {
     expect(state).toEqual({ q: "solar", status: "completed", host: "all", submitted: "all" });
   });
 
+  it("uses the current submitter as the default when submitted is absent", () => {
+    const state = buildJobsListStateFromSearchParams(new URLSearchParams("q=solar"), {
+      defaultSubmitted: "Tiago Fonseca"
+    });
+    expect(state).toEqual({ q: "solar", status: "all", host: "all", submitted: "Tiago Fonseca" });
+  });
+
+  it("keeps explicit submitted filters over the current submitter default", () => {
+    const state = buildJobsListStateFromSearchParams(new URLSearchParams("submitted=all"), {
+      defaultSubmitted: "Tiago Fonseca"
+    });
+    expect(state.submitted).toBe("all");
+  });
+
   it("serializes only non-default values", () => {
     const params = toJobsListSearchParams({
       q: "abc",
@@ -18,5 +32,18 @@ describe("jobsListState helpers", () => {
     expect(params.toString()).toContain("host=worker-a");
     expect(params.toString()).toContain("submitted=Tiago");
     expect(params.toString()).not.toContain("status=");
+  });
+
+  it("serializes all submitters when the current submitter is the default", () => {
+    const params = toJobsListSearchParams(
+      {
+        q: "",
+        status: "all",
+        host: "all",
+        submitted: "all"
+      },
+      { defaultSubmitted: "Tiago Fonseca" }
+    );
+    expect(params.toString()).toBe("submitted=all");
   });
 });

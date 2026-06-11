@@ -10,13 +10,6 @@ type DockLogo = {
 
 const DOCK_LOGOS: DockLogo[] = [
   {
-    id: "opeva",
-    href: "https://opeva.eu/",
-    label: "OPEVA",
-    src: "/assets/logos/opeva-light.jpg",
-    className: "dock-logo-opeva"
-  },
-  {
     id: "softcps",
     href: "https://www2.isep.ipp.pt/softcps/",
     label: "softCPS",
@@ -30,14 +23,6 @@ const DOCK_LOGOS: DockLogo[] = [
     lightSrc: "/assets/logos/ISEP-light.png",
     darkSrc: "/assets/logos/logoISEP.png",
     className: "dock-logo-isep"
-  },
-  {
-    id: "i-charging",
-    href: "https://i-charging.tech/",
-    label: "i-charging",
-    lightSrc: "/assets/logos/icharging_light.png",
-    darkSrc: "/assets/logos/logo_i_charging_dark.png",
-    className: "dock-logo-icharging"
   },
   {
     id: "chips",
@@ -76,21 +61,16 @@ export function InstitutionalDock(): JSX.Element {
       <div className="institutional-inner">
         <div className="institutional-note-wrap">
           <p className="institutional-note institutional-note-compact">
-            Funded by OPEVA (Chips JU, Horizon Europe, grant 101097267) and by FCT via
-            LA/P/0063/2020 (DOI:10.54499/LA/P/0063/2020) and grant 2024.00855.BD.
+            Funded by DEMFLEX, supported by FCT - Fundacao para a Ciencia e a Tecnologia under
+            grant 2024.00855.BD.
           </p>
           <details className="institutional-note-more">
-            <summary>Full funding disclaimer</summary>
+            <summary>Funding disclaimer</summary>
             <p className="institutional-note">
-              This work is supported by the OPEVA project that has received funding within the Chips
-              Joint Undertaking (Chips JU) from the European Union&apos;s Horizon Europe Programme and
-              the National Authorities (France, Czechia, Italy, Portugal, Turkey, Switzerland), under
-              grant agreement 101097267. The work is also partially financed by National Funds through
-              the Portuguese funding agency, FCT - Fundacao para a Ciencia e a Tecnologia, within
-              project LA/P/0063/2020. DOI:10.54499/LA/P/0063/2020 and through the FCT individual
-              research grant 2024.00855.BD. Views and opinions expressed are however those of the
-              authors only and do not reflect those of the European Union, Chips JU or FCT. Neither
-              the European Union nor the granting authorities can be held responsible for them.
+              This work is supported by DEMFLEX, financed by National Funds through the Portuguese
+              funding agency, FCT - Fundacao para a Ciencia e a Tecnologia, under grant
+              2024.00855.BD. Views and opinions expressed are those of the authors only and do not
+              necessarily reflect FCT.
             </p>
           </details>
         </div>

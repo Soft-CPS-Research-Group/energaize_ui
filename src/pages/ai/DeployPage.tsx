@@ -62,6 +62,11 @@ const INVESTOR_HISTORY_SEARCH_TERMS = ["Inputs:", "Prices", "Community:", "Dispa
 const INVESTOR_HISTORY_FALLBACK_LIMIT_LINES = 2000;
 const INVESTOR_CLOCK_TICK_MS = 300_000;
 const INVESTOR_KPI_INIT_DELAY_MS = 250;
+const DEPLOY_HOUSE_PLACEHOLDERS = [
+  { id: "rh02", name: "RH02", subtitle: "Residential house", bundleLabel: "Residential Flex Controller" },
+  { id: "rh03", name: "RH03", subtitle: "Residential house", bundleLabel: "Residential Flex Controller" },
+  { id: "rh04", name: "RH04", subtitle: "Residential house", bundleLabel: "Residential Flex Controller" }
+] as const;
 
 type DeployLogsMode = "live" | "history";
 type DeployHistoryQuickRange = "1h" | "6h" | "24h" | "custom";
@@ -811,6 +816,7 @@ export function DeployPage(): JSX.Element {
   });
   const targets = targetsQuery.data || [];
   const bundles = bundlesQuery.data || [];
+  const visibleTargetCount = targets.length + DEPLOY_HOUSE_PLACEHOLDERS.length;
 
   const healthQueries = useQueries({
     queries: targets.map((target) => ({
@@ -1536,10 +1542,10 @@ export function DeployPage(): JSX.Element {
         <article className="panel deploy-manager-main">
           <header className="deploy-manager-panel-head">
             <h2>Running Inferences</h2>
-            <small>{targets.length} configured targets</small>
+            <small>{visibleTargetCount} managed targets</small>
           </header>
 
-          {targets.length === 0 ? (
+          {visibleTargetCount === 0 ? (
             <EmptyState title="No inference targets" message="Configure DEPLOY_INFERENCE_TARGETS in backend settings." />
           ) : (
             <div className="deploy-manager-table-wrap">
@@ -1695,6 +1701,59 @@ export function DeployPage(): JSX.Element {
                       </tr>
                     );
                   })}
+                  {DEPLOY_HOUSE_PLACEHOLDERS.map((target) => (
+                    <tr key={target.id} className="deploy-placeholder-row">
+                      <td>
+                        <div className="deploy-target-name">
+                          <strong>{target.name}</strong>
+                          <small>{target.subtitle}</small>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="deploy-health-pill is-placeholder">standby</span>
+                      </td>
+                      <td className="deploy-active-bundle-col">
+                        <span className="deploy-active-bundle-placeholder">{target.bundleLabel}</span>
+                      </td>
+                      <td className="deploy-investor-target-cell">
+                        <span className="deploy-data-placeholder">--</span>
+                      </td>
+                      <td className="deploy-data-cell">
+                        <span className="deploy-data-placeholder">--</span>
+                      </td>
+                      <td className="deploy-actions-cell">
+                        <div className="table-actions deploy-manager-actions">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            iconLeft={<ArrowRightLeft size={13} />}
+                            iconOnly
+                            title="Switch bundle"
+                            aria-label={`Switch bundle for ${target.name}`}
+                            disabled
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            iconLeft={<Eye size={13} />}
+                            iconOnly
+                            title="Open logs"
+                            aria-label={`Open logs for ${target.name}`}
+                            disabled
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            iconLeft={<BarChart3 size={13} />}
+                            iconOnly
+                            title="Open charts"
+                            aria-label={`Open charts for ${target.name}`}
+                            disabled
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

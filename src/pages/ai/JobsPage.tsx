@@ -560,8 +560,12 @@ export function JobsPage(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialState = buildJobsListStateFromSearchParams(searchParams);
   const { session } = useAuth();
+  const currentSubmittedFilter =
+    resolveSubmittedByLabel(session?.name) || resolveSubmittedByLabel(session?.email);
+  const initialState = buildJobsListStateFromSearchParams(searchParams, {
+    defaultSubmitted: currentSubmittedFilter
+  });
   const { notifyError, notifyInfo, notifySuccess } = useApiFeedback();
 
   const [runOpen, setRunOpen] = useState(false);
@@ -692,16 +696,19 @@ export function JobsPage(): JSX.Element {
   });
 
   useEffect(() => {
-    const nextParams = toJobsListSearchParams({
-      q: searchQuery,
-      status: statusFilter,
-      host: hostFilter,
-      submitted: submittedFilter
-    });
+    const nextParams = toJobsListSearchParams(
+      {
+        q: searchQuery,
+        status: statusFilter,
+        host: hostFilter,
+        submitted: submittedFilter
+      },
+      { defaultSubmitted: currentSubmittedFilter }
+    );
     if (nextParams.toString() !== searchParams.toString()) {
       setSearchParams(nextParams, { replace: true });
     }
-  }, [hostFilter, searchParams, searchQuery, setSearchParams, statusFilter, submittedFilter]);
+  }, [currentSubmittedFilter, hostFilter, searchParams, searchQuery, setSearchParams, statusFilter, submittedFilter]);
 
   useJobStatusNotifications(jobsQuery.data);
 
@@ -820,8 +827,10 @@ export function JobsPage(): JSX.Element {
         resolveSubmittedByLabel(job.job_meta?.submitted_by);
       if (submittedBy) values.add(submittedBy);
     });
+    if (currentSubmittedFilter) values.add(currentSubmittedFilter);
+    if (submittedFilter !== "all") values.add(submittedFilter);
     return Array.from(values).sort((a, b) => a.localeCompare(b));
-  }, [jobsQuery.data]);
+  }, [currentSubmittedFilter, jobsQuery.data, submittedFilter]);
 
   const availableHosts = hostsQuery.data?.available_hosts || [];
   const availableConfigs = configsQuery.data || [];
