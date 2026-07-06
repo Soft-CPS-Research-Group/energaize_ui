@@ -4,6 +4,7 @@ import {
   buildSimulationTree,
   extractChargerStateSamples,
   extractKpisFromSimulationData,
+  filterFilesToLatestEpisode,
   parseSimulationDataFile,
   scoreKpiImprovement
 } from "./simulationData";
@@ -54,6 +55,40 @@ describe("simulationData utils", () => {
 
     const evGroup = tree.children.find((node) => node.id === "group:electric-vehicles");
     expect(evGroup).toBeTruthy();
+  });
+
+  it("builds the asset tree from the latest episode only", () => {
+    const files = [
+      parseSimulationDataFile("run/exported_data_building_1_ep1.csv"),
+      parseSimulationDataFile("run/exported_data_building_1_battery_ep1.csv"),
+      parseSimulationDataFile("run/exported_data_building_1_charger_1_1_ep1.csv"),
+      parseSimulationDataFile("run/exported_data_building_1_ep2.csv"),
+      parseSimulationDataFile("run/exported_data_building_1_battery_ep2.csv"),
+      parseSimulationDataFile("run/exported_data_building_1_charger_1_1_ep2.csv")
+    ];
+
+    const tree = buildSimulationTree(files);
+    const buildingNode = tree.children.find((node) => node.id === "building:1");
+    const batteryNode = buildingNode?.children.find((node) => node.kind === "battery");
+    const chargerNode = buildingNode?.children.find((node) => node.kind === "charger");
+
+    expect(buildingNode?.fileRefs).toEqual(["run/exported_data_building_1_ep2.csv"]);
+    expect(buildingNode?.children).toHaveLength(2);
+    expect(batteryNode?.fileRefs).toEqual(["run/exported_data_building_1_battery_ep2.csv"]);
+    expect(chargerNode?.fileRefs).toEqual(["run/exported_data_building_1_charger_1_1_ep2.csv"]);
+  });
+
+  it("filters file entries to the latest episode while preserving episode-less files", () => {
+    const files = [
+      parseSimulationDataFile("run/exported_data_building_1_ep1.csv"),
+      parseSimulationDataFile("run/exported_data_building_1_ep2.csv"),
+      parseSimulationDataFile("run/exported_kpis.csv")
+    ];
+
+    expect(filterFilesToLatestEpisode(files).map((file) => file.relativePath)).toEqual([
+      "run/exported_data_building_1_ep2.csv",
+      "run/exported_kpis.csv"
+    ]);
   });
 
   it("builds a tree for named sites (hq/sao_mamede/r-h-01)", () => {

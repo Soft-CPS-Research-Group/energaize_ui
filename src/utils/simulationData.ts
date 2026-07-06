@@ -248,7 +248,7 @@ function enrichFileRefs(node: SimulationTreeNode): SimulationTreeNode {
 }
 
 export function buildSimulationTree(files: SimulationDataFileEntry[]): SimulationTreeNode {
-  const dataFiles = files.filter((file) => file.kind !== "kpi");
+  const dataFiles = filterFilesToLatestEpisode(files).filter((file) => file.kind !== "kpi");
   const communityLeaves: SimulationTreeNode[] = [];
   const pricingLeaves: SimulationTreeNode[] = [];
   const evLeaves: SimulationTreeNode[] = [];
@@ -386,6 +386,12 @@ export function latestEpisode(files: SimulationDataFileEntry[]): string | null {
   const episodes = listEpisodes(files);
   if (episodes.length === 0) return null;
   return episodes[episodes.length - 1];
+}
+
+export function filterFilesToLatestEpisode(files: SimulationDataFileEntry[]): SimulationDataFileEntry[] {
+  const episode = latestEpisode(files);
+  if (!episode) return files;
+  return files.filter((file) => file.episode === null || file.episode === episode);
 }
 
 export function filterFileRefsByEpisode(

@@ -113,6 +113,7 @@ import {
   extractKpisFromSimulationData,
   extractChargerStateSamples,
   filterFileRefsByEpisode,
+  filterFilesToLatestEpisode,
   flattenTreeNodes,
   latestEpisode,
   listEpisodes,
@@ -2491,10 +2492,15 @@ export function JobDetailPage(): JSX.Element {
     enabled: Boolean(jobId && isCompleted)
   });
 
+  const latestSimulationFiles = useMemo(
+    () => filterFilesToLatestEpisode(simulationIndexQuery.data?.files || []),
+    [simulationIndexQuery.data?.files]
+  );
+
   const simulationTree = useMemo(() => {
-    if (!simulationIndexQuery.data?.files || simulationIndexQuery.data.files.length === 0) return null;
-    return buildSimulationTree(simulationIndexQuery.data.files);
-  }, [simulationIndexQuery.data?.files]);
+    if (latestSimulationFiles.length === 0) return null;
+    return buildSimulationTree(latestSimulationFiles);
+  }, [latestSimulationFiles]);
 
   const treeNodes = useMemo(
     () => (simulationTree ? flattenTreeNodes(simulationTree) : []),
@@ -2521,8 +2527,8 @@ export function JobDetailPage(): JSX.Element {
   }, [simulationTree]);
 
   const episodes = useMemo(
-    () => listEpisodes(simulationIndexQuery.data?.files || []),
-    [simulationIndexQuery.data?.files]
+    () => listEpisodes(latestSimulationFiles),
+    [latestSimulationFiles]
   );
 
   useEffect(() => {
@@ -2550,9 +2556,9 @@ export function JobDetailPage(): JSX.Element {
       return;
     }
     if (!selectedEpisode || !episodes.includes(selectedEpisode)) {
-      setSelectedEpisode(latestEpisode(simulationIndexQuery.data?.files || []));
+      setSelectedEpisode(latestEpisode(latestSimulationFiles));
     }
-  }, [episodes, selectedEpisode, simulationIndexQuery.data?.files]);
+  }, [episodes, selectedEpisode, latestSimulationFiles]);
 
   const selectedNode = useMemo(() => {
     if (selectedNodeId === "__community__") return null;
@@ -2560,17 +2566,15 @@ export function JobDetailPage(): JSX.Element {
   }, [selectedNodeId, treeNodeMap]);
 
   const communityFileRefs = useMemo(() => {
-    const files = simulationIndexQuery.data?.files || [];
-    return files.filter((file) => file.kind === "community").map((file) => file.relativePath);
-  }, [simulationIndexQuery.data?.files]);
+    return latestSimulationFiles.filter((file) => file.kind === "community").map((file) => file.relativePath);
+  }, [latestSimulationFiles]);
   const pricingFileRefs = useMemo(() => {
-    const files = simulationIndexQuery.data?.files || [];
-    return files.filter((file) => file.kind === "pricing").map((file) => file.relativePath);
-  }, [simulationIndexQuery.data?.files]);
+    return latestSimulationFiles.filter((file) => file.kind === "pricing").map((file) => file.relativePath);
+  }, [latestSimulationFiles]);
 
   const selectedFileRefs = useMemo(() => {
     if (!simulationIndexQuery.data?.files) return [];
-    const files = simulationIndexQuery.data.files;
+    const files = latestSimulationFiles;
 
     const baseRefs =
       selectedNodeId === "__community__"
@@ -2600,6 +2604,7 @@ export function JobDetailPage(): JSX.Element {
     selectedEpisode,
     selectedNode,
     selectedNodeId,
+    latestSimulationFiles,
     simulationIndexQuery.data?.files,
     treeNodeMap
   ]);

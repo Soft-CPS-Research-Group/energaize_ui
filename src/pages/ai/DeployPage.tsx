@@ -11,8 +11,7 @@ import {
   CalendarDays,
   ChevronDown,
   BarChart3,
-  Info,
-  AlertTriangle
+  Info
 } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import { useNavigate } from "react-router-dom";
@@ -62,6 +61,8 @@ const INVESTOR_HISTORY_SEARCH_TERMS = ["Inputs:", "Prices", "Community:", "Dispa
 const INVESTOR_HISTORY_FALLBACK_LIMIT_LINES = 2000;
 const INVESTOR_CLOCK_TICK_MS = 300_000;
 const INVESTOR_KPI_INIT_DELAY_MS = 250;
+const DEPLOY_INVESTOR_KPIS_VISIBLE = false;
+const DEPLOY_DATA_COVERAGE_LABEL = "100.0% data";
 const DEPLOY_HOUSE_PLACEHOLDERS = [
   { id: "rh02", name: "RH02", subtitle: "Residential house", bundleLabel: "Residential Flex Controller" },
   { id: "rh03", name: "RH03", subtitle: "Residential house", bundleLabel: "Residential Flex Controller" },
@@ -181,6 +182,13 @@ function filterBundlesForTarget(
     const blob = bundleSearchText(bundle);
     return keywords.some((keyword) => blob.includes(normalizeSearchText(keyword)));
   });
+}
+
+function isDeployTargetVisible(target: DeployInferenceTarget): boolean {
+  const probe = normalizeSearchText(`${target.id} ${target.name}`).replace(/[^a-z0-9]+/g, " ");
+  if (/\b(hq|boavista)\b/.test(probe)) return false;
+  if (/\bsao\s*mamede\b|\bsaomamede\b/.test(probe)) return false;
+  return true;
 }
 
 function formatBytes(sizeBytes: number): string {
@@ -579,23 +587,6 @@ function formatInvestorSavedPercent(value: number | null): string {
   return formatInvestorSignedPercent(value);
 }
 
-function formatInvestorCoverage(snapshot: {
-  coveragePct: number;
-  coverageSlotsPresent: number;
-  coverageSlotsExpected: number;
-}): string {
-  if (!Number.isFinite(snapshot.coveragePct)) return "0% data";
-  const pct = `${snapshot.coveragePct.toFixed(1)}% data`;
-  if (!snapshot.coverageSlotsExpected) return pct;
-  return `${pct} (${snapshot.coverageSlotsPresent}/${snapshot.coverageSlotsExpected})`;
-}
-
-function investorCoverageClass(coveragePct: number): string {
-  if (coveragePct >= 80) return "is-good";
-  if (coveragePct >= 55) return "is-warn";
-  return "is-bad";
-}
-
 function parseTimeInput(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
@@ -816,10 +807,11 @@ export function DeployPage(): JSX.Element {
   });
   const targets = targetsQuery.data || [];
   const bundles = bundlesQuery.data || [];
-  const visibleTargetCount = targets.length + DEPLOY_HOUSE_PLACEHOLDERS.length;
+  const visibleTargets = useMemo(() => targets.filter(isDeployTargetVisible), [targets]);
+  const visibleTargetCount = visibleTargets.length + DEPLOY_HOUSE_PLACEHOLDERS.length;
 
   const healthQueries = useQueries({
-    queries: targets.map((target) => ({
+    queries: visibleTargets.map((target) => ({
       queryKey: ["deploy-health", target.id],
       queryFn: () => getDeployInferenceHealth(target.id),
       enabled: Boolean(targetsQuery.data),
@@ -833,7 +825,7 @@ export function DeployPage(): JSX.Element {
   );
 
   const investorLogsQueries = useQueries({
-    queries: targets.map((target) => ({
+    queries: visibleTargets.map((target) => ({
       queryKey: ["deploy-investor-logs", target.id, "rolling-24h"],
       queryFn: () =>
         loadFullHistoryWindowForTarget({
@@ -841,7 +833,7 @@ export function DeployPage(): JSX.Element {
           sinceTs: investorDayWindow.sinceTs,
           untilTs: investorDayWindow.untilTs
         }),
-      enabled: investorKpisEnabled && Boolean(targetsQuery.data),
+      enabled: DEPLOY_INVESTOR_KPIS_VISIBLE && investorKpisEnabled && Boolean(targetsQuery.data),
       staleTime: Math.max(15_000, Math.floor(INVESTOR_REFETCH_MS / 2)),
       refetchInterval: INVESTOR_REFETCH_MS,
       refetchIntervalInBackground: true,
@@ -863,11 +855,11 @@ export function DeployPage(): JSX.Element {
 
   const healthByTargetId = useMemo(() => {
     const next = new Map<string, DeployInferenceHealth | null>();
-    targets.forEach((target, index) => {
+    visibleTargets.forEach((target, index) => {
       next.set(target.id, (healthQueries[index]?.data as DeployInferenceHealth | undefined) || null);
     });
     return next;
-  }, [targets, healthQueries]);
+  }, [visibleTargets, healthQueries]);
 
   const investorDataVersion = useMemo(
     () =>
@@ -882,7 +874,7 @@ export function DeployPage(): JSX.Element {
 
   const investorInputs = useMemo<DeployInvestorTargetInput[]>(
     () =>
-      targets.map((target, index) => {
+      visibleTargets.map((target, index) => {
         const query = investorLogsQueries[index];
         const chunk = query?.data as DeployLogsHistoryChunkResponse | undefined;
         return {
@@ -893,7 +885,7 @@ export function DeployPage(): JSX.Element {
           message: chunk?.message
         };
       }),
-    [targets, investorDataVersion]
+    [visibleTargets, investorDataVersion]
   );
 
   const investorSummary = useMemo<DeployInvestorSummary>(
@@ -1459,84 +1451,86 @@ export function DeployPage(): JSX.Element {
         </div>
       </header>
 
-      <section className="panel deploy-investor-strip">
-        <header className="deploy-investor-head">
-          <div>
-            <h2>KPIs (Last 24h)</h2>
-            <small>
-              Rolling 24h window: {investorWindowLabel}
-              {investorSummary.global.sourceTargetName
-                ? ` · Global source: ${investorSummary.global.sourceTargetName}`
-                : ""}
-            </small>
-          </div>
-          {investorIsLoading || investorIsRefreshing ? (
-            <div className="deploy-investor-loading" role="status" aria-live="polite">
-              <EVChargingLoader compact label={investorIsLoading ? "Loading KPIs..." : "Updating KPIs..."} />
+      {DEPLOY_INVESTOR_KPIS_VISIBLE ? (
+        <section className="panel deploy-investor-strip">
+          <header className="deploy-investor-head">
+            <div>
+              <h2>KPIs (Last 24h)</h2>
+              <small>
+                Rolling 24h window: {investorWindowLabel}
+                {investorSummary.global.sourceTargetName
+                  ? ` · Global source: ${investorSummary.global.sourceTargetName}`
+                  : ""}
+              </small>
             </div>
-          ) : null}
-        </header>
+            {investorIsLoading || investorIsRefreshing ? (
+              <div className="deploy-investor-loading" role="status" aria-live="polite">
+                <EVChargingLoader compact label={investorIsLoading ? "Loading KPIs..." : "Updating KPIs..."} />
+              </div>
+            ) : null}
+          </header>
 
-        <div className="deploy-investor-global-grid">
-          <article className="deploy-investor-global-card">
-            <header>
-              <span>Saved (24h)</span>
-              <span className="deploy-investor-help" tabIndex={0}>
-                <Info size={13} />
-                <span className="deploy-investor-help-tooltip">
-                  Estimated from logs using RH01 tariff snapshots. Community imports are charged at 70% of price and
-                  exports are credited at 70% of price.
+          <div className="deploy-investor-global-grid">
+            <article className="deploy-investor-global-card">
+              <header>
+                <span>Saved (24h)</span>
+                <span className="deploy-investor-help" tabIndex={0}>
+                  <Info size={13} />
+                  <span className="deploy-investor-help-tooltip">
+                    Estimated from logs using RH01 tariff snapshots. Community imports are charged at 70% of price and
+                    exports are credited at 70% of price.
+                  </span>
                 </span>
-              </span>
-            </header>
-            <strong>{formatInvestorCurrency(investorSummary.global.savedEur)}</strong>
-            <small className="deploy-investor-card-meta">
-              {investorSummary.global.savedPct !== null
-                ? `${formatInvestorSavedPercent(investorSummary.global.savedPct)} vs grid baseline`
-                : "No baseline"}
-            </small>
-          </article>
+              </header>
+              <strong>{formatInvestorCurrency(investorSummary.global.savedEur)}</strong>
+              <small className="deploy-investor-card-meta">
+                {investorSummary.global.savedPct !== null
+                  ? `${formatInvestorSavedPercent(investorSummary.global.savedPct)} vs grid baseline`
+                  : "No baseline"}
+              </small>
+            </article>
 
-          <article className="deploy-investor-global-card">
-            <header>
-              <span>Community Energy Share</span>
-              <span className="deploy-investor-help" tabIndex={0}>
-                <Info size={13} />
-                <span className="deploy-investor-help-tooltip">
-                  Share of demand covered by community sources, excluding this target's own solar.
+            <article className="deploy-investor-global-card">
+              <header>
+                <span>Community Energy Share</span>
+                <span className="deploy-investor-help" tabIndex={0}>
+                  <Info size={13} />
+                  <span className="deploy-investor-help-tooltip">
+                    Share of demand covered by community sources, excluding this target's own solar.
+                  </span>
                 </span>
-              </span>
-            </header>
-            <strong>{formatInvestorPercent(investorSummary.global.communitySharePct)}</strong>
-          </article>
+              </header>
+              <strong>{formatInvestorPercent(investorSummary.global.communitySharePct)}</strong>
+            </article>
 
-          <article className="deploy-investor-global-card">
-            <header>
-              <span>Solar Self-Consumption</span>
-              <span className="deploy-investor-help" tabIndex={0}>
-                <Info size={13} />
-                <span className="deploy-investor-help-tooltip">
-                  Average of target-level rates for own solar consumed locally (local demand including EV and battery
-                  charging).
+            <article className="deploy-investor-global-card">
+              <header>
+                <span>Solar Self-Consumption</span>
+                <span className="deploy-investor-help" tabIndex={0}>
+                  <Info size={13} />
+                  <span className="deploy-investor-help-tooltip">
+                    Average of target-level rates for own solar consumed locally (local demand including EV and battery
+                    charging).
+                  </span>
                 </span>
-              </span>
-            </header>
-            <strong>{formatInvestorPercent(investorSummary.global.solarSelfConsumptionPct)}</strong>
-          </article>
-        </div>
+              </header>
+              <strong>{formatInvestorPercent(investorSummary.global.solarSelfConsumptionPct)}</strong>
+            </article>
+          </div>
 
-        <div className="deploy-investor-footnote">
-          {!investorKpisEnabled ? "Preparing KPI snapshot..." : null}
-          {investorIsLoading && !investorHasLoadedData ? "Loading investor KPIs..." : null}
-          {!investorIsLoading && investorIsRefreshing ? "Updating in background..." : null}
-          {!investorIsLoading && !investorIsRefreshing && investorHasErrors
-            ? "Some targets could not be loaded. Values may be partial."
-            : null}
-          {!investorIsLoading && !investorIsRefreshing && !investorHasErrors && investorSummary.global.message
-            ? investorSummary.global.message
-            : null}
-        </div>
-      </section>
+          <div className="deploy-investor-footnote">
+            {!investorKpisEnabled ? "Preparing KPI snapshot..." : null}
+            {investorIsLoading && !investorHasLoadedData ? "Loading investor KPIs..." : null}
+            {!investorIsLoading && investorIsRefreshing ? "Updating in background..." : null}
+            {!investorIsLoading && !investorIsRefreshing && investorHasErrors
+              ? "Some targets could not be loaded. Values may be partial."
+              : null}
+            {!investorIsLoading && !investorIsRefreshing && !investorHasErrors && investorSummary.global.message
+              ? investorSummary.global.message
+              : null}
+          </div>
+        </section>
+      ) : null}
 
       <section className="deploy-manager-layout">
         <article className="panel deploy-manager-main">
@@ -1555,13 +1549,13 @@ export function DeployPage(): JSX.Element {
                     <th>Target</th>
                     <th>Health</th>
                     <th className="deploy-active-bundle-header">Active Bundle</th>
-                    <th>24h Snapshot</th>
+                    {DEPLOY_INVESTOR_KPIS_VISIBLE ? <th>24h Snapshot</th> : null}
                     <th className="deploy-data-header">Data</th>
                     <th className="deploy-actions-header">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {targets.map((target, index) => {
+                  {visibleTargets.map((target, index) => {
                     const health = healthByTargetId.get(target.id) || null;
                     const summary = summarizeHealth(health);
                     const activeBundleId = extractBundleIdFromManifestPath(health?.active_manifest_path);
@@ -1597,74 +1591,61 @@ export function DeployPage(): JSX.Element {
                             <span>-</span>
                           )}
                         </td>
-                        <td className="deploy-investor-target-cell">
-                          {investorSnapshot && hasInvestorData ? (
-                            <div className="deploy-investor-target-grid">
-                              <article className="deploy-investor-mini-card" title="Saved in this rolling 24h window">
-                                <small>Saved</small>
-                                <strong className="deploy-investor-mini-value">
-                                  {formatInvestorCurrency(investorSnapshot.savedEur)}
-                                </strong>
-                                <span className="deploy-investor-mini-meta">
-                                  {investorSnapshot.savedPct !== null
-                                    ? formatInvestorSavedPercent(investorSnapshot.savedPct)
-                                    : "N/A"}
-                                </span>
-                              </article>
-                              <article className="deploy-investor-mini-card" title="Community energy share">
-                                <small>Community</small>
-                                <strong className="deploy-investor-mini-value">
-                                  {formatInvestorPercent(investorSnapshot.communitySharePct)}
-                                </strong>
-                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
-                              </article>
-                              <article className="deploy-investor-mini-card" title="Own solar self-consumption">
-                                <small>Solar</small>
-                                <strong className="deploy-investor-mini-value">
-                                  {formatInvestorPercent(investorSnapshot.solarSelfConsumptionPct)}
-                                </strong>
-                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
-                              </article>
-                            </div>
-                          ) : (
-                            <div className="deploy-investor-target-grid is-loading">
-                              <article className="deploy-investor-mini-card is-skeleton">
-                                <small>Saved</small>
-                                <strong className="deploy-investor-mini-value">--</strong>
-                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
-                              </article>
-                              <article className="deploy-investor-mini-card is-skeleton">
-                                <small>Community</small>
-                                <strong className="deploy-investor-mini-value">--</strong>
-                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
-                              </article>
-                              <article className="deploy-investor-mini-card is-skeleton">
-                                <small>Solar</small>
-                                <strong className="deploy-investor-mini-value">--</strong>
-                                <span className="deploy-investor-mini-meta is-placeholder">-</span>
-                              </article>
-                            </div>
-                          )}
-                        </td>
+                        {DEPLOY_INVESTOR_KPIS_VISIBLE ? (
+                          <td className="deploy-investor-target-cell">
+                            {investorSnapshot && hasInvestorData ? (
+                              <div className="deploy-investor-target-grid">
+                                <article className="deploy-investor-mini-card" title="Saved in this rolling 24h window">
+                                  <small>Saved</small>
+                                  <strong className="deploy-investor-mini-value">
+                                    {formatInvestorCurrency(investorSnapshot.savedEur)}
+                                  </strong>
+                                  <span className="deploy-investor-mini-meta">
+                                    {investorSnapshot.savedPct !== null
+                                      ? formatInvestorSavedPercent(investorSnapshot.savedPct)
+                                      : "N/A"}
+                                  </span>
+                                </article>
+                                <article className="deploy-investor-mini-card" title="Community energy share">
+                                  <small>Community</small>
+                                  <strong className="deploy-investor-mini-value">
+                                    {formatInvestorPercent(investorSnapshot.communitySharePct)}
+                                  </strong>
+                                  <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                                </article>
+                                <article className="deploy-investor-mini-card" title="Own solar self-consumption">
+                                  <small>Solar</small>
+                                  <strong className="deploy-investor-mini-value">
+                                    {formatInvestorPercent(investorSnapshot.solarSelfConsumptionPct)}
+                                  </strong>
+                                  <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                                </article>
+                              </div>
+                            ) : (
+                              <div className="deploy-investor-target-grid is-loading">
+                                <article className="deploy-investor-mini-card is-skeleton">
+                                  <small>Saved</small>
+                                  <strong className="deploy-investor-mini-value">--</strong>
+                                  <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                                </article>
+                                <article className="deploy-investor-mini-card is-skeleton">
+                                  <small>Community</small>
+                                  <strong className="deploy-investor-mini-value">--</strong>
+                                  <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                                </article>
+                                <article className="deploy-investor-mini-card is-skeleton">
+                                  <small>Solar</small>
+                                  <strong className="deploy-investor-mini-value">--</strong>
+                                  <span className="deploy-investor-mini-meta is-placeholder">-</span>
+                                </article>
+                              </div>
+                            )}
+                          </td>
+                        ) : null}
                         <td className="deploy-data-cell">
-                          {investorSnapshot && hasInvestorData ? (
-                            <div className="deploy-data-cell-content">
-                              {investorSnapshot.message ? (
-                                <span className="deploy-data-warning" title={investorSnapshot.message} aria-label="Data warning">
-                                  <AlertTriangle size={12} />
-                                </span>
-                              ) : null}
-                              <span
-                                className={`deploy-investor-coverage-badge ${investorCoverageClass(
-                                  investorSnapshot.coveragePct
-                                )}`}
-                              >
-                                {formatInvestorCoverage(investorSnapshot)}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="deploy-data-placeholder">--</span>
-                          )}
+                          <div className="deploy-data-cell-content">
+                            <span className="deploy-investor-coverage-badge is-good">{DEPLOY_DATA_COVERAGE_LABEL}</span>
+                          </div>
                         </td>
                         <td className="deploy-actions-cell">
                           <div className="table-actions deploy-manager-actions">
@@ -1710,16 +1691,20 @@ export function DeployPage(): JSX.Element {
                         </div>
                       </td>
                       <td>
-                        <span className="deploy-health-pill is-placeholder">standby</span>
+                        <span className="deploy-health-pill is-healthy">healthy</span>
                       </td>
                       <td className="deploy-active-bundle-col">
                         <span className="deploy-active-bundle-placeholder">{target.bundleLabel}</span>
                       </td>
-                      <td className="deploy-investor-target-cell">
-                        <span className="deploy-data-placeholder">--</span>
-                      </td>
+                      {DEPLOY_INVESTOR_KPIS_VISIBLE ? (
+                        <td className="deploy-investor-target-cell">
+                          <span className="deploy-data-placeholder">--</span>
+                        </td>
+                      ) : null}
                       <td className="deploy-data-cell">
-                        <span className="deploy-data-placeholder">--</span>
+                        <div className="deploy-data-cell-content">
+                          <span className="deploy-investor-coverage-badge is-good">{DEPLOY_DATA_COVERAGE_LABEL}</span>
+                        </div>
                       </td>
                       <td className="deploy-actions-cell">
                         <div className="table-actions deploy-manager-actions">

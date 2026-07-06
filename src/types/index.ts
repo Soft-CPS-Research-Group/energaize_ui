@@ -122,6 +122,19 @@ export interface JobInfo {
   [key: string]: unknown;
 }
 
+export interface QueuedStartEstimate {
+  available?: boolean;
+  kind?: "estimated_start" | string;
+  reason?: string | null;
+  source?: string | null;
+  target_host?: string | null;
+  profile?: string | null;
+  estimated_start_at?: number | string | null;
+  estimated_start_seconds?: number | null;
+  blocking_job_id?: string | null;
+  queue_position?: number | null;
+}
+
 export interface JobItem {
   job_id: string;
   status: JobStatus;
@@ -136,6 +149,9 @@ export interface JobItem {
   queue_wait_seconds?: number | null;
   run_duration_seconds?: number | null;
   total_duration_seconds?: number | null;
+  estimated_start_at?: number | string | null;
+  estimated_start_seconds?: number | null;
+  queued_start_estimate?: QueuedStartEstimate | null;
   requeue_count?: number | null;
   attempt_number?: number | null;
   job_meta?: Record<string, unknown> & {
@@ -256,6 +272,9 @@ export interface QueueItem {
   preferred_host?: string | null;
   require_host?: boolean;
   submitted_by?: string | null;
+  estimated_start_at?: number | string | null;
+  estimated_start_seconds?: number | null;
+  queued_start_estimate?: QueuedStartEstimate | null;
 }
 
 export interface HostInfo {

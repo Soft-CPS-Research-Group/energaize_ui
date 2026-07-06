@@ -49,13 +49,13 @@ import { StatusPill } from "../../components/ui/StatusPill";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
 import { useJobLogsPolling } from "../../hooks/useJobLogsPolling";
 import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications";
-import type { HostInfo, JobItem } from "../../types";
+import type { HostInfo, JobItem, QueueItem, QueuedStartEstimate } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "../../utils/jobsListState";
-import { formatDateTime } from "../../utils/time";
+import { formatDateTime, formatDurationSeconds } from "../../utils/time";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -125,6 +125,14 @@ type DeucalionPartitionLimit = {
   profile: DeucalionRuntimeProfile;
   label: string;
   maxSeconds: number;
+};
+type ProgressInfo = {
+  percent: number | null;
+  updatedAt: string | number | null;
+  etaSeconds: number | null;
+  estimatedFinishAt: string | number | null;
+  etaAvailable: boolean;
+  etaReason: string | null;
 };
 
 const RUN_WIZARD_BASE_STEPS: RunWizardStep[] = [
@@ -390,12 +398,34 @@ function formatBudgetUsage(usedPercent: number | null | undefined): string {
   return `${usedPercent.toFixed(1)}%`;
 }
 
-function extractProgressInfo(payload: unknown): { percent: number | null; updatedAt: string | number | null } {
+function extractEtaInfo(data: Record<string, unknown>): Omit<ProgressInfo, "percent" | "updatedAt"> {
+  const eta = asRecord(data.eta);
+  const etaSeconds = asNumber(data.eta_seconds) ?? asNumber(eta?.eta_seconds);
+  const estimatedFinishAt =
+    (data.estimated_finish_at || eta?.estimated_finish_at || null) as string | number | null;
+  const etaAvailableRaw = eta?.available;
+  return {
+    etaSeconds,
+    estimatedFinishAt,
+    etaAvailable: etaAvailableRaw === true || etaSeconds !== null,
+    etaReason: typeof eta?.reason === "string" ? eta.reason : null
+  };
+}
+
+function extractProgressInfo(payload: unknown): ProgressInfo {
   if (!payload || typeof payload !== "object") {
-    return { percent: null, updatedAt: null };
+    return {
+      percent: null,
+      updatedAt: null,
+      etaSeconds: null,
+      estimatedFinishAt: null,
+      etaAvailable: false,
+      etaReason: null
+    };
   }
 
   const data = payload as Record<string, unknown>;
+  const etaInfo = extractEtaInfo(data);
   const candidateKeys = ["progress_pct", "percent", "progress", "progress_percent", "completion"];
   for (const key of candidateKeys) {
     const value = asNumber(data[key]);
@@ -405,7 +435,8 @@ function extractProgressInfo(payload: unknown): { percent: number | null; update
         updatedAt: (data.updated_at || data.timestamp || data.last_update || null) as
           | string
           | number
-          | null
+          | null,
+        ...etaInfo
       };
     }
   }
@@ -416,15 +447,102 @@ function extractProgressInfo(payload: unknown): { percent: number | null; update
     if (nestedPercent !== null) {
       return {
         percent: toPercent(nestedPercent),
-        updatedAt: (nested.updated_at || nested.timestamp || null) as string | number | null
+        updatedAt: (nested.updated_at || nested.timestamp || null) as string | number | null,
+        ...etaInfo
       };
     }
   }
 
   return {
     percent: null,
-    updatedAt: (data.updated_at || data.timestamp || data.last_update || null) as string | number | null
+    updatedAt: (data.updated_at || data.timestamp || data.last_update || null) as string | number | null,
+    ...etaInfo
   };
+}
+
+function resolveProgressEtaSeconds(job: JobItem, progressInfo: ProgressInfo | undefined): number | null {
+  if (!progressInfo || !hasAnyStatus(job.status, ["running"])) return null;
+  if (!progressInfo.etaAvailable || progressInfo.etaSeconds === null) return null;
+  return progressInfo.etaSeconds;
+}
+
+function resolveProgressEstimatedFinishAt(job: JobItem, progressInfo: ProgressInfo | undefined): string | number | null {
+  if (!progressInfo || !hasAnyStatus(job.status, ["running"])) return null;
+  if (!progressInfo.etaAvailable || progressInfo.etaSeconds === null) return null;
+  return progressInfo.estimatedFinishAt;
+}
+
+function queuedStartReasonLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case "slot_available":
+      return "Slot available";
+    case "waiting_for_active_job":
+      return "Waiting for active job";
+    case "queued_behind_job":
+      return "Waiting behind another queued job";
+    case "active_eta_unavailable":
+      return "Waiting for active job ETA";
+    case "target_ambiguous":
+      return "Start estimate unavailable: target host ambiguous";
+    case "host_unavailable":
+      return "Start estimate unavailable: host offline";
+    case "no_capacity":
+      return "Start estimate unavailable: no capacity";
+    default:
+      return "Start estimate unavailable";
+  }
+}
+
+function queuedStartTooltipFromEstimate(estimate: QueuedStartEstimate | null | undefined): string | null {
+  if (!estimate) return null;
+  if (estimate.available && estimate.estimated_start_at !== null && estimate.estimated_start_at !== undefined) {
+    return [
+      estimate.estimated_start_seconds !== null && estimate.estimated_start_seconds !== undefined
+        ? `Starts in ${formatDurationSeconds(estimate.estimated_start_seconds)}`
+        : null,
+      `Estimated start ${formatDateTime(estimate.estimated_start_at)}`
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return queuedStartReasonLabel(estimate.reason);
+}
+
+function queuedStartVisibleLabel(estimate: QueuedStartEstimate | null | undefined): string | null {
+  if (!estimate) return null;
+  if (estimate.available) {
+    if (estimate.estimated_start_seconds !== null && estimate.estimated_start_seconds !== undefined) {
+      return estimate.estimated_start_seconds <= 60
+        ? "Start now"
+        : `Start in ${formatDurationSeconds(estimate.estimated_start_seconds)}`;
+    }
+    return "Start soon";
+  }
+  switch (estimate.reason) {
+    case "queued_behind_job":
+      return "Waiting in queue";
+    case "active_eta_unavailable":
+      return "Waiting for ETA";
+    case "waiting_for_active_job":
+      return "Waiting active job";
+    case "target_ambiguous":
+      return "No start estimate";
+    case "host_unavailable":
+      return "Host offline";
+    case "no_capacity":
+      return "No capacity";
+    default:
+      return "Start unavailable";
+  }
+}
+
+function resolveQueuedStartTooltip(job: JobItem): string | null {
+  if (!hasAnyStatus(job.status, ["queue", "launch"])) return null;
+  return queuedStartTooltipFromEstimate(job.queued_start_estimate);
+}
+
+function resolveQueueEntryStartTooltip(entry: QueueItem): string | null {
+  return queuedStartTooltipFromEstimate(entry.queued_start_estimate);
 }
 
 function resolveJobDisplayName(job: JobItem): string {
@@ -721,7 +839,7 @@ export function JobsPage(): JSX.Element {
   });
 
   const progressMap = useMemo(() => {
-    const map = new Map<string, { percent: number | null; updatedAt: string | number | null }>();
+    const map = new Map<string, ProgressInfo>();
     (jobsQuery.data || []).forEach((job, index) => {
       const progressPayload = progressQueries[index]?.data;
       map.set(job.job_id, extractProgressInfo(progressPayload));
@@ -1600,6 +1718,17 @@ export function JobsPage(): JSX.Element {
                     const progress = progressInfo?.percent ?? null;
                     const displayStatus = resolveDisplayJobStatus(job.status, progress);
                     const isCompleted = isCompletedForResults(job.status);
+                    const etaSeconds = resolveProgressEtaSeconds(job, progressInfo);
+                    const estimatedFinishAt = resolveProgressEstimatedFinishAt(job, progressInfo);
+                    const queuedStartTitle = resolveQueuedStartTooltip(job);
+                    const progressTitle = [
+                      progress !== null ? `Progress ${Math.round(progress)}%` : null,
+                      etaSeconds !== null ? `ETA ${formatDurationSeconds(etaSeconds)}` : null,
+                      estimatedFinishAt !== null ? `Expected finish ${formatDateTime(estimatedFinishAt)}` : null,
+                      queuedStartTitle
+                    ]
+                      .filter(Boolean)
+                      .join("\n");
                     const isChecked = compareSelection.includes(job.job_id);
                     const checkboxDisabled = !isCompleted;
                     const submittedBy =
@@ -1706,8 +1835,8 @@ export function JobsPage(): JSX.Element {
                         </td>
                         <td className="jobs-progress-col">
                           <div className="jobs-progress-cell">
-                            <strong>{progress !== null ? `${Math.round(progress)}%` : "-"}</strong>
-                            <div className="progress-track">
+                            <strong title={progressTitle || undefined}>{progress !== null ? `${Math.round(progress)}%` : "-"}</strong>
+                            <div className="progress-track" title={progressTitle || undefined}>
                               <div className="progress-fill" style={{ width: `${progress ?? 0}%` }} />
                             </div>
                           </div>
@@ -1727,7 +1856,9 @@ export function JobsPage(): JSX.Element {
                                 <StatusPill status={displayStatus} />
                               </button>
                             ) : (
-                              <StatusPill status={displayStatus} />
+                              <span title={queuedStartTitle || undefined}>
+                                <StatusPill status={displayStatus} />
+                              </span>
                             )}
                           </div>
                         </td>
@@ -1963,11 +2094,12 @@ export function JobsPage(): JSX.Element {
                   size="sm"
                   variant="ghost"
                   className="jobs-queue-clean-btn"
+                  iconLeft={<Trash2 size={13} />}
                   onClick={() => {
                     setAdminConfirm({ action: "cleanup_queue" });
                   }}
                 >
-                  Cleanup queue
+                  Clean up
                 </Button>
               ) : null}
             </header>
@@ -1986,13 +2118,15 @@ export function JobsPage(): JSX.Element {
                 const jobRef = jobsById.get(entry.job_id);
                 const queueName = jobRef ? resolveJobDisplayName(jobRef) : entry.job_id;
                 const queueHost = entry.preferred_host || jobRef?.job_info.target_host || "Any host";
+                const queueStartTitle = resolveQueueEntryStartTooltip(entry);
+                const queueStartLabel = queuedStartVisibleLabel(entry.queued_start_estimate);
                 const submittedBy =
                   resolveSubmittedByLabel(entry.submitted_by) ||
                   resolveSubmittedByLabel(jobRef?.job_info.submitted_by) ||
                   resolveSubmittedByLabel(jobRef?.job_meta?.submitted_by);
                 const canCancelEntry = !jobRef || canCancelStatus(jobRef.status);
                 return (
-                  <li key={entry.job_id}>
+                  <li key={entry.job_id} title={queueStartTitle || undefined}>
                     <article className="queue-row">
                       <div className="queue-row-main">
                         <span className="queue-index">{index + 1}</span>
@@ -2012,9 +2146,19 @@ export function JobsPage(): JSX.Element {
                               <span className="submitted-by-avatar">{computeUserInitials(submittedBy)}</span>
                             </span>
                           ) : null}
-                          <small className="jobs-meta">
+                          <small className="jobs-meta" title={queueStartTitle || undefined}>
                             {formatDateTime(entry.enqueued_at || jobRef?.queued_at || null)}
                           </small>
+                          {queueStartLabel ? (
+                            <span
+                              className={`queue-start-pill${
+                                entry.queued_start_estimate?.available ? "" : " is-muted"
+                              }`}
+                              title={queueStartTitle || undefined}
+                            >
+                              {queueStartLabel}
+                            </span>
+                          ) : null}
                         </div>
                         <Button
                           size="sm"

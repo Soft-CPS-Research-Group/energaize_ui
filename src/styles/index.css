@@ -4065,7 +4065,7 @@ button {
   padding: 0;
 }
 
-.jobs-queue-header {
+.jobs-side-panel header.jobs-queue-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4096,6 +4096,8 @@ button {
 
 .jobs-queue-clean-btn {
   min-height: 26px;
+  padding-inline: 9px;
+  white-space: nowrap;
 }
 
 .jobs-queue-filters {
@@ -4204,6 +4206,27 @@ button {
   color: var(--text-soft);
   font-size: 0.75rem;
   white-space: nowrap;
+}
+
+.queue-start-pill {
+  border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 10%, var(--bg-elev));
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  color: color-mix(in srgb, var(--brand) 72%, var(--text));
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.queue-start-pill.is-muted {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--bg-elev) 75%, transparent);
+  color: var(--text-soft);
+  font-weight: 500;
 }
 
 .queue-cancel-btn {
