@@ -17,6 +17,7 @@ describe("jobStatus utils", () => {
     expect(jobStatusTone("finished")).toBe("success");
     expect(jobStatusTone("failed")).toBe("error");
     expect(jobStatusTone("queued")).toBe("warning");
+    expect(jobStatusTone("setup")).toBe("warning");
     expect(jobStatusTone("unknown")).toBe("info");
   });
 
@@ -29,6 +30,7 @@ describe("jobStatus utils", () => {
     expect(isCompletedForResults("SUCCESS")).toBe(true);
     expect(isCompletedForResults("running")).toBe(false);
     expect(isCompletedForResults("queued")).toBe(false);
+    expect(isCompletedForResults("setup")).toBe(false);
     expect(isCompletedForResults("failed")).toBe(false);
   });
 });

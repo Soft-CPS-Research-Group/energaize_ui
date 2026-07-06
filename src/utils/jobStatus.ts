@@ -34,6 +34,7 @@ export function jobStatusTone(status: JobStatus): "info" | "success" | "warning"
   if (
     key.includes("queue") ||
     key.includes("export") ||
+    key.includes("setup") ||
     key.includes("launch") ||
     key.includes("dispatch") ||
     key.includes("progress") ||
@@ -70,6 +71,7 @@ export function isCompletedForResults(status: JobStatus): boolean {
     "running",
     "progress",
     "pending",
+    "setup",
     "launch",
     "dispatch"
   ];

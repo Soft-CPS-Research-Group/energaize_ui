@@ -605,13 +605,13 @@ function hasAnyStatus(status: string, tokens: string[]): boolean {
 
 function canCancelStatus(status: string): boolean {
   return (
-    hasAnyStatus(status, ["running", "queue", "pending", "launch", "dispatch", "start", "progress"]) &&
+    hasAnyStatus(status, ["running", "queue", "pending", "setup", "launch", "dispatch", "start", "progress"]) &&
     !hasAnyStatus(status, ["cancel", "fail", "error", "finish", "complete", "done", "stopp"])
   );
 }
 
 function canRequeueStatus(status: string): boolean {
-  return !hasAnyStatus(status, ["running", "queue", "pending", "launch", "dispatch"]);
+  return !hasAnyStatus(status, ["running", "queue", "pending", "setup", "launch", "dispatch"]);
 }
 
 function canFailStatus(status: string): boolean {
@@ -1739,11 +1739,13 @@ export function JobsPage(): JSX.Element {
                       (typeof job.job_info.config_path === "string" && job.job_info.config_path) ||
                       (typeof job.job_meta?.config_path === "string" ? job.job_meta.config_path : "");
                     const resolvedConfigAvailable = Boolean(job.job_info.resolved_config_available) && isCompleted;
-                    const dispatchedStatus = hasAnyStatus(job.status, ["dispatch"]);
+                    const dispatchedStatus = hasAnyStatus(job.status, ["dispatch", "setup"]);
                     const dispatchSnapshot = readDispatchSnapshot(job);
                     const dispatchTitle = dispatchSnapshot.slurmState
                       ? `Slurm state: ${dispatchSnapshot.slurmState}`
-                      : "Show Slurm queue details";
+                      : dispatchedStatus
+                        ? "Show setup/dispatch details"
+                        : "Show Slurm queue details";
                     const hostLabel = resolveJobTargetHost(job);
                     const deucalionRuntime = inferDeucalionJobRuntime(job, hostLabel);
                     const jobDisplayName = resolveJobDisplayName(job);
