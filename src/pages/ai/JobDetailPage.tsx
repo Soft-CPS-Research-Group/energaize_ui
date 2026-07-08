@@ -3608,22 +3608,32 @@ export function JobDetailPage(): JSX.Element {
   const progressPercent = useMemo(() => {
     const payload = progressQuery.data as Record<string, unknown> | undefined;
     if (!payload) return null;
-    const candidates = [
-      payload.progress_pct,
-      payload.percent,
-      payload.progress,
-      payload.progress_percent,
-      payload.completion
+    const candidates: Array<[string, unknown]> = [
+      ["progress_pct", payload.progress_pct],
+      ["percent", payload.percent],
+      ["progress", payload.progress],
+      ["progress_percent", payload.progress_percent],
+      ["completion", payload.completion]
     ];
-    for (const candidate of candidates) {
+    for (const [key, candidate] of candidates) {
       if (typeof candidate === "number" && Number.isFinite(candidate)) {
-        const value = candidate <= 1 ? candidate * 100 : candidate;
+        const value =
+          key === "progress_pct" || key === "progress_percent"
+            ? candidate
+            : candidate <= 1
+              ? candidate * 100
+              : candidate;
         return Math.max(0, Math.min(100, value));
       }
       if (typeof candidate === "string" && candidate.trim() !== "") {
         const parsed = Number(candidate);
         if (Number.isFinite(parsed)) {
-          const value = parsed <= 1 ? parsed * 100 : parsed;
+          const value =
+            key === "progress_pct" || key === "progress_percent"
+              ? parsed
+              : parsed <= 1
+                ? parsed * 100
+                : parsed;
           return Math.max(0, Math.min(100, value));
         }
       }

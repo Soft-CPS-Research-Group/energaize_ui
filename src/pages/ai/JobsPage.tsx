@@ -366,6 +366,11 @@ function toPercent(raw: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
+function normalizeProgressPercent(raw: number, key?: string): number {
+  const value = key === "progress_pct" || key === "progress_percent" ? raw : raw <= 1 ? raw * 100 : raw;
+  return Math.max(0, Math.min(100, value));
+}
+
 function toEpochMs(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") {
@@ -431,7 +436,7 @@ function extractProgressInfo(payload: unknown): ProgressInfo {
     const value = asNumber(data[key]);
     if (value !== null) {
       return {
-        percent: toPercent(value),
+        percent: normalizeProgressPercent(value, key),
         updatedAt: (data.updated_at || data.timestamp || data.last_update || null) as
           | string
           | number
@@ -1060,6 +1065,7 @@ export function JobsPage(): JSX.Element {
   const queueHostOptions = useMemo(() => {
     const values = new Set<string>();
     (queueQuery.data || []).forEach((entry) => {
+      if (entry.require_host === false) return;
       const jobRef = jobsById.get(entry.job_id);
       const host = entry.preferred_host || jobRef?.job_info.target_host;
       if (host) values.add(host);
@@ -1070,6 +1076,7 @@ export function JobsPage(): JSX.Element {
   const filteredQueueEntries = useMemo(() => {
     return (queueQuery.data || []).filter((entry) => {
       if (queueHostFilter === "all") return true;
+      if (entry.require_host === false) return false;
       const jobRef = jobsById.get(entry.job_id);
       const host = entry.preferred_host || jobRef?.job_info.target_host || "";
       return host === queueHostFilter;
@@ -2119,7 +2126,8 @@ export function JobsPage(): JSX.Element {
               {filteredQueueEntries.map((entry, index) => {
                 const jobRef = jobsById.get(entry.job_id);
                 const queueName = jobRef ? resolveJobDisplayName(jobRef) : entry.job_id;
-                const queueHost = entry.preferred_host || jobRef?.job_info.target_host || "Any host";
+                const queueHost =
+                  entry.require_host === false ? "Any host" : entry.preferred_host || jobRef?.job_info.target_host || "Any host";
                 const queueStartTitle = resolveQueueEntryStartTooltip(entry);
                 const queueStartLabel = queuedStartVisibleLabel(entry.queued_start_estimate);
                 const submittedBy =
