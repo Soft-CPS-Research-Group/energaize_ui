@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCcw, Server } from "lucide-react";
+import { Cpu, RefreshCcw, Server } from "lucide-react";
 import { listHosts, listJobs, listJobsInitialData } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -8,6 +8,7 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import type { HostInfo } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
+import { resolveHostComputeBadge } from "../../utils/hostCompute";
 import { formatDateTime } from "../../utils/time";
 
 function isRecentHostUpdate(lastSeen: number | null): boolean {
@@ -101,25 +102,36 @@ export function HostsPage(): JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.name}>
-                  <td>
-                    <div className="host-name">
-                      <Server size={14} />
-                      <strong>{row.name}</strong>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`host-live-dot${isRecentHostUpdate(row.last_seen) ? " is-online" : ""}`} />
-                    {isRecentHostUpdate(row.last_seen) ? " Live" : " Offline"}
-                  </td>
-                  <td>{renderCapacityLine(row.name, row)}</td>
-                  <td>{resolveJobName(row.current_job_id || row.info.active_job_id || null)}</td>
-                  <td>{row.current_job_status || row.info.active_job_status || row.info.last_terminal_status || "-"}</td>
-                  <td>{renderBudgetLine(row.info.budget?.accounts)}</td>
-                  <td>{formatDateTime(row.last_seen)}</td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const computeBadge = resolveHostComputeBadge(row.name, row);
+                return (
+                  <tr key={row.name}>
+                    <td>
+                      <div className="host-name">
+                        <Server size={14} />
+                        <strong>{row.name}</strong>
+                        <span
+                          className={`host-compute-pill is-${computeBadge.kind}`}
+                          title={computeBadge.title}
+                          aria-label={computeBadge.title}
+                        >
+                          <Cpu size={11} />
+                          {computeBadge.label}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`host-live-dot${isRecentHostUpdate(row.last_seen) ? " is-online" : ""}`} />
+                      {isRecentHostUpdate(row.last_seen) ? " Live" : " Offline"}
+                    </td>
+                    <td>{renderCapacityLine(row.name, row)}</td>
+                    <td>{resolveJobName(row.current_job_id || row.info.active_job_id || null)}</td>
+                    <td>{row.current_job_status || row.info.active_job_status || row.info.last_terminal_status || "-"}</td>
+                    <td>{renderBudgetLine(row.info.budget?.accounts)}</td>
+                    <td>{formatDateTime(row.last_seen)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </section>

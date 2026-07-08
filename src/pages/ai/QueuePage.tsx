@@ -5,6 +5,14 @@ import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
+import type { QueueItem } from "../../types";
+
+function queueTargetLabel(item: QueueItem): string {
+  if (item.require_host !== false) return item.preferred_host || "-";
+  if (item.target_worker_profile === "gpu") return "Any GPU";
+  if (item.target_worker_profile === "cpu") return "Any CPU";
+  return "Any host";
+}
 
 export function QueuePage(): JSX.Element {
   const queryClient = useQueryClient();
@@ -58,7 +66,7 @@ export function QueuePage(): JSX.Element {
               {queueQuery.data.map((item) => (
                 <tr key={item.job_id}>
                   <td>{item.job_id}</td>
-                  <td>{item.preferred_host || "-"}</td>
+                  <td>{queueTargetLabel(item)}</td>
                   <td>{String(Boolean(item.require_host))}</td>
                   <td>
                     <div className="table-actions">
@@ -97,4 +105,3 @@ export function QueuePage(): JSX.Element {
     </div>
   );
 }
-

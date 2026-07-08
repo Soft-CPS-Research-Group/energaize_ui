@@ -100,6 +100,7 @@ export interface JobInfo {
   resolved_config_available?: boolean;
   resolved_config_file?: string;
   target_host?: string;
+  target_worker_profile?: "cpu" | "gpu" | string | null;
   experiment_name?: string;
   run_name?: string;
   submitted_by?: string;
@@ -271,6 +272,7 @@ export interface QueueItem {
   enqueued_at?: number | null;
   preferred_host?: string | null;
   require_host?: boolean;
+  target_worker_profile?: "cpu" | "gpu" | string | null;
   submitted_by?: string | null;
   estimated_start_at?: number | string | null;
   estimated_start_seconds?: number | null;

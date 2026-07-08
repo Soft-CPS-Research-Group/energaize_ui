@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import {
   Copy,
+  Cpu,
   Download,
   Eye,
   FileText,
@@ -52,6 +53,7 @@ import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications
 import type { HostInfo, JobItem, QueueItem, QueuedStartEstimate } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
+import { resolveHostComputeBadge } from "../../utils/hostCompute";
 import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "../../utils/jobsListState";
@@ -63,6 +65,7 @@ interface RunForm {
   configPath: string;
   jobName: string;
   targetHost: string;
+  targetWorkerProfile: "" | "cpu" | "gpu";
   imageTag: string;
   deucalionOptions: {
     account: string;
@@ -256,6 +259,7 @@ const defaultRunForm: RunForm = {
   configPath: "",
   jobName: "",
   targetHost: "",
+  targetWorkerProfile: "",
   imageTag: "latest",
   deucalionOptions: {
     account: "",
@@ -280,6 +284,16 @@ function inferComputeProfile(entry: HostActiveJobSnapshot): "GPU" | "CPU" | null
     return isGpuLikePartition(entry.slurm_partition) ? "GPU" : "CPU";
   }
   return null;
+}
+
+function normalizeTargetWorkerProfile(value: unknown): "" | "cpu" | "gpu" {
+  return value === "cpu" || value === "gpu" ? value : "";
+}
+
+function targetWorkerProfileLabel(value: "" | "cpu" | "gpu"): string {
+  if (value === "gpu") return "Any GPU";
+  if (value === "cpu") return "Any CPU";
+  return "automatic";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -1044,7 +1058,7 @@ export function JobsPage(): JSX.Element {
     return Object.entries(hostsQuery.data?.hosts || {}).map(([name, data]) => ({ name, ...data }));
   }, [hostsQuery.data?.hosts]);
   const hostOptions = useMemo(() => {
-    const map = new Map<string, { name: string; online: boolean | null; lastSeen: number | null }>();
+    const map = new Map<string, { name: string; online: boolean | null; lastSeen: number | null; data?: HostInfo }>();
     availableHosts.forEach((name) => {
       map.set(name, { name, online: true, lastSeen: null });
     });
@@ -1052,7 +1066,8 @@ export function JobsPage(): JSX.Element {
       map.set(host.name, {
         name: host.name,
         online: typeof host.online === "boolean" ? host.online : null,
-        lastSeen: typeof host.last_seen === "number" ? host.last_seen : null
+        lastSeen: typeof host.last_seen === "number" ? host.last_seen : null,
+        data: host
       });
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -1556,6 +1571,7 @@ export function JobsPage(): JSX.Element {
 
     const payload: RunSimulationPayload = {
       target_host: runForm.targetHost || undefined,
+      target_worker_profile: runForm.targetHost ? undefined : runForm.targetWorkerProfile || undefined,
       config_path: matchedRunConfig,
       job_name: runForm.jobName.trim() || undefined,
       submitted_by: session?.name || session?.email || undefined,
@@ -2054,6 +2070,7 @@ export function JobsPage(): JSX.Element {
                     typeof cardActiveJobName?.job_name === "string" ? cardActiveJobName.job_name : null
                   );
                   const capacitySummary = resolveHostCapacitySummary(host.name, host);
+                  const computeBadge = resolveHostComputeBadge(host.name, host);
                   return (
                     <li key={host.name}>
                       <button
@@ -2066,6 +2083,14 @@ export function JobsPage(): JSX.Element {
                           <Server size={14} />
                           <span className={`host-live-dot${isLive ? " is-online" : ""}`} />
                           <strong>{host.name}</strong>
+                          <span
+                            className={`host-compute-pill is-${computeBadge.kind}`}
+                            title={computeBadge.title}
+                            aria-label={computeBadge.title}
+                          >
+                            <Cpu size={11} />
+                            {computeBadge.label}
+                          </span>
                           <small>{isLive ? "Live" : "Offline"}</small>
                           <Info size={13} />
                         </div>
@@ -2126,8 +2151,15 @@ export function JobsPage(): JSX.Element {
               {filteredQueueEntries.map((entry, index) => {
                 const jobRef = jobsById.get(entry.job_id);
                 const queueName = jobRef ? resolveJobDisplayName(jobRef) : entry.job_id;
+                const queueTargetProfile = normalizeTargetWorkerProfile(
+                  entry.target_worker_profile || jobRef?.job_info.target_worker_profile
+                );
                 const queueHost =
-                  entry.require_host === false ? "Any host" : entry.preferred_host || jobRef?.job_info.target_host || "Any host";
+                  entry.require_host === false
+                    ? queueTargetProfile
+                      ? targetWorkerProfileLabel(queueTargetProfile)
+                      : "Any host"
+                    : entry.preferred_host || jobRef?.job_info.target_host || "Any host";
                 const queueStartTitle = resolveQueueEntryStartTooltip(entry);
                 const queueStartLabel = queuedStartVisibleLabel(entry.queued_start_estimate);
                 const submittedBy =
@@ -2336,25 +2368,60 @@ export function JobsPage(): JSX.Element {
                 <div className="run-host-grid">
                   <button
                     type="button"
-                    className={`run-host-option is-auto${runForm.targetHost === "" ? " is-selected" : ""}`}
-                    onClick={() => setRunForm((prev) => ({ ...prev, targetHost: "" }))}
+                    className={`run-host-option is-auto${
+                      runForm.targetHost === "" && runForm.targetWorkerProfile === "" ? " is-selected" : ""
+                    }`}
+                    onClick={() => setRunForm((prev) => ({ ...prev, targetHost: "", targetWorkerProfile: "" }))}
                   >
                     <span className="run-host-dot is-online" />
                     <strong>Automatic</strong>
                     <small>Use scheduler routing</small>
                   </button>
-                  {hostOptions.map((host) => (
-                    <button
-                      type="button"
-                      key={host.name}
-                      className={`run-host-option${runForm.targetHost === host.name ? " is-selected" : ""}`}
-                      onClick={() => setRunForm((prev) => ({ ...prev, targetHost: host.name }))}
-                    >
-                      <span className={`run-host-dot${host.online === true ? " is-online" : ""}`} />
-                      <strong>{host.name}</strong>
-                      <small>{host.online === true ? "Online" : "Offline"}</small>
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    className={`run-host-option is-auto${
+                      runForm.targetHost === "" && runForm.targetWorkerProfile === "gpu" ? " is-selected" : ""
+                    }`}
+                    onClick={() => setRunForm((prev) => ({ ...prev, targetHost: "", targetWorkerProfile: "gpu" }))}
+                  >
+                    <span className="run-host-dot is-online" />
+                    <strong>Any GPU</strong>
+                    <small>Only GPU workers</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`run-host-option is-auto${
+                      runForm.targetHost === "" && runForm.targetWorkerProfile === "cpu" ? " is-selected" : ""
+                    }`}
+                    onClick={() => setRunForm((prev) => ({ ...prev, targetHost: "", targetWorkerProfile: "cpu" }))}
+                  >
+                    <span className="run-host-dot is-online" />
+                    <strong>Any CPU</strong>
+                    <small>Only CPU workers</small>
+                  </button>
+                  {hostOptions.map((host) => {
+                    const computeBadge = resolveHostComputeBadge(host.name, host.data);
+                    return (
+                      <button
+                        type="button"
+                        key={host.name}
+                        className={`run-host-option${runForm.targetHost === host.name ? " is-selected" : ""}`}
+                        onClick={() => setRunForm((prev) => ({ ...prev, targetHost: host.name, targetWorkerProfile: "" }))}
+                      >
+                        <span className={`run-host-dot${host.online === true ? " is-online" : ""}`} />
+                        <strong>{host.name}</strong>
+                        <small>{host.online === true ? "Online" : "Offline"}</small>
+                        <span
+                          className={`host-compute-pill is-${computeBadge.kind}`}
+                          title={computeBadge.title}
+                          aria-label={computeBadge.title}
+                        >
+                          <Cpu size={11} />
+                          {computeBadge.label}
+                        </span>
+                      </button>
+                    );
+                  })}
                   {!hostOptions.length ? (
                     <p className="jobs-meta">No host telemetry available.</p>
                   ) : null}
@@ -2627,7 +2694,7 @@ export function JobsPage(): JSX.Element {
                   </div>
                   <div>
                     <dt>Target host</dt>
-                    <dd>{runForm.targetHost || "automatic"}</dd>
+                    <dd>{runForm.targetHost || targetWorkerProfileLabel(runForm.targetWorkerProfile)}</dd>
                   </div>
                   <div>
                     <dt>Version tag</dt>

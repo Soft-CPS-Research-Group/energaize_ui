@@ -3235,6 +3235,47 @@ button {
   gap: 7px;
 }
 
+.host-compute-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: max-content;
+  min-height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--bg-elev-2) 85%, var(--line));
+  white-space: nowrap;
+}
+
+.host-compute-pill svg {
+  flex: 0 0 auto;
+}
+
+.host-compute-pill.is-cpu {
+  border-color: color-mix(in srgb, var(--text-soft) 42%, var(--line));
+}
+
+.host-compute-pill.is-gpu {
+  color: color-mix(in srgb, var(--brand) 72%, var(--text));
+  border-color: color-mix(in srgb, var(--brand) 52%, var(--line));
+  background: color-mix(in srgb, var(--brand) 10%, var(--bg-elev-2));
+}
+
+.host-compute-pill.is-mixed {
+  color: color-mix(in srgb, var(--success) 72%, var(--text));
+  border-color: color-mix(in srgb, var(--success) 48%, var(--line));
+  background: color-mix(in srgb, var(--success) 10%, var(--bg-elev-2));
+}
+
+.host-compute-pill.is-unknown {
+  opacity: 0.72;
+}
+
 .theme-select-row {
   display: inline-flex;
   gap: 8px;
@@ -5757,6 +5798,12 @@ button {
   grid-column: 2;
   color: var(--text-soft);
   font-size: 0.71rem;
+}
+
+.run-host-option .host-compute-pill {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: 2px;
 }
 
 .run-host-option.is-selected {

@@ -50,6 +50,7 @@ export interface RunSimulationPayload {
   config?: Record<string, unknown>;
   config_path?: string;
   target_host?: string;
+  target_worker_profile?: "cpu" | "gpu";
   save_as?: string;
   job_name?: string;
   submitted_by?: string;
