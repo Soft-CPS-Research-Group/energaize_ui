@@ -9,6 +9,7 @@ import type { HostInfo } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { resolveHostComputeBadge } from "../../utils/hostCompute";
+import { formatHostName } from "../../utils/hostDisplay";
 import { formatDateTime } from "../../utils/time";
 
 function isRecentHostUpdate(lastSeen: number | null): boolean {
@@ -79,7 +80,7 @@ export function HostsPage(): JSX.Element {
     <div className="page">
       <PageHeader
         title="Hosts"
-        subtitle="Worker availability, active jobs and Deucalion budget snapshot."
+        subtitle="Worker availability, active jobs and compute capacity."
         actions={
           <Button variant="secondary" iconLeft={<RefreshCcw size={14} />} onClick={() => hostsQuery.refetch()}>
             Refresh
@@ -109,7 +110,7 @@ export function HostsPage(): JSX.Element {
                     <td>
                       <div className="host-name">
                         <Server size={14} />
-                        <strong>{row.name}</strong>
+                        <strong>{formatHostName(row.name)}</strong>
                         <span
                           className={`host-compute-pill is-${computeBadge.kind}`}
                           title={computeBadge.title}

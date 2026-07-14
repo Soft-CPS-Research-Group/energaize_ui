@@ -84,6 +84,7 @@ import type {
   SimulationTreeNode
 } from "../../types";
 import { extractKpis } from "../../utils/jobResult";
+import { formatHostName } from "../../utils/hostDisplay";
 import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import {
   formatKpiFamilyLabel,
@@ -4415,7 +4416,7 @@ export function JobDetailPage(): JSX.Element {
                 </article>
                 <article className="job-overview-metric">
                   <small>Target host</small>
-                  <strong>{targetHost}</strong>
+                  <strong>{formatHostName(targetHost)}</strong>
                 </article>
                 <article className="job-overview-metric">
                   <small>Run duration</small>
@@ -4473,7 +4474,7 @@ export function JobDetailPage(): JSX.Element {
                       </div>
                       <div>
                         <dt>Host</dt>
-                        <dd>{targetHost}</dd>
+                        <dd>{formatHostName(targetHost)}</dd>
                       </div>
                       <div>
                         <dt>Profile</dt>

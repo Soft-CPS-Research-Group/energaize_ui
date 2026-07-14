@@ -6,9 +6,10 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
 import type { QueueItem } from "../../types";
+import { formatHostName } from "../../utils/hostDisplay";
 
 function queueTargetLabel(item: QueueItem): string {
-  if (item.require_host !== false) return item.preferred_host || "-";
+  if (item.require_host !== false) return formatHostName(item.preferred_host);
   if (item.target_worker_profile === "gpu") return "Any GPU";
   if (item.target_worker_profile === "cpu") return "Any CPU";
   return "Any host";

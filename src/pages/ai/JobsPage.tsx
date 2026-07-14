@@ -54,6 +54,7 @@ import type { HostInfo, JobItem, QueueItem, QueuedStartEstimate } from "../../ty
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { resolveHostComputeBadge } from "../../utils/hostCompute";
+import { formatHostName } from "../../utils/hostDisplay";
 import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "../../utils/jobsListState";
@@ -1680,7 +1681,7 @@ export function JobsPage(): JSX.Element {
                 <option value="all">All Hosts</option>
                 {hostOptions.map((host) => (
                   <option key={host.name} value={host.name}>
-                    {host.name}
+                    {formatHostName(host.name)}
                   </option>
                 ))}
               </select>
@@ -1769,8 +1770,9 @@ export function JobsPage(): JSX.Element {
                       : dispatchedStatus
                         ? "Show setup/dispatch details"
                         : "Show Slurm queue details";
-                    const hostLabel = resolveJobTargetHost(job);
-                    const deucalionRuntime = inferDeucalionJobRuntime(job, hostLabel);
+                    const hostId = resolveJobTargetHost(job);
+                    const hostLabel = formatHostName(hostId);
+                    const deucalionRuntime = inferDeucalionJobRuntime(job, hostId);
                     const jobDisplayName = resolveJobDisplayName(job);
                     const resolvedConfigLabel = job.job_info.resolved_config_file || "config.resolved.yaml";
                     const baseConfigLabel = resolveConfigName(baseConfigPath);
@@ -2077,12 +2079,12 @@ export function JobsPage(): JSX.Element {
                         type="button"
                         className="host-card-btn"
                         onClick={() => openHostDetails(host.name, host)}
-                        title={`Open details for ${host.name}`}
+                        title={`Open details for ${formatHostName(host.name)}`}
                       >
                         <div className="jobs-host-line">
                           <Server size={14} />
                           <span className={`host-live-dot${isLive ? " is-online" : ""}`} />
-                          <strong>{host.name}</strong>
+                          <strong>{formatHostName(host.name)}</strong>
                           <span
                             className={`host-compute-pill is-${computeBadge.kind}`}
                             title={computeBadge.title}
@@ -2409,7 +2411,7 @@ export function JobsPage(): JSX.Element {
                         onClick={() => setRunForm((prev) => ({ ...prev, targetHost: host.name, targetWorkerProfile: "" }))}
                       >
                         <span className={`run-host-dot${host.online === true ? " is-online" : ""}`} />
-                        <strong>{host.name}</strong>
+                        <strong>{formatHostName(host.name)}</strong>
                         <small>{host.online === true ? "Online" : "Offline"}</small>
                         <span
                           className={`host-compute-pill is-${computeBadge.kind}`}
@@ -2694,7 +2696,7 @@ export function JobsPage(): JSX.Element {
                   </div>
                   <div>
                     <dt>Target host</dt>
-                    <dd>{runForm.targetHost || targetWorkerProfileLabel(runForm.targetWorkerProfile)}</dd>
+                    <dd>{runForm.targetHost ? formatHostName(runForm.targetHost) : targetWorkerProfileLabel(runForm.targetWorkerProfile)}</dd>
                   </div>
                   <div>
                     <dt>Version tag</dt>
@@ -2818,7 +2820,7 @@ export function JobsPage(): JSX.Element {
       </Modal>
 
       <Modal
-        title={`Host details: ${hostDetailsTarget?.name || "-"}`}
+        title={`Host details: ${formatHostName(hostDetailsTarget?.name)}`}
         open={hostDetailsOpen}
         onClose={() => {
           setHostDetailsOpen(false);
