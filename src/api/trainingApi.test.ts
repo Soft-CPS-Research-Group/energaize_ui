@@ -66,7 +66,7 @@ describe("training API jobs", () => {
   });
 
   it("requests interactive authentication for the selected worker", async () => {
-    const fetchMock = vi.fn(() =>
+    const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(
         new Response(
           JSON.stringify({
