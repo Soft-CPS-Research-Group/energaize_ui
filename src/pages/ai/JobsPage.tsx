@@ -125,6 +125,17 @@ interface HostActiveJobSnapshot {
   ahead?: number;
 }
 
+function hostActiveJobStatus(entry: HostActiveJobSnapshot | undefined, fallback?: string | null): string {
+  if (entry?.phase === "union:provisioning") return "provisioning";
+  return entry?.status || fallback || "-";
+}
+
+function hostActiveJobPhaseLabel(phase: string): string {
+  if (phase === "union:provisioning") return "Waiting for Union resources";
+  if (phase === "union:running") return "Running on Union";
+  return phase;
+}
+
 function resolveUnionRunsUrl(info: HostInfo["info"]): string {
   const rawEndpoint = typeof info?.union_endpoint === "string"
     ? info.union_endpoint.trim()
@@ -3010,11 +3021,13 @@ export function JobsPage(): JSX.Element {
               ? telemetryActiveJobs.find((entry) => entry.job_id === currentJobId)
               : telemetryActiveJobs[0];
             const currentJobName = currentActiveEntry?.job_name || null;
-            const currentJobStatus =
+            const currentJobStatus = hostActiveJobStatus(
+              currentActiveEntry,
               hostDetailsTarget.data.current_job_status ||
-              (typeof hostDetailsTarget.data.info?.active_job_status === "string"
-                ? hostDetailsTarget.data.info.active_job_status
-                : "-");
+                (typeof hostDetailsTarget.data.info?.active_job_status === "string"
+                  ? hostDetailsTarget.data.info.active_job_status
+                  : "-")
+            );
             const capacitySummary = resolveHostCapacitySummary(hostDetailsTarget.name, hostDetailsTarget.data);
             const lastJobId =
               typeof hostDetailsTarget.data.info?.last_job_id === "string" ? hostDetailsTarget.data.info.last_job_id : null;
@@ -3168,12 +3181,12 @@ export function JobsPage(): JSX.Element {
                           >
                             {resolveHostJobName(entry.job_id, entry.job_name)}
                           </button>
-                          {typeof entry.status === "string" ? <StatusPill status={entry.status} /> : null}
+                          {typeof entry.status === "string" ? <StatusPill status={hostActiveJobStatus(entry)} /> : null}
                         </div>
                         <div className="host-active-job-meta">
                           {profile ? <small className="jobs-meta">Profile: {profile}</small> : null}
                           {typeof entry.phase === "string" && entry.phase ? (
-                            <small className="jobs-meta">{entry.phase}</small>
+                            <small className="jobs-meta">{hostActiveJobPhaseLabel(entry.phase)}</small>
                           ) : null}
                           {typeof entry.slurm_state === "string" && entry.slurm_state ? (
                             <small className="jobs-meta">Slurm: {entry.slurm_state}</small>

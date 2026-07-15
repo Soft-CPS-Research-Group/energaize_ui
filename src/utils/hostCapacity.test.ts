@@ -59,4 +59,21 @@ describe("hostCapacity", () => {
     expect(summary.label).toBe("Slots: 2/4");
     expect(summary.overCapacity).toBe(false);
   });
+
+  it("separates running and provisioning Union jobs", () => {
+    const summary = resolveHostCapacitySummary(
+      "union-inesctec",
+      host({
+        info: {
+          active_job_count: 8,
+          running_job_count: 7,
+          provisioning_job_count: 1,
+          max_active_jobs: 10
+        },
+        running: 8
+      })
+    );
+
+    expect(summary.label).toBe("Slots: 8/10 · 7 running · 1 provisioning");
+  });
 });

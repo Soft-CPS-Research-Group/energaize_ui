@@ -16,6 +16,11 @@ export interface HostCapacitySummary {
   };
 }
 
+function readCount(value: unknown): number | null {
+  const parsed = asNumber(value);
+  return parsed === null ? null : Math.max(0, Math.floor(parsed));
+}
+
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {
@@ -69,8 +74,13 @@ export function resolveHostCapacitySummary(hostName: string, host: HostInfo): Ho
 
   const active = fallbackActiveCount(host);
   const max = Math.max(1, Math.floor(asNumber(host.info?.max_active_jobs) ?? 1));
+  const running = readCount(host.info?.running_job_count);
+  const provisioning = readCount(host.info?.provisioning_job_count);
+  const unionBreakdown = hostName.toLowerCase() === "union-inesctec" && (running !== null || provisioning !== null)
+    ? ` · ${running ?? 0} running · ${provisioning ?? 0} provisioning`
+    : "";
   return {
-    label: `Slots: ${active}/${max}`,
+    label: `Slots: ${active}/${max}${unionBreakdown}`,
     active,
     max,
     overCapacity: active > max

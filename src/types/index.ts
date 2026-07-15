@@ -293,6 +293,8 @@ export interface HostInfo {
     };
     active_job_id?: string | null;
     active_job_count?: number | null;
+    running_job_count?: number | null;
+    provisioning_job_count?: number | null;
     active_job_count_by_profile?: {
       cpu?: number;
       gpu?: number;
