@@ -56,7 +56,7 @@ import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications
 import type { HostInfo, JobItem, QueueItem, QueuedStartEstimate } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
-import { resolveHostComputeBadge } from "../../utils/hostCompute";
+import { resolveHostComputeBadge, resolveHostComputeKind } from "../../utils/hostCompute";
 import { formatHostName } from "../../utils/hostDisplay";
 import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
@@ -123,6 +123,16 @@ interface HostActiveJobSnapshot {
   slurm_gpus?: number;
   queue_pos?: number;
   ahead?: number;
+}
+
+function resolveUnionRunsUrl(info: HostInfo["info"]): string {
+  const rawEndpoint = typeof info?.union_endpoint === "string"
+    ? info.union_endpoint.trim()
+    : "dns:///inesctec.hosted.unionai.cloud";
+  const host = rawEndpoint.replace(/^(?:dns:\/\/\/|https?:\/\/)/, "").replace(/\/$/, "");
+  const project = typeof info?.union_project === "string" ? info.union_project : "humanise-energaize";
+  const domain = typeof info?.union_domain === "string" ? info.union_domain : "development";
+  return `https://${host}/v2/runs/project/${encodeURIComponent(project)}/domain/${encodeURIComponent(domain)}`;
 }
 
 type DeucalionRuntimeProfile = "cpu" | "gpu";
@@ -1025,7 +1035,12 @@ export function JobsPage(): JSX.Element {
   const imageRepository = jobImagesQuery.data?.repository || "calof/opeva_simulator";
   const runImageOptions = useMemo(() => {
     const tags = jobImagesQuery.data?.tags || [];
-    const byTag = new Map<string, { deucalionReady: boolean; lastUpdated?: string }>();
+    const byTag = new Map<string, {
+      deucalionReady: boolean;
+      jetsonReady: boolean;
+      unionReady: boolean;
+      lastUpdated?: string;
+    }>();
 
     tags.forEach((tag) => {
       if (!tag?.name) return;
@@ -1033,6 +1048,8 @@ export function JobsPage(): JSX.Element {
       const previous = byTag.get(tag.name);
       byTag.set(tag.name, {
         deucalionReady: ready,
+        jetsonReady: typeof tag.jetson_ready === "boolean" ? tag.jetson_ready : true,
+        unionReady: typeof tag.union_ready === "boolean" ? tag.union_ready : true,
         lastUpdated:
           typeof tag.last_updated === "string" && tag.last_updated.trim()
             ? tag.last_updated
@@ -1040,27 +1057,23 @@ export function JobsPage(): JSX.Element {
       });
     });
 
-    if (!byTag.has("latest")) {
-      byTag.set("latest", { deucalionReady: true });
-    }
-
-    const orderedTags = ["latest", ...Array.from(byTag.keys()).filter((tag) => tag !== "latest")];
-    return orderedTags.map((tag) => ({
+    return Array.from(byTag.keys()).map((tag) => ({
       tag,
       deucalionReady: byTag.get(tag)?.deucalionReady ?? true,
+      jetsonReady: byTag.get(tag)?.jetsonReady ?? true,
+      unionReady: byTag.get(tag)?.unionReady ?? true,
       lastUpdated: byTag.get(tag)?.lastUpdated
-    }));
+    })).sort((left, right) => String(right.lastUpdated || "").localeCompare(String(left.lastUpdated || "")));
   }, [jobImagesQuery.data?.tags]);
   const filteredConfigOptions = useMemo(() => {
     const query = runForm.configPath.trim().toLowerCase();
     if (!query) return availableConfigs;
     return availableConfigs.filter((config) => config.toLowerCase().includes(query));
   }, [availableConfigs, runForm.configPath]);
-  const hasCustomRunImage =
-    runForm.imageTag.trim() !== "" && !runImageOptions.some((option) => option.tag === runForm.imageTag.trim());
   const isRunHostDeucalion = runForm.targetHost === "deucalion";
+  const isRunHostJetson = runForm.targetHost === "jetson-xavier";
+  const isRunHostUnion = runForm.targetHost === "union-inesctec";
   const selectedImageOption = runImageOptions.find((option) => option.tag === runForm.imageTag.trim()) || null;
-  const hasReadyDeucalionImage = runImageOptions.some((option) => option.deucalionReady);
   const deucalionDefaults = DEUCALION_PROFILE_DEFAULTS[deucalionProfile];
   const deucalionBudgetAccounts = useMemo(() => {
     const host = hostsQuery.data?.hosts?.deucalion;
@@ -1123,6 +1136,22 @@ export function JobsPage(): JSX.Element {
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [availableHosts, hostRows]);
+  const imageOptionIsReadyForHost = (option: (typeof runImageOptions)[number], hostName: string): boolean => {
+    if (hostName === "deucalion") return option.deucalionReady;
+    if (hostName === "jetson-xavier") return option.jetsonReady;
+    if (hostName === "union-inesctec") return option.unionReady;
+    return true;
+  };
+  const imageOptionIsCompatible = (option: (typeof runImageOptions)[number]): boolean => {
+    if (runForm.targetHost) return imageOptionIsReadyForHost(option, runForm.targetHost);
+    return hostOptions.some((host) => {
+      if (host.name === "deucalion") return false;
+      const kind = resolveHostComputeKind(host.name, host.data);
+      const profileMatches = !runForm.targetWorkerProfile
+        || (runForm.targetWorkerProfile === "gpu" ? kind === "gpu" || kind === "mixed" : kind === "cpu" || kind === "mixed");
+      return profileMatches && imageOptionIsReadyForHost(option, host.name);
+    });
+  };
 
   const jobsById = useMemo(() => {
     return new Map((jobsQuery.data || []).map((job) => [job.job_id, job] as const));
@@ -1285,19 +1314,18 @@ export function JobsPage(): JSX.Element {
 
   useEffect(() => {
     if (!runOpen) return;
-    if (!isRunHostDeucalion) return;
-    if (!hasReadyDeucalionImage) return;
+    if (!runImageOptions.length) return;
 
     const currentImageTag = runForm.imageTag.trim();
     const currentOption = runImageOptions.find((option) => option.tag === currentImageTag);
-    if (currentOption?.deucalionReady) return;
+    if (currentOption && imageOptionIsCompatible(currentOption)) return;
 
-    const fallback = runImageOptions.find((option) => option.deucalionReady);
+    const fallback = runImageOptions.find(imageOptionIsCompatible);
     if (!fallback) return;
     if (currentImageTag === fallback.tag) return;
 
     setRunForm((previous) => ({ ...previous, imageTag: fallback.tag }));
-  }, [hasReadyDeucalionImage, isRunHostDeucalion, runForm.imageTag, runImageOptions, runOpen]);
+  }, [isRunHostDeucalion, isRunHostJetson, isRunHostUnion, runForm.imageTag, runImageOptions, runOpen]);
 
   useEffect(() => {
     if (runOpen) return;
@@ -1561,10 +1589,16 @@ export function JobsPage(): JSX.Element {
   const selectedRunTagOption = runImageOptions.find((option) => option.tag === normalizedImageTag) || null;
   const runTagExists = Boolean(selectedRunTagOption);
   const runTagIsReadyForDeucalion = !isRunHostDeucalion || Boolean(selectedRunTagOption?.deucalionReady);
+  const runTagIsReadyForJetson = !isRunHostJetson || Boolean(selectedRunTagOption?.jetsonReady);
+  const runTagIsReadyForUnion = !isRunHostUnion || Boolean(selectedRunTagOption?.unionReady);
+  const runTagIsCompatible = Boolean(selectedRunTagOption && imageOptionIsCompatible(selectedRunTagOption));
   const runCanGoToReview =
     Boolean(matchedRunConfig) &&
     runTagExists &&
     runTagIsReadyForDeucalion &&
+    runTagIsReadyForJetson &&
+    runTagIsReadyForUnion &&
+    runTagIsCompatible &&
     !deucalionWalltimeError;
   const runStepDefinitions = useMemo(() => {
     if (!isRunHostDeucalion) return RUN_WIZARD_BASE_STEPS;
@@ -1614,6 +1648,27 @@ export function JobsPage(): JSX.Element {
       setRunStep(3);
       return;
     }
+    if (!runTagIsReadyForJetson) {
+      notifyError(
+        "Version not ready for Jetson",
+        new Error("A imagem Jetson desta versão ainda não está publicada.")
+      );
+      setRunStep(3);
+      return;
+    }
+    if (!runTagIsReadyForUnion) {
+      notifyError(
+        "Version not ready for Union",
+        new Error("A imagem Blackwell desta versão ainda não está publicada para Union.")
+      );
+      setRunStep(3);
+      return;
+    }
+    if (!runTagIsCompatible) {
+      notifyError("No compatible host", new Error("This runtime version is unavailable for the selected host routing."));
+      setRunStep(3);
+      return;
+    }
     if (isRunHostDeucalion && deucalionWalltimeError) {
       notifyError("Invalid Deucalion walltime", new Error(deucalionWalltimeError));
       setRunStep(4);
@@ -1651,6 +1706,24 @@ export function JobsPage(): JSX.Element {
           "Version not ready for Deucalion",
           new Error("SIF desta versão ainda não está publicado para Deucalion.")
         );
+        return;
+      }
+      if (!runTagIsReadyForJetson) {
+        notifyError(
+          "Version not ready for Jetson",
+          new Error("A imagem Jetson desta versão ainda não está publicada.")
+        );
+        return;
+      }
+      if (!runTagIsReadyForUnion) {
+        notifyError(
+          "Version not ready for Union",
+          new Error("A imagem Blackwell desta versão ainda não está publicada para Union.")
+        );
+        return;
+      }
+      if (!runTagIsCompatible) {
+        notifyError("No compatible host", new Error("This runtime version is unavailable for the selected host routing."));
         return;
       }
     }
@@ -2493,42 +2566,49 @@ export function JobsPage(): JSX.Element {
             ) : null}
 
             {runStep === 3 ? (
-              <label className="full-col">
+              <section className="full-col run-image-section">
                 <span className="run-image-label">
                   Runtime version
                   <span className="run-image-help" tabIndex={0} aria-label="Runtime version hint">
                     <Info size={13} />
                     <span role="tooltip" className="run-image-help-tooltip">
-                      Para Deucalion, apenas versões com SIF publicado estão disponíveis.
+                      A versão lógica é convertida automaticamente para a imagem certa em cada host.
                     </span>
                   </span>
                 </span>
-                <select
-                  value={runForm.imageTag}
-                  onChange={(event) => setRunForm((previous) => ({ ...previous, imageTag: event.target.value }))}
-                >
-                  {hasCustomRunImage ? (
-                    <option value={runForm.imageTag} disabled={isRunHostDeucalion}>
-                      {runForm.imageTag} {isRunHostDeucalion ? "(custom, SIF unknown)" : "(custom)"}
-                    </option>
-                  ) : null}
-                  {runImageOptions.map((option) => (
-                    <option
+                <div className="run-image-list" role="radiogroup" aria-label="Runtime version">
+                  {runImageOptions.map((option) => {
+                    const compatible = imageOptionIsCompatible(option);
+                    return (
+                    <button
+                      type="button"
                       key={option.tag}
-                      value={option.tag}
-                      disabled={isRunHostDeucalion && !option.deucalionReady}
-                      title={
-                        isRunHostDeucalion && !option.deucalionReady
-                          ? "SIF desta versão ainda não está publicado para Deucalion"
-                          : undefined
-                      }
+                      role="radio"
+                      aria-checked={runForm.imageTag === option.tag}
+                      className={`run-image-option${runForm.imageTag === option.tag ? " is-selected" : ""}`}
+                      disabled={!compatible}
+                      onClick={() => setRunForm((previous) => ({ ...previous, imageTag: option.tag }))}
                     >
-                      {option.tag}
-                      {option.lastUpdated ? ` · ${formatDateTime(option.lastUpdated)}` : ""}
-                      {isRunHostDeucalion && !option.deucalionReady ? " (SIF not ready)" : ""}
-                    </option>
-                  ))}
-                </select>
+                      <span className="run-image-option-copy">
+                        <strong>{option.tag}</strong>
+                        <small>{option.lastUpdated ? formatDateTime(option.lastUpdated) : "Build date unavailable"}</small>
+                      </span>
+                      <span className="run-image-availability" aria-label="Runtime availability">
+                        <span className="is-ready" title="General Docker image available">General</span>
+                        <span className={option.jetsonReady ? "is-ready" : ""} title={`Jetson ${option.jetsonReady ? "available" : "unavailable"}`}>Jetson</span>
+                        <span className={option.deucalionReady ? "is-ready" : ""} title={`Deucalion ${option.deucalionReady ? "available" : "unavailable"}`}>Deucalion</span>
+                        <span className={option.unionReady ? "is-ready" : ""} title={`Union ${option.unionReady ? "available" : "unavailable"}`}>Union</span>
+                      </span>
+                    </button>
+                  );})}
+                  {!runImageOptions.length ? (
+                    <p className="jobs-meta">No published runtime versions are available yet.</p>
+                  ) : null}
+                </div>
+                <div className="run-image-legend">
+                  <span><i className="is-ready" /> Available</span>
+                  <span><i /> Not published</span>
+                </div>
                 <small className="jobs-meta">
                   Docker repository: {imageRepository}
                   {jobImagesQuery.isFetching ? " · refreshing versions..." : ""}
@@ -2536,7 +2616,13 @@ export function JobsPage(): JSX.Element {
                 {isRunHostDeucalion && selectedImageOption && !selectedImageOption.deucalionReady ? (
                   <small className="jobs-meta">SIF desta versão ainda não está publicado para Deucalion.</small>
                 ) : null}
-              </label>
+                {isRunHostJetson && selectedImageOption && !selectedImageOption.jetsonReady ? (
+                  <small className="jobs-meta">A imagem Jetson desta versão ainda não está publicada.</small>
+                ) : null}
+                {isRunHostUnion && selectedImageOption && !selectedImageOption.unionReady ? (
+                  <small className="jobs-meta">A imagem Blackwell desta versão ainda não está publicada para Union.</small>
+                ) : null}
+              </section>
             ) : null}
 
             {isRunHostDeucalion && runStep === 4 ? (
@@ -2940,36 +3026,52 @@ export function JobsPage(): JSX.Element {
             const unionAuth = unionAuthRaw && typeof unionAuthRaw === "object"
               ? (unionAuthRaw as Record<string, unknown>)
               : null;
+            const isUnionHost = hostDetailsTarget.name === "union-inesctec";
+            const unionRunsUrl = isUnionHost ? resolveUnionRunsUrl(hostDetailsTarget.data.info) : null;
             return (
               <section className="host-details-modal">
-                {hostDetailsTarget.name === "union-inesctec" && canAuthenticateUnion && unionAuth ? (
-                  <section className={`union-auth-panel is-${String(unionAuth.status || "unknown")}`}>
+                {isUnionHost ? (
+                  <section className={`union-auth-panel is-${String(unionAuth?.status || "unknown")}`}>
                     <div className="union-auth-copy">
                       <span className="union-auth-icon"><TriangleAlert size={17} /></span>
                       <div>
-                        <h4>Union authentication</h4>
+                        <h4>Union INESC TEC</h4>
                         <p>
-                          {unionAuth.status === "authenticated"
+                          {unionAuth?.status === "authenticated"
                             ? "Authenticated. Stored credentials will be refreshed automatically."
-                            : unionAuth.status === "checking"
+                            : unionAuth?.status === "checking"
                               ? "Checking stored Union credentials…"
-                              : "Authentication is required before this worker can accept new jobs."}
+                              : unionAuth
+                                ? "Authentication is required before this worker can accept new jobs."
+                                : "Open Union to inspect runs for this host."}
                         </p>
-                        {typeof unionAuth.user_code === "string" ? (
+                        {typeof unionAuth?.user_code === "string" ? (
                           <small>Verification code: <strong>{unionAuth.user_code}</strong></small>
                         ) : null}
                       </div>
                     </div>
-                    {unionAuth.status === "authentication_required" ? (
-                      <Button
-                        variant="primary"
-                        iconLeft={<ExternalLink size={14} />}
-                        disabled={unionAuthMutation.isPending}
-                        onClick={() => beginUnionAuthentication(unionAuth)}
+                    <div className="union-auth-actions">
+                      <a
+                        className="btn btn-secondary btn-sm"
+                        href={unionRunsUrl || undefined}
+                        target="_blank"
+                        rel="noreferrer"
                       >
-                        {unionAuthMutation.isPending ? "Preparing…" : "Authenticate with Union"}
-                      </Button>
-                    ) : null}
+                        <span>View Union runs</span>
+                        <span className="btn-icon"><ExternalLink size={14} /></span>
+                      </a>
+                      {unionAuth?.status === "authentication_required" && canAuthenticateUnion ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          iconLeft={<ExternalLink size={14} />}
+                          disabled={unionAuthMutation.isPending}
+                          onClick={() => beginUnionAuthentication(unionAuth)}
+                        >
+                          {unionAuthMutation.isPending ? "Preparing…" : "Authenticate with Union"}
+                        </Button>
+                      ) : null}
+                    </div>
                   </section>
                 ) : null}
                 <dl className="host-details-grid">

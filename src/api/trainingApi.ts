@@ -87,11 +87,15 @@ export interface JobImageTag {
   last_updated?: string;
   digest?: string | null;
   deucalion_ready?: boolean;
+  jetson_ready?: boolean;
+  union_ready?: boolean;
 }
 
 export interface JobImageVersionsResponse {
   repository: string;
   sif_repository?: string;
+  jetson_tag_suffix?: string;
+  union_tag_suffix?: string;
   tags: JobImageTag[];
   count: number;
   cached: boolean;

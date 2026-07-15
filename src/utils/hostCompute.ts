@@ -19,6 +19,7 @@ function readHostBoolean(info: HostInfo["info"] | undefined, key: string): boole
 export function resolveHostComputeKind(hostName: string, host?: HostInfo | null): HostComputeKind {
   const normalizedName = hostName.trim().toLowerCase();
   if (normalizedName === "deucalion") return "mixed";
+  if (normalizedName === "jetson-xavier" || normalizedName === "union-inesctec") return "gpu";
 
   const info = host?.info;
   const profileLimits = info?.max_active_jobs_by_profile;

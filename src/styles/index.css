@@ -4110,8 +4110,9 @@ button {
 
 .union-auth-panel {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 18px;
   margin-bottom: 20px;
   padding: 14px 0 16px;
@@ -4120,9 +4121,25 @@ button {
 
 .union-auth-copy {
   display: flex;
+  flex: 1 1 260px;
   align-items: flex-start;
   gap: 11px;
   min-width: 0;
+}
+
+.union-auth-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.union-auth-actions .btn {
+  white-space: nowrap;
 }
 
 .union-auth-copy h4,
@@ -4159,6 +4176,18 @@ button {
   .union-auth-panel {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .union-auth-actions {
+    align-items: stretch;
+    flex-direction: column;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .union-auth-actions .btn {
+    justify-content: center;
+    width: 100%;
   }
 }
 
@@ -5714,6 +5743,111 @@ button {
   gap: 6px;
 }
 
+.run-image-section {
+  display: grid;
+  gap: 9px;
+}
+
+.run-image-list {
+  display: grid;
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+
+.run-image-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  padding: 11px 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease, opacity 0.14s ease;
+}
+
+.run-image-option:hover:not(:disabled),
+.run-image-option.is-selected {
+  background: color-mix(in srgb, var(--brand) 7%, transparent);
+}
+
+.run-image-option.is-selected {
+  box-shadow: inset 2px 0 0 var(--brand);
+  padding-left: 10px;
+}
+
+.run-image-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.run-image-option-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.run-image-option-copy strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-image-option-copy small {
+  color: var(--text-soft);
+  font-size: 0.7rem;
+}
+
+.run-image-availability {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px 9px;
+}
+
+.run-image-availability span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.run-image-availability span::before,
+.run-image-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-soft) 35%, transparent);
+  content: "";
+}
+
+.run-image-availability span.is-ready::before,
+.run-image-legend i.is-ready {
+  background: var(--success, #36a875);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success, #36a875) 14%, transparent);
+}
+
+.run-image-legend {
+  display: flex;
+  gap: 14px;
+  color: var(--text-soft);
+  font-size: 0.68rem;
+}
+
+.run-image-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .run-image-help {
   position: relative;
   display: inline-flex;
@@ -5752,6 +5886,17 @@ button {
 .run-image-help:focus-visible .run-image-help-tooltip {
   opacity: 1;
   transform: translateY(0);
+}
+
+@media (max-width: 640px) {
+  .run-image-option {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .run-image-availability {
+    justify-content: flex-start;
+  }
 }
 
 .run-host-grid {
