@@ -1,4 +1,6 @@
 import { motion } from "framer-motion";
+import { useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
@@ -8,11 +10,41 @@ import { CommunityTree } from "./CommunityTree";
 import { InstitutionalDock } from "./InstitutionalDock";
 import { TopBar } from "./TopBar";
 import { ToastStack } from "./ToastStack";
+import { listHosts } from "../../api/trainingApi";
+import { HOSTS_POLL_MS } from "../../constants";
 
 export function AppShell(): JSX.Element {
   const location = useLocation();
   const { session } = useAuth();
   const { activeCommunity, pushNotification } = useUI();
+  const unionAuthNoticeRef = useRef<string | null>(null);
+  const isTiago = session?.email.trim().toLowerCase() === "tiago.fonseca@energaize.io";
+  const hostsQuery = useQuery({
+    queryKey: ["hosts"],
+    queryFn: listHosts,
+    refetchInterval: HOSTS_POLL_MS,
+    enabled: isTiago
+  });
+
+  useEffect(() => {
+    if (!isTiago) return;
+    const auth = hostsQuery.data?.hosts?.["union-inesctec"]?.info?.union_auth;
+    if (!auth || typeof auth !== "object") return;
+    const state = auth as { status?: string; user_code?: string; updated_at?: number };
+    if (state.status !== "authentication_required") {
+      unionAuthNoticeRef.current = null;
+      return;
+    }
+    const noticeKey = `${state.user_code || "required"}:${state.updated_at || ""}`;
+    if (unionAuthNoticeRef.current === noticeKey) return;
+    unionAuthNoticeRef.current = noticeKey;
+    pushNotification({
+      title: "Union authentication required",
+      message: "Open the Union INESC TEC host details to complete authentication.",
+      severity: "warning",
+      source: "union-inesctec"
+    });
+  }, [hostsQuery.data, isTiago, pushNotification]);
 
   useAlerts({
     community: activeCommunity?.id || "living_lab",

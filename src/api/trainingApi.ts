@@ -75,6 +75,13 @@ export interface JobActionResponse {
   job_id?: string;
 }
 
+export interface WorkerAuthenticationResponse {
+  worker_id: string;
+  action: "union_authenticate";
+  request_id: string;
+  requested_at: number;
+}
+
 export interface JobImageTag {
   name: string;
   last_updated?: string;
@@ -440,6 +447,13 @@ export async function listQueue(): Promise<QueueItem[]> {
 
 export async function listHosts(): Promise<HostsPayload> {
   return jobOrchestratorHttp<HostsPayload>("/hosts");
+}
+
+export async function authenticateWorker(workerId: string): Promise<WorkerAuthenticationResponse> {
+  return jobOrchestratorHttp<WorkerAuthenticationResponse>(
+    `/ops/workers/${encodeURIComponent(workerId)}/authenticate`,
+    { method: "POST" }
+  );
 }
 
 export async function listJobImageVersions(params?: {

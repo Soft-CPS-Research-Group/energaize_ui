@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listJobs, listJobsInitialData, listLocalJobs } from "./trainingApi";
+import { authenticateWorker, listJobs, listJobsInitialData, listLocalJobs } from "./trainingApi";
 
 function backendHangUntilAbort(init?: RequestInit): Promise<Response> {
   return new Promise((_resolve, reject) => {
@@ -63,5 +63,27 @@ describe("training API jobs", () => {
 
     expect(jobs.some((job) => job.job_id === "backend-job-001")).toBe(true);
     expect(jobs.some((job) => job.job_id === "live-rbc-ev-native-2000-300s-post026")).toBe(true);
+  });
+
+  it("requests interactive authentication for the selected worker", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            worker_id: "union-inesctec",
+            action: "union_authenticate",
+            request_id: "request-1",
+            requested_at: 1
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await authenticateWorker("union-inesctec");
+
+    expect(result.request_id).toBe("request-1");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/ops/workers/union-inesctec/authenticate");
   });
 });

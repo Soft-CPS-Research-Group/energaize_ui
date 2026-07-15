@@ -17,9 +17,12 @@ import {
   RefreshCcw,
   Search,
   Server,
-  Trash2
+  Trash2,
+  TriangleAlert,
+  ExternalLink
 } from "lucide-react";
 import {
+  authenticateWorker,
   deleteJob,
   getExperimentConfig,
   getJobFileLogs,
@@ -699,6 +702,7 @@ export function JobsPage(): JSX.Element {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { session } = useAuth();
+  const canAuthenticateUnion = session?.email.trim().toLowerCase() === "tiago.fonseca@energaize.io";
   const currentSubmittedFilter =
     resolveSubmittedByLabel(session?.name) || resolveSubmittedByLabel(session?.email);
   const initialState = buildJobsListStateFromSearchParams(searchParams, {
@@ -739,6 +743,7 @@ export function JobsPage(): JSX.Element {
   const [deleteJobTarget, setDeleteJobTarget] = useState<string | null>(null);
   const logsPreRef = useRef<HTMLPreElement | null>(null);
   const configJobNameRequestRef = useRef(0);
+  const unionAuthWindowRef = useRef<Window | null>(null);
 
   function resetRunWizardState(): void {
     setRunForm(defaultRunForm);
@@ -921,6 +926,51 @@ export function JobsPage(): JSX.Element {
     onSuccess: (result) => notifyInfo("Jobs cleanup", `${result.count} entries removed.`),
     onError: (error) => notifyError("Failed to cleanup jobs", error)
   });
+
+  const unionAuthMutation = useMutation({
+    mutationFn: () => authenticateWorker("union-inesctec"),
+    onSuccess: () => {
+      notifyInfo("Union authentication started", "Waiting for the secure Union sign-in link.");
+      queryClient.invalidateQueries({ queryKey: ["hosts"] });
+    },
+    onError: (error) => {
+      unionAuthWindowRef.current?.close();
+      unionAuthWindowRef.current = null;
+      notifyError("Unable to start Union authentication", error);
+    }
+  });
+
+  useEffect(() => {
+    if (!hostDetailsTarget) return;
+    const freshHost = hostsQuery.data?.hosts?.[hostDetailsTarget.name];
+    if (freshHost && freshHost !== hostDetailsTarget.data) {
+      setHostDetailsTarget({ name: hostDetailsTarget.name, data: freshHost });
+    }
+  }, [hostDetailsTarget, hostsQuery.data?.hosts]);
+
+  useEffect(() => {
+    const auth = hostsQuery.data?.hosts?.["union-inesctec"]?.info?.union_auth;
+    if (!auth || typeof auth !== "object") return;
+    const url = (auth as { verification_url_complete?: unknown }).verification_url_complete;
+    if (typeof url !== "string" || !url || !unionAuthWindowRef.current) return;
+    unionAuthWindowRef.current.location.href = url;
+    unionAuthWindowRef.current = null;
+  }, [hostsQuery.data?.hosts]);
+
+  function beginUnionAuthentication(auth: Record<string, unknown>): void {
+    const completeUrl = typeof auth.verification_url_complete === "string" ? auth.verification_url_complete : "";
+    const expiresAt = typeof auth.expires_at === "number" ? auth.expires_at : 0;
+    if (completeUrl && expiresAt > Date.now() / 1000) {
+      window.open(completeUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    unionAuthWindowRef.current = window.open("about:blank", "union-authentication");
+    if (unionAuthWindowRef.current) {
+      unionAuthWindowRef.current.document.title = "Waiting for Union authentication";
+      unionAuthWindowRef.current.document.body.textContent = "Preparing secure Union authentication…";
+    }
+    unionAuthMutation.mutate();
+  }
 
   const statusOptions = useMemo(() => {
     const values = new Set<string>();
@@ -2052,6 +2102,10 @@ export function JobsPage(): JSX.Element {
               {hostRows.length > 0 ? (
                 hostRows.map((host) => {
                   const isLive = isRecentTimestamp(host.last_seen);
+                  const unionAuth = host.name === "union-inesctec" && host.info?.union_auth && typeof host.info.union_auth === "object"
+                    ? (host.info.union_auth as { status?: string })
+                    : null;
+                  const unionAuthRequired = unionAuth?.status === "authentication_required";
                   const cardActiveJobId =
                     host.current_job_id ||
                     (typeof host.info?.active_job_id === "string" ? host.info.active_job_id : null);
@@ -2085,6 +2139,13 @@ export function JobsPage(): JSX.Element {
                           <Server size={14} />
                           <span className={`host-live-dot${isLive ? " is-online" : ""}`} />
                           <strong>{formatHostName(host.name)}</strong>
+                          {unionAuthRequired && canAuthenticateUnion ? (
+                            <TriangleAlert
+                              size={14}
+                              className="host-auth-warning-icon"
+                              aria-label="Union authentication required"
+                            />
+                          ) : null}
                           <span
                             className={`host-compute-pill is-${computeBadge.kind}`}
                             title={computeBadge.title}
@@ -2875,8 +2936,42 @@ export function JobsPage(): JSX.Element {
               typeof hostDetailsTarget.data.info?.last_terminal_status === "string"
                 ? hostDetailsTarget.data.info.last_terminal_status
                 : "-";
+            const unionAuthRaw = hostDetailsTarget.data.info?.union_auth;
+            const unionAuth = unionAuthRaw && typeof unionAuthRaw === "object"
+              ? (unionAuthRaw as Record<string, unknown>)
+              : null;
             return (
               <section className="host-details-modal">
+                {hostDetailsTarget.name === "union-inesctec" && canAuthenticateUnion && unionAuth ? (
+                  <section className={`union-auth-panel is-${String(unionAuth.status || "unknown")}`}>
+                    <div className="union-auth-copy">
+                      <span className="union-auth-icon"><TriangleAlert size={17} /></span>
+                      <div>
+                        <h4>Union authentication</h4>
+                        <p>
+                          {unionAuth.status === "authenticated"
+                            ? "Authenticated. Stored credentials will be refreshed automatically."
+                            : unionAuth.status === "checking"
+                              ? "Checking stored Union credentials…"
+                              : "Authentication is required before this worker can accept new jobs."}
+                        </p>
+                        {typeof unionAuth.user_code === "string" ? (
+                          <small>Verification code: <strong>{unionAuth.user_code}</strong></small>
+                        ) : null}
+                      </div>
+                    </div>
+                    {unionAuth.status === "authentication_required" ? (
+                      <Button
+                        variant="primary"
+                        iconLeft={<ExternalLink size={14} />}
+                        disabled={unionAuthMutation.isPending}
+                        onClick={() => beginUnionAuthentication(unionAuth)}
+                      >
+                        {unionAuthMutation.isPending ? "Preparing…" : "Authenticate with Union"}
+                      </Button>
+                    ) : null}
+                  </section>
+                ) : null}
                 <dl className="host-details-grid">
               <div>
                 <dt>Status</dt>

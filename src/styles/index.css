@@ -4102,6 +4102,66 @@ button {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 22%, transparent);
 }
 
+.host-auth-warning-icon {
+  color: var(--warning, #d99518);
+  flex: 0 0 auto;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 35%, transparent));
+}
+
+.union-auth-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding: 14px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.union-auth-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+}
+
+.union-auth-copy h4,
+.union-auth-copy p {
+  margin: 0;
+}
+
+.union-auth-copy p {
+  margin-top: 4px;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.union-auth-copy small {
+  display: block;
+  margin-top: 7px;
+  letter-spacing: 0.02em;
+}
+
+.union-auth-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  color: var(--warning, #d99518);
+}
+
+.union-auth-panel.is-authenticated .union-auth-icon {
+  color: var(--success, #36a875);
+}
+
+@media (max-width: 640px) {
+  .union-auth-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .jobs-queue-list li {
   padding: 0;
 }

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Cpu, RefreshCcw, Server } from "lucide-react";
+import { Cpu, RefreshCcw, Server, TriangleAlert } from "lucide-react";
 import { listHosts, listJobs, listJobsInitialData } from "../../api/trainingApi";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
@@ -11,6 +11,7 @@ import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { resolveHostComputeBadge } from "../../utils/hostCompute";
 import { formatHostName } from "../../utils/hostDisplay";
 import { formatDateTime } from "../../utils/time";
+import { useAuth } from "../../contexts/AuthContext";
 
 function isRecentHostUpdate(lastSeen: number | null): boolean {
   if (!lastSeen) return false;
@@ -50,6 +51,8 @@ function renderCapacityLine(hostName: string, host: HostInfo): JSX.Element {
 }
 
 export function HostsPage(): JSX.Element {
+  const { session } = useAuth();
+  const isTiago = session?.email.trim().toLowerCase() === "tiago.fonseca@energaize.io";
   const hostsQuery = useQuery({
     queryKey: ["hosts"],
     queryFn: listHosts,
@@ -105,12 +108,18 @@ export function HostsPage(): JSX.Element {
             <tbody>
               {rows.map((row) => {
                 const computeBadge = resolveHostComputeBadge(row.name, row);
+                const unionAuth = row.info?.union_auth && typeof row.info.union_auth === "object"
+                  ? (row.info.union_auth as { status?: string })
+                  : null;
                 return (
                   <tr key={row.name}>
                     <td>
                       <div className="host-name">
                         <Server size={14} />
                         <strong>{formatHostName(row.name)}</strong>
+                        {isTiago && row.name === "union-inesctec" && unionAuth?.status === "authentication_required" ? (
+                          <TriangleAlert className="host-auth-warning-icon" size={14} aria-label="Union authentication required" />
+                        ) : null}
                         <span
                           className={`host-compute-pill is-${computeBadge.kind}`}
                           title={computeBadge.title}
