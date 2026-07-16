@@ -121,6 +121,7 @@ interface HostActiveJobSnapshot {
   slurm_nodes?: number;
   slurm_cpus?: number;
   slurm_gpus?: number;
+  gpu_model?: string;
   queue_pos?: number;
   ahead?: number;
 }
@@ -304,6 +305,7 @@ function isGpuLikePartition(partition: string): boolean {
 }
 
 function inferComputeProfile(entry: HostActiveJobSnapshot): "GPU" | "CPU" | null {
+  if (typeof entry.gpu_model === "string" && entry.gpu_model) return "GPU";
   if (typeof entry.slurm_gpus === "number" && entry.slurm_gpus > 0) return "GPU";
   if (typeof entry.slurm_partition === "string" && entry.slurm_partition.trim()) {
     return isGpuLikePartition(entry.slurm_partition) ? "GPU" : "CPU";
@@ -3003,6 +3005,7 @@ export function JobsPage(): JSX.Element {
                 slurm_nodes: typeof entry.slurm_nodes === "number" ? entry.slurm_nodes : undefined,
                 slurm_cpus: typeof entry.slurm_cpus === "number" ? entry.slurm_cpus : undefined,
                 slurm_gpus: typeof entry.slurm_gpus === "number" ? entry.slurm_gpus : undefined,
+                gpu_model: typeof entry.gpu_model === "string" ? entry.gpu_model : undefined,
                 queue_pos: typeof entry.queue_pos === "number" ? entry.queue_pos : undefined,
                 ahead: typeof entry.ahead === "number" ? entry.ahead : undefined,
               }))
@@ -3199,6 +3202,11 @@ export function JobsPage(): JSX.Element {
                           ) : null}
                           {typeof entry.slurm_gpus === "number" && entry.slurm_gpus > 0 ? (
                             <small className="jobs-meta">gpus {entry.slurm_gpus}</small>
+                          ) : null}
+                          {typeof entry.gpu_model === "string" && entry.gpu_model ? (
+                            <small className="jobs-meta" title="GPU assigned by Union">
+                              GPU: {entry.gpu_model}
+                            </small>
                           ) : null}
                           {typeof entry.queue_pos === "number" ? (
                             <small className="jobs-meta">queue #{entry.queue_pos}</small>

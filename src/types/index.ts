@@ -317,6 +317,7 @@ export interface HostInfo {
       slurm_nodes?: number;
       slurm_cpus?: number;
       slurm_gpus?: number;
+      gpu_model?: string;
       queue_pos?: number;
       ahead?: number;
       updated_at?: number | string;
