@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canDeleteJobStatus,
   isCompletedForResults,
   jobStatusTone,
   normalizeJobStatus,
@@ -32,5 +33,16 @@ describe("jobStatus utils", () => {
     expect(isCompletedForResults("queued")).toBe(false);
     expect(isCompletedForResults("setup")).toBe(false);
     expect(isCompletedForResults("failed")).toBe(false);
+  });
+
+  it("allows deletion only after the job reaches a terminal status", () => {
+    expect(canDeleteJobStatus("finished")).toBe(true);
+    expect(canDeleteJobStatus("failed")).toBe(true);
+    expect(canDeleteJobStatus("stopped")).toBe(true);
+    expect(canDeleteJobStatus("canceled")).toBe(true);
+    expect(canDeleteJobStatus("queued")).toBe(false);
+    expect(canDeleteJobStatus("setup")).toBe(false);
+    expect(canDeleteJobStatus("running")).toBe(false);
+    expect(canDeleteJobStatus("stop_requested")).toBe(false);
   });
 });

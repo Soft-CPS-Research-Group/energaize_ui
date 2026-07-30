@@ -17,6 +17,7 @@ import {
   RefreshCcw,
   Search,
   Server,
+  Square,
   Trash2,
   TriangleAlert,
   ExternalLink
@@ -58,7 +59,7 @@ import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { resolveHostComputeBadge, resolveHostComputeKind } from "../../utils/hostCompute";
 import { formatHostName } from "../../utils/hostDisplay";
-import { isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
+import { canDeleteJobStatus, isCompletedForResults, resolveDisplayJobStatus } from "../../utils/jobStatus";
 import { resolveMlflowRunUrl } from "../../utils/mlflow";
 import { buildJobsListStateFromSearchParams, toJobsListSearchParams } from "../../utils/jobsListState";
 import { formatDateTime, formatDurationSeconds } from "../../utils/time";
@@ -1878,6 +1879,8 @@ export function JobsPage(): JSX.Element {
                     const progress = progressInfo?.percent ?? null;
                     const displayStatus = resolveDisplayJobStatus(job.status, progress);
                     const isCompleted = isCompletedForResults(job.status);
+                    const canStopJob = canCancelStatus(job.status);
+                    const canDeleteJob = canDeleteJobStatus(job.status);
                     const etaSeconds = resolveProgressEtaSeconds(job, progressInfo);
                     const estimatedFinishAt = resolveProgressEstimatedFinishAt(job, progressInfo);
                     const queuedStartTitle = resolveQueuedStartTooltip(job);
@@ -2082,18 +2085,35 @@ export function JobsPage(): JSX.Element {
                               <FlaskConical size={15} />
                             </button>
 
-                            <button
-                              type="button"
-                              className="icon-btn icon-btn-danger"
-                              aria-label={`Delete ${job.job_id}`}
-                              title="Delete"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setDeleteJobTarget(job.job_id);
-                              }}
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            {canStopJob ? (
+                              <button
+                                type="button"
+                                className="icon-btn icon-btn-danger"
+                                aria-label={`Stop ${job.job_id}`}
+                                title="Stop job"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setAdminConfirm({ action: "stop", jobId: job.job_id });
+                                }}
+                              >
+                                <Square size={14} />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className={`icon-btn icon-btn-danger${canDeleteJob ? "" : " is-disabled"}`}
+                                aria-label={`Delete ${job.job_id}`}
+                                title={canDeleteJob ? "Delete" : "Wait for the job to stop before deleting"}
+                                disabled={!canDeleteJob}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  if (!canDeleteJob) return;
+                                  setDeleteJobTarget(job.job_id);
+                                }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

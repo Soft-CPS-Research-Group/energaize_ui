@@ -83,3 +83,7 @@ export function isCompletedForResults(status: JobStatus): boolean {
   const completedTokens = ["complete", "completed", "success", "finished", "done"];
   return completedTokens.some((token) => key.includes(token));
 }
+
+export function canDeleteJobStatus(status: JobStatus): boolean {
+  return ["finished", "failed", "stopped", "canceled"].includes(status.trim().toLowerCase());
+}
