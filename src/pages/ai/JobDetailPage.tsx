@@ -42,6 +42,7 @@ import {
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   getExperimentConfig,
+  getJobFileLogs,
   getJobInfo,
   getJobProgress,
   getJobResolvedConfig,
@@ -2397,6 +2398,8 @@ export function JobDetailPage(): JSX.Element {
   const [deployActionError, setDeployActionError] = useState<string | null>(null);
   const [deployDownloadBusyKey, setDeployDownloadBusyKey] = useState<string | null>(null);
   const [overviewLogsOpen, setOverviewLogsOpen] = useState(false);
+  const [overviewLogsDownloading, setOverviewLogsDownloading] = useState(false);
+  const [overviewLogsDownloadError, setOverviewLogsDownloadError] = useState<string | null>(null);
   const [configPreviewOpen, setConfigPreviewOpen] = useState(false);
   const [configPreviewTarget, setConfigPreviewTarget] = useState("");
   const [configPreviewLabel, setConfigPreviewLabel] = useState("");
@@ -3748,6 +3751,23 @@ export function JobDetailPage(): JSX.Element {
     setConfigPreviewOpen(true);
   }
 
+  async function downloadOverviewLogs(): Promise<void> {
+    if (!jobId || overviewLogsDownloading) return;
+    setOverviewLogsDownloadError(null);
+    setOverviewLogsDownloading(true);
+    try {
+      const fullLogs = await getJobFileLogs(jobId);
+      if (!fullLogs.trim()) {
+        throw new Error("No log file content was returned for this job.");
+      }
+      triggerBlobDownload(new Blob([fullLogs], { type: "text/plain;charset=utf-8" }), `${jobId}.log`);
+    } catch (error) {
+      setOverviewLogsDownloadError(error instanceof Error ? error.message : "Could not download job logs.");
+    } finally {
+      setOverviewLogsDownloading(false);
+    }
+  }
+
   async function downloadDeployManifest(): Promise<void> {
     const manifestData = deployManifestQuery.data;
     if (!manifestData?.content) return;
@@ -4393,7 +4413,10 @@ export function JobDetailPage(): JSX.Element {
                     <Button
                       variant="secondary"
                       iconLeft={<FileText size={14} />}
-                      onClick={() => setOverviewLogsOpen(true)}
+                      onClick={() => {
+                        setOverviewLogsDownloadError(null);
+                        setOverviewLogsOpen(true);
+                      }}
                     >
                       Open Logs
                     </Button>
@@ -5541,15 +5564,33 @@ export function JobDetailPage(): JSX.Element {
       <Modal
         title={`Logs: ${jobId || "-"}`}
         open={overviewLogsOpen}
-        onClose={() => setOverviewLogsOpen(false)}
+        onClose={() => {
+          setOverviewLogsOpen(false);
+          setOverviewLogsDownloadError(null);
+        }}
         width="lg"
       >
         <section className="job-logs-modal-content">
+          <div className="job-logs-toolbar">
+            <div className="job-logs-modal-actions">
+              <Button
+                variant="ghost"
+                iconLeft={<Download size={13} />}
+                onClick={() => {
+                  void downloadOverviewLogs();
+                }}
+                disabled={overviewLogsDownloading || (!overviewLogs.available && !hasOverviewLogs)}
+              >
+                {overviewLogsDownloading ? "Downloading..." : "Download"}
+              </Button>
+            </div>
+          </div>
           {(overviewLogs.loading || (overviewLogs.fetching && !hasOverviewLogs)) ? (
             <section className="datasets-loader-preview">
               <EVChargingLoader label="Loading logs..." />
             </section>
           ) : null}
+          {overviewLogsDownloadError ? <p className="error-text">{overviewLogsDownloadError}</p> : null}
           {overviewLogs.error ? <p className="error-text">Could not load logs for this job.</p> : null}
           {!overviewLogs.loading && !overviewLogs.error ? (
             hasOverviewLogs ? (
