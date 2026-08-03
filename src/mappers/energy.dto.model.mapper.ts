@@ -43,6 +43,10 @@ function mapBuildingItem(dto: BuildingItemDTO): BuildingItems {
     return {
         id: dto._id,
         timestamp: new Date(dto.timestamp),
+        community_snapshot: {
+            energy_in_total: 0,
+            energy_out_total: 0,
+        },
         observations: mapObservation(dto.observations),
     }
 }
@@ -56,6 +60,7 @@ function mapObservation(dto: ObservationDTO): Observation {
         energy_price: dto.energy_price,
         charging_session: mapChargingSessions(dto.charging_session),
         electric_vehicles: mapElectricVehicles(dto.electric_vehicles),
+        pv_panels: [],
         non_shiftable_load: dto.non_shiftable_load
     }
 }
