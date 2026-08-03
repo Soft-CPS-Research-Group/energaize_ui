@@ -1,9 +1,3 @@
-/* ==========================================================================
-   GraphicsView — adapted to the energaize_ui design system
-   (uses the app's existing tokens from src/styles/index.css instead of
-   the frontend-app --sb-* theme variables)
-   ========================================================================== */
-
 /* ---- Local tokens (radius/shadow only — fonts reuse the app's) ---- */
 
 .view-container {
@@ -20,7 +14,6 @@
 /* ---- Base container ---- */
 
 .view-container {
-    height: 100vh;
     padding: 28px 32px;
 
     background: var(--bg);
@@ -31,6 +24,7 @@
     gap: 24px;
 
     overflow-y: auto;
+    overflow-x: hidden;
 
     font-family: var(--font-body);
 
@@ -304,6 +298,7 @@
     border-radius: var(--radius-lg);
     padding: 4px;
     min-height: 480px;
+    min-width: 0; /* impede que o conteúdo (Recharts) force overflow do grid */
 
     background: var(--bg-elev);
     border: 1px solid var(--line);
@@ -345,6 +340,7 @@
 
 .building-group {
     grid-column: 1 / -1;
+    min-width: 0; /* impede overflow horizontal quando os cards internos alargam */
 
     border: 1px solid var(--line);
     border-radius: var(--radius-xl);
@@ -403,6 +399,7 @@
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 16px;
+    min-width: 0; /* impede que os cards internos forcem overflow no grid pai */
 
     padding: 0 24px;
 }
