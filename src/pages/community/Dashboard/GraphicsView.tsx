@@ -99,9 +99,6 @@ function GraphicsView({ onCommunityChange, selectedEquipment, setSelectedEquipme
 
     const mappingSource = useDebouncedValue(dataSource, isLive ? 0 : 300);
 
-    // Mappers com memória própria — só processam itens novos desde a última chamada
-    // (ver energy.model.dtoGraphic.mapper.ts). Recriados sempre que a comunidade ou
-    // o filtro de tempo mudam, para não arrastar cache antiga.
     const consumptionProductionMapperRef = useRef(createIncrementalConsumptionProductionMapper());
     const pricingMapperRef = useRef(createIncrementalPricingMapper());
     const buildingConsumptionMapperRef = useRef(createIncrementalSingleBuildingConsumptionProductionMapper());

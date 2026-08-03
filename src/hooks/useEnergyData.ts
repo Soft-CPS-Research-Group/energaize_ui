@@ -31,13 +31,6 @@ function mergeEnergyCommunities(prev: EnergyCommunity | null, next: EnergyCommun
     };
 }
 
-/**
- * Sem gate manual: todas as páginas que chegam da rede são aplicadas
- * automaticamente ao estado via startTransition, que é não-bloqueante —
- * o React pode interromper esta atualização para priorizar interações
- * do utilizador (ex: mexer no slider) enquanto os dados continuam a chegar
- * em segundo plano.
- */
 export function useEnergyData(communityId: string, filter: TimeFilter | null) {
     const [community, setCommunity] = useState<EnergyCommunity | null>(null);
     const [loading, setLoading] = useState(false);

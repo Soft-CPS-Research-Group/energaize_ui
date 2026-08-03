@@ -19,9 +19,6 @@ interface Cache<T> {
 // CONSUMPTION + PRODUCTION
 // ============================================================
 
-// Versão simples — para datasets ad-hoc/pequenos (sem cache). Um único
-// edifício tem os seus items() naturalmente cronológicos (append-only),
-// por isso não precisa de sort().
 export function mapConsumptionProductionToDTO(community: EnergyCommunity): ConsumptionProductionDTO[] {
     const data: ConsumptionProductionDTO[] = [];
     community.collections.forEach(building => {
@@ -47,7 +44,6 @@ function mapConsumptionProductionItem(item: BuildingItems): ConsumptionProductio
     };
 }
 
-// Versão incremental — comunidade inteira, merge k-way entre edifícios.
 export function createIncrementalConsumptionProductionMapper() {
     const state = new Map<string, Cache<ConsumptionProductionDTO>>();
 
@@ -83,9 +79,6 @@ export function createIncrementalConsumptionProductionMapper() {
     };
 }
 
-// Versão incremental — UM único edifício (usada em buildingData no GraphicsView,
-// quando um edifício é selecionado diretamente como "equipamento").
-// Não precisa de merge k-way (só há um edifício), apenas append.
 export function createIncrementalSingleBuildingConsumptionProductionMapper() {
     const state = new Map<string, Cache<ConsumptionProductionDTO>>(); // key = buildingId
 
@@ -152,9 +145,6 @@ export function mapBatteryDataToBatteryDTOMap(
     return data;
 }
 
-// Versão incremental — só processa os items novos desde a última chamada,
-// por bateria/edifício. items() é append-only e cronológico, por isso o
-// array cache mantém-se sempre ordenado sem precisar de sort().
 export function createIncrementalBatteryMapper() {
     const state = new Map<string, Cache<BatteryDataDTO>>(); // key = buildingId:batteryId
 
@@ -431,9 +421,6 @@ export function createIncrementalSingleBuildingPricingMapper() {
 // UTIL
 // ============================================================
 
-// Merge k-way entre N arrays já ordenados por timestamp — O(n·k), sem sort()
-// sobre o total. Usa push() de um elemento de cada vez (nunca spread/apply,
-// que rebentam com "Maximum call stack size exceeded" em arrays grandes).
 function mergeSortedArraysByTimestamp<T extends { timestamp: string }>(arrays: T[][]): T[] {
     const indices = new Array(arrays.length).fill(0);
     const result: T[] = [];
