@@ -1,0 +1,159 @@
+/* ==========================================================================
+   Card de Carregador EV — adaptado ao design system do energaize_ui
+   ========================================================================== */
+
+.charger-card {
+    width: 100%;
+    margin-bottom: 1.5rem;
+}
+
+.charger-card .card-body {
+    background-color: var(--bg-elev);
+    color: var(--text);
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    font-family: var(--font-body);
+}
+
+.charger-card .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.2rem;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 1rem;
+}
+
+.charger-card .card-top .fw-bold {
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    letter-spacing: 0.5px;
+    color: var(--text);
+}
+
+.charger-card .card-info {
+    display: flex;
+    flex-direction: row;
+    gap: 0.3rem;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+}
+
+/* Botões de intervalo */
+.charger-card .btn-interval {
+    font-size: 0.72rem !important;
+    padding: 0.25rem 0.6rem !important;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    color: var(--text-soft);
+    transition: all 0.2s ease-in-out !important;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.charger-card .btn-interval.active {
+    background-color: color-mix(in srgb, var(--brand) 22%, transparent) !important;
+    border-color: var(--line) !important;
+    color: var(--text) !important;
+    font-weight: 700 !important;
+    box-shadow: none;
+    transform: none;
+}
+
+.charger-card .btn-interval:not(.active):hover {
+    background-color: var(--bg-elev-2) !important;
+    border-color: color-mix(in srgb, var(--brand) 45%, var(--line)) !important;
+    color: var(--text) !important;
+}
+
+/* Badge de Ajuste Automático */
+.charger-card .auto-adj-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--brand-strong);
+    background: color-mix(in srgb, var(--brand) 10%, transparent);
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+/* Legendas */
+.charger-card .series-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    margin-bottom: 1.5rem;
+    background: color-mix(in srgb, var(--text) 3%, transparent);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+}
+
+.charger-card .series-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+}
+
+.charger-card .series-label {
+    color: var(--text-soft);
+    user-select: none;
+}
+
+.charger-card .ev-legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.charger-card .ev-legend-line {
+    width: 18px;
+    height: 3px;
+    display: inline-block;
+    flex-shrink: 0;
+    border-radius: 2px;
+    border-top: 2px dashed currentColor;
+    background: transparent;
+    border-color: inherit;
+}
+
+/* Fundo do gráfico */
+.charger-card .recharts-wrapper,
+.charger-card .recharts-surface {
+    background-color: transparent !important;
+    border-radius: 8px;
+}
+
+/* Grid lines */
+.charger-card .recharts-cartesian-grid-horizontal line,
+.charger-card .recharts-cartesian-grid-vertical line {
+    stroke: var(--line) !important;
+}
+
+/* Eixos — texto */
+.charger-card .recharts-text,
+.charger-card .recharts-cartesian-axis-tick-value {
+    fill: var(--text-soft) !important;
+}
+
+/* Label do eixo Y */
+.charger-card .recharts-label {
+    fill: var(--text-soft) !important;
+}
+
+/* Legenda */
+.charger-card .recharts-legend-item-text {
+    color: var(--text-soft) !important;
+}
+
+/* Slider */
+.charger-card .mt-4 {
+    margin-top: 2rem !important;
+    padding: 0 5px;
+}

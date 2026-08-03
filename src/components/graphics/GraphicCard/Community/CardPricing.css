@@ -1,0 +1,117 @@
+/* ==========================================================================
+   Card de Pricing — adaptado ao design system do energaize_ui
+   ========================================================================== */
+
+.pricing-card {
+    width: 100%;
+    margin-bottom: 1.5rem;
+}
+
+.pricing-card .card-body {
+    background-color: var(--bg-elev);
+    color: var(--text);
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    font-family: var(--font-body);
+}
+
+.pricing-card .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.2rem;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 1rem;
+}
+
+.pricing-card .card-top .fw-bold {
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    letter-spacing: 0.5px;
+    color: var(--text);
+}
+
+.pricing-card .card-info {
+    display: flex;
+    flex-direction: row;
+    gap: 0.3rem;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+}
+
+/* Botões de intervalo */
+.pricing-card .btn-interval {
+    font-size: 0.72rem !important;
+    padding: 0.25rem 0.6rem !important;
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    color: var(--text-soft);
+    transition: all 0.2s ease-in-out !important;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Cor mantida igual ao original (laranja, identidade da série "Price") */
+.pricing-card .btn-interval.active {
+    background-color: #FF7300 !important;
+    border-color: #FF7300 !important;
+    color: #000 !important;
+    font-weight: 700 !important;
+    box-shadow: 0 0 12px rgba(255, 115, 0, 0.35);
+    transform: translateY(-1px);
+}
+
+.pricing-card .btn-interval:not(.active):hover {
+    background-color: var(--bg-elev-2) !important;
+    border-color: var(--line-strong) !important;
+    color: var(--text) !important;
+}
+
+/* Badge de Ajuste Automático — cor mantida igual ao original */
+.pricing-card .auto-adj-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: #FF7300;
+    background: rgba(255, 115, 0, 0.1);
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 115, 0, 0.2);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+/* Fundo do gráfico */
+.pricing-card .recharts-wrapper,
+.pricing-card .recharts-surface {
+    background-color: transparent !important;
+    border-radius: 8px;
+}
+
+/* Grid lines */
+.pricing-card .recharts-cartesian-grid-horizontal line,
+.pricing-card .recharts-cartesian-grid-vertical line {
+    stroke: var(--line) !important;
+}
+
+/* Eixos — texto */
+.pricing-card .recharts-text,
+.pricing-card .recharts-cartesian-axis-tick-value {
+    fill: var(--text-soft) !important;
+}
+
+/* Label do eixo Y */
+.pricing-card .recharts-label {
+    fill: var(--text-soft) !important;
+}
+
+/* Legenda */
+.pricing-card .recharts-legend-item-text {
+    color: var(--text-soft) !important;
+}
+
+/* Slider */
+.pricing-card .mt-4 {
+    margin-top: 2rem !important;
+    padding: 0 5px;
+}

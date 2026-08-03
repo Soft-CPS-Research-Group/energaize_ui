@@ -1,0 +1,299 @@
+/* ==========================================================================
+   App Body & Workspace Layout
+   ========================================================================== */
+
+.app-body {
+    display: flex;
+    width: 100%;
+    .app-body {height: calc(100vh - var(--institutional-dock-offset, 60px));}
+    overflow: hidden;
+    position: relative;
+}
+
+/* Área principal do Dashboard / Gráficos */
+.workspace-main {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    transition: flex 0.25s ease;
+}
+
+/* ==========================================================================
+   Sidebar Wrapper & Fixed Content Container
+   ========================================================================== */
+
+.tree-column-wrapper {
+    position: relative;
+    height: 100%;
+    background: var(--bg-elev);
+    border-right: 1px solid var(--line);
+    box-sizing: border-box;
+    flex-shrink: 0;
+    z-index: 20;
+
+    /* Oculta o conteúdo da árvore quando a largura encolhe */
+    overflow: hidden !important;
+}
+
+/* Mantém a largura interna fixa em 280px para o texto não ser esmagado */
+.sidebar-fixed-content {
+    width: 280px;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* ==========================================================================
+   Edge Toggle Button (Puxador redondo - Sempre Visível)
+   ========================================================================== */
+
+.sidebar-edge-toggle {
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 32px;
+    height: 32px;
+    padding: 0;
+
+    /* Mesma cor do painel para fundir com a interface */
+    background: var(--bg-elev);
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    color: var(--text-soft);
+
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+
+    transition:
+            color 0.15s ease,
+            background 0.15s ease,
+            border-color 0.15s ease,
+            transform 0.15s ease;
+}
+
+.sidebar-edge-toggle:hover {
+    color: var(--brand);
+    border-color: var(--brand);
+    background: color-mix(in srgb, var(--brand) 12%, var(--bg-elev));
+}
+
+.sidebar-edge-toggle:active {
+    transform: scale(0.92);
+}
+
+.sidebar-edge-toggle:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+}
+
+/* ==========================================================================
+   Community Container & Tree Elements
+   ========================================================================== */
+
+.community-container {
+    width: 280px;
+    height: 100%;
+
+    box-sizing: border-box;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    padding: 18px 16px;
+
+    background: var(--bg-elev);
+    color: var(--text);
+
+    font-family: var(--font-body);
+
+    user-select: none;
+    accent-color: var(--brand);
+
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+}
+
+.community-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.community-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.community-container::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+}
+
+/* ---- Title & Header ---- */
+
+.title-wrapper {
+    margin-bottom: 22px;
+    padding-right: 40px;
+}
+
+.community-title {
+    margin: 0;
+    padding-bottom: 10px;
+
+    font-family: var(--font-heading);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+
+    color: var(--text);
+}
+
+.title-underline {
+    width: 100%;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--brand), transparent);
+}
+
+/* ---- Tree Lists ---- */
+
+.community-list,
+.sub-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.sub-list {
+    margin-left: 12px;
+    padding-left: 14px;
+    border-left: 1px dashed var(--line);
+}
+
+/* ---- Item Row Header ---- */
+
+.item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    padding: 3px 0;
+}
+
+/* ---- Expand Arrow Button ---- */
+
+.community-container button {
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+}
+
+.community-container button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+    outline-offset: 2px;
+    border-radius: inherit;
+}
+
+.expand-button {
+    width: 22px;
+    height: 22px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    flex-shrink: 0;
+    padding: 0;
+
+    border: 1px solid transparent;
+    border-radius: 6px;
+
+    background: transparent;
+    color: var(--brand);
+
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1;
+
+    cursor: pointer;
+
+    transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease,
+            transform 0.15s ease;
+}
+
+.expand-button:hover {
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+    border-color: var(--line);
+    color: var(--brand);
+}
+
+.expand-button:active {
+    transform: scale(0.94);
+}
+
+/* ---- Text & Labels ---- */
+
+.item-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.leaf-item {
+    list-style: none;
+    padding: 2px 0 2px 30px;
+}
+
+.leaf-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.leaf-label:hover {
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+/* ---- Checkboxes & Hover States ---- */
+
+.community-container input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--brand);
+    flex-shrink: 0;
+}
+
+.no-children-spacer {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.sub-list > li > .item-header .item-name {
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.community-list > li {
+    border-radius: 10px;
+}
+
+.community-list > li:hover > .item-header {
+    background: color-mix(in srgb, var(--brand) 5%, transparent);
+}

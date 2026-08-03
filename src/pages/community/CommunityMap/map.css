@@ -1,0 +1,668 @@
+/* ============================================================
+   Tokens locais — mapeados para o design system do energaize_ui
+   (com scope em .layout-ptd, sem poluir o :root global)
+   ============================================================ */
+
+.layout-ptd {
+    --bg-main: var(--bg);
+    --bg-sidebar: var(--bg-elev);
+    --bg-header: var(--bg-elev-2);
+    --bg-card: var(--bg-elev);
+    --bg-card-hover: var(--bg-elev-2);
+    --bg-map-area: var(--bg);
+
+    --action-blue: var(--brand);
+    --action-blue-hover: var(--brand-strong);
+    --action-green: #10b981;
+    --action-orange: #f59e0b;
+
+    --txt-primary: var(--text);
+    --txt-secondary: var(--text-soft);
+
+    --border-color: var(--line);
+
+    --panel-shadow: var(--shadow);
+}
+
+/* ============================================================
+   LAYOUT GLOBAL
+   ============================================================ */
+
+.layout-ptd {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+
+    overflow: hidden;
+
+    background: var(--bg-main);
+    color: var(--txt-primary);
+
+    font-family: var(--font-body);
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+
+.sidebar-ptd {
+    width: 340px;
+    min-width: 340px;
+
+    display: flex;
+    flex-direction: column;
+
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+
+    z-index: 100;
+}
+
+.sidebar-header {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    padding: 20px;
+
+    background: var(--bg-header);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.header-text h2 {
+    margin: 0;
+
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    letter-spacing: -0.025em;
+
+    color: var(--txt-primary);
+}
+
+.count-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+
+    color: var(--txt-secondary);
+}
+
+/* ============================================================
+   TOGGLE
+   ============================================================ */
+
+.view-toggle {
+    display: flex;
+    gap: 4px;
+
+    padding: 4px;
+
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+}
+
+.view-toggle button {
+    flex: 1;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    background: transparent;
+    color: var(--txt-secondary);
+
+    border: none;
+    border-radius: 6px;
+
+    padding: 8px;
+
+    cursor: pointer;
+
+    transition: all 0.2s ease;
+}
+
+.view-toggle button:hover {
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+    color: var(--txt-primary);
+}
+
+.view-toggle button.active {
+    background: var(--action-blue);
+    color: white;
+
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--brand) 25%, transparent);
+}
+
+/* ============================================================
+   STATUS BAR
+   ============================================================ */
+
+.data-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    padding: 3px 9px;
+
+    border-radius: 999px;
+
+    font-size: 11px;
+    font-weight: 600;
+
+    border: 1px solid;
+}
+
+.badge-live {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+    color: var(--danger);
+}
+
+.live-dot {
+    width: 6px;
+    height: 6px;
+
+    border-radius: 50%;
+
+    background: var(--danger);
+
+    animation: livepulse 1.6s ease-in-out infinite;
+}
+
+@keyframes livepulse {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+.badge-hist {
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+    border-color: color-mix(in srgb, var(--brand) 40%, transparent);
+    color: var(--brand-strong);
+}
+
+.status-date {
+    font-size: 11px;
+    color: var(--txt-secondary);
+}
+
+/* ============================================================
+   BUILDING LIST
+   ============================================================ */
+
+.lista-casas {
+    flex: 1;
+
+    overflow-y: auto;
+
+    padding: 20px;
+}
+
+.card-casa {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    margin-bottom: 12px;
+    padding: 14px 16px;
+
+    background: var(--bg-card);
+
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+
+    transition: all 0.2s ease;
+}
+
+.card-casa:hover {
+    background: var(--bg-card-hover);
+
+    border-color: var(--action-blue);
+
+    transform: translateY(-2px);
+}
+
+.card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.card-info .nome {
+    font-size: 0.95rem;
+    font-weight: 600;
+
+    color: var(--txt-primary);
+}
+
+.card-info .sub {
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-transform: uppercase;
+
+    color: var(--txt-secondary);
+}
+
+/* ============================================================
+   BUTTON LOCATE
+   ============================================================ */
+
+.btn-locate {
+    width: 38px;
+    height: 38px;
+
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+
+    padding: 0;
+
+    background: var(--action-blue);
+
+    border: none;
+    border-radius: 10px;
+
+    cursor: pointer;
+
+    transition: all 0.2s ease;
+}
+
+.btn-locate:hover {
+    background: var(--action-blue-hover);
+
+    transform: scale(1.06);
+}
+
+.btn-locate svg {
+    width: 18px;
+    height: 18px;
+
+    color: white !important;
+    stroke: white !important;
+}
+
+/* ============================================================
+   MAP AREA
+   ============================================================ */
+
+.main-content-area {
+    flex: 1;
+    position: relative;
+
+    height: 100%;
+
+    background: var(--bg-map-area);
+}
+
+.leaflet-map-element {
+    width: 100%;
+    height: 100%;
+}
+
+/* ============================================================
+   LEAFLET
+   ============================================================ */
+
+.layout-ptd .leaflet-bar {
+    border: none !important;
+    box-shadow: var(--panel-shadow) !important;
+}
+
+.layout-ptd .leaflet-bar a {
+    background: var(--bg-sidebar) !important;
+    color: var(--txt-primary) !important;
+
+    border-bottom: 1px solid var(--border-color) !important;
+}
+
+.layout-ptd .leaflet-control-attribution {
+    background: color-mix(in srgb, var(--bg) 85%, transparent) !important;
+    color: var(--txt-secondary) !important;
+}
+
+.layout-ptd .leaflet-control-attribution a {
+    color: var(--action-blue) !important;
+}
+
+/* ============================================================
+   TOPOLOGY
+   ============================================================ */
+
+.topology-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+.topology-canvas {
+    flex: 1;
+    position: relative;
+
+    background: var(--bg-main);
+}
+
+/* ============================================================
+   REACT FLOW NODES
+   ============================================================ */
+
+.node-community {
+    width: 220px;
+
+    padding: 15px !important;
+
+    text-align: center;
+
+    background: var(--bg-header) !important;
+    color: var(--action-blue) !important;
+
+    border: 2px solid var(--action-blue) !important;
+    border-radius: 12px !important;
+
+    font-size: 14px;
+    font-weight: 800;
+
+    box-shadow: 0 0 25px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.node-building {
+    width: 180px;
+
+    padding: 12px !important;
+
+    text-align: center;
+
+    background: var(--bg-sidebar) !important;
+    color: var(--txt-primary) !important;
+
+    border: 1px solid var(--action-blue) !important;
+    border-radius: 8px !important;
+
+    font-weight: 600;
+}
+
+.node-asset {
+    width: 140px !important;
+    min-height: 48px;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    padding: 10px !important;
+
+    text-align: center;
+
+    color: white !important;
+
+    border-radius: 8px !important;
+
+    font-size: 11px;
+    font-weight: 600;
+
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+}
+
+.node-asset.battery {
+    background: linear-gradient(135deg, #059669, #10b981) !important;
+}
+
+.node-asset.ev {
+    background: linear-gradient(135deg, #d97706, #f59e0b) !important;
+}
+
+.node-asset.grid {
+    background: linear-gradient(135deg, #475569, #64748b) !important;
+}
+
+.node-asset.charger {
+    background: linear-gradient(135deg, #7c3aed, #8b5cf6) !important;
+}
+
+.node-asset.pv {
+    background: linear-gradient(135deg, #ca8a04, #eab308) !important;
+}
+
+/* ============================================================
+   EDGES
+   ============================================================ */
+
+.layout-ptd .react-flow {
+    background: var(--bg-main);
+}
+
+.layout-ptd .react-flow__background {
+    background-color: var(--bg-main);
+}
+
+.layout-ptd .react-flow__edge-path {
+    stroke-width: 2;
+    stroke: #475569;
+}
+
+.layout-ptd .react-flow__edge.animated path {
+    stroke: var(--action-blue);
+}
+
+.layout-ptd .react-flow__controls {
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.layout-ptd .react-flow__controls button {
+    background: var(--bg-sidebar);
+    color: var(--txt-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.layout-ptd .react-flow__controls button:hover {
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+/* ============================================================
+   SIDE PANEL
+   ============================================================ */
+
+.topology-side-panel {
+    width: 320px;
+
+    display: flex;
+    flex-direction: column;
+
+    background: var(--bg-sidebar);
+
+    border-left: 1px solid var(--border-color);
+
+    box-shadow: -10px 0 30px rgba(0,0,0,0.45);
+
+    z-index: 50;
+
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 20px;
+
+    background: var(--bg-header);
+
+    border-bottom: 1px solid var(--border-color);
+}
+
+.panel-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    margin: 0;
+
+    font-size: 0.9rem;
+
+    color: var(--txt-primary);
+}
+
+.close-btn {
+    width: 28px;
+    height: 28px;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+
+    color: var(--txt-secondary);
+
+    border: none;
+    border-radius: 50%;
+
+    cursor: pointer;
+}
+
+.close-btn:hover {
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+    color: var(--txt-primary);
+}
+
+.panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    overflow-y: auto;
+
+    padding: 24px;
+}
+
+/* ============================================================
+   DETAIL CARDS
+   ============================================================ */
+
+.detail-card {
+    padding: 16px;
+
+    background: var(--bg-main);
+
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+.detail-card .label {
+    display: block;
+
+    margin-bottom: 6px;
+
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+
+    color: var(--txt-secondary);
+}
+
+.detail-card .value {
+    font-size: 0.9rem;
+    font-weight: 600;
+
+    color: var(--txt-primary);
+}
+
+/* ============================================================
+   DYNAMIC PROPS
+   ============================================================ */
+
+.dynamic-props {
+    padding: 18px;
+
+    background: color-mix(in srgb, var(--brand) 8%, transparent);
+
+    border: 1px solid color-mix(in srgb, var(--brand) 18%, transparent);
+    border-radius: 12px;
+}
+
+.dynamic-props h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    margin: 0 0 14px 0;
+
+    font-size: 0.85rem;
+
+    color: var(--action-blue);
+}
+
+.dynamic-props h5 {
+    margin-top: 10px;
+    color: var(--txt-secondary);
+}
+
+.dynamic-props p {
+    display: flex;
+    justify-content: space-between;
+
+    margin: 8px 0;
+
+    font-size: 0.8rem;
+
+    color: var(--txt-secondary);
+}
+
+.dynamic-props strong {
+    color: var(--txt-primary);
+}
+
+.dynamic-props hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+
+    margin: 12px 0;
+}
+
+/* ============================================================
+   SCROLLBAR (scoped to this view only)
+   ============================================================ */
+
+.layout-ptd ::-webkit-scrollbar {
+    width: 6px;
+}
+
+.layout-ptd ::-webkit-scrollbar-track {
+    background: var(--bg-main);
+}
+
+.layout-ptd ::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+}
+
+.layout-ptd ::-webkit-scrollbar-thumb:hover {
+    background: var(--txt-secondary);
+}

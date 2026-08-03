@@ -1,24 +1,44 @@
 import { motion } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "react-router-dom";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
 import { useUI } from "../../contexts/UIContext";
 import { useAlerts } from "../../hooks/useAlerts";
 import { CommunityTree } from "./CommunityTree";
+import CommunityList from "../community-tree/CommunityList";
 import { InstitutionalDock } from "./InstitutionalDock";
 import { TopBar } from "./TopBar";
 import { ToastStack } from "./ToastStack";
 import { listHosts } from "../../api/trainingApi";
 import { HOSTS_POLL_MS } from "../../constants";
+import GraphicsView from "../../pages/community/Dashboard/GraphicsView";
+import type { EnergyCommunity } from "../../models/energy.model";
+import type { SelectedEquipment } from "../../models/energy.selectedEquipment";
 
-export function AppShell(): JSX.Element {
+interface AppShellProps {
+  communityData: EnergyCommunity | null;
+  selectedEquipment: SelectedEquipment[] | null;
+  setSelectedEquipment: (equipment: SelectedEquipment[]) => void;
+  onCommunityChange: (community: EnergyCommunity) => void;
+}
+
+export function AppShell({
+                           communityData,
+                           selectedEquipment,
+                           setSelectedEquipment,
+                           onCommunityChange,
+                         }: AppShellProps): JSX.Element {
   const location = useLocation();
   const { session } = useAuth();
   const { activeCommunity, pushNotification } = useUI();
   const unionAuthNoticeRef = useRef<string | null>(null);
   const isTiago = session?.email.trim().toLowerCase() === "tiago.fonseca@energaize.io";
+  const isRecManager = session?.role === "rec_manager";
+  const [showAssetTree, setShowAssetTree] = useState(true);
+
   const hostsQuery = useQuery({
     queryKey: ["hosts"],
     queryFn: listHosts,
@@ -65,32 +85,104 @@ export function AppShell(): JSX.Element {
   });
 
   const hideTree =
-    isTrainingManagerRole(session?.role) ||
-    isPredictorRole(session?.role) ||
-    isKpiManagerRole(session?.role) ||
-    location.pathname.startsWith("/app/community/topology");
+      isTrainingManagerRole(session?.role) ||
+      isPredictorRole(session?.role) ||
+      isKpiManagerRole(session?.role) ||
+      location.pathname.startsWith("/app/community/topology");
   const showTree = !hideTree;
+  const isDashboardRoute = location.pathname.startsWith("/app/community/dashboard");
+
+  const [dashboardVisited, setDashboardVisited] = useState(false);
+
+  useEffect(() => {
+    if (isDashboardRoute) setDashboardVisited(true);
+  }, [isDashboardRoute]);
 
   return (
-    <div className="app-shell">
-      <TopBar />
+      <div className="app-shell">
+        <TopBar />
 
-      <div className={`app-body${showTree ? "" : " no-tree"}`}>
-        {showTree ? <CommunityTree /> : null}
+        <div className={`app-body${showTree ? "" : " no-tree"}`}>
+          {showTree ? (
+              isRecManager ? (
+                  <div style={{ position: "relative", height: "100%", flexShrink: 0, zIndex: 20 }}>
+                    {isDashboardRoute && (
+                        <button
+                            className="sidebar-edge-toggle"
+                            type="button"
+                            onClick={() => setShowAssetTree((prev) => !prev)}
+                            title={showAssetTree ? "Ocultar painel" : "Mostrar painel"}
+                            aria-label="Alternar painel lateral"
+                            style={{
+                              position: "absolute",
+                              top: "18px",
+                              left: showAssetTree ? "264px" : "0px",
+                              zIndex: 60,
+                              borderRadius: showAssetTree ? "50%" : "0 8px 8px 0",
+                              transition: "left 0.28s cubic-bezier(0.16, 1, 0.3, 1)",
+                            }}
+                        >
+                          {showAssetTree ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+                        </button>
+                    )}
 
-        <motion.main
-          key={location.pathname}
-          className="workspace-main"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
-        >
-          <Outlet />
-        </motion.main>
+                    <motion.div
+                        className="tree-column-wrapper"
+                        initial={false}
+                        animate={{
+                          width: showAssetTree ? 280 : 0,
+                        }}
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        style={{
+                          height: "100%",
+                          overflow: "hidden",
+                        }}
+                    >
+                      {isDashboardRoute && (
+                          <div
+                              className="sidebar-fixed-content"
+                              style={{ opacity: showAssetTree ? 1 : 0, transition: "opacity 0.2s ease" }}
+                          >
+                            <CommunityList
+                                community={communityData}
+                                selectedItems={selectedEquipment ?? []}
+                                onSelectionChange={setSelectedEquipment}
+                            />
+                          </div>
+                      )}
+                    </motion.div>
+                  </div>
+              ) : (
+                  <CommunityTree />
+              )
+          ) : null}
+
+          <div className="workspace-main">
+            {dashboardVisited && (
+                <div style={{ display: isDashboardRoute ? "contents" : "none" }}>
+                  <GraphicsView
+                      onCommunityChange={onCommunityChange}
+                      selectedEquipment={isRecManager ? selectedEquipment : null}
+                      setSelectedEquipment={setSelectedEquipment}
+                  />
+                </div>
+            )}
+
+            {!isDashboardRoute && (
+                <motion.div
+                    key={location.pathname}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                >
+                  <Outlet />
+                </motion.div>
+            )}
+          </div>
+        </div>
+
+        <ToastStack />
+        <InstitutionalDock />
       </div>
-
-      <ToastStack />
-      <InstitutionalDock />
-    </div>
   );
 }
