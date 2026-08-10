@@ -70,6 +70,43 @@ export interface ExperimentConfigItem {
 
 export type JobStatus = string;
 
+export interface JobStorageCategory {
+  bytes: number;
+  file_count: number;
+}
+
+export interface JobResultStorage {
+  schema_version: number;
+  measured_at?: number | string | null;
+  transfer: {
+    bytes?: number | null;
+    announced_unpacked_bytes?: number;
+    announced_file_count?: number;
+  };
+  installed: {
+    bytes: number;
+    file_count: number;
+    categories: Record<string, JobStorageCategory>;
+  };
+}
+
+export interface JobOrganization {
+  folder_id?: string | null;
+  archived: boolean;
+  archived_at?: number | string | null;
+  archived_by?: string | null;
+  owner?: string | null;
+  updated_at?: number | string | null;
+}
+
+export interface JobFolder {
+  folder_id: string;
+  name: string;
+  owner: string;
+  created_at?: number | string | null;
+  updated_at?: number | string | null;
+}
+
 export interface JobEmailNotificationAttempt {
   job_id?: string;
   status?: string;
@@ -120,6 +157,8 @@ export interface JobInfo {
   total_duration_seconds?: number | null;
   last_email_notification?: JobEmailNotificationAttempt | null;
   email_notifications?: JobEmailNotificationAttempt[];
+  result_storage?: JobResultStorage;
+  organization?: JobOrganization;
   [key: string]: unknown;
 }
 
@@ -155,6 +194,7 @@ export interface JobItem {
   queued_start_estimate?: QueuedStartEstimate | null;
   requeue_count?: number | null;
   attempt_number?: number | null;
+  organization?: JobOrganization;
   job_meta?: Record<string, unknown> & {
     last_email_notification?: JobEmailNotificationAttempt | null;
     email_notifications?: JobEmailNotificationAttempt[];

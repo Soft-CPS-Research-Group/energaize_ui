@@ -3487,6 +3487,127 @@ button {
   gap: 10px;
 }
 
+.jobs-collections {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jobs-collection-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.jobs-collection-tab {
+  min-height: 34px;
+  max-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.jobs-collection-tab:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--brand) 7%, transparent);
+}
+
+.jobs-collection-tab.is-active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+  font-weight: 600;
+}
+
+.jobs-collection-tab.is-drop-target {
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 45%, transparent);
+}
+
+.jobs-collection-tab.is-drop-blocked {
+  color: var(--danger);
+}
+
+.jobs-collection-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jobs-collection-tab small {
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: inherit;
+  font-size: 0.68rem;
+}
+
+.jobs-collection-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.jobs-organization-selection {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.jobs-organization-selection .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.jobs-folder-form {
+  display: grid;
+  gap: 14px;
+}
+
+.jobs-folder-form > p {
+  margin: 0;
+}
+
+.jobs-folder-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+}
+
+.jobs-folder-form input,
+.jobs-folder-form select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
 .jobs-loader-card {
   margin: 0;
 }
@@ -3540,7 +3661,7 @@ button {
 }
 
 .jobs-table {
-  min-width: 1180px;
+  min-width: 1230px;
   table-layout: fixed;
 }
 
@@ -3550,6 +3671,24 @@ button {
 
 .jobs-row.is-selected {
   background: color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.jobs-row.is-organization-selected {
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+
+.jobs-row[draggable="true"] {
+  cursor: grab;
+}
+
+.jobs-row[draggable="true"]:active,
+.jobs-row.is-dragging {
+  cursor: grabbing;
+}
+
+.jobs-row.is-dragging {
+  opacity: 0.58;
 }
 
 .jobs-id-cell,
@@ -3592,7 +3731,7 @@ button {
 }
 
 .jobs-table col.jobs-actions-col {
-  width: 168px;
+  width: 220px;
 }
 
 .table th.jobs-compare-col,
@@ -4109,10 +4248,9 @@ button {
 }
 
 .union-auth-panel {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
   gap: 18px;
   margin-bottom: 20px;
   padding: 14px 0 16px;
@@ -4121,7 +4259,6 @@ button {
 
 .union-auth-copy {
   display: flex;
-  flex: 1 1 260px;
   align-items: flex-start;
   gap: 11px;
   min-width: 0;
@@ -4131,7 +4268,6 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex: 0 1 auto;
   flex-wrap: wrap;
   gap: 8px;
   margin-left: auto;
@@ -4174,8 +4310,7 @@ button {
 
 @media (max-width: 640px) {
   .union-auth-panel {
-    align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .union-auth-actions {

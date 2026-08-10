@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent
+} from "react";
 import {
   useMutation,
   useQueries,
@@ -6,25 +13,35 @@ import {
   useQueryClient
 } from "@tanstack/react-query";
 import {
+  Archive,
+  CheckCircle2,
   Copy,
   Cpu,
   Download,
   Eye,
   FileText,
   FlaskConical,
+  Folder,
+  FolderPlus,
   Info,
+  LoaderCircle,
   Play,
+  Pencil,
   RefreshCcw,
   Search,
   Server,
   Square,
   Trash2,
   TriangleAlert,
+  X,
   ExternalLink
 } from "lucide-react";
 import {
+  archiveJob,
   authenticateWorker,
+  createJobFolder,
   deleteJob,
+  deleteJobFolder,
   getExperimentConfig,
   getJobFileLogs,
   getJobProgress,
@@ -32,6 +49,7 @@ import {
   listExperimentConfigs,
   listHosts,
   listJobImageVersions,
+  listJobFolders,
   listJobs,
   listJobsInitialData,
   listQueue,
@@ -39,8 +57,12 @@ import {
   opsCleanupJobs,
   opsCleanupQueue,
   opsFailJob,
+  opsRecoverJob,
   opsRequeueJob,
   opsStopJob,
+  moveJobToFolder,
+  renameJobFolder,
+  restoreArchivedJob,
   runSimulation,
   type RunSimulationPayload
 } from "../../api/trainingApi";
@@ -54,7 +76,7 @@ import { StatusPill } from "../../components/ui/StatusPill";
 import { useApiFeedback } from "../../hooks/useApiFeedback";
 import { useJobLogsPolling } from "../../hooks/useJobLogsPolling";
 import { useJobStatusNotifications } from "../../hooks/useJobStatusNotifications";
-import type { HostInfo, JobItem, QueueItem, QueuedStartEstimate } from "../../types";
+import type { HostInfo, JobFolder, JobItem, QueueItem, QueuedStartEstimate } from "../../types";
 import { resolveHostCapacitySummary } from "../../utils/hostCapacity";
 import { inferBudgetAccountKind } from "../../utils/hostBudget";
 import { resolveHostComputeBadge, resolveHostComputeKind } from "../../utils/hostCompute";
@@ -83,7 +105,7 @@ interface RunForm {
   };
 }
 
-type AdminActionType = "requeue" | "cancel" | "stop" | "fail" | "cleanup_queue" | "cleanup_jobs";
+type AdminActionType = "recover" | "requeue" | "cancel" | "stop" | "fail" | "cleanup_queue" | "cleanup_jobs";
 
 interface AdminConfirmState {
   action: AdminActionType;
@@ -91,6 +113,18 @@ interface AdminConfirmState {
 }
 
 type DetailTabForJobs = "overview" | "timeseries" | "kpis" | "deploy";
+type JobCollectionView = "general" | "archive" | `folder:${string}`;
+
+interface FolderEditorState {
+  mode: "create" | "rename";
+  folderId?: string;
+  name: string;
+}
+
+interface OrganizationDropPayload {
+  jobIds: string[];
+  target: JobCollectionView;
+}
 
 interface SlurmDispatchSnapshot {
   details: Record<string, unknown> | null;
@@ -135,6 +169,13 @@ function hostActiveJobStatus(entry: HostActiveJobSnapshot | undefined, fallback?
 function hostActiveJobPhaseLabel(phase: string): string {
   if (phase === "union:provisioning") return "Waiting for Union resources";
   if (phase === "union:running") return "Running on Union";
+  if (phase === "union:recovery_waiting_for_slot") return "Waiting for result recovery slot";
+  if (phase === "union:recovery_waiting_for_space") return "Waiting for local result space";
+  if (phase === "union:recovery_downloading") return "Downloading Union result";
+  if (phase === "union:recovery_extracting") return "Extracting Union result";
+  if (phase === "union:recovery_installing") return "Installing Union result";
+  if (phase === "union:recovery_cleaning_remote_artifact") return "Cleaning remote result";
+  if (phase === "union:recovery_retrying") return "Retrying Union result recovery";
   return phase;
 }
 
@@ -632,6 +673,18 @@ function resolveSubmittedByLabel(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function normalizeOrganizationOwner(value: string | null | undefined): string {
+  return (value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function collectionViewFromParam(value: string | null): JobCollectionView {
+  if (value === "archive") return "archive";
+  if (value?.startsWith("folder:") && value.length > "folder:".length) {
+    return value as `folder:${string}`;
+  }
+  return "general";
+}
+
 function computeUserInitials(label: string): string {
   const normalized = label.includes("@") ? label.split("@")[0] : label;
   const chunks = normalized
@@ -652,22 +705,33 @@ function hasAnyStatus(status: string, tokens: string[]): boolean {
 
 function canCancelStatus(status: string): boolean {
   return (
-    hasAnyStatus(status, ["running", "queue", "pending", "setup", "launch", "dispatch", "start", "progress"]) &&
+    hasAnyStatus(status, ["running", "recover", "queue", "pending", "setup", "launch", "dispatch", "start", "progress"]) &&
     !hasAnyStatus(status, ["cancel", "fail", "error", "finish", "complete", "done", "stopp"])
   );
 }
 
 function canRequeueStatus(status: string): boolean {
-  return !hasAnyStatus(status, ["running", "queue", "pending", "setup", "launch", "dispatch"]);
+  return !hasAnyStatus(status, ["running", "recover", "queue", "pending", "setup", "launch", "dispatch"]);
 }
 
 function canFailStatus(status: string): boolean {
-  return !hasAnyStatus(status, ["fail", "error", "cancel", "finish", "complete", "done", "stopp"]);
+  return !hasAnyStatus(status, ["recover", "fail", "error", "cancel", "finish", "complete", "done", "stopp"]);
 }
 
 function asObjectRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function canRecoverUnionResults(job: JobItem): boolean {
+  if (job.status.trim().toLowerCase() !== "failed" || resolveJobTargetHost(job) !== "union-inesctec") {
+    return false;
+  }
+  const infoDetails = asObjectRecord(job.job_info.details);
+  const metaDetails = asObjectRecord(job.job_meta?.details);
+  const details = { ...(metaDetails || {}), ...(infoDetails || {}) };
+  const phase = typeof details.union_phase === "string" ? details.union_phase.toUpperCase() : "";
+  return details.compute_succeeded === true || phase === "SUCCEEDED" || phase.endsWith(".SUCCEEDED");
 }
 
 function readDispatchSnapshot(job: JobItem): SlurmDispatchSnapshot {
@@ -729,6 +793,7 @@ export function JobsPage(): JSX.Element {
   const canAuthenticateUnion = session?.email.trim().toLowerCase() === "tiago.fonseca@energaize.io";
   const currentSubmittedFilter =
     resolveSubmittedByLabel(session?.name) || resolveSubmittedByLabel(session?.email);
+  const organizationOwner = currentSubmittedFilter || "";
   const initialState = buildJobsListStateFromSearchParams(searchParams, {
     defaultSubmitted: currentSubmittedFilter
   });
@@ -742,7 +807,15 @@ export function JobsPage(): JSX.Element {
   const [jobNameAutoValue, setJobNameAutoValue] = useState("");
   const [jobNameTouched, setJobNameTouched] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
+  const [organizationSelection, setOrganizationSelection] = useState<string[]>([]);
+  const [draggedJobIds, setDraggedJobIds] = useState<string[]>([]);
+  const [dragOverCollection, setDragOverCollection] = useState<JobCollectionView | null>(null);
   const [compareMode, setCompareMode] = useState(false);
+  const [collectionView, setCollectionView] = useState<JobCollectionView>(() =>
+    collectionViewFromParam(searchParams.get("collection"))
+  );
+  const [folderEditor, setFolderEditor] = useState<FolderEditorState | null>(null);
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<JobFolder | null>(null);
   const [refreshingVisual, setRefreshingVisual] = useState(false);
   const [statusFilter, setStatusFilter] = useState(initialState.status);
   const [hostFilter, setHostFilter] = useState(initialState.host);
@@ -768,6 +841,8 @@ export function JobsPage(): JSX.Element {
   const logsPreRef = useRef<HTMLPreElement | null>(null);
   const configJobNameRequestRef = useRef(0);
   const unionAuthWindowRef = useRef<Window | null>(null);
+  const organizationSelectionAnchorRef = useRef<string | null>(null);
+  const suppressRowClickRef = useRef(false);
 
   function resetRunWizardState(): void {
     setRunForm(defaultRunForm);
@@ -789,6 +864,13 @@ export function JobsPage(): JSX.Element {
     queryFn: listJobs,
     initialData: listJobsInitialData,
     refetchInterval: JOB_POLL_MS,
+    networkMode: "always"
+  });
+
+  const foldersQuery = useQuery({
+    queryKey: ["job-folders", organizationOwner],
+    queryFn: () => listJobFolders(organizationOwner),
+    enabled: Boolean(organizationOwner),
     networkMode: "always"
   });
 
@@ -872,10 +954,19 @@ export function JobsPage(): JSX.Element {
       },
       { defaultSubmitted: currentSubmittedFilter }
     );
+    if (collectionView !== "general") nextParams.set("collection", collectionView);
     if (nextParams.toString() !== searchParams.toString()) {
       setSearchParams(nextParams, { replace: true });
     }
-  }, [currentSubmittedFilter, hostFilter, searchParams, searchQuery, setSearchParams, statusFilter, submittedFilter]);
+  }, [collectionView, currentSubmittedFilter, hostFilter, searchParams, searchQuery, setSearchParams, statusFilter, submittedFilter]);
+
+  useEffect(() => {
+    if (!collectionView.startsWith("folder:") || foldersQuery.isLoading) return;
+    const folderId = collectionView.slice("folder:".length);
+    if (!(foldersQuery.data || []).some((folder) => folder.folder_id === folderId)) {
+      setCollectionView("general");
+    }
+  }, [collectionView, foldersQuery.data, foldersQuery.isLoading]);
 
   useJobStatusNotifications(jobsQuery.data);
 
@@ -918,8 +1009,108 @@ export function JobsPage(): JSX.Element {
     onError: (error) => notifyError("Failed to delete job", error)
   });
 
+  const folderSaveMutation = useMutation({
+    mutationFn: (payload: FolderEditorState) => {
+      if (payload.mode === "rename" && payload.folderId) {
+        return renameJobFolder({
+          folder_id: payload.folderId,
+          owner: organizationOwner,
+          name: payload.name
+        });
+      }
+      return createJobFolder({ owner: organizationOwner, name: payload.name });
+    },
+    onSuccess: (folder, payload) => {
+      notifySuccess(payload.mode === "create" ? "Folder created" : "Folder renamed", folder.name);
+      setFolderEditor(null);
+      queryClient.invalidateQueries({ queryKey: ["job-folders", organizationOwner] });
+      if (payload.mode === "create") setCollectionView(`folder:${folder.folder_id}`);
+    },
+    onError: (error) => notifyError("Could not save folder", error)
+  });
+
+  const folderDeleteMutation = useMutation({
+    mutationFn: (folder: JobFolder) => deleteJobFolder({ folder_id: folder.folder_id, owner: organizationOwner }),
+    onSuccess: (_, folder) => {
+      notifyInfo("Folder deleted", `${folder.name} was removed. Its jobs remain in General.`);
+      if (collectionView === `folder:${folder.folder_id}`) setCollectionView("general");
+      setDeleteFolderTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["job-folders", organizationOwner] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (error) => notifyError("Could not delete folder", error)
+  });
+
+  const organizeJobsMutation = useMutation({
+    mutationFn: async (payload: OrganizationDropPayload) => {
+      const jobsById = new Map((jobsQuery.data || []).map((job) => [job.job_id, job]));
+      const selectedJobs = payload.jobIds.map((jobId) => jobsById.get(jobId)).filter((job): job is JobItem => Boolean(job));
+      if (selectedJobs.length !== payload.jobIds.length) {
+        throw new Error("One or more selected jobs are no longer available.");
+      }
+
+      const ownerKey = normalizeOrganizationOwner(organizationOwner);
+      if (
+        !ownerKey ||
+        selectedJobs.some((job) => {
+          const submittedBy =
+            resolveSubmittedByLabel(job.job_info.submitted_by) ||
+            resolveSubmittedByLabel(job.job_meta?.submitted_by);
+          return normalizeOrganizationOwner(submittedBy) !== ownerKey;
+        })
+      ) {
+        throw new Error("Only your own jobs can be organized.");
+      }
+
+      if (payload.target === "archive" && selectedJobs.some((job) => !canDeleteJobStatus(job.status))) {
+        throw new Error("Only terminal jobs can be archived.");
+      }
+
+      const folderId = payload.target.startsWith("folder:")
+        ? payload.target.slice("folder:".length)
+        : null;
+      await Promise.all(
+        selectedJobs.map(async (job) => {
+          if (payload.target === "archive") {
+            if (!job.organization?.archived) {
+              await archiveJob({ job_id: job.job_id, owner: organizationOwner });
+            }
+            return;
+          }
+          if (job.organization?.archived) {
+            await restoreArchivedJob({ job_id: job.job_id, owner: organizationOwner });
+          }
+          await moveJobToFolder({ job_id: job.job_id, owner: organizationOwner, folder_id: folderId });
+        })
+      );
+      return { count: selectedJobs.length };
+    },
+    onSuccess: (result, payload) => {
+      const destination = payload.target === "archive"
+        ? "Archive"
+        : payload.target === "general"
+          ? "General"
+          : (foldersQuery.data || []).find((folder) => payload.target === `folder:${folder.folder_id}`)?.name || "folder";
+      notifySuccess(
+        result.count === 1 ? "Job organized" : "Jobs organized",
+        `${result.count} ${result.count === 1 ? "job" : "jobs"} moved to ${destination}.`
+      );
+      setOrganizationSelection([]);
+      organizationSelectionAnchorRef.current = null;
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (error) => notifyError("Could not organize jobs", error),
+    onSettled: () => {
+      setDraggedJobIds([]);
+      setDragOverCollection(null);
+    }
+  });
+
   const opsMutation = useMutation({
-    mutationFn: async (payload: { type: "requeue" | "cancel" | "stop" | "fail"; jobId: string }) => {
+    mutationFn: async (payload: { type: "recover" | "requeue" | "cancel" | "stop" | "fail"; jobId: string }) => {
+      if (payload.type === "recover") {
+        return opsRecoverJob(payload.jobId);
+      }
       if (payload.type === "requeue") {
         return opsRequeueJob({ job_id: payload.jobId, force: false });
       }
@@ -1004,13 +1195,27 @@ export function JobsPage(): JSX.Element {
 
   const filteredJobs = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
+    const ownerKey = normalizeOrganizationOwner(organizationOwner);
 
     return (jobsQuery.data || []).filter((job) => {
-      if (statusFilter !== "all" && job.status !== statusFilter) return false;
-      if (hostFilter !== "all" && (job.job_info.target_host || "") !== hostFilter) return false;
+      const archived = Boolean(job.organization?.archived);
       const submittedBy =
         resolveSubmittedByLabel(job.job_info.submitted_by) ||
         resolveSubmittedByLabel(job.job_meta?.submitted_by);
+      const ownedByCurrentUser = Boolean(ownerKey && normalizeOrganizationOwner(submittedBy) === ownerKey);
+      if (collectionView === "archive") {
+        if (!archived || !ownedByCurrentUser) return false;
+      } else {
+        if (archived) return false;
+        if (collectionView === "general") {
+          if (job.organization?.folder_id) return false;
+        } else if (collectionView.startsWith("folder:")) {
+          const folderId = collectionView.slice("folder:".length);
+          if (!ownedByCurrentUser || job.organization?.folder_id !== folderId) return false;
+        }
+      }
+      if (statusFilter !== "all" && job.status !== statusFilter) return false;
+      if (hostFilter !== "all" && (job.job_info.target_host || "") !== hostFilter) return false;
       if (submittedFilter !== "all" && submittedBy !== submittedFilter) return false;
       if (!query) return true;
 
@@ -1029,7 +1234,29 @@ export function JobsPage(): JSX.Element {
 
       return haystack.includes(query);
     });
-  }, [hostFilter, jobsQuery.data, searchQuery, statusFilter, submittedFilter]);
+  }, [collectionView, hostFilter, jobsQuery.data, organizationOwner, searchQuery, statusFilter, submittedFilter]);
+
+  const collectionCounts = useMemo(() => {
+    const ownerKey = normalizeOrganizationOwner(organizationOwner);
+    const folders = new Map<string, number>();
+    let general = 0;
+    let archive = 0;
+    (jobsQuery.data || []).forEach((job) => {
+      const submittedBy =
+        resolveSubmittedByLabel(job.job_info.submitted_by) ||
+        resolveSubmittedByLabel(job.job_meta?.submitted_by);
+      const owned = Boolean(ownerKey && normalizeOrganizationOwner(submittedBy) === ownerKey);
+      if (job.organization?.archived) {
+        if (owned) archive += 1;
+        return;
+      }
+      if (!job.organization?.folder_id) general += 1;
+      if (owned && job.organization?.folder_id) {
+        folders.set(job.organization.folder_id, (folders.get(job.organization.folder_id) || 0) + 1);
+      }
+    });
+    return { general, archive, folders };
+  }, [jobsQuery.data, organizationOwner]);
 
   const submittedByOptions = useMemo(() => {
     const values = new Set<string>();
@@ -1046,6 +1273,10 @@ export function JobsPage(): JSX.Element {
 
   const availableHosts = hostsQuery.data?.available_hosts || [];
   const availableConfigs = configsQuery.data || [];
+  const personalFolders = foldersQuery.data || [];
+  const activeFolder = collectionView.startsWith("folder:")
+    ? personalFolders.find((folder) => folder.folder_id === collectionView.slice("folder:".length)) || null
+    : null;
   const imageRepository = jobImagesQuery.data?.repository || "calof/opeva_simulator";
   const runImageOptions = useMemo(() => {
     const tags = jobImagesQuery.data?.tags || [];
@@ -1129,6 +1360,10 @@ export function JobsPage(): JSX.Element {
   const canRequeueSelected = selectedJob ? canRequeueStatus(selectedJob.status) : false;
   const canStopSelected = selectedJob ? canCancelStatus(selectedJob.status) : false;
   const canFailSelected = selectedJob ? canFailStatus(selectedJob.status) : false;
+  const archiveDropBlocked = draggedJobIds.some((jobId) => {
+    const job = (jobsQuery.data || []).find((candidate) => candidate.job_id === jobId);
+    return !job || !canDeleteJobStatus(job.status);
+  });
   const canCleanupQueue = (queueQuery.data?.length || 0) > 0;
   const canCleanupJobs = (jobsQuery.data?.length || 0) > 0;
 
@@ -1253,8 +1488,10 @@ export function JobsPage(): JSX.Element {
 
   useEffect(() => {
     const eligible = new Set((jobsQuery.data || []).filter((job) => isCompletedForResults(job.status)).map((job) => job.job_id));
+    const available = new Set((jobsQuery.data || []).map((job) => job.job_id));
 
     setCompareSelection((previous) => previous.filter((jobId) => eligible.has(jobId)));
+    setOrganizationSelection((previous) => previous.filter((jobId) => available.has(jobId)));
 
     if (selectedJobId && !(jobsQuery.data || []).some((job) => job.job_id === selectedJobId)) {
       setSelectedJobId("");
@@ -1363,6 +1600,98 @@ export function JobsPage(): JSX.Element {
     });
   }
 
+  function canOrganizeJob(job: JobItem): boolean {
+    const submittedBy =
+      resolveSubmittedByLabel(job.job_info.submitted_by) ||
+      resolveSubmittedByLabel(job.job_meta?.submitted_by);
+    return Boolean(
+      organizationOwner &&
+        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(organizationOwner)
+    );
+  }
+
+  function handleJobRowClick(event: ReactMouseEvent<HTMLTableRowElement>, job: JobItem): void {
+    if (suppressRowClickRef.current) return;
+    setSelectedJobId(job.job_id);
+    if (compareMode || !canOrganizeJob(job)) {
+      setOrganizationSelection([]);
+      organizationSelectionAnchorRef.current = null;
+      return;
+    }
+
+    const additive = event.ctrlKey || event.metaKey;
+    const anchorId = organizationSelectionAnchorRef.current;
+    if (event.shiftKey && anchorId) {
+      const visibleOwnedIds = filteredJobs.filter(canOrganizeJob).map((candidate) => candidate.job_id);
+      const anchorIndex = visibleOwnedIds.indexOf(anchorId);
+      const currentIndex = visibleOwnedIds.indexOf(job.job_id);
+      if (anchorIndex >= 0 && currentIndex >= 0) {
+        const range = visibleOwnedIds.slice(
+          Math.min(anchorIndex, currentIndex),
+          Math.max(anchorIndex, currentIndex) + 1
+        );
+        setOrganizationSelection((previous) => additive ? Array.from(new Set([...previous, ...range])) : range);
+        return;
+      }
+    }
+
+    setOrganizationSelection((previous) => {
+      if (!additive) return [job.job_id];
+      return previous.includes(job.job_id)
+        ? previous.filter((jobId) => jobId !== job.job_id)
+        : [...previous, job.job_id];
+    });
+    organizationSelectionAnchorRef.current = job.job_id;
+  }
+
+  function handleJobDragStart(event: ReactDragEvent<HTMLTableRowElement>, job: JobItem): void {
+    if (!canOrganizeJob(job) || organizeJobsMutation.isPending) {
+      event.preventDefault();
+      return;
+    }
+    suppressRowClickRef.current = true;
+    const jobIds = organizationSelection.includes(job.job_id)
+      ? organizationSelection
+      : [job.job_id];
+    setSelectedJobId(job.job_id);
+    setOrganizationSelection(jobIds);
+    setDraggedJobIds(jobIds);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-opeva-job-ids", JSON.stringify(jobIds));
+    event.dataTransfer.setData("text/plain", jobIds.join(","));
+  }
+
+  function handleJobDragEnd(): void {
+    setDraggedJobIds([]);
+    setDragOverCollection(null);
+    window.setTimeout(() => {
+      suppressRowClickRef.current = false;
+    }, 0);
+  }
+
+  function handleCollectionDragOver(event: ReactDragEvent<HTMLButtonElement>, target: JobCollectionView): void {
+    if (draggedJobIds.length === 0 || organizeJobsMutation.isPending) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDragOverCollection(target);
+  }
+
+  function handleCollectionDrop(event: ReactDragEvent<HTMLButtonElement>, target: JobCollectionView): void {
+    event.preventDefault();
+    let jobIds = draggedJobIds;
+    try {
+      const transferred = JSON.parse(event.dataTransfer.getData("application/x-opeva-job-ids"));
+      if (Array.isArray(transferred)) {
+        jobIds = transferred.filter((value): value is string => typeof value === "string" && Boolean(value));
+      }
+    } catch {
+      // The in-memory drag selection remains authoritative for local drags.
+    }
+    if (jobIds.length > 0) {
+      organizeJobsMutation.mutate({ jobIds, target });
+    }
+  }
+
   function openJobDetails(jobId: string, tab?: DetailTabForJobs): void {
     const params = new URLSearchParams();
     if (tab) {
@@ -1464,6 +1793,13 @@ export function JobsPage(): JSX.Element {
     description: string;
     confirmLabel: string;
   } {
+    if (state.action === "recover") {
+      return {
+        title: "Recover Union Results",
+        description: `Retry result recovery for job ${state.jobId} without rerunning its compute?`,
+        confirmLabel: "Recover Results"
+      };
+    }
     if (state.action === "requeue") {
       return {
         title: "Confirm Requeue",
@@ -1507,6 +1843,10 @@ export function JobsPage(): JSX.Element {
   }
 
   function executeAdminAction(state: AdminConfirmState): void {
+    if (state.action === "recover" && state.jobId) {
+      opsMutation.mutate({ type: "recover", jobId: state.jobId });
+      return;
+    }
     if (state.action === "requeue" && state.jobId) {
       opsMutation.mutate({ type: "requeue", jobId: state.jobId });
       return;
@@ -1770,6 +2110,102 @@ export function JobsPage(): JSX.Element {
           ) : null}
 
           <section className="jobs-main">
+          <section className="jobs-collections" aria-label="Job folders">
+            <div className="jobs-collection-tabs">
+              <button
+                type="button"
+                className={`jobs-collection-tab${collectionView === "general" ? " is-active" : ""}${dragOverCollection === "general" ? " is-drop-target" : ""}`}
+                onClick={() => setCollectionView("general")}
+                onDragOver={(event) => handleCollectionDragOver(event, "general")}
+                onDrop={(event) => handleCollectionDrop(event, "general")}
+              >
+                <Folder size={15} />
+                <span>General</span>
+                <small>{collectionCounts.general}</small>
+              </button>
+              {personalFolders.map((folder) => {
+                const view: JobCollectionView = `folder:${folder.folder_id}`;
+                return (
+                  <button
+                    key={folder.folder_id}
+                    type="button"
+                    className={`jobs-collection-tab${collectionView === view ? " is-active" : ""}${dragOverCollection === view ? " is-drop-target" : ""}`}
+                    onClick={() => setCollectionView(view)}
+                    onDragOver={(event) => handleCollectionDragOver(event, view)}
+                    onDrop={(event) => handleCollectionDrop(event, view)}
+                    title={draggedJobIds.length > 0 ? `Move ${draggedJobIds.length} selected ${draggedJobIds.length === 1 ? "job" : "jobs"} to ${folder.name}` : folder.name}
+                  >
+                    <Folder size={15} />
+                    <span>{folder.name}</span>
+                    <small>{collectionCounts.folders.get(folder.folder_id) || 0}</small>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className={`jobs-collection-tab${collectionView === "archive" ? " is-active" : ""}${dragOverCollection === "archive" ? " is-drop-target" : ""}${archiveDropBlocked ? " is-drop-blocked" : ""}`}
+                onClick={() => setCollectionView("archive")}
+                onDragOver={(event) => handleCollectionDragOver(event, "archive")}
+                onDrop={(event) => handleCollectionDrop(event, "archive")}
+                title={archiveDropBlocked ? "Only terminal jobs can be archived" : undefined}
+              >
+                <Archive size={15} />
+                <span>Archive</span>
+                <small>{collectionCounts.archive}</small>
+              </button>
+            </div>
+            <div className="jobs-collection-actions">
+              {organizationSelection.length > 0 ? (
+                <div className="jobs-organization-selection" aria-live="polite">
+                  <span>{organizationSelection.length} selected</span>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Clear selection"
+                    aria-label="Clear job selection"
+                    onClick={() => {
+                      setOrganizationSelection([]);
+                      organizationSelectionAnchorRef.current = null;
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : null}
+              {activeFolder ? (
+                <>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title={`Rename ${activeFolder.name}`}
+                    aria-label={`Rename ${activeFolder.name}`}
+                    onClick={() => setFolderEditor({ mode: "rename", folderId: activeFolder.folder_id, name: activeFolder.name })}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn-danger"
+                    title={`Delete ${activeFolder.name}`}
+                    aria-label={`Delete ${activeFolder.name}`}
+                    onClick={() => setDeleteFolderTarget(activeFolder)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                className="icon-btn"
+                title="Create folder"
+                aria-label="Create folder"
+                disabled={!organizationOwner}
+                onClick={() => setFolderEditor({ mode: "create", name: "" })}
+              >
+                <FolderPlus size={15} />
+              </button>
+            </div>
+          </section>
           <div className="jobs-command-bar">
             <div className="jobs-command-group">
               <Button
@@ -1836,8 +2272,8 @@ export function JobsPage(): JSX.Element {
 
           {filteredJobs.length === 0 ? (
             <EmptyState
-              title="No jobs found"
-              message="Create a simulation or adjust filters."
+              title={collectionView === "archive" ? "Archive is empty" : activeFolder ? `No jobs in ${activeFolder.name}` : "No jobs found"}
+              message={collectionView === "archive" ? "Archived terminal jobs will appear here." : activeFolder ? "Move jobs into this folder or adjust the filters." : "Create a simulation or adjust filters."}
               action={
                 <Button
                   variant="primary"
@@ -1874,13 +2310,15 @@ export function JobsPage(): JSX.Element {
                 </thead>
                 <tbody>
                   {filteredJobs.map((job) => {
-                    const selected = selectedJobId === job.job_id;
+                    const organizationSelected = organizationSelection.includes(job.job_id);
+                    const selected = organizationSelected || selectedJobId === job.job_id;
                     const progressInfo = progressMap.get(job.job_id);
                     const progress = progressInfo?.percent ?? null;
                     const displayStatus = resolveDisplayJobStatus(job.status, progress);
                     const isCompleted = isCompletedForResults(job.status);
                     const canStopJob = canCancelStatus(job.status);
                     const canDeleteJob = canDeleteJobStatus(job.status);
+                    const canRecoverResults = canRecoverUnionResults(job);
                     const etaSeconds = resolveProgressEtaSeconds(job, progressInfo);
                     const estimatedFinishAt = resolveProgressEstimatedFinishAt(job, progressInfo);
                     const queuedStartTitle = resolveQueuedStartTooltip(job);
@@ -1897,6 +2335,10 @@ export function JobsPage(): JSX.Element {
                     const submittedBy =
                       resolveSubmittedByLabel(job.job_info.submitted_by) ||
                       resolveSubmittedByLabel(job.job_meta?.submitted_by);
+                    const canOrganizeThisJob = Boolean(
+                      organizationOwner &&
+                        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(organizationOwner)
+                    );
                     const mlflowUrl = resolveMlflowRunUrl(job.job_info, job.job_meta);
                     const baseConfigPath =
                       (typeof job.job_info.config_path === "string" && job.job_info.config_path) ||
@@ -1925,8 +2367,12 @@ export function JobsPage(): JSX.Element {
                     return (
                       <tr
                         key={job.job_id}
-                        className={`jobs-row${selected ? " is-selected" : ""}`}
-                        onClick={() => setSelectedJobId(job.job_id)}
+                        className={`jobs-row${selected ? " is-selected" : ""}${organizationSelected ? " is-organization-selected" : ""}${draggedJobIds.includes(job.job_id) ? " is-dragging" : ""}`}
+                        aria-selected={organizationSelected}
+                        draggable={canOrganizeThisJob && !compareMode}
+                        onClick={(event) => handleJobRowClick(event, job)}
+                        onDragStart={(event) => handleJobDragStart(event, job)}
+                        onDragEnd={handleJobDragEnd}
                         onDoubleClick={() => openJobDetails(job.job_id, "overview")}
                       >
                         {compareMode ? (
@@ -2084,6 +2530,21 @@ export function JobsPage(): JSX.Element {
                             >
                               <FlaskConical size={15} />
                             </button>
+
+                            {canRecoverResults ? (
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                aria-label={`Recover results for ${job.job_id}`}
+                                title="Recover Union results without rerunning compute"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setAdminConfirm({ action: "recover", jobId: job.job_id });
+                                }}
+                              >
+                                <RefreshCcw size={15} />
+                              </button>
+                            ) : null}
 
                             {canStopJob ? (
                               <button
@@ -3064,12 +3525,20 @@ export function JobsPage(): JSX.Element {
               : null;
             const isUnionHost = hostDetailsTarget.name === "union-inesctec";
             const unionRunsUrl = isUnionHost ? resolveUnionRunsUrl(hostDetailsTarget.data.info) : null;
+            const unionAuthStatus = String(unionAuth?.status || "unknown");
+            const UnionAuthIcon = unionAuthStatus === "authenticated"
+              ? CheckCircle2
+              : unionAuthStatus === "checking"
+                ? LoaderCircle
+                : TriangleAlert;
             return (
               <section className="host-details-modal">
                 {isUnionHost ? (
-                  <section className={`union-auth-panel is-${String(unionAuth?.status || "unknown")}`}>
+                  <section className={`union-auth-panel is-${unionAuthStatus}`}>
                     <div className="union-auth-copy">
-                      <span className="union-auth-icon"><TriangleAlert size={17} /></span>
+                      <span className="union-auth-icon">
+                        <UnionAuthIcon size={17} className={unionAuthStatus === "checking" ? "animate-spin" : undefined} />
+                      </span>
                       <div>
                         <h4>Union INESC TEC</h4>
                         <p>
@@ -3083,6 +3552,10 @@ export function JobsPage(): JSX.Element {
                         </p>
                         {typeof unionAuth?.user_code === "string" ? (
                           <small>Verification code: <strong>{unionAuth.user_code}</strong></small>
+                        ) : null}
+                        {unionAuthStatus === "authenticated" &&
+                        (typeof unionAuth?.last_verified_at === "number" || typeof unionAuth?.last_verified_at === "string") ? (
+                          <small>Last verified: {formatDateTime(unionAuth.last_verified_at)}</small>
                         ) : null}
                       </div>
                     </div>
@@ -3457,6 +3930,57 @@ export function JobsPage(): JSX.Element {
       </Modal>
 
       <Modal
+        title={folderEditor?.mode === "rename" ? "Rename folder" : "Create folder"}
+        open={Boolean(folderEditor)}
+        onClose={() => setFolderEditor(null)}
+        width="sm"
+      >
+        {folderEditor ? (
+          <form
+            className="jobs-folder-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!folderEditor.name.trim() || folderSaveMutation.isPending) return;
+              folderSaveMutation.mutate({ ...folderEditor, name: folderEditor.name.trim() });
+            }}
+          >
+            <label>
+              <span>Name</span>
+              <input
+                autoFocus
+                maxLength={80}
+                value={folderEditor.name}
+                onChange={(event) => setFolderEditor({ ...folderEditor, name: event.target.value })}
+                placeholder="Experiment group"
+              />
+            </label>
+            <div className="jobs-command-group inline-end">
+              <Button variant="secondary" type="button" onClick={() => setFolderEditor(null)}>
+                Cancel
+              </Button>
+              <Button variant="primary" type="submit" disabled={!folderEditor.name.trim() || folderSaveMutation.isPending}>
+                {folderSaveMutation.isPending ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deleteFolderTarget)}
+        title="Delete folder"
+        message={deleteFolderTarget ? `Delete "${deleteFolderTarget.name}"? Its jobs remain available in General.` : "Delete this folder?"}
+        confirmLabel="Delete folder"
+        confirmVariant="danger"
+        pending={folderDeleteMutation.isPending}
+        onCancel={() => setDeleteFolderTarget(null)}
+        onConfirm={() => {
+          if (!deleteFolderTarget) return;
+          folderDeleteMutation.mutate(deleteFolderTarget);
+        }}
+      />
+
+      <Modal
         title={adminConfirm ? resolveAdminConfirmCopy(adminConfirm).title : "Confirm action"}
         open={Boolean(adminConfirm)}
         onClose={() => setAdminConfirm(null)}
@@ -3470,7 +3994,7 @@ export function JobsPage(): JSX.Element {
                 Cancel
               </Button>
               <Button
-                variant={adminConfirm.action === "requeue" ? "secondary" : "danger"}
+                variant={adminConfirm.action === "requeue" || adminConfirm.action === "recover" ? "secondary" : "danger"}
                 onClick={() => {
                   executeAdminAction(adminConfirm);
                   setAdminConfirm(null);

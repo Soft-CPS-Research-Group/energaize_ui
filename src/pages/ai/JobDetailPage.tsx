@@ -483,6 +483,26 @@ function formatNumber(value: number | null | undefined): string {
   return value.toFixed(4);
 }
 
+function formatStorageBytes(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value) || value < 0) return "-";
+  if (value < 1024) return `${Math.round(value)} B`;
+  const units = ["KiB", "MiB", "GiB", "TiB"];
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  const precision = size >= 100 ? 0 : size >= 10 ? 1 : 2;
+  return `${size.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function formatStorageCategory(value: { bytes?: number; file_count?: number } | undefined): string {
+  if (!value) return "0 B (0 files)";
+  const files = Math.max(0, Math.round(value.file_count || 0));
+  return `${formatStorageBytes(value.bytes)} (${files} ${files === 1 ? "file" : "files"})`;
+}
+
 function formatYAxisTick(value: number): string {
   if (!Number.isFinite(value)) return "-";
   if (Math.abs(value) < 1e-9) return "0";
@@ -3706,6 +3726,8 @@ export function JobDetailPage(): JSX.Element {
         : "-";
   const canOpenResolvedConfig = Boolean(jobId && resolvedConfigAvailable);
   const availableConfigs = configsQuery.data || [];
+  const resultStorage = infoQuery.data?.result_storage;
+  const storageCategories = resultStorage?.installed?.categories || {};
 
   const hasOverviewLogs = overviewLogs.text.trim().length > 0;
   const emailHistory = readEmailNotificationHistory(infoQuery.data);
@@ -4481,7 +4503,7 @@ export function JobDetailPage(): JSX.Element {
                       </div>
                       <div>
                         <dt>Status</dt>
-                        <dd>{status}</dd>
+                        <dd>{displayStatus}</dd>
                       </div>
                     </dl>
                   </article>
@@ -4529,6 +4551,44 @@ export function JobDetailPage(): JSX.Element {
                       </div>
                     </dl>
                   </article>
+
+                  {resultStorage ? (
+                    <article className="job-overview-section">
+                      <header>
+                        <h3>Result Storage</h3>
+                      </header>
+                      <dl className="job-overview-list job-storage-list">
+                        <div>
+                          <dt>Transferred archive</dt>
+                          <dd>{formatStorageBytes(resultStorage.transfer.bytes)}</dd>
+                        </div>
+                        <div>
+                          <dt>Installed total</dt>
+                          <dd>{formatStorageBytes(resultStorage.installed.bytes)}</dd>
+                        </div>
+                        <div>
+                          <dt>KPIs</dt>
+                          <dd>{formatStorageCategory(storageCategories.kpis)}</dd>
+                        </div>
+                        <div>
+                          <dt>Time series</dt>
+                          <dd>{formatStorageCategory(storageCategories.timeseries)}</dd>
+                        </div>
+                        <div>
+                          <dt>Checkpoints</dt>
+                          <dd>{formatStorageCategory(storageCategories.checkpoints)}</dd>
+                        </div>
+                        <div>
+                          <dt>Logs</dt>
+                          <dd>{formatStorageCategory(storageCategories.logs)}</dd>
+                        </div>
+                        <div>
+                          <dt>Other</dt>
+                          <dd>{formatStorageCategory(storageCategories.other)}</dd>
+                        </div>
+                      </dl>
+                    </article>
+                  ) : null}
                 </div>
 
                 <div className="job-overview-column">

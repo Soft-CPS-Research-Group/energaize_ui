@@ -37,6 +37,7 @@ export function jobStatusTone(status: JobStatus): "info" | "success" | "warning"
     key.includes("setup") ||
     key.includes("launch") ||
     key.includes("dispatch") ||
+    key.includes("recover") ||
     key.includes("progress") ||
     key.includes("pending") ||
     key.includes("stop_requested")
@@ -53,6 +54,9 @@ export function prettyJobStatus(status: JobStatus): string {
 
 export function resolveDisplayJobStatus(status: JobStatus, progressPercent?: number | null): JobStatus {
   const key = status.toLowerCase();
+  if (key === "recovering") {
+    return "exporting";
+  }
   if (key === "running" && typeof progressPercent === "number" && progressPercent >= 99.5) {
     return "exporting";
   }
@@ -73,7 +77,8 @@ export function isCompletedForResults(status: JobStatus): boolean {
     "pending",
     "setup",
     "launch",
-    "dispatch"
+    "dispatch",
+    "recover"
   ];
 
   if (blockedTokens.some((token) => key.includes(token))) {

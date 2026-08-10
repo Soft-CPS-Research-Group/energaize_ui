@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
@@ -8,6 +8,7 @@ import App from "../App";
 import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
 import { AuthProvider } from "../contexts/AuthContext";
 import { UIProvider } from "../contexts/UIContext";
+import { setMockJobStatus } from "./handlers";
 import { server } from "./server";
 
 function renderApp(initialRoute: string) {
@@ -40,6 +41,18 @@ function readBlobAsText(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error || new Error("Could not read blob."));
     reader.readAsText(blob);
   });
+}
+
+function createDragDataTransfer(): DataTransfer {
+  const values = new Map<string, string>();
+  return {
+    effectAllowed: "none",
+    dropEffect: "none",
+    getData: (type: string) => values.get(type) || "",
+    setData: (type: string, value: string) => {
+      values.set(type, value);
+    }
+  } as DataTransfer;
 }
 
 describe("App integration", () => {
@@ -208,6 +221,81 @@ describe("App integration", () => {
         value: originalRevokeObjectURL
       });
     }
+  });
+
+  it("organizes personal jobs in folders and archive without moving results", async () => {
+    seedAiSession();
+    setMockJobStatus("job-completed-001", "finished");
+    setMockJobStatus("job-completed-002", "finished");
+    const user = userEvent.setup();
+    renderApp("/app/ai/jobs");
+
+    expect(await screen.findByText("job-completed-001")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create folder" }));
+    await screen.findByRole("heading", { name: "Create folder" });
+    await user.type(screen.getByLabelText("Name"), "Research");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("button", { name: /Research/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /General/ }));
+    const firstGeneralRow = (await screen.findByText("job-completed-001")).closest("tr");
+    const secondGeneralRow = screen.getByText("job-completed-002").closest("tr");
+    expect(firstGeneralRow).not.toBeNull();
+    expect(secondGeneralRow).not.toBeNull();
+    expect(firstGeneralRow).toHaveAttribute("draggable", "true");
+
+    fireEvent.click(firstGeneralRow!);
+    fireEvent.click(secondGeneralRow!, { ctrlKey: true });
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    const moveTransfer = createDragDataTransfer();
+    fireEvent.dragStart(firstGeneralRow!, { dataTransfer: moveTransfer });
+    const researchTab = screen.getByRole("button", { name: /Research/ });
+    fireEvent.dragOver(researchTab, { dataTransfer: moveTransfer });
+    fireEvent.drop(researchTab, { dataTransfer: moveTransfer });
+    fireEvent.dragEnd(firstGeneralRow!, { dataTransfer: moveTransfer });
+    await waitFor(() => expect(screen.queryByText("2 selected")).not.toBeInTheDocument());
+    await waitFor(() => {
+      expect(screen.queryByText("job-completed-001")).not.toBeInTheDocument();
+      expect(screen.queryByText("job-completed-002")).not.toBeInTheDocument();
+    });
+
+    await user.click(await screen.findByRole("button", { name: /Research/ }));
+    expect(await screen.findByText("job-completed-001")).toBeInTheDocument();
+    expect(screen.getByText("job-completed-002")).toBeInTheDocument();
+
+    const firstFolderRow = screen.getByText("job-completed-001").closest("tr");
+    const secondFolderRow = screen.getByText("job-completed-002").closest("tr");
+    fireEvent.click(firstFolderRow!);
+    fireEvent.click(secondFolderRow!, { ctrlKey: true });
+    const archiveTransfer = createDragDataTransfer();
+    fireEvent.dragStart(firstFolderRow!, { dataTransfer: archiveTransfer });
+    const archiveTab = screen.getByRole("button", { name: /Archive/ });
+    fireEvent.dragOver(archiveTab, { dataTransfer: archiveTransfer });
+    fireEvent.drop(archiveTab, { dataTransfer: archiveTransfer });
+    fireEvent.dragEnd(firstFolderRow!, { dataTransfer: archiveTransfer });
+    await waitFor(() => expect(screen.queryByText("2 selected")).not.toBeInTheDocument());
+
+    await user.click(await screen.findByRole("button", { name: /Archive/ }));
+    expect(await screen.findByText("job-completed-001")).toBeInTheDocument();
+    expect(screen.getByText("job-completed-002")).toBeInTheDocument();
+
+    const firstArchiveRow = screen.getByText("job-completed-001").closest("tr");
+    const secondArchiveRow = screen.getByText("job-completed-002").closest("tr");
+    fireEvent.click(firstArchiveRow!);
+    fireEvent.click(secondArchiveRow!, { ctrlKey: true });
+    const restoreTransfer = createDragDataTransfer();
+    fireEvent.dragStart(firstArchiveRow!, { dataTransfer: restoreTransfer });
+    const restoreTarget = screen.getByRole("button", { name: /Research/ });
+    fireEvent.dragOver(restoreTarget, { dataTransfer: restoreTransfer });
+    fireEvent.drop(restoreTarget, { dataTransfer: restoreTransfer });
+    fireEvent.dragEnd(firstArchiveRow!, { dataTransfer: restoreTransfer });
+    await waitFor(() => expect(screen.queryByText("2 selected")).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: /Research/ }));
+    expect(await screen.findByText("job-completed-001")).toBeInTheDocument();
+    expect(screen.getByText("job-completed-002")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Move .* to folder/ })).not.toBeInTheDocument();
   });
 
   it("selects two completed jobs and opens KPI compare page", async () => {

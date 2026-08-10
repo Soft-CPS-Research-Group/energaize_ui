@@ -4,7 +4,8 @@ import {
   isCompletedForResults,
   jobStatusTone,
   normalizeJobStatus,
-  prettyJobStatus
+  prettyJobStatus,
+  resolveDisplayJobStatus
 } from "./jobStatus";
 
 describe("jobStatus utils", () => {
@@ -19,11 +20,16 @@ describe("jobStatus utils", () => {
     expect(jobStatusTone("failed")).toBe("error");
     expect(jobStatusTone("queued")).toBe("warning");
     expect(jobStatusTone("setup")).toBe("warning");
+    expect(jobStatusTone("recovering")).toBe("warning");
     expect(jobStatusTone("unknown")).toBe("info");
   });
 
   it("pretty prints underscore statuses", () => {
     expect(prettyJobStatus("stop_requested")).toBe("stop requested");
+  });
+
+  it("presents Union recovery as exporting", () => {
+    expect(resolveDisplayJobStatus("recovering", 100)).toBe("exporting");
   });
 
   it("identifies statuses that can expose results", () => {
@@ -33,6 +39,7 @@ describe("jobStatus utils", () => {
     expect(isCompletedForResults("queued")).toBe(false);
     expect(isCompletedForResults("setup")).toBe(false);
     expect(isCompletedForResults("failed")).toBe(false);
+    expect(isCompletedForResults("recovering")).toBe(false);
   });
 
   it("allows deletion only after the job reaches a terminal status", () => {
@@ -43,6 +50,7 @@ describe("jobStatus utils", () => {
     expect(canDeleteJobStatus("queued")).toBe(false);
     expect(canDeleteJobStatus("setup")).toBe(false);
     expect(canDeleteJobStatus("running")).toBe(false);
+    expect(canDeleteJobStatus("recovering")).toBe(false);
     expect(canDeleteJobStatus("stop_requested")).toBe(false);
   });
 });

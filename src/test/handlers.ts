@@ -5,9 +5,24 @@ type JobRecord = {
   job_id: string;
   status: string;
   job_info: Record<string, unknown>;
+  organization?: {
+    folder_id: string | null;
+    archived: boolean;
+    archived_at: number | null;
+    archived_by: string | null;
+  };
+};
+
+type JobFolderRecord = {
+  folder_id: string;
+  name: string;
+  owner: string;
+  created_at: number;
+  updated_at: number;
 };
 
 let jobs: JobRecord[] = [];
+let jobFolders: JobFolderRecord[] = [];
 let experimentConfigs: Record<string, string> = {};
 let deployBundles: Array<{
   bundle_id: string;
@@ -63,6 +78,7 @@ export function resetMockState(): void {
         target_host: "worker-a",
         run_name: "alpha-run",
         config_path: "alpha.yaml",
+        submitted_by: "Tiago Fonseca",
         mlflow_run_url: "http://mlflow.local/run/alpha",
         last_email_notification: {
           status: "completed",
@@ -106,6 +122,7 @@ export function resetMockState(): void {
         target_host: "worker-b",
         run_name: "beta-run",
         config_path: "beta.yaml",
+        submitted_by: "Tiago Fonseca",
         mlflow_run_url: "http://mlflow.local/run/beta"
       }
     },
@@ -114,10 +131,12 @@ export function resetMockState(): void {
       status: "queued",
       job_info: {
         experiment_name: "Live Queue Job",
-        target_host: "worker-a"
+        target_host: "worker-a",
+        submitted_by: "Tiago Fonseca"
       }
     }
   ];
+  jobFolders = [];
   experimentConfigs = {
     "demo.yaml": "metadata:\n  experiment_name: Demo\n  run_name: baseline\n"
   };
@@ -133,6 +152,11 @@ export function resetMockState(): void {
       updated_at: "2026-04-01T12:00:00Z"
     }
   ];
+}
+
+export function setMockJobStatus(jobId: string, status: string): void {
+  const job = jobs.find((item) => item.job_id === jobId);
+  if (job) job.status = status;
 }
 
 resetMockState();
@@ -174,6 +198,41 @@ export const handlers = [
     });
   }),
   http.get(endpoint("/jobs"), () => HttpResponse.json(jobs)),
+  http.get(endpoint("/job-folders"), ({ request }) => {
+    const owner = new URL(request.url).searchParams.get("owner") || "";
+    return HttpResponse.json(jobFolders.filter((folder) => folder.owner === owner));
+  }),
+  http.post(endpoint("/job-folders"), async ({ request }) => {
+    const body = (await request.json()) as { owner: string; name: string };
+    const now = Date.now() / 1000;
+    const folder = {
+      folder_id: `folder-${jobFolders.length + 1}`,
+      name: body.name,
+      owner: body.owner,
+      created_at: now,
+      updated_at: now
+    };
+    jobFolders.push(folder);
+    return HttpResponse.json(folder);
+  }),
+  http.put(endpoint("/job-folders/:folderId"), async ({ params, request }) => {
+    const body = (await request.json()) as { owner: string; name: string };
+    const folder = jobFolders.find((item) => item.folder_id === params.folderId && item.owner === body.owner);
+    if (!folder) return HttpResponse.json({ detail: "Folder not found" }, { status: 404 });
+    folder.name = body.name;
+    folder.updated_at = Date.now() / 1000;
+    return HttpResponse.json(folder);
+  }),
+  http.delete(endpoint("/job-folders/:folderId"), ({ params }) => {
+    jobFolders = jobFolders.filter((folder) => folder.folder_id !== params.folderId);
+    jobs.forEach((job) => {
+      const organization = job.organization;
+      if (organization && organization.folder_id === params.folderId) {
+        job.organization = { ...organization, folder_id: null };
+      }
+    });
+    return HttpResponse.json({ message: "Folder deleted" });
+  }),
   http.get(endpoint("/queue"), () => HttpResponse.json([])),
   http.get(endpoint("/hosts"), () =>
     HttpResponse.json({
@@ -472,13 +531,15 @@ export const handlers = [
     }
     return HttpResponse.json({ detail: "file not found" }, { status: 404 });
   }),
-  http.post(endpoint("/run-simulation"), async () => {
+  http.post(endpoint("/run-simulation"), async ({ request }) => {
+    const body = (await request.json()) as { submitted_by?: string };
     const next = {
       job_id: `job-${jobs.length + 1}`,
       status: "queued",
       job_info: {
         experiment_name: "New Simulation",
-        target_host: "worker-a"
+        target_host: "worker-a",
+        submitted_by: body.submitted_by || null
       }
     };
     jobs = [next, ...jobs];
@@ -514,6 +575,41 @@ export const handlers = [
   http.post(endpoint("/stop/:jobId"), ({ params }) =>
     HttpResponse.json({ message: `stop requested ${params.jobId}` })
   ),
+  http.put(endpoint("/job/:jobId/folder"), async ({ params, request }) => {
+    const body = (await request.json()) as { folder_id: string | null };
+    const job = jobs.find((item) => item.job_id === params.jobId);
+    if (!job) return HttpResponse.json({ detail: "Job not found" }, { status: 404 });
+    job.organization = {
+      folder_id: body.folder_id,
+      archived: Boolean(job.organization?.archived),
+      archived_at: job.organization?.archived_at || null,
+      archived_by: job.organization?.archived_by || null
+    };
+    return HttpResponse.json({ message: "Job folder updated", job_id: job.job_id, organization: job.organization });
+  }),
+  http.post(endpoint("/job/:jobId/archive"), async ({ params, request }) => {
+    const body = (await request.json()) as { owner: string };
+    const job = jobs.find((item) => item.job_id === params.jobId);
+    if (!job) return HttpResponse.json({ detail: "Job not found" }, { status: 404 });
+    job.organization = {
+      folder_id: job.organization?.folder_id || null,
+      archived: true,
+      archived_at: Date.now() / 1000,
+      archived_by: body.owner
+    };
+    return HttpResponse.json({ message: "Job archived", job_id: job.job_id, organization: job.organization });
+  }),
+  http.post(endpoint("/job/:jobId/restore"), ({ params }) => {
+    const job = jobs.find((item) => item.job_id === params.jobId);
+    if (!job) return HttpResponse.json({ detail: "Job not found" }, { status: 404 });
+    job.organization = {
+      folder_id: job.organization?.folder_id || null,
+      archived: false,
+      archived_at: null,
+      archived_by: null
+    };
+    return HttpResponse.json({ message: "Job restored", job_id: job.job_id, organization: job.organization });
+  }),
   http.delete(endpoint("/job/:jobId"), ({ params }) => {
     jobs = jobs.filter((item) => item.job_id !== params.jobId);
     return HttpResponse.json({ message: "deleted" });

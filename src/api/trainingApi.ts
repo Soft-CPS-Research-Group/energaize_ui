@@ -4,6 +4,8 @@ import type {
   HostsPayload,
   JobInfo,
   JobItem,
+  JobFolder,
+  JobOrganization,
   JobStatus,
   QueueItem
 } from "../types";
@@ -445,6 +447,71 @@ export async function deleteJob(jobId: string): Promise<JobActionResponse> {
   });
 }
 
+export async function listJobFolders(owner: string): Promise<JobFolder[]> {
+  const query = new URLSearchParams({ owner });
+  return jobOrchestratorHttp<JobFolder[]>(`/job-folders?${query.toString()}`);
+}
+
+export async function createJobFolder(payload: { owner: string; name: string }): Promise<JobFolder> {
+  return jobOrchestratorHttp<JobFolder>("/job-folders", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function renameJobFolder(payload: {
+  folder_id: string;
+  owner: string;
+  name: string;
+}): Promise<JobFolder> {
+  return jobOrchestratorHttp<JobFolder>(`/job-folders/${encodeURIComponent(payload.folder_id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ owner: payload.owner, name: payload.name })
+  });
+}
+
+export async function deleteJobFolder(payload: { folder_id: string; owner: string }): Promise<{ message: string }> {
+  const query = new URLSearchParams({ owner: payload.owner });
+  return jobOrchestratorHttp<{ message: string }>(
+    `/job-folders/${encodeURIComponent(payload.folder_id)}?${query.toString()}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function moveJobToFolder(payload: {
+  job_id: string;
+  owner: string;
+  folder_id: string | null;
+}): Promise<{ message: string; job_id: string; organization: JobOrganization }> {
+  return jobOrchestratorHttp<{ message: string; job_id: string; organization: JobOrganization }>(
+    `/job/${encodeURIComponent(payload.job_id)}/folder`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ owner: payload.owner, folder_id: payload.folder_id })
+    }
+  );
+}
+
+export async function archiveJob(payload: {
+  job_id: string;
+  owner: string;
+}): Promise<{ message: string; job_id: string; organization: JobOrganization }> {
+  return jobOrchestratorHttp<{ message: string; job_id: string; organization: JobOrganization }>(
+    `/job/${encodeURIComponent(payload.job_id)}/archive`,
+    { method: "POST", body: JSON.stringify({ owner: payload.owner }) }
+  );
+}
+
+export async function restoreArchivedJob(payload: {
+  job_id: string;
+  owner: string;
+}): Promise<{ message: string; job_id: string; organization: JobOrganization }> {
+  return jobOrchestratorHttp<{ message: string; job_id: string; organization: JobOrganization }>(
+    `/job/${encodeURIComponent(payload.job_id)}/restore`,
+    { method: "POST", body: JSON.stringify({ owner: payload.owner }) }
+  );
+}
+
 export async function listQueue(): Promise<QueueItem[]> {
   return jobOrchestratorHttp<QueueItem[]>("/queue");
 }
@@ -458,6 +525,12 @@ export async function authenticateWorker(workerId: string): Promise<WorkerAuthen
     `/ops/workers/${encodeURIComponent(workerId)}/authenticate`,
     { method: "POST" }
   );
+}
+
+export async function opsRecoverJob(jobId: string): Promise<JobActionResponse> {
+  return jobOrchestratorHttp<JobActionResponse>(`/ops/jobs/${encodeURIComponent(jobId)}/recover`, {
+    method: "POST"
+  });
 }
 
 export async function listJobImageVersions(params?: {
