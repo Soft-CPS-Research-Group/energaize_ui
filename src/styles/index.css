@@ -4249,9 +4249,9 @@ button {
 
 .union-auth-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: flex-start;
-  gap: 18px;
+  gap: 12px;
   margin-bottom: 20px;
   padding: 14px 0 16px;
   border-bottom: 1px solid var(--border);
@@ -4264,13 +4264,17 @@ button {
   min-width: 0;
 }
 
+.union-auth-copy > div {
+  min-width: 0;
+}
+
 .union-auth-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 8px;
-  margin-left: auto;
+  margin-left: 41px;
   max-width: 100%;
 }
 
@@ -4287,6 +4291,7 @@ button {
   margin-top: 4px;
   color: var(--text-soft);
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .union-auth-copy small {
@@ -4622,6 +4627,8 @@ button {
 .host-details-modal {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .host-details-modal h4 {
@@ -4694,6 +4701,8 @@ button {
 .host-details-grid dd {
   margin: 3px 0 0;
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .host-job-pill {

@@ -298,6 +298,141 @@ describe("App integration", () => {
     expect(screen.queryByRole("button", { name: /Move .* to folder/ })).not.toBeInTheDocument();
   });
 
+  it("switches General, Archive, and folders with the selected submitter", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    const api = JOB_ORCHESTRATOR_API_URL.replace(/\/$/, "");
+    const organization = (folderId: string | null, archived = false) => ({
+      folder_id: folderId,
+      archived,
+      archived_at: archived ? 1770000000 : null,
+      archived_by: archived ? "owner" : null
+    });
+    const job = (jobId: string, submittedBy: string, folderId: string | null, archived = false) => ({
+      job_id: jobId,
+      status: "finished",
+      job_info: {
+        experiment_name: `Experiment ${jobId}`,
+        target_host: "worker-a",
+        submitted_by: submittedBy
+      },
+      organization: organization(folderId, archived)
+    });
+    const folders = [
+      { folder_id: "tiago-folder", name: "Tiago Research", owner: "Tiago Fonseca", created_at: 1, updated_at: 1 },
+      { folder_id: "gustavo-folder", name: "Gustavo Research", owner: "Gustavo", created_at: 1, updated_at: 1 }
+    ];
+
+    server.use(
+      http.get(`${api}/jobs`, () =>
+        HttpResponse.json([
+          job("tiago-general", "Tiago Fonseca", null),
+          job("tiago-foldered", "Tiago Fonseca", "tiago-folder"),
+          job("tiago-archived", "Tiago Fonseca", null, true),
+          job("gustavo-general", "Gustavo", null),
+          job("gustavo-foldered", "Gustavo", "gustavo-folder"),
+          job("gustavo-archived", "Gustavo", null, true)
+        ])
+      ),
+      http.get(`${api}/job-folders`, ({ request }) => {
+        const owner = new URL(request.url).searchParams.get("owner") || "";
+        return HttpResponse.json(folders.filter((folder) => folder.owner === owner));
+      })
+    );
+
+    renderApp("/app/ai/jobs");
+
+    expect(await screen.findByRole("button", { name: /Tiago Research/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Gustavo Research/ })).not.toBeInTheDocument();
+    const collectionCount = (name: RegExp) =>
+      Number(screen.getByRole("button", { name }).querySelector("small")?.textContent || "0");
+    const tiagoGeneralCount = collectionCount(/General/);
+    expect(tiagoGeneralCount).toBeGreaterThanOrEqual(1);
+    expect(collectionCount(/Archive/)).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: "Create folder" })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Submitted by"), "all");
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Tiago Research/ })).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Gustavo Research/ })).not.toBeInTheDocument();
+    expect(collectionCount(/General/)).toBeGreaterThan(tiagoGeneralCount);
+    expect(collectionCount(/Archive/)).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole("button", { name: "Create folder" })).not.toBeInTheDocument();
+    expect(await screen.findByText("tiago-foldered")).toBeInTheDocument();
+    expect(screen.getByText("gustavo-foldered")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Submitted by"), "Gustavo");
+    expect(await screen.findByRole("button", { name: /Gustavo Research/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Tiago Research/ })).not.toBeInTheDocument();
+    expect(collectionCount(/General/)).toBe(1);
+    expect(collectionCount(/Archive/)).toBe(1);
+    expect(screen.queryByRole("button", { name: "Create folder" })).not.toBeInTheDocument();
+    expect(await screen.findByText("gustavo-general")).toBeInTheDocument();
+    expect(screen.queryByText("tiago-general")).not.toBeInTheDocument();
+  });
+
+  it("closes the Union authentication popup when the requested attempt fails", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    const api = JOB_ORCHESTRATOR_API_URL.replace(/\/$/, "");
+    let unionAuth: Record<string, unknown> = {
+      status: "authentication_required",
+      updated_at: 1,
+      error: "Previous authentication error"
+    };
+    const popupDocument = document.implementation.createHTMLDocument();
+    const closePopup = vi.fn();
+    const popup = {
+      close: closePopup,
+      document: popupDocument,
+      location: { href: "about:blank" },
+      opener: window
+    } as unknown as Window;
+    const openWindow = vi.spyOn(window, "open").mockReturnValue(popup);
+
+    server.use(
+      http.get(`${api}/hosts`, () =>
+        HttpResponse.json({
+          available_hosts: ["union-inesctec"],
+          hosts: {
+            "union-inesctec": {
+              online: true,
+              last_seen: Date.now() / 1000,
+              info: {
+                executor: "union",
+                max_active_jobs: 10,
+                active_job_count: 0,
+                union_auth: unionAuth
+              },
+              running: 0
+            }
+          }
+        })
+      ),
+      http.post(`${api}/ops/workers/:workerId/authenticate`, () => {
+        unionAuth = {
+          status: "authentication_required",
+          request_id: "auth-request-1",
+          updated_at: 101,
+          error: "Fresh authentication error"
+        };
+        return HttpResponse.json({
+          worker_id: "union-inesctec",
+          action: "union_authenticate",
+          request_id: "auth-request-1",
+          requested_at: 100
+        });
+      })
+    );
+
+    renderApp("/app/ai/jobs");
+    await user.click(await screen.findByTitle("Open details for Union INESC TEC"));
+    await user.click(await screen.findByRole("button", { name: "Authenticate with Union" }));
+
+    await waitFor(() => expect(closePopup).toHaveBeenCalled());
+    expect(await screen.findByText("Fresh authentication error")).toBeInTheDocument();
+    openWindow.mockRestore();
+  });
+
   it("selects two completed jobs and opens KPI compare page", async () => {
     seedAiSession();
     const user = userEvent.setup();

@@ -841,8 +841,15 @@ export function JobsPage(): JSX.Element {
   const logsPreRef = useRef<HTMLPreElement | null>(null);
   const configJobNameRequestRef = useRef(0);
   const unionAuthWindowRef = useRef<Window | null>(null);
+  const unionAuthRequestRef = useRef<{ requestId: string; requestedAt: number } | null>(null);
+  const unionAuthTimeoutRef = useRef<number | null>(null);
   const organizationSelectionAnchorRef = useRef<string | null>(null);
   const suppressRowClickRef = useRef(false);
+  const collectionOwner = submittedFilter === "all" ? "" : submittedFilter;
+  const canManageCollection = Boolean(
+    collectionOwner &&
+      normalizeOrganizationOwner(collectionOwner) === normalizeOrganizationOwner(organizationOwner)
+  );
 
   function resetRunWizardState(): void {
     setRunForm(defaultRunForm);
@@ -868,9 +875,9 @@ export function JobsPage(): JSX.Element {
   });
 
   const foldersQuery = useQuery({
-    queryKey: ["job-folders", organizationOwner],
-    queryFn: () => listJobFolders(organizationOwner),
-    enabled: Boolean(organizationOwner),
+    queryKey: ["job-folders", collectionOwner],
+    queryFn: () => listJobFolders(collectionOwner),
+    enabled: Boolean(collectionOwner),
     networkMode: "always"
   });
 
@@ -1011,31 +1018,39 @@ export function JobsPage(): JSX.Element {
 
   const folderSaveMutation = useMutation({
     mutationFn: (payload: FolderEditorState) => {
+      if (!canManageCollection) {
+        throw new Error("Select your own jobs before managing folders.");
+      }
       if (payload.mode === "rename" && payload.folderId) {
         return renameJobFolder({
           folder_id: payload.folderId,
-          owner: organizationOwner,
+          owner: collectionOwner,
           name: payload.name
         });
       }
-      return createJobFolder({ owner: organizationOwner, name: payload.name });
+      return createJobFolder({ owner: collectionOwner, name: payload.name });
     },
     onSuccess: (folder, payload) => {
       notifySuccess(payload.mode === "create" ? "Folder created" : "Folder renamed", folder.name);
       setFolderEditor(null);
-      queryClient.invalidateQueries({ queryKey: ["job-folders", organizationOwner] });
+      queryClient.invalidateQueries({ queryKey: ["job-folders", collectionOwner] });
       if (payload.mode === "create") setCollectionView(`folder:${folder.folder_id}`);
     },
     onError: (error) => notifyError("Could not save folder", error)
   });
 
   const folderDeleteMutation = useMutation({
-    mutationFn: (folder: JobFolder) => deleteJobFolder({ folder_id: folder.folder_id, owner: organizationOwner }),
+    mutationFn: (folder: JobFolder) => {
+      if (!canManageCollection) {
+        throw new Error("Select your own jobs before managing folders.");
+      }
+      return deleteJobFolder({ folder_id: folder.folder_id, owner: collectionOwner });
+    },
     onSuccess: (_, folder) => {
       notifyInfo("Folder deleted", `${folder.name} was removed. Its jobs remain in General.`);
       if (collectionView === `folder:${folder.folder_id}`) setCollectionView("general");
       setDeleteFolderTarget(null);
-      queryClient.invalidateQueries({ queryKey: ["job-folders", organizationOwner] });
+      queryClient.invalidateQueries({ queryKey: ["job-folders", collectionOwner] });
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (error) => notifyError("Could not delete folder", error)
@@ -1043,13 +1058,16 @@ export function JobsPage(): JSX.Element {
 
   const organizeJobsMutation = useMutation({
     mutationFn: async (payload: OrganizationDropPayload) => {
+      if (!canManageCollection) {
+        throw new Error("Select your own jobs before organizing them.");
+      }
       const jobsById = new Map((jobsQuery.data || []).map((job) => [job.job_id, job]));
       const selectedJobs = payload.jobIds.map((jobId) => jobsById.get(jobId)).filter((job): job is JobItem => Boolean(job));
       if (selectedJobs.length !== payload.jobIds.length) {
         throw new Error("One or more selected jobs are no longer available.");
       }
 
-      const ownerKey = normalizeOrganizationOwner(organizationOwner);
+      const ownerKey = normalizeOrganizationOwner(collectionOwner);
       if (
         !ownerKey ||
         selectedJobs.some((job) => {
@@ -1073,14 +1091,14 @@ export function JobsPage(): JSX.Element {
         selectedJobs.map(async (job) => {
           if (payload.target === "archive") {
             if (!job.organization?.archived) {
-              await archiveJob({ job_id: job.job_id, owner: organizationOwner });
+              await archiveJob({ job_id: job.job_id, owner: collectionOwner });
             }
             return;
           }
           if (job.organization?.archived) {
-            await restoreArchivedJob({ job_id: job.job_id, owner: organizationOwner });
+            await restoreArchivedJob({ job_id: job.job_id, owner: collectionOwner });
           }
-          await moveJobToFolder({ job_id: job.job_id, owner: organizationOwner, folder_id: folderId });
+          await moveJobToFolder({ job_id: job.job_id, owner: collectionOwner, folder_id: folderId });
         })
       );
       return { count: selectedJobs.length };
@@ -1144,16 +1162,45 @@ export function JobsPage(): JSX.Element {
 
   const unionAuthMutation = useMutation({
     mutationFn: () => authenticateWorker("union-inesctec"),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      unionAuthRequestRef.current = {
+        requestId: result.request_id,
+        requestedAt: result.requested_at
+      };
+      clearUnionAuthTimeout();
+      if (unionAuthWindowRef.current) {
+        unionAuthTimeoutRef.current = window.setTimeout(() => {
+          if (!unionAuthWindowRef.current) return;
+          unionAuthWindowRef.current.close();
+          unionAuthWindowRef.current = null;
+          unionAuthRequestRef.current = null;
+          notifyError(
+            "Union authentication timed out",
+            new Error("The worker did not return a secure sign-in link. Check the worker status and try again.")
+          );
+        }, 90_000);
+      }
       notifyInfo("Union authentication started", "Waiting for the secure Union sign-in link.");
       queryClient.invalidateQueries({ queryKey: ["hosts"] });
     },
     onError: (error) => {
-      unionAuthWindowRef.current?.close();
-      unionAuthWindowRef.current = null;
+      resetUnionAuthAttempt(true);
       notifyError("Unable to start Union authentication", error);
     }
   });
+
+  function clearUnionAuthTimeout(): void {
+    if (unionAuthTimeoutRef.current === null) return;
+    window.clearTimeout(unionAuthTimeoutRef.current);
+    unionAuthTimeoutRef.current = null;
+  }
+
+  function resetUnionAuthAttempt(closeWindow: boolean): void {
+    clearUnionAuthTimeout();
+    if (closeWindow) unionAuthWindowRef.current?.close();
+    unionAuthWindowRef.current = null;
+    unionAuthRequestRef.current = null;
+  }
 
   useEffect(() => {
     if (!hostDetailsTarget) return;
@@ -1165,12 +1212,34 @@ export function JobsPage(): JSX.Element {
 
   useEffect(() => {
     const auth = hostsQuery.data?.hosts?.["union-inesctec"]?.info?.union_auth;
-    if (!auth || typeof auth !== "object") return;
-    const url = (auth as { verification_url_complete?: unknown }).verification_url_complete;
-    if (typeof url !== "string" || !url || !unionAuthWindowRef.current) return;
-    unionAuthWindowRef.current.location.href = url;
-    unionAuthWindowRef.current = null;
+    const popup = unionAuthWindowRef.current;
+    if (!auth || typeof auth !== "object" || !popup) return;
+    const state = auth as Record<string, unknown>;
+    const url = typeof state.verification_url_complete === "string" ? state.verification_url_complete : "";
+    const expiresAt = typeof state.expires_at === "number" ? state.expires_at : 0;
+    if (url && (!expiresAt || expiresAt > Date.now() / 1000)) {
+      clearUnionAuthTimeout();
+      popup.opener = null;
+      popup.location.href = url;
+      unionAuthWindowRef.current = null;
+      unionAuthRequestRef.current = null;
+      return;
+    }
+
+    const attempt = unionAuthRequestRef.current;
+    const requestId = typeof state.request_id === "string" ? state.request_id : "";
+    const updatedAt = typeof state.updated_at === "number" ? state.updated_at : 0;
+    const error = typeof state.error === "string" ? state.error.trim() : "";
+    const belongsToAttempt = Boolean(
+      attempt && (requestId === attempt.requestId || (!requestId && updatedAt >= attempt.requestedAt))
+    );
+    if (state.status === "authentication_required" && error && belongsToAttempt) {
+      resetUnionAuthAttempt(true);
+      notifyError("Unable to prepare Union authentication", new Error(error));
+    }
   }, [hostsQuery.data?.hosts]);
+
+  useEffect(() => () => resetUnionAuthAttempt(true), []);
 
   function beginUnionAuthentication(auth: Record<string, unknown>): void {
     const completeUrl = typeof auth.verification_url_complete === "string" ? auth.verification_url_complete : "";
@@ -1179,10 +1248,16 @@ export function JobsPage(): JSX.Element {
       window.open(completeUrl, "_blank", "noopener,noreferrer");
       return;
     }
+    resetUnionAuthAttempt(true);
     unionAuthWindowRef.current = window.open("about:blank", "union-authentication");
     if (unionAuthWindowRef.current) {
       unionAuthWindowRef.current.document.title = "Waiting for Union authentication";
-      unionAuthWindowRef.current.document.body.textContent = "Preparing secure Union authentication…";
+      unionAuthWindowRef.current.document.body.innerHTML = [
+        '<main style="font: 16px system-ui, sans-serif; max-width: 36rem; margin: 3rem auto; padding: 0 1.5rem; color: #1f2926">',
+        '<h1 style="font-size: 1.1rem; margin: 0 0 .75rem">Preparing Union authentication</h1>',
+        '<p style="line-height: 1.5; color: #596763">Waiting for the worker to provide the secure sign-in link. This window will redirect automatically.</p>',
+        "</main>"
+      ].join("");
     }
     unionAuthMutation.mutate();
   }
@@ -1195,23 +1270,26 @@ export function JobsPage(): JSX.Element {
 
   const filteredJobs = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const ownerKey = normalizeOrganizationOwner(organizationOwner);
+    const collectionOwnerKey = normalizeOrganizationOwner(collectionOwner);
+    const aggregateView = submittedFilter === "all";
 
     return (jobsQuery.data || []).filter((job) => {
       const archived = Boolean(job.organization?.archived);
       const submittedBy =
         resolveSubmittedByLabel(job.job_info.submitted_by) ||
         resolveSubmittedByLabel(job.job_meta?.submitted_by);
-      const ownedByCurrentUser = Boolean(ownerKey && normalizeOrganizationOwner(submittedBy) === ownerKey);
+      const ownedByCollectionOwner = Boolean(
+        collectionOwnerKey && normalizeOrganizationOwner(submittedBy) === collectionOwnerKey
+      );
       if (collectionView === "archive") {
-        if (!archived || !ownedByCurrentUser) return false;
+        if (!archived || (!aggregateView && !ownedByCollectionOwner)) return false;
       } else {
         if (archived) return false;
         if (collectionView === "general") {
-          if (job.organization?.folder_id) return false;
+          if (!aggregateView && job.organization?.folder_id) return false;
         } else if (collectionView.startsWith("folder:")) {
           const folderId = collectionView.slice("folder:".length);
-          if (!ownedByCurrentUser || job.organization?.folder_id !== folderId) return false;
+          if (aggregateView || !ownedByCollectionOwner || job.organization?.folder_id !== folderId) return false;
         }
       }
       if (statusFilter !== "all" && job.status !== statusFilter) return false;
@@ -1234,10 +1312,11 @@ export function JobsPage(): JSX.Element {
 
       return haystack.includes(query);
     });
-  }, [collectionView, hostFilter, jobsQuery.data, organizationOwner, searchQuery, statusFilter, submittedFilter]);
+  }, [collectionOwner, collectionView, hostFilter, jobsQuery.data, searchQuery, statusFilter, submittedFilter]);
 
   const collectionCounts = useMemo(() => {
-    const ownerKey = normalizeOrganizationOwner(organizationOwner);
+    const collectionOwnerKey = normalizeOrganizationOwner(collectionOwner);
+    const aggregateView = submittedFilter === "all";
     const folders = new Map<string, number>();
     let general = 0;
     let archive = 0;
@@ -1245,18 +1324,21 @@ export function JobsPage(): JSX.Element {
       const submittedBy =
         resolveSubmittedByLabel(job.job_info.submitted_by) ||
         resolveSubmittedByLabel(job.job_meta?.submitted_by);
-      const owned = Boolean(ownerKey && normalizeOrganizationOwner(submittedBy) === ownerKey);
+      const owned = Boolean(
+        collectionOwnerKey && normalizeOrganizationOwner(submittedBy) === collectionOwnerKey
+      );
+      if (!aggregateView && !owned) return;
       if (job.organization?.archived) {
-        if (owned) archive += 1;
+        archive += 1;
         return;
       }
-      if (!job.organization?.folder_id) general += 1;
-      if (owned && job.organization?.folder_id) {
+      if (aggregateView || !job.organization?.folder_id) general += 1;
+      if (!aggregateView && job.organization?.folder_id) {
         folders.set(job.organization.folder_id, (folders.get(job.organization.folder_id) || 0) + 1);
       }
     });
     return { general, archive, folders };
-  }, [jobsQuery.data, organizationOwner]);
+  }, [collectionOwner, jobsQuery.data, submittedFilter]);
 
   const submittedByOptions = useMemo(() => {
     const values = new Set<string>();
@@ -1273,9 +1355,9 @@ export function JobsPage(): JSX.Element {
 
   const availableHosts = hostsQuery.data?.available_hosts || [];
   const availableConfigs = configsQuery.data || [];
-  const personalFolders = foldersQuery.data || [];
+  const visibleFolders = foldersQuery.data || [];
   const activeFolder = collectionView.startsWith("folder:")
-    ? personalFolders.find((folder) => folder.folder_id === collectionView.slice("folder:".length)) || null
+    ? visibleFolders.find((folder) => folder.folder_id === collectionView.slice("folder:".length)) || null
     : null;
   const imageRepository = jobImagesQuery.data?.repository || "calof/opeva_simulator";
   const runImageOptions = useMemo(() => {
@@ -1605,8 +1687,8 @@ export function JobsPage(): JSX.Element {
       resolveSubmittedByLabel(job.job_info.submitted_by) ||
       resolveSubmittedByLabel(job.job_meta?.submitted_by);
     return Boolean(
-      organizationOwner &&
-        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(organizationOwner)
+      canManageCollection &&
+        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(collectionOwner)
     );
   }
 
@@ -2123,7 +2205,7 @@ export function JobsPage(): JSX.Element {
                 <span>General</span>
                 <small>{collectionCounts.general}</small>
               </button>
-              {personalFolders.map((folder) => {
+              {visibleFolders.map((folder) => {
                 const view: JobCollectionView = `folder:${folder.folder_id}`;
                 return (
                   <button
@@ -2172,7 +2254,7 @@ export function JobsPage(): JSX.Element {
                   </button>
                 </div>
               ) : null}
-              {activeFolder ? (
+              {activeFolder && canManageCollection ? (
                 <>
                   <button
                     type="button"
@@ -2194,16 +2276,17 @@ export function JobsPage(): JSX.Element {
                   </button>
                 </>
               ) : null}
-              <button
-                type="button"
-                className="icon-btn"
-                title="Create folder"
-                aria-label="Create folder"
-                disabled={!organizationOwner}
-                onClick={() => setFolderEditor({ mode: "create", name: "" })}
-              >
-                <FolderPlus size={15} />
-              </button>
+              {canManageCollection ? (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Create folder"
+                  aria-label="Create folder"
+                  onClick={() => setFolderEditor({ mode: "create", name: "" })}
+                >
+                  <FolderPlus size={15} />
+                </button>
+              ) : null}
             </div>
           </section>
           <div className="jobs-command-bar">
@@ -2258,7 +2341,16 @@ export function JobsPage(): JSX.Element {
                   </option>
                 ))}
               </select>
-              <select value={submittedFilter} onChange={(event) => setSubmittedFilter(event.target.value)}>
+              <select
+                aria-label="Submitted by"
+                value={submittedFilter}
+                onChange={(event) => {
+                  setSubmittedFilter(event.target.value);
+                  setCollectionView("general");
+                  setOrganizationSelection([]);
+                  organizationSelectionAnchorRef.current = null;
+                }}
+              >
                 <option value="all">All Submitters</option>
                 {submittedByOptions.map((submittedBy) => (
                   <option key={submittedBy} value={submittedBy}>
@@ -2336,8 +2428,8 @@ export function JobsPage(): JSX.Element {
                       resolveSubmittedByLabel(job.job_info.submitted_by) ||
                       resolveSubmittedByLabel(job.job_meta?.submitted_by);
                     const canOrganizeThisJob = Boolean(
-                      organizationOwner &&
-                        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(organizationOwner)
+                      canManageCollection &&
+                        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(collectionOwner)
                     );
                     const mlflowUrl = resolveMlflowRunUrl(job.job_info, job.job_meta);
                     const baseConfigPath =
