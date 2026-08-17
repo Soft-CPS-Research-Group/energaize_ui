@@ -30,8 +30,9 @@
 
 .layout-ptd {
     display: flex;
-    width: 100%;
-    height: calc(100vh - 176px);
+    width: calc(100% + 28px);
+    margin: -14px -14px 0 -14px;   /* neutraliza o padding lateral/topo do workspace-main só aqui */
+    height: calc(100vh - 176px);   /* fallback antes do JS calcular */
     min-height: 0;
     overflow: hidden;
 }
