@@ -6,13 +6,11 @@ import {
     useRef,
     useState
 } from "react";
-
 import CardConsumption_Production from "../../../components/graphics/GraphicCard/Community/CardConsuption_Production";
 import CardPricing from "../../../components/graphics/GraphicCard/Community/CardPricing";
 import CardBattery from "../../../components/graphics/GraphicCard/Building/BatteryCard";
 import CardEV from "../../../components/graphics/GraphicCard/Building/CardEV";
 import CardCharger from "../../../components/graphics/GraphicCard/Building/CardCharger";
-
 import {
     createIncrementalConsumptionProductionMapper,
     createIncrementalPricingMapper,
@@ -22,22 +20,18 @@ import {
     createIncrementalEVMapper,
     createIncrementalChargerMapper,
 } from "../../../mappers/energy.model.dtoGraphic.mapper";
-
 import {
     type TimeFilter,
     useEnergyData
 } from "../../../hooks/useEnergyData";
-
 import { useRealTimeData } from "../../../hooks/useRealTimeData";
-
 import "./GraphicsView.css";
-
 import type { EnergyCommunity } from "../../../models/energy.model.ts";
-
 import {
     EquipmentType,
     type SelectedEquipment
 } from "../../../models/energy.selectedEquipment";
+import { useUI } from "../../../contexts/UIContext";
 
 const AVAILABLE_HOUSES = [
     {
@@ -101,8 +95,9 @@ function GraphicsView({
                           selectedEquipment,
                           setSelectedEquipment
                       }: Props) {
-    const community =
-        localStorage.getItem("community") || "";
+
+    const { activeCommunity } = useUI();
+    const community = activeCommunity?.id || "";
 
     const [filter, setFilter] =
         useState<TimeFilter | null>({

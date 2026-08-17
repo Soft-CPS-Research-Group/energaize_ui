@@ -43,9 +43,6 @@ export default function App(): JSX.Element {
     const handleCommunityChange = (data: EnergyCommunity) => {
         if (!isRecManager) return;
         setCommunityData(data);
-        if (data?.id) {
-            localStorage.setItem("community", data.id);
-        }
     };
 
     const handleSelectedEquipmentChange = (equipment: SelectedEquipment[]) => {
