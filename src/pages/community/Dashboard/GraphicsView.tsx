@@ -979,7 +979,7 @@ function GraphicsView({
                 {loadingMore && (
                     <div className="loading-more-indicator">
                         <span>
-                            A carregar mais dados…
+                            Loading more data…
                         </span>
                     </div>
                 )}

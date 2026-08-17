@@ -2,111 +2,295 @@ import type {
     EnergyCommunity,
     BuildingItems,
 } from "../models/energy.model.ts";
+
 import type {
     BatteryDataDTO,
     ElectricVehicleDataDTO,
     ChargerDataDTO,
     ConsumptionProductionDTO,
-    PricingDTO
+    PricingDTO,
 } from "../dto/energy.graphics.dto.ts";
+
+// ============================================================
+// CACHE
+// ============================================================
 
 interface Cache<T> {
     lastLength: number;
     cached: T[];
 }
 
+
+interface SortedCache<T> extends Cache<T> {
+    timestamps: number[];
+}
+
 // ============================================================
 // CONSUMPTION + PRODUCTION
 // ============================================================
 
-export function mapConsumptionProductionToDTO(community: EnergyCommunity): ConsumptionProductionDTO[] {
+export function mapConsumptionProductionToDTO(
+    community: EnergyCommunity
+): ConsumptionProductionDTO[] {
     const data: ConsumptionProductionDTO[] = [];
-    community.collections.forEach(building => {
-        building.items.forEach((item: BuildingItems) => {
-            if (!item.observations) return;
-            data.push(mapConsumptionProductionItem(item));
-        });
+
+    community.collections.forEach((building) => {
+        building.items.forEach(
+            (item: BuildingItems) => {
+                if (!item.observations) return;
+
+                data.push(
+                    mapConsumptionProductionItem(
+                        item
+                    )
+                );
+            }
+        );
     });
+
     return data;
 }
 
-function mapConsumptionProductionItem(item: BuildingItems): ConsumptionProductionDTO {
+function mapConsumptionProductionItem(
+    item: BuildingItems
+): ConsumptionProductionDTO {
     const obs = item.observations;
-    const netConsumption = (obs?.grid_meters || []).reduce(
-        (total, meter) => total + ((meter.energyIn ?? 0) - (meter.energyOut ?? 0)),
-        0
-    );
+
+    const netConsumption =
+        (obs?.grid_meters || []).reduce(
+            (total, meter) =>
+                total +
+                ((meter.energyIn ?? 0) -
+                    (meter.energyOut ?? 0)),
+            0
+        );
+
     return {
-        timestamp: item.timestamp.toISOString().replace('T', ' ').split('.')[0],
-        "Non-shiftable Load-kWh": obs?.non_shiftable_load ?? 0,
-        "Net Electricity Consumption-kWh": netConsumption,
-        "Energy Production from PV-kWh": obs?.solar_generation ?? 0
+        timestamp: item.timestamp
+            .toISOString()
+            .replace("T", " ")
+            .split(".")[0],
+
+        "Non-shiftable Load-kWh":
+            obs?.non_shiftable_load ?? 0,
+
+        "Net Electricity Consumption-kWh":
+        netConsumption,
+
+        "Energy Production from PV-kWh":
+            obs?.solar_generation ?? 0,
     };
 }
+
+// ============================================================
+// INCREMENTAL CONSUMPTION + PRODUCTION
+// ============================================================
 
 export function createIncrementalConsumptionProductionMapper() {
-    const state = new Map<string, Cache<ConsumptionProductionDTO>>();
+    const state = new Map<
+        string,
+        SortedCache<ConsumptionProductionDTO>
+    >();
 
-    return function mapIncremental(community: EnergyCommunity | null): ConsumptionProductionDTO[] {
-        if (!community) return [];
-
-        const activeIds = new Set(community.collections.map(b => b.id));
-        for (const key of state.keys()) {
-            if (!activeIds.has(key)) state.delete(key);
+    return function mapIncremental(
+        community: EnergyCommunity | null
+    ): ConsumptionProductionDTO[] {
+        if (!community) {
+            state.clear();
+            return [];
         }
 
-        community.collections.forEach(building => {
-            const items = building.items || [];
-            let entry = state.get(building.id);
+        /*
+         * Remove buildings que já não existem.
+         */
+        const activeIds = new Set(
+            community.collections.map(
+                (building) => building.id
+            )
+        );
 
-            if (!entry || items.length < entry.lastLength) {
-                entry = { lastLength: 0, cached: [] };
-                state.set(building.id, entry);
+        for (const key of state.keys()) {
+            if (!activeIds.has(key)) {
+                state.delete(key);
             }
+        }
 
-            if (items.length > entry.lastLength) {
-                for (let i = entry.lastLength; i < items.length; i++) {
-                    const item = items[i];
-                    if (!item.observations) continue;
-                    entry.cached.push(mapConsumptionProductionItem(item));
+        /*
+         * Processa apenas os items novos.
+         */
+        community.collections.forEach(
+            (building) => {
+                const items =
+                    building.items || [];
+
+                let entry =
+                    state.get(building.id);
+
+                /*
+                 * Primeiro carregamento ou reset.
+                 */
+                if (
+                    !entry ||
+                    items.length <
+                    entry.lastLength
+                ) {
+                    entry = {
+                        lastLength: 0,
+                        cached: [],
+                        timestamps: [],
+                    };
+
+                    state.set(
+                        building.id,
+                        entry
+                    );
                 }
-                entry.lastLength = items.length;
-            }
-        });
 
-        const arrays = Array.from(state.values()).map(e => e.cached);
-        return mergeSortedArraysByTimestamp(arrays);
+                /*
+                 * Apenas items novos são convertidos.
+                 */
+                if (
+                    items.length >
+                    entry.lastLength
+                ) {
+                    for (
+                        let i =
+                            entry.lastLength;
+                        i < items.length;
+                        i++
+                    ) {
+                        const item =
+                            items[i];
+
+                        if (
+                            !item.observations
+                        ) {
+                            continue;
+                        }
+
+                        const dto =
+                            mapConsumptionProductionItem(
+                                item
+                            );
+
+                        entry.cached.push(dto);
+
+                        /*
+                         * Guardamos o timestamp
+                         * numérico uma única vez.
+                         */
+                        entry.timestamps.push(
+                            item.timestamp.getTime()
+                        );
+                    }
+
+                    entry.lastLength =
+                        items.length;
+                }
+            }
+        );
+
+        /*
+         * Merge otimizado dos buildings.
+         */
+        return mergeSortedCaches(
+            Array.from(
+                state.values()
+            )
+        );
     };
 }
 
-export function createIncrementalSingleBuildingConsumptionProductionMapper() {
-    const state = new Map<string, Cache<ConsumptionProductionDTO>>(); // key = buildingId
+// ============================================================
+// SINGLE BUILDING - CONSUMPTION + PRODUCTION
+// ============================================================
 
-    return function mapIncremental(community: EnergyCommunity | null, buildingId: string): ConsumptionProductionDTO[] {
-        if (!community) return [];
-        const building = community.collections.find(b => b.id === buildingId);
+export function createIncrementalSingleBuildingConsumptionProductionMapper() {
+    const state = new Map<
+        string,
+        SortedCache<ConsumptionProductionDTO>
+    >();
+
+    return function mapIncremental(
+        community: EnergyCommunity | null,
+        buildingId: string
+    ): ConsumptionProductionDTO[] {
+        if (!community) {
+            state.delete(buildingId);
+            return [];
+        }
+
+        const building =
+            community.collections.find(
+                (b) =>
+                    b.id === buildingId
+            );
+
         if (!building) {
             state.delete(buildingId);
             return [];
         }
 
-        const items = building.items || [];
-        let entry = state.get(buildingId);
+        const items =
+            building.items || [];
 
-        if (!entry || items.length < entry.lastLength) {
-            entry = { lastLength: 0, cached: [] };
-            state.set(buildingId, entry);
+        let entry =
+            state.get(buildingId);
+
+        if (
+            !entry ||
+            items.length <
+            entry.lastLength
+        ) {
+            entry = {
+                lastLength: 0,
+                cached: [],
+                timestamps: [],
+            };
+
+            state.set(
+                buildingId,
+                entry
+            );
         }
 
-        if (items.length > entry.lastLength) {
-            for (let i = entry.lastLength; i < items.length; i++) {
-                const item = items[i];
-                if (!item.observations) continue;
-                entry.cached.push(mapConsumptionProductionItem(item));
+        if (
+            items.length >
+            entry.lastLength
+        ) {
+            for (
+                let i =
+                    entry.lastLength;
+                i < items.length;
+                i++
+            ) {
+                const item =
+                    items[i];
+
+                if (!item.observations) {
+                    continue;
+                }
+
+                const dto =
+                    mapConsumptionProductionItem(
+                        item
+                    );
+
+                entry.cached.push(dto);
+
+                entry.timestamps.push(
+                    item.timestamp.getTime()
+                );
             }
-            entry.lastLength = items.length;
+
+            entry.lastLength =
+                items.length;
         }
 
+        /*
+         * Apenas um building:
+         * não precisamos de merge nenhum.
+         */
         return entry.cached;
     };
 }
@@ -115,66 +299,157 @@ export function createIncrementalSingleBuildingConsumptionProductionMapper() {
 // BATTERIES
 // ============================================================
 
-function mapBatteryItem(item: BuildingItems, batteryId: string): BatteryDataDTO | null {
+function mapBatteryItem(
+    item: BuildingItems,
+    batteryId: string
+): BatteryDataDTO | null {
     const obs = item.observations;
+
     if (!obs) return null;
-    const battery = (obs.batteries || []).find(b => b.id === batteryId);
+
+    const battery =
+        (obs.batteries || []).find(
+            (battery) =>
+                battery.id === batteryId
+        );
+
     if (!battery) return null;
+
     return {
-        timestamp: item.timestamp.toISOString().replace('T', ' ').split('.')[0],
-        "Battery Soc-%": battery.soc * 100,
-        "Battery (Dis)Charge-kWh": (battery.energyIn ?? 0) - (battery.energyOut ?? 0)
+        timestamp: item.timestamp
+            .toISOString()
+            .replace("T", " ")
+            .split(".")[0],
+
+        "Battery Soc-%":
+            battery.soc * 100,
+
+        "Battery (Dis)Charge-kWh":
+            (battery.energyIn ?? 0) -
+            (battery.energyOut ?? 0),
     };
 }
 
-// Versão simples (sem cache) — mantida para compatibilidade/uso ad-hoc.
+// ============================================================
+// BATTERIES - SIMPLE
+// ============================================================
+
 export function mapBatteryDataToBatteryDTOMap(
     community: EnergyCommunity | null,
     buildingId: string,
     batteryId: string
 ): BatteryDataDTO[] {
     if (!community) return [];
-    const building = community.collections.find(b => b.id === buildingId);
+
+    const building =
+        community.collections.find(
+            (b) =>
+                b.id === buildingId
+        );
+
     if (!building) return [];
 
     const data: BatteryDataDTO[] = [];
-    for (const item of building.items || []) {
-        const dto = mapBatteryItem(item, batteryId);
-        if (dto) data.push(dto);
+
+    for (
+        const item of
+    building.items || []
+        ) {
+        const dto =
+            mapBatteryItem(
+                item,
+                batteryId
+            );
+
+        if (dto) {
+            data.push(dto);
+        }
     }
+
     return data;
 }
 
+// ============================================================
+// BATTERIES - INCREMENTAL
+// ============================================================
+
 export function createIncrementalBatteryMapper() {
-    const state = new Map<string, Cache<BatteryDataDTO>>(); // key = buildingId:batteryId
+    const state = new Map<
+        string,
+        Cache<BatteryDataDTO>
+    >();
 
     return function mapIncremental(
         community: EnergyCommunity | null,
         buildingId: string,
         batteryId: string
     ): BatteryDataDTO[] {
-        if (!community) return [];
-        const key = `${buildingId}:${batteryId}`;
-        const building = community.collections.find(b => b.id === buildingId);
+        if (!community) {
+            state.delete(
+                `${buildingId}:${batteryId}`
+            );
+
+            return [];
+        }
+
+        const key =
+            `${buildingId}:${batteryId}`;
+
+        const building =
+            community.collections.find(
+                (b) =>
+                    b.id === buildingId
+            );
+
         if (!building) {
             state.delete(key);
             return [];
         }
 
-        const items = building.items || [];
-        let entry = state.get(key);
+        const items =
+            building.items || [];
 
-        if (!entry || items.length < entry.lastLength) {
-            entry = { lastLength: 0, cached: [] };
+        let entry =
+            state.get(key);
+
+        if (
+            !entry ||
+            items.length <
+            entry.lastLength
+        ) {
+            entry = {
+                lastLength: 0,
+                cached: [],
+            };
+
             state.set(key, entry);
         }
 
-        if (items.length > entry.lastLength) {
-            for (let i = entry.lastLength; i < items.length; i++) {
-                const dto = mapBatteryItem(items[i], batteryId);
-                if (dto) entry.cached.push(dto);
+        if (
+            items.length >
+            entry.lastLength
+        ) {
+            for (
+                let i =
+                    entry.lastLength;
+                i < items.length;
+                i++
+            ) {
+                const dto =
+                    mapBatteryItem(
+                        items[i],
+                        batteryId
+                    );
+
+                if (dto) {
+                    entry.cached.push(
+                        dto
+                    );
+                }
             }
-            entry.lastLength = items.length;
+
+            entry.lastLength =
+                items.length;
         }
 
         return entry.cached;
@@ -185,71 +460,172 @@ export function createIncrementalBatteryMapper() {
 // ELECTRIC VEHICLES
 // ============================================================
 
-function mapEVItem(item: BuildingItems, evId: string): ElectricVehicleDataDTO | null {
+function mapEVItem(
+    item: BuildingItems,
+    evId: string
+): ElectricVehicleDataDTO | null {
     const obs = item.observations;
+
     if (!obs) return null;
-    const ev = (obs.electric_vehicles || []).find(v => v.id === evId);
+
+    const ev =
+        (obs.electric_vehicles || [])
+            .find(
+                (vehicle) =>
+                    vehicle.id === evId
+            );
+
     if (!ev) return null;
+
     return {
-        timestamp: item.timestamp.toISOString(),
-        'EV SOC-%': ev.SoC != null ? ev.SoC * 100 : 0,
-        'EV Estimated SOC Arrival-%': ev.estimated_soc_at_arrival != null
-            ? ev.estimated_soc_at_arrival * 100
-            : null,
-        'EV Required SOC Departure-%': ev.estimated_soc_at_departure != null
-            ? ev.estimated_soc_at_departure * 100
-            : null,
-        'EV Departure Time': ev.estimated_time_at_departure || undefined,
-        'EV Arrival Time': ev.estimated_time_at_arrival || undefined
+        timestamp:
+            item.timestamp.toISOString(),
+
+        "EV SOC-%":
+            ev.SoC != null
+                ? ev.SoC * 100
+                : 0,
+
+        "EV Estimated SOC Arrival-%":
+            ev.estimated_soc_at_arrival != null
+                ? ev.estimated_soc_at_arrival *
+                100
+                : null,
+
+        "EV Required SOC Departure-%":
+            ev.estimated_soc_at_departure != null
+                ? ev.estimated_soc_at_departure *
+                100
+                : null,
+
+        "EV Departure Time":
+            ev.estimated_time_at_departure ||
+            undefined,
+
+        "EV Arrival Time":
+            ev.estimated_time_at_arrival ||
+            undefined,
     };
 }
+
+// ============================================================
+// ELECTRIC VEHICLES - SIMPLE
+// ============================================================
 
 export function mapEVDataToEVDTOMap(
     community: EnergyCommunity,
     buildingId: string,
     evId: string
 ): ElectricVehicleDataDTO[] {
-    const building = community.collections.find(b => b.id === buildingId);
+    const building =
+        community.collections.find(
+            (b) =>
+                b.id === buildingId
+        );
+
     if (!building) return [];
 
     const data: ElectricVehicleDataDTO[] = [];
-    for (const item of building.items || []) {
-        const dto = mapEVItem(item, evId);
-        if (dto) data.push(dto);
+
+    for (
+        const item of
+    building.items || []
+        ) {
+        const dto =
+            mapEVItem(
+                item,
+                evId
+            );
+
+        if (dto) {
+            data.push(dto);
+        }
     }
+
     return data;
 }
 
+// ============================================================
+// ELECTRIC VEHICLES - INCREMENTAL
+// ============================================================
+
 export function createIncrementalEVMapper() {
-    const state = new Map<string, Cache<ElectricVehicleDataDTO>>(); // key = buildingId:evId
+    const state = new Map<
+        string,
+        Cache<ElectricVehicleDataDTO>
+    >();
 
     return function mapIncremental(
         community: EnergyCommunity | null,
         buildingId: string,
         evId: string
     ): ElectricVehicleDataDTO[] {
-        if (!community) return [];
-        const key = `${buildingId}:${evId}`;
-        const building = community.collections.find(b => b.id === buildingId);
+        if (!community) {
+            state.delete(
+                `${buildingId}:${evId}`
+            );
+
+            return [];
+        }
+
+        const key =
+            `${buildingId}:${evId}`;
+
+        const building =
+            community.collections.find(
+                (b) =>
+                    b.id === buildingId
+            );
+
         if (!building) {
             state.delete(key);
             return [];
         }
 
-        const items = building.items || [];
-        let entry = state.get(key);
+        const items =
+            building.items || [];
 
-        if (!entry || items.length < entry.lastLength) {
-            entry = { lastLength: 0, cached: [] };
+        let entry =
+            state.get(key);
+
+        if (
+            !entry ||
+            items.length <
+            entry.lastLength
+        ) {
+            entry = {
+                lastLength: 0,
+                cached: [],
+            };
+
             state.set(key, entry);
         }
 
-        if (items.length > entry.lastLength) {
-            for (let i = entry.lastLength; i < items.length; i++) {
-                const dto = mapEVItem(items[i], evId);
-                if (dto) entry.cached.push(dto);
+        if (
+            items.length >
+            entry.lastLength
+        ) {
+            for (
+                let i =
+                    entry.lastLength;
+                i < items.length;
+                i++
+            ) {
+                const dto =
+                    mapEVItem(
+                        items[i],
+                        evId
+                    );
+
+                if (dto) {
+                    entry.cached.push(
+                        dto
+                    );
+                }
             }
-            entry.lastLength = items.length;
+
+            entry.lastLength =
+                items.length;
         }
 
         return entry.cached;
@@ -260,17 +636,40 @@ export function createIncrementalEVMapper() {
 // CHARGERS
 // ============================================================
 
-function mapChargerItem(item: BuildingItems, chargerId: string): ChargerDataDTO | null {
+function mapChargerItem(
+    item: BuildingItems,
+    chargerId: string
+): ChargerDataDTO | null {
     const obs = item.observations;
+
     if (!obs) return null;
-    const charger = (obs.charging_session || []).find(c => c.id === chargerId);
+
+    const charger =
+        (obs.charging_session || [])
+            .find(
+                (chargingSession) =>
+                    chargingSession.id ===
+                    chargerId
+            );
+
     if (!charger) return null;
+
     return {
-        timestamp: item.timestamp.toISOString(),
-        Power: charger.power ?? 0,
-        electric_vehicle: charger.electric_vehicle ?? ""
+        timestamp:
+            item.timestamp.toISOString(),
+
+        Power:
+            charger.power ?? 0,
+
+        electric_vehicle:
+            charger.electric_vehicle ??
+            "",
     };
 }
+
+// ============================================================
+// CHARGERS - SIMPLE
+// ============================================================
 
 export function mapChargerDataToChargerDTOMap(
     community: EnergyCommunity | null,
@@ -278,47 +677,116 @@ export function mapChargerDataToChargerDTOMap(
     chargerId: string
 ): ChargerDataDTO[] {
     if (!community) return [];
-    const building = community.collections.find(b => b.id === buildingId);
+
+    const building =
+        community.collections.find(
+            (b) =>
+                b.id === buildingId
+        );
+
     if (!building) return [];
 
     const data: ChargerDataDTO[] = [];
-    for (const item of building.items || []) {
-        const dto = mapChargerItem(item, chargerId);
-        if (dto) data.push(dto);
+
+    for (
+        const item of
+    building.items || []
+        ) {
+        const dto =
+            mapChargerItem(
+                item,
+                chargerId
+            );
+
+        if (dto) {
+            data.push(dto);
+        }
     }
+
     return data;
 }
 
+// ============================================================
+// CHARGERS - INCREMENTAL
+// ============================================================
+
 export function createIncrementalChargerMapper() {
-    const state = new Map<string, Cache<ChargerDataDTO>>(); // key = buildingId:chargerId
+    const state = new Map<
+        string,
+        Cache<ChargerDataDTO>
+    >();
 
     return function mapIncremental(
         community: EnergyCommunity | null,
         buildingId: string,
         chargerId: string
     ): ChargerDataDTO[] {
-        if (!community) return [];
-        const key = `${buildingId}:${chargerId}`;
-        const building = community.collections.find(b => b.id === buildingId);
+        if (!community) {
+            state.delete(
+                `${buildingId}:${chargerId}`
+            );
+
+            return [];
+        }
+
+        const key =
+            `${buildingId}:${chargerId}`;
+
+        const building =
+            community.collections.find(
+                (b) =>
+                    b.id === buildingId
+            );
+
         if (!building) {
             state.delete(key);
             return [];
         }
 
-        const items = building.items || [];
-        let entry = state.get(key);
+        const items =
+            building.items || [];
 
-        if (!entry || items.length < entry.lastLength) {
-            entry = { lastLength: 0, cached: [] };
+        let entry =
+            state.get(key);
+
+        if (
+            !entry ||
+            items.length <
+            entry.lastLength
+        ) {
+            entry = {
+                lastLength: 0,
+                cached: [],
+            };
+
             state.set(key, entry);
         }
 
-        if (items.length > entry.lastLength) {
-            for (let i = entry.lastLength; i < items.length; i++) {
-                const dto = mapChargerItem(items[i], chargerId);
-                if (dto) entry.cached.push(dto);
+        if (
+            items.length >
+            entry.lastLength
+        ) {
+            for (
+                let i =
+                    entry.lastLength;
+                i < items.length;
+                i++
+            ) {
+                const dto =
+                    mapChargerItem(
+                        items[i],
+                        chargerId
+                    );
+
+                if (dto) {
+                    entry.cached.push(
+                        dto
+                    );
+                }
             }
-            entry.lastLength = items.length;
+
+            entry.lastLength =
+                items.length;
         }
 
         return entry.cached;
@@ -329,119 +797,363 @@ export function createIncrementalChargerMapper() {
 // PRICING
 // ============================================================
 
-function mapPricingItem(item: BuildingItems): PricingDTO {
+function mapPricingItem(
+    item: BuildingItems
+): PricingDTO {
     const obs = item.observations;
+
     return {
-        timestamp: item.timestamp.toISOString().replace('T', ' ').split('.')[0],
-        'electricity_pricing-$/kWh': obs?.energy_price ?? 0
+        timestamp: item.timestamp
+            .toISOString()
+            .replace("T", " ")
+            .split(".")[0],
+
+        "electricity_pricing-$/kWh":
+            obs?.energy_price ?? 0,
     };
 }
 
-export function mapPricingDataToPricingDTO(community: EnergyCommunity): PricingDTO[] {
+// ============================================================
+// PRICING - SIMPLE
+// ============================================================
+
+export function mapPricingDataToPricingDTO(
+    community: EnergyCommunity
+): PricingDTO[] {
     const data: PricingDTO[] = [];
-    for (const building of community.collections || []) {
-        for (const item of building.items || []) {
-            if (!item.observations) continue;
-            data.push(mapPricingItem(item));
+
+    for (
+        const building of
+    community.collections || []
+        ) {
+        for (
+            const item of
+        building.items || []
+            ) {
+            if (!item.observations) {
+                continue;
+            }
+
+            data.push(
+                mapPricingItem(item)
+            );
         }
     }
-    return data.sort((a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+
+    return data.sort(
+        (a, b) =>
+            new Date(
+                a.timestamp
+            ).getTime() -
+            new Date(
+                b.timestamp
+            ).getTime()
     );
 }
 
+// ============================================================
+// PRICING - INCREMENTAL
+// ============================================================
+
 export function createIncrementalPricingMapper() {
-    const state = new Map<string, Cache<PricingDTO>>();
+    const state = new Map<
+        string,
+        SortedCache<PricingDTO>
+    >();
 
-    return function mapIncremental(community: EnergyCommunity | null): PricingDTO[] {
-        if (!community) return [];
-
-        const activeIds = new Set(community.collections.map(b => b.id));
-        for (const key of state.keys()) {
-            if (!activeIds.has(key)) state.delete(key);
+    return function mapIncremental(
+        community: EnergyCommunity | null
+    ): PricingDTO[] {
+        if (!community) {
+            state.clear();
+            return [];
         }
 
-        community.collections.forEach(building => {
-            const items = building.items || [];
-            let entry = state.get(building.id);
+        /*
+         * Remove buildings antigos.
+         */
+        const activeIds = new Set(
+            community.collections.map(
+                (building) => building.id
+            )
+        );
 
-            if (!entry || items.length < entry.lastLength) {
-                entry = { lastLength: 0, cached: [] };
-                state.set(building.id, entry);
+        for (const key of state.keys()) {
+            if (!activeIds.has(key)) {
+                state.delete(key);
             }
+        }
 
-            if (items.length > entry.lastLength) {
-                for (let i = entry.lastLength; i < items.length; i++) {
-                    const item = items[i];
-                    if (!item.observations) continue;
-                    entry.cached.push(mapPricingItem(item));
+        /*
+         * Processa apenas os novos items.
+         */
+        community.collections.forEach(
+            (building) => {
+                const items =
+                    building.items || [];
+
+                let entry =
+                    state.get(building.id);
+
+                if (
+                    !entry ||
+                    items.length <
+                    entry.lastLength
+                ) {
+                    entry = {
+                        lastLength: 0,
+                        cached: [],
+                        timestamps: [],
+                    };
+
+                    state.set(
+                        building.id,
+                        entry
+                    );
                 }
-                entry.lastLength = items.length;
-            }
-        });
 
-        const arrays = Array.from(state.values()).map(e => e.cached);
-        return mergeSortedArraysByTimestamp(arrays);
+                if (
+                    items.length >
+                    entry.lastLength
+                ) {
+                    for (
+                        let i =
+                            entry.lastLength;
+                        i < items.length;
+                        i++
+                    ) {
+                        const item =
+                            items[i];
+
+                        if (
+                            !item.observations
+                        ) {
+                            continue;
+                        }
+
+                        const dto =
+                            mapPricingItem(
+                                item
+                            );
+
+                        entry.cached.push(
+                            dto
+                        );
+
+                        entry.timestamps.push(
+                            item.timestamp.getTime()
+                        );
+                    }
+
+                    entry.lastLength =
+                        items.length;
+                }
+            }
+        );
+
+        return mergeSortedCaches(
+            Array.from(
+                state.values()
+            )
+        );
     };
 }
 
-export function createIncrementalSingleBuildingPricingMapper() {
-    const state = new Map<string, Cache<PricingDTO>>(); // key = buildingId
+// ============================================================
+// SINGLE BUILDING - PRICING
+// ============================================================
 
-    return function mapIncremental(community: EnergyCommunity | null, buildingId: string): PricingDTO[] {
-        if (!community) return [];
-        const building = community.collections.find(b => b.id === buildingId);
+export function createIncrementalSingleBuildingPricingMapper() {
+    const state = new Map<
+        string,
+        SortedCache<PricingDTO>
+    >();
+
+    return function mapIncremental(
+        community: EnergyCommunity | null,
+        buildingId: string
+    ): PricingDTO[] {
+        if (!community) {
+            state.delete(buildingId);
+            return [];
+        }
+
+        const building =
+            community.collections.find(
+                (b) =>
+                    b.id === buildingId
+            );
+
         if (!building) {
             state.delete(buildingId);
             return [];
         }
 
-        const items = building.items || [];
-        let entry = state.get(buildingId);
+        const items =
+            building.items || [];
 
-        if (!entry || items.length < entry.lastLength) {
-            entry = { lastLength: 0, cached: [] };
-            state.set(buildingId, entry);
+        let entry =
+            state.get(buildingId);
+
+        if (
+            !entry ||
+            items.length <
+            entry.lastLength
+        ) {
+            entry = {
+                lastLength: 0,
+                cached: [],
+                timestamps: [],
+            };
+
+            state.set(
+                buildingId,
+                entry
+            );
         }
 
-        if (items.length > entry.lastLength) {
-            for (let i = entry.lastLength; i < items.length; i++) {
-                const item = items[i];
-                if (!item.observations) continue;
-                entry.cached.push(mapPricingItem(item));
+        if (
+            items.length >
+            entry.lastLength
+        ) {
+            for (
+                let i =
+                    entry.lastLength;
+                i < items.length;
+                i++
+            ) {
+                const item =
+                    items[i];
+
+                if (!item.observations) {
+                    continue;
+                }
+
+                const dto =
+                    mapPricingItem(
+                        item
+                    );
+
+                entry.cached.push(dto);
+
+                entry.timestamps.push(
+                    item.timestamp.getTime()
+                );
             }
-            entry.lastLength = items.length;
+
+            entry.lastLength =
+                items.length;
         }
 
+        /*
+         * Um único building já está
+         * cronologicamente ordenado.
+         */
         return entry.cached;
     };
 }
 
 // ============================================================
-// UTIL
+// OPTIMIZED MERGE
 // ============================================================
 
-function mergeSortedArraysByTimestamp<T extends { timestamp: string }>(arrays: T[][]): T[] {
-    const indices = new Array(arrays.length).fill(0);
-    const result: T[] = [];
-    const total = arrays.reduce((sum, a) => sum + a.length, 0);
+function mergeSortedCaches<
+    T
+>(
+    caches: SortedCache<T>[]
+): T[] {
 
-    for (let count = 0; count < total; count++) {
-        let bestArr = -1;
-        let bestTime = Infinity;
-        for (let a = 0; a < arrays.length; a++) {
-            const idx = indices[a];
-            if (idx < arrays[a].length) {
-                const t = new Date(arrays[a][idx].timestamp).getTime();
-                if (t < bestTime) {
-                    bestTime = t;
-                    bestArr = a;
-                }
+    const activeCaches =
+        caches.filter(
+            (cache) =>
+                cache.cached.length > 0
+        );
+
+    if (activeCaches.length === 0) {
+        return [];
+    }
+
+
+    if (activeCaches.length === 1) {
+        return activeCaches[0].cached;
+    }
+
+
+    const indices =
+        new Array(
+            activeCaches.length
+        ).fill(0);
+
+    const total =
+        activeCaches.reduce(
+            (sum, cache) =>
+                sum + cache.cached.length,
+            0
+        );
+
+
+    const result =
+        new Array<T>(total);
+
+
+    for (
+        let resultIndex = 0;
+        resultIndex < total;
+        resultIndex++
+    ) {
+        let bestCache = -1;
+        let bestTimestamp =
+            Infinity;
+
+        for (
+            let cacheIndex = 0;
+            cacheIndex <
+            activeCaches.length;
+            cacheIndex++
+        ) {
+            const index =
+                indices[cacheIndex];
+
+            const cache =
+                activeCaches[
+                    cacheIndex
+                    ];
+
+            if (
+                index >=
+                cache.cached.length
+            ) {
+                continue;
+            }
+
+            const timestamp =
+                cache.timestamps[index];
+
+            if (
+                timestamp <
+                bestTimestamp
+            ) {
+                bestTimestamp =
+                    timestamp;
+
+                bestCache =
+                    cacheIndex;
             }
         }
-        if (bestArr === -1) break;
-        result.push(arrays[bestArr][indices[bestArr]]);
-        indices[bestArr]++;
+
+        if (bestCache === -1) {
+            break;
+        }
+
+        const index =
+            indices[bestCache];
+
+        result[resultIndex] =
+            activeCaches[
+                bestCache
+                ].cached[index];
+
+        indices[bestCache]++;
     }
 
     return result;

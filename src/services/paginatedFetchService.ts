@@ -1,7 +1,6 @@
 import { getHistoricDataByCommunity } from "../api/communityDataApi";
 
 const LIMIT = 1000;
-const PARALLEL_PAGES = 4;
 
 export interface FetchParams {
     community: string;
@@ -13,88 +12,61 @@ export interface FetchParams {
     signal?: AbortSignal;
 }
 
-export async function paginatedFetch(params: FetchParams): Promise<any> {
-    const { community, minutes, from_ts, until_ts, granularity_minutes, onPageReceived, signal } = params;
-
-    let currentOffset = 0;
-    let done = false;
-    let merged: any = null;
-
-    // 1. PRIMEIRO PEDIDO (Página 0)
-    const firstResponse = await getHistoricDataByCommunity(
-        community, minutes, currentOffset, LIMIT, from_ts, until_ts, granularity_minutes
+function countItems(response: any): number {
+    return Object.values(
+        response?.collections ?? {}
+    ).reduce(
+        (total: number, building: any) =>
+            total + (building?.items?.length ?? 0),
+        0
     );
+}
 
-    if (signal?.aborted) return firstResponse;
 
-    merged = JSON.parse(JSON.stringify(firstResponse));
+export async function paginatedFetch(
+    params: FetchParams
+): Promise<void> {
+    const {
+        community,
+        minutes,
+        from_ts,
+        until_ts,
+        granularity_minutes,
+        onPageReceived,
+        signal,
+    } = params;
 
-    // Dispara a primeira página com a estrutura intacta
-    onPageReceived?.(firstResponse);
+    let offset = 0;
 
-    const firstPageTotal = Object.values(firstResponse.collections ?? {})
-        .flatMap((b: any) => b.items ?? []).length;
-
-    if (firstPageTotal < LIMIT) {
-        return merged;
-    }
-
-    currentOffset += LIMIT;
-
-    // 2. PEDIDOS EM PARALELO (Ronda de Páginas)
-    while (!done && !signal?.aborted) {
-        const promises = [];
-
-        for (let i = 0; i < PARALLEL_PAGES; i++) {
-            const nextOffset = currentOffset + (i * LIMIT);
-            promises.push(
-                getHistoricDataByCommunity(
-                    community, minutes, nextOffset, LIMIT, from_ts, until_ts, granularity_minutes
-                )
+    while (!signal?.aborted) {
+        const response =
+            await getHistoricDataByCommunity(
+                community,
+                minutes,
+                offset,
+                LIMIT,
+                from_ts,
+                until_ts,
+                granularity_minutes
             );
+
+        if (signal?.aborted) {
+            return;
         }
 
-        const responses = await Promise.all(promises);
+        const itemsInPage =
+            countItems(response);
 
-        for (const response of responses) {
-            if (signal?.aborted) break;
 
-            let itemsInPage = 0;
-
-            // Criamos o chunk copiando as propriedades do nível superior (ex: status, community_id)
-            const singlePageChunk: any = { ...response, collections: {} };
-
-            for (const buildingKey of Object.keys(response.collections ?? {})) {
-                const rawBuilding = response.collections[buildingKey];
-                const incoming = rawBuilding?.items ?? [];
-                itemsInPage += incoming.length;
-
-                // 1. Agrega no merged global
-                if (!merged.collections[buildingKey]) {
-                    merged.collections[buildingKey] = { ...rawBuilding, items: [] };
-                }
-                merged.collections[buildingKey].items.push(...incoming);
-
-                // 2. Clona o edifício mantendo metadados (IDs, nomes) e isola os items deste lote
-                singlePageChunk.collections[buildingKey] = {
-                    ...rawBuilding,
-                    items: [...incoming]
-                };
-            }
-
-            // Envia a página estruturada corretamente de forma incremental
-            if (itemsInPage > 0) {
-                onPageReceived?.(singlePageChunk);
-            }
-
-            if (itemsInPage < LIMIT) {
-                done = true;
-            }
+        if (itemsInPage > 0) {
+            onPageReceived?.(response);
         }
 
-        if (done) break;
-        currentOffset += PARALLEL_PAGES * LIMIT;
+
+        if (itemsInPage < LIMIT) {
+            break;
+        }
+
+        offset += LIMIT;
     }
-
-    return merged;
 }
