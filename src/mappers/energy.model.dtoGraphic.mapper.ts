@@ -11,6 +11,15 @@ import type {
     PricingDTO,
 } from "../dto/energy.graphics.dto.ts";
 
+function formatLocalTimestamp(date: Date): string {
+    const pad = (n: number) => String(n).padStart(2, "0");
+
+    return (
+        `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+        `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    );
+}
+
 // ============================================================
 // CACHE
 // ============================================================
@@ -66,10 +75,7 @@ function mapConsumptionProductionItem(
         );
 
     return {
-        timestamp: item.timestamp
-            .toISOString()
-            .replace("T", " ")
-            .split(".")[0],
+        timestamp: formatLocalTimestamp(item.timestamp),
 
         "Non-shiftable Load-kWh":
             obs?.non_shiftable_load ?? 0,
@@ -316,10 +322,7 @@ function mapBatteryItem(
     if (!battery) return null;
 
     return {
-        timestamp: item.timestamp
-            .toISOString()
-            .replace("T", " ")
-            .split(".")[0],
+        timestamp: formatLocalTimestamp(item.timestamp),
 
         "Battery Soc-%":
             battery.soc * 100,
@@ -478,8 +481,7 @@ function mapEVItem(
     if (!ev) return null;
 
     return {
-        timestamp:
-            item.timestamp.toISOString(),
+        timestamp: formatLocalTimestamp(item.timestamp),
 
         "EV SOC-%":
             ev.SoC != null
@@ -655,8 +657,7 @@ function mapChargerItem(
     if (!charger) return null;
 
     return {
-        timestamp:
-            item.timestamp.toISOString(),
+        timestamp: formatLocalTimestamp(item.timestamp),
 
         Power:
             charger.power ?? 0,
@@ -803,10 +804,7 @@ function mapPricingItem(
     const obs = item.observations;
 
     return {
-        timestamp: item.timestamp
-            .toISOString()
-            .replace("T", " ")
-            .split(".")[0],
+        timestamp: formatLocalTimestamp(item.timestamp),
 
         "electricity_pricing-$/kWh":
             obs?.energy_price ?? 0,
@@ -1157,4 +1155,42 @@ function mergeSortedCaches<
     }
 
     return result;
+}
+
+// ============================================================
+// LIVE (SEM CACHE)
+// ============================================================
+
+export function mapConsumptionProductionForBuildingLive(
+    community: EnergyCommunity | null,
+    buildingId: string
+): ConsumptionProductionDTO[] {
+    if (!community) return [];
+
+    const building = community.collections.find(
+        (b) => b.id === buildingId
+    );
+
+    if (!building) return [];
+
+    return (building.items || [])
+        .filter((item) => !!item.observations)
+        .map(mapConsumptionProductionItem);
+}
+
+export function mapPricingForBuildingLive(
+    community: EnergyCommunity | null,
+    buildingId: string
+): PricingDTO[] {
+    if (!community) return [];
+
+    const building = community.collections.find(
+        (b) => b.id === buildingId
+    );
+
+    if (!building) return [];
+
+    return (building.items || [])
+        .filter((item) => !!item.observations)
+        .map(mapPricingItem);
 }

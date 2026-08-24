@@ -55,16 +55,22 @@ const intervals = [
 const MAX_POINTS = 500;
 const LIVE_WINDOW_MIN = 10;
 
-const floorToMidnightUTC = (ts: number): number => {
+const floorToMidnightLocal = (ts: number): number => {
     const d = new Date(ts);
-    d.setUTCHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
     return d.getTime();
 };
 
-const ceilToEndOfDayUTC = (ts: number): number => {
+const ceilToEndOfDayLocal = (ts: number): number => {
     const d = new Date(ts);
-    d.setUTCHours(23, 59, 59, 999);
+    d.setHours(23, 59, 59, 999);
     return d.getTime();
+};
+
+const getLocalDateKey = (ts: number): string => {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
 const aggregateGroup = (groupStart: number, group: InternalBatteryItem[]) => {
@@ -114,9 +120,9 @@ const getMidnightTicks = (data: any[]): string[] => {
     const seen = new Set<string>();
     const ticks: string[] = [];
     for (const item of data) {
-        const datePart = item["Time Step"].split("T")[0];
-        if (!seen.has(datePart)) {
-            seen.add(datePart);
+        const dateKey = getLocalDateKey(item.timestamp);
+        if (!seen.has(dateKey)) {
+            seen.add(dateKey);
             ticks.push(item["Time Step"]);
         }
     }
@@ -162,8 +168,8 @@ function CardBattery({ data, title, isLive}: CardBatteryProps) {
 
     const metadata = useMemo(() => {
         if (updatedData.length === 0) return { min: 0, max: 0, baseInt: 1 };
-        const min = floorToMidnightUTC(updatedData[0].timestamp);
-        const max = ceilToEndOfDayUTC(updatedData[updatedData.length - 1].timestamp);
+        const min = floorToMidnightLocal(updatedData[0].timestamp);
+        const max = ceilToEndOfDayLocal(updatedData[updatedData.length - 1].timestamp);
         const baseInt =
             updatedData.length > 1
                 ? Math.max(0.25, (updatedData[1].timestamp - updatedData[0].timestamp) / 60000)
@@ -206,7 +212,7 @@ function CardBattery({ data, title, isLive}: CardBatteryProps) {
     useEffect(() => {
         if (!init && updatedData.length > 0) {
             const pointsPerDay = Math.floor((24 * 60) / metadata.baseInt);
-            const defaultEnd = ceilToEndOfDayUTC(
+            const defaultEnd = ceilToEndOfDayLocal(
                 updatedData[pointsPerDay * 10]?.timestamp ?? metadata.max
             );
             const initialSlider: number[] = [metadata.min, defaultEnd];

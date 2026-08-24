@@ -71,16 +71,22 @@ const intervals = [
 const MAX_POINTS = 300;
 const LIVE_WINDOW_MIN = 10;
 
-const floorToMidnightUTC = (ts: number): number => {
+const floorToMidnightLocal = (ts: number): number => {
     const d = new Date(ts);
-    d.setUTCHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
     return d.getTime();
 };
 
-const ceilToEndOfDayUTC = (ts: number): number => {
+const ceilToEndOfDayLocal = (ts: number): number => {
     const d = new Date(ts);
-    d.setUTCHours(23, 59, 59, 999);
+    d.setHours(23, 59, 59, 999);
     return d.getTime();
+};
+
+const getLocalDateKey = (ts: number): string => {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
 const aggregateGroup = (groupStart: number, group: DataItem[]): DataItem => {
@@ -129,7 +135,7 @@ const getDayTransitionTicks = (data: DataItem[]): string[] => {
     let lastDateStr = "";
 
     data.forEach((item) => {
-        const currentDateStr = new Date(item.timestamp).toISOString().slice(0, 10);
+        const currentDateStr = getLocalDateKey(item.timestamp);
 
         if (currentDateStr !== lastDateStr) {
             ticks.push(item['Time Step']);
@@ -171,8 +177,8 @@ function CardConsumption_Production({ data, title, isLive }: Props) {
 
     const metadata = useMemo(() => {
         if (updatedData.length === 0) return { min: 0, max: 0, baseInt: 1 };
-        const min = floorToMidnightUTC(updatedData[0].timestamp);
-        const max = ceilToEndOfDayUTC(updatedData[updatedData.length - 1].timestamp);
+        const min = floorToMidnightLocal(updatedData[0].timestamp);
+        const max = ceilToEndOfDayLocal(updatedData[updatedData.length - 1].timestamp);
         const baseInt = updatedData.length > 1
             ? Math.max(0.25, (updatedData[1].timestamp - updatedData[0].timestamp) / 60000)
             : 1;
@@ -232,7 +238,7 @@ function CardConsumption_Production({ data, title, isLive }: Props) {
     useEffect(() => {
         if (!init && updatedData.length > 0) {
             const pointsPerDay = Math.floor((24 * 60) / metadata.baseInt);
-            const defaultEnd = ceilToEndOfDayUTC(updatedData[pointsPerDay * 10]?.timestamp ?? metadata.max);
+            const defaultEnd = ceilToEndOfDayLocal(updatedData[pointsPerDay * 10]?.timestamp ?? metadata.max);
             const initialSlider: number[] = [metadata.min, defaultEnd];
             setSliderValues(initialSlider);
 

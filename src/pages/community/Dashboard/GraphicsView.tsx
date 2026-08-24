@@ -19,6 +19,13 @@ import {
     createIncrementalBatteryMapper,
     createIncrementalEVMapper,
     createIncrementalChargerMapper,
+    mapConsumptionProductionToDTO,
+    mapPricingDataToPricingDTO,
+    mapBatteryDataToBatteryDTOMap,
+    mapEVDataToEVDTOMap,
+    mapChargerDataToChargerDTOMap,
+    mapConsumptionProductionForBuildingLive,
+    mapPricingForBuildingLive,
 } from "../../../mappers/energy.model.dtoGraphic.mapper";
 import {
     type TimeFilter,
@@ -329,9 +336,6 @@ function GraphicsView({
 
     /*
      * Dados gerais.
-     *
-     * useMemo evita voltar a executar
-     * os mappers se mappingSource não mudou.
      */
     const communityConsumptionProductionData =
         useMemo(() => {
@@ -339,10 +343,14 @@ function GraphicsView({
                 return [];
             }
 
-            return consumptionProductionMapperRef.current(
-                mappingSource
-            );
-        }, [mappingSource]);
+            return isLive
+                ? mapConsumptionProductionToDTO(
+                    mappingSource
+                )
+                : consumptionProductionMapperRef.current(
+                    mappingSource
+                );
+        }, [mappingSource, isLive]);
 
     const communityPricingData =
         useMemo(() => {
@@ -350,10 +358,14 @@ function GraphicsView({
                 return [];
             }
 
-            return pricingMapperRef.current(
-                mappingSource
-            );
-        }, [mappingSource]);
+            return isLive
+                ? mapPricingDataToPricingDTO(
+                    mappingSource
+                )
+                : pricingMapperRef.current(
+                    mappingSource
+                );
+        }, [mappingSource, isLive]);
 
     /*
      * Batteries
@@ -380,11 +392,17 @@ function GraphicsView({
 
                     map.set(
                         `${equipment.building}:${equipment.id}`,
-                        batteryMapperRef.current(
-                            mappingSource,
-                            equipment.building,
-                            equipment.id
-                        )
+                        isLive
+                            ? mapBatteryDataToBatteryDTOMap(
+                                mappingSource,
+                                equipment.building,
+                                equipment.id
+                            )
+                            : batteryMapperRef.current(
+                                mappingSource,
+                                equipment.building,
+                                equipment.id
+                            )
                     );
                 }
             );
@@ -392,7 +410,8 @@ function GraphicsView({
             return map;
         }, [
             mappingSource,
-            selectedEquipment
+            selectedEquipment,
+            isLive
         ]);
 
     /*
@@ -420,11 +439,17 @@ function GraphicsView({
 
                     map.set(
                         `${equipment.building}:${equipment.id}`,
-                        evMapperRef.current(
-                            mappingSource,
-                            equipment.building,
-                            equipment.id
-                        )
+                        isLive
+                            ? mapEVDataToEVDTOMap(
+                                mappingSource,
+                                equipment.building,
+                                equipment.id
+                            )
+                            : evMapperRef.current(
+                                mappingSource,
+                                equipment.building,
+                                equipment.id
+                            )
                     );
                 }
             );
@@ -432,7 +457,8 @@ function GraphicsView({
             return map;
         }, [
             mappingSource,
-            selectedEquipment
+            selectedEquipment,
+            isLive
         ]);
 
     /*
@@ -460,11 +486,17 @@ function GraphicsView({
 
                     map.set(
                         `${equipment.building}:${equipment.id}`,
-                        chargerMapperRef.current(
-                            mappingSource,
-                            equipment.building,
-                            equipment.id
-                        )
+                        isLive
+                            ? mapChargerDataToChargerDTOMap(
+                                mappingSource,
+                                equipment.building,
+                                equipment.id
+                            )
+                            : chargerMapperRef.current(
+                                mappingSource,
+                                equipment.building,
+                                equipment.id
+                            )
                     );
                 }
             );
@@ -472,7 +504,8 @@ function GraphicsView({
             return map;
         }, [
             mappingSource,
-            selectedEquipment
+            selectedEquipment,
+            isLive
         ]);
 
     /*
@@ -519,16 +552,26 @@ function GraphicsView({
                         equipment.building,
                         {
                             consumption:
-                                buildingConsumptionMapperRef.current(
-                                    mappingSource,
-                                    equipment.building
-                                ),
+                                isLive
+                                    ? mapConsumptionProductionForBuildingLive(
+                                        mappingSource,
+                                        equipment.building
+                                    )
+                                    : buildingConsumptionMapperRef.current(
+                                        mappingSource,
+                                        equipment.building
+                                    ),
 
                             pricing:
-                                buildingPricingMapperRef.current(
-                                    mappingSource,
-                                    equipment.building
-                                )
+                                isLive
+                                    ? mapPricingForBuildingLive(
+                                        mappingSource,
+                                        equipment.building
+                                    )
+                                    : buildingPricingMapperRef.current(
+                                        mappingSource,
+                                        equipment.building
+                                    )
                         }
                     );
                 }
@@ -537,7 +580,8 @@ function GraphicsView({
             return map;
         }, [
             mappingSource,
-            selectedEquipment
+            selectedEquipment,
+            isLive
         ]);
 
     const handleQuickSearch = (

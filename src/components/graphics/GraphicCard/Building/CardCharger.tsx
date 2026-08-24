@@ -7,16 +7,22 @@ import { Button } from "react-bootstrap";
 import DateRangeSlider from "../DateRangeSlider";
 import "./CardCharger.css";
 
-const floorToMidnightUTC = (ts: number): number => {
+const floorToMidnightLocal = (ts: number): number => {
     const d = new Date(ts);
-    d.setUTCHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
     return d.getTime();
 };
 
-const ceilToEndOfDayUTC = (ts: number): number => {
+const ceilToEndOfDayLocal = (ts: number): number => {
     const d = new Date(ts);
-    d.setUTCHours(23, 59, 59, 999);
+    d.setHours(23, 59, 59, 999);
     return d.getTime();
+};
+
+const getLocalDateKey = (ts: number): string => {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
 const intervals = [
@@ -69,7 +75,7 @@ const getDayTransitionTicks = (data: any[]): string[] => {
     const ticks: string[] = [];
     let lastDateStr = "";
     for (const item of data) {
-        const d = new Date(item.timestamp).toISOString().slice(0, 10);
+        const d = getLocalDateKey(item.timestamp);
         if (d !== lastDateStr) { ticks.push(item['Time Step']); lastDateStr = d; }
     }
     return ticks;
@@ -318,8 +324,8 @@ function CardCharger({ data, title, isLive}: Props) {
 
     const metadata = useMemo(() => {
         if (updatedData.length === 0) return { min: 0, max: 0, baseInt: 1 };
-        const min     = floorToMidnightUTC(updatedData[0].timestamp);
-        const max     = ceilToEndOfDayUTC(updatedData[updatedData.length - 1].timestamp);
+        const min     = floorToMidnightLocal(updatedData[0].timestamp);
+        const max     = ceilToEndOfDayLocal(updatedData[updatedData.length - 1].timestamp);
         const baseInt = updatedData.length > 1
             ? Math.max(0.25, (updatedData[1].timestamp - updatedData[0].timestamp) / 60000)
             : 1;
@@ -354,7 +360,7 @@ function CardCharger({ data, title, isLive}: Props) {
     useEffect(() => {
         if (!init && updatedData.length > 0) {
             const ppd        = Math.floor((24 * 60) / metadata.baseInt);
-            const defaultEnd = ceilToEndOfDayUTC(updatedData[ppd * 10]?.timestamp ?? metadata.max);
+            const defaultEnd = ceilToEndOfDayLocal(updatedData[ppd * 10]?.timestamp ?? metadata.max);
             setSliderValues([metadata.min, defaultEnd]);
             const viable = intervals.find(({ value }) => checkViability(value));
             if (viable) setIntervalInput(viable.value);
