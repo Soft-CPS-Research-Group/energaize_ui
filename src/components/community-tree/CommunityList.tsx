@@ -17,6 +17,18 @@ function CommunityList({ selectedItems, onSelectionChange, community }: Communit
         return <div className="community-container">Loading data..</div>;
     }
 
+    if (community.collections.length === 0) {
+        return (
+            <div className="community-container">
+                <div className="title-wrapper">
+                    <h2 className="community-title">{community.id}</h2>
+                    <div className="title-underline"></div>
+                </div>
+                <p className="no-data-message">There is no data available</p>
+            </div>
+        );
+    }
+
     const toggleExpanded = (id: string) => {
         setExpandedIds(prev =>
             prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]

@@ -31,7 +31,7 @@ import {
     type TimeFilter,
     useEnergyData
 } from "../../../hooks/useEnergyData";
-import { useRealTimeData } from "../../../hooks/useRealTimeData";
+import { useRealTimeData, communityHouses } from "../../../hooks/useRealTimeData";
 import "./GraphicsView.css";
 import type { EnergyCommunity } from "../../../models/energy.model.ts";
 import {
@@ -40,33 +40,6 @@ import {
 } from "../../../models/energy.selectedEquipment";
 import { useUI } from "../../../contexts/UIContext";
 
-const AVAILABLE_HOUSES = [
-    {
-        label: "R-H-01",
-        exchange: "percepta_live_data_R-H-01"
-    },
-    {
-        label: "R-H-02",
-        exchange: "percepta_live_data_R-H-02"
-    },
-    {
-        label: "R-H-03",
-        exchange: "percepta_live_data_R-H-03"
-    },
-    {
-        label: "R-H-04",
-        exchange: "percepta_live_data_R-H-04"
-    },
-    {
-        label: "São Mamede",
-        exchange: "percepta_live_data_SaoMamede"
-    },
-    {
-        label: "i-charging headquarters",
-        exchange:
-            "percepta_live_data_i-charging headquarters 3Phase"
-    }
-];
 
 const MemoCardConsumption_Production =
     memo(CardConsumption_Production);
@@ -137,7 +110,8 @@ function GraphicsView({
         useState<string[]>([]);
 
     const {
-        data: realTimeData
+        data: realTimeData,
+        isWaitingForLiveData
     } = useRealTimeData(
         selectedExchanges,
         isLive
@@ -168,22 +142,26 @@ function GraphicsView({
     }, [onCommunityChange]);
 
     useEffect(() => {
-        if (isLive && realTimeData) {
-            onCommunityChangeRef.current(
-                realTimeData
-            );
-        } else if (
-            !isLive &&
-            communityData
-        ) {
-            onCommunityChangeRef.current(
-                communityData
-            );
+        if (isLive) {
+            if (realTimeData) {
+                onCommunityChangeRef.current(realTimeData);
+            } else if (!isWaitingLive) {
+                onCommunityChangeRef.current({ id: community, collections: [] });
+            }
+        } else {
+            if (communityData) {
+                onCommunityChangeRef.current(communityData);
+            } else if (!loading) {
+                onCommunityChangeRef.current({ id: community, collections: [] });
+            }
         }
     }, [
         communityData,
         realTimeData,
-        isLive
+        isLive,
+        loading,
+        isWaitingLive,
+        community
     ]);
 
     useEffect(() => {
@@ -825,6 +803,26 @@ function GraphicsView({
             isLive
         ]);
 
+    /*
+     * Cruzamento entre as casas disponiveis
+     * para tempo real e as da comunidade
+     */
+
+    const [availableHouses, setAvailableHouses] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (!communityData) return;
+
+        const loadHouses = async () => {
+            const houses = await communityHouses(communityData);
+            setAvailableHouses(houses);
+        };
+
+        loadHouses();
+    }, [communityData]);
+
+
+
     return (
         <div className="view-container">
             <h2>{community}</h2>
@@ -911,40 +909,30 @@ function GraphicsView({
                                     Select Buildings
                                 </div>
 
-                                {AVAILABLE_HOUSES.map(
-                                    house => (
+                                {availableHouses.length > 0 ? (
+                                    availableHouses.map(house => (
                                         <div
-                                            key={
-                                                house.exchange
-                                            }
+                                            key={house}
                                             className={`live-dropdown-item ${
-                                                selectedExchanges.includes(
-                                                    house.exchange
-                                                )
+                                                selectedExchanges.includes(house)
                                                     ? "selected"
                                                     : ""
                                             }`}
-                                            onClick={() =>
-                                                handleSelectHouse(
-                                                    house.exchange
-                                                )
-                                            }
+                                            onClick={() => handleSelectHouse(house)}
                                         >
                                             <input
                                                 type="checkbox"
-                                                checked={selectedExchanges.includes(
-                                                    house.exchange
-                                                )}
+                                                checked={selectedExchanges.includes(house)}
                                                 readOnly
                                             />
 
-                                            <span>
-                                                {
-                                                    house.label
-                                                }
-                                            </span>
+                                            <span>{house}</span>
                                         </div>
-                                    )
+                                    ))
+                                ) : (
+                                    <div className="live-dropdown-empty">
+                                        No buildings available
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -1030,13 +1018,12 @@ function GraphicsView({
             </div>
 
             <div className="graph-container">
-                {loading ||
-                isWaitingLive ? (
+                {loading || isWaitingForLiveData ? (
                     <div className="loader-wrapper">
                         <div className="spinner" />
 
                         <span>
-                            {isWaitingLive
+                            {isWaitingForLiveData
                                 ? "Connecting to Live Stream..."
                                 : "Processing Historical Data..."}
                         </span>

@@ -297,3 +297,9 @@
 .community-list > li:hover > .item-header {
     background: color-mix(in srgb, var(--brand) 5%, transparent);
 }
+
+.no-data-message {
+    color: #888;
+    font-style: italic;
+    padding: 1rem 0;
+}

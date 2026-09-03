@@ -1,289 +1,336 @@
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+    type ReactNode
 } from "react";
 import { createRec, isCommunityBackendMode, listCommunityContexts } from "../api/communityApi";
+import { getCommunitiesData } from "../api/communityDataApi";
+import { useAuth } from "./AuthContext";
 import { INITIAL_COMMUNITIES } from "../constants";
 import type { CommunityContext, NotificationItem, ThemeMode, ToastItem } from "../types";
 import { createId } from "../utils/id";
 import { readStorage, STORAGE_KEYS, writeStorage } from "../utils/storage";
 
 interface UIContextValue {
-  theme: ThemeMode;
-  setTheme: (mode: ThemeMode) => void;
-  toggleTheme: () => void;
-  communities: CommunityContext[];
-  activeCommunity: CommunityContext;
-  setActiveCommunity: (communityId: string) => void;
-  addCommunity: (
-    input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }
-  ) => Promise<CommunityContext>;
-  notifications: NotificationItem[];
-  toasts: ToastItem[];
-  unreadCount: number;
-  pushNotification: (input: Omit<NotificationItem, "id" | "timestamp" | "read">) => void;
-  dismissToast: (id: string) => void;
-  markNotificationRead: (id: string) => void;
-  markAllNotificationsRead: () => void;
-  removeNotification: (id: string) => void;
-  clearNotifications: () => void;
-  treeCollapsed: boolean;
-  toggleTreeCollapsed: () => void;
-  mobileTreeOpen: boolean;
-  setMobileTreeOpen: (value: boolean) => void;
-  selectedEntityId: string;
-  setSelectedEntityId: (value: string) => void;
+    theme: ThemeMode;
+    setTheme: (mode: ThemeMode) => void;
+    toggleTheme: () => void;
+    communities: CommunityContext[];
+    activeCommunity: CommunityContext;
+    setActiveCommunity: (communityId: string) => void;
+    addCommunity: (
+        input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }
+    ) => Promise<CommunityContext>;
+    notifications: NotificationItem[];
+    toasts: ToastItem[];
+    unreadCount: number;
+    pushNotification: (input: Omit<NotificationItem, "id" | "timestamp" | "read">) => void;
+    dismissToast: (id: string) => void;
+    markNotificationRead: (id: string) => void;
+    markAllNotificationsRead: () => void;
+    removeNotification: (id: string) => void;
+    clearNotifications: () => void;
+    treeCollapsed: boolean;
+    toggleTreeCollapsed: () => void;
+    mobileTreeOpen: boolean;
+    setMobileTreeOpen: (value: boolean) => void;
+    selectedEntityId: string;
+    setSelectedEntityId: (value: string) => void;
 }
 
 const UIContext = createContext<UIContextValue | undefined>(undefined);
 
 function resolveInitialCommunities(): CommunityContext[] {
-  const domainCommunities = INITIAL_COMMUNITIES;
-  const persisted = readStorage<CommunityContext[] | null>(STORAGE_KEYS.communities, null);
-  if (!persisted || persisted.length === 0) return domainCommunities;
+    const domainCommunities = INITIAL_COMMUNITIES;
+    const persisted = readStorage<CommunityContext[] | null>(STORAGE_KEYS.communities, null);
+    if (!persisted || persisted.length === 0) return domainCommunities;
 
-  const domainIds = new Set(domainCommunities.map((community) => community.id));
-  const localDrafts = persisted.filter((community) => !domainIds.has(community.id));
-  return [...localDrafts, ...domainCommunities];
+    const domainIds = new Set(domainCommunities.map((community) => community.id));
+    const localDrafts = persisted.filter((community) => !domainIds.has(community.id));
+    return [...localDrafts, ...domainCommunities];
 }
 
 function resolvePreferredTheme(): ThemeMode {
-  const persisted = readStorage<ThemeMode | null>(STORAGE_KEYS.theme, null);
-  if (persisted) return persisted;
-  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-    return "dark";
-  }
-  return "light";
+    const persisted = readStorage<ThemeMode | null>(STORAGE_KEYS.theme, null);
+    if (persisted) return persisted;
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+        return "dark";
+    }
+    return "light";
+}
+
+// A API /energy-communities devolve apenas uma lista de nomes (string[]).
+// Preenchemos os restantes campos de CommunityContext com defaults, já que
+// o endpoint não fornece localização, nº de edifícios, etc.
+function mapEnergyCommunityNamesToContext(names: string[]): CommunityContext[] {
+    return names.map((name) => ({
+        id: name,
+        name,
+        location: "Location not set",
+        description: undefined,
+        buildings: 0,
+        assets: 0,
+        status: "normal" as const,
+        topologyPreset: "blank" as const
+    }));
 }
 
 export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [theme, setThemeState] = useState<ThemeMode>(resolvePreferredTheme);
-  const [communities, setCommunities] = useState<CommunityContext[]>(resolveInitialCommunities);
+    const { session } = useAuth();
+    const isRecManager = session?.role === "rec_manager";
 
-  const [activeCommunityId, setActiveCommunityId] = useState<string>(() => {
-    const persisted = readStorage<string | null>(STORAGE_KEYS.communityId, null);
-    return persisted || INITIAL_COMMUNITIES[0].id;
-  });
+    const [theme, setThemeState] = useState<ThemeMode>(resolvePreferredTheme);
+    const [communities, setCommunities] = useState<CommunityContext[]>(resolveInitialCommunities);
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [treeCollapsed, setTreeCollapsed] = useState(false);
-  const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
-  const [selectedEntityId, setSelectedEntityId] = useState("community");
+    const [activeCommunityId, setActiveCommunityId] = useState<string>(() => {
+        const persisted = readStorage<string | null>(STORAGE_KEYS.communityId, null);
+        return persisted || INITIAL_COMMUNITIES[0].id;
+    });
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    writeStorage(STORAGE_KEYS.theme, theme);
-  }, [theme]);
+    const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+    const [toasts, setToasts] = useState<ToastItem[]>([]);
+    const [treeCollapsed, setTreeCollapsed] = useState(false);
+    const [mobileTreeOpen, setMobileTreeOpen] = useState(false);
+    const [selectedEntityId, setSelectedEntityId] = useState("community");
 
-  useEffect(() => {
-    if (!isCommunityBackendMode()) return;
+    useEffect(() => {
+        document.documentElement.dataset.theme = theme;
+        writeStorage(STORAGE_KEYS.theme, theme);
+    }, [theme]);
 
-    let cancelled = false;
-    listCommunityContexts()
-      .then((nextCommunities) => {
-        if (cancelled || nextCommunities.length === 0) return;
-        setCommunities(nextCommunities);
-        writeStorage(STORAGE_KEYS.communities, nextCommunities);
-        if (!nextCommunities.some((community) => community.id === activeCommunityId)) {
-          const nextActive = nextCommunities[0];
-          setActiveCommunityId(nextActive.id);
-          setSelectedEntityId("community");
-          writeStorage(STORAGE_KEYS.communityId, nextActive.id);
+    // rec_manager: vai buscar as comunidades reais ao backend do INESC TEC (/energy-communities).
+    // Restantes roles: mantêm o comportamento existente (listCommunityContexts / mock).
+    useEffect(() => {
+        if (isRecManager) {
+            let cancelled = false;
+            getCommunitiesData()
+                .then((names: string[]) => {
+                    if (cancelled || !names || names.length === 0) return;
+                    const mapped = mapEnergyCommunityNamesToContext(names);
+                    setCommunities(mapped);
+                    writeStorage(STORAGE_KEYS.communities, mapped);
+                    if (!mapped.some((community) => community.id === activeCommunityId)) {
+                        const nextActive = mapped[0];
+                        setActiveCommunityId(nextActive.id);
+                        setSelectedEntityId("community");
+                        writeStorage(STORAGE_KEYS.communityId, nextActive.id);
+                    }
+                })
+                .catch((error) => {
+                    console.warn("Energy communities could not be loaded from backend", error);
+                });
+
+            return () => {
+                cancelled = true;
+            };
         }
-      })
-      .catch((error) => {
-        console.warn("Community contexts could not be loaded from backend", error);
-      });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeCommunityId]);
+        if (!isCommunityBackendMode()) return;
 
-  const setTheme = useCallback((mode: ThemeMode) => {
-    setThemeState(mode);
-  }, []);
+        let cancelled = false;
+        listCommunityContexts()
+            .then((nextCommunities) => {
+                if (cancelled || nextCommunities.length === 0) return;
+                setCommunities(nextCommunities);
+                writeStorage(STORAGE_KEYS.communities, nextCommunities);
+                if (!nextCommunities.some((community) => community.id === activeCommunityId)) {
+                    const nextActive = nextCommunities[0];
+                    setActiveCommunityId(nextActive.id);
+                    setSelectedEntityId("community");
+                    writeStorage(STORAGE_KEYS.communityId, nextActive.id);
+                }
+            })
+            .catch((error) => {
+                console.warn("Community contexts could not be loaded from backend", error);
+            });
 
-  const toggleTheme = useCallback(() => {
-    setThemeState((previous) => (previous === "light" ? "dark" : "light"));
-  }, []);
-
-  const activeCommunity = useMemo(() => {
-    return communities.find((item) => item.id === activeCommunityId) || communities[0];
-  }, [activeCommunityId, communities]);
-
-  const setActiveCommunity = useCallback((communityId: string) => {
-    setActiveCommunityId(communityId);
-    setSelectedEntityId("community");
-    writeStorage(STORAGE_KEYS.communityId, communityId);
-  }, []);
-
-  const addCommunity = useCallback(
-    async (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => {
-      const rec = await createRec({
-        name: input.name,
-        localization: { name: input.location },
-        description: input.description,
-        action_frequency: "daily",
-        power_limit_export: { megawatts: 0 },
-        power_limit_import: { megawatts: 0 }
-      });
-      const nextCommunities = await listCommunityContexts();
-      const community =
-        nextCommunities.find((item) => item.id === rec.id) || {
-          id: rec.id,
-          name: rec.name,
-          location: rec.localization.name,
-          description: rec.description,
-          buildings: 0,
-          assets: 0,
-          status: "normal" as const,
-          topologyPreset: "blank" as const
+        return () => {
+            cancelled = true;
         };
+    }, [activeCommunityId, isRecManager]);
 
-      setCommunities((previous) => {
-        const next =
-          nextCommunities.length > 0
-            ? nextCommunities
-            : [community, ...previous.filter((item) => item.id !== community.id)];
-        writeStorage(STORAGE_KEYS.communities, next);
-        return next;
-      });
-      setActiveCommunityId(community.id);
-      setSelectedEntityId("community");
-      writeStorage(STORAGE_KEYS.communityId, community.id);
-      return community;
-    },
-    []
-  );
+    const setTheme = useCallback((mode: ThemeMode) => {
+        setThemeState(mode);
+    }, []);
 
-  const pushNotification = useCallback(
-    (input: Omit<NotificationItem, "id" | "timestamp" | "read">) => {
-      const id = createId("notif");
-      const createdAt = Date.now();
-      setNotifications((previous) => [
-        {
-          id,
-          timestamp: createdAt,
-          read: false,
-          ...input
+    const toggleTheme = useCallback(() => {
+        setThemeState((previous) => (previous === "light" ? "dark" : "light"));
+    }, []);
+
+    const activeCommunity = useMemo(() => {
+        return communities.find((item) => item.id === activeCommunityId) || communities[0];
+    }, [activeCommunityId, communities]);
+
+    const setActiveCommunity = useCallback((communityId: string) => {
+        setActiveCommunityId(communityId);
+        setSelectedEntityId("community");
+        writeStorage(STORAGE_KEYS.communityId, communityId);
+    }, []);
+
+    const addCommunity = useCallback(
+        async (input: Omit<CommunityContext, "id" | "status"> & { status?: CommunityContext["status"] }) => {
+            const rec = await createRec({
+                name: input.name,
+                localization: { name: input.location },
+                description: input.description,
+                action_frequency: "daily",
+                power_limit_export: { megawatts: 0 },
+                power_limit_import: { megawatts: 0 }
+            });
+            const nextCommunities = await listCommunityContexts();
+            const community =
+                nextCommunities.find((item) => item.id === rec.id) || {
+                    id: rec.id,
+                    name: rec.name,
+                    location: rec.localization.name,
+                    description: rec.description,
+                    buildings: 0,
+                    assets: 0,
+                    status: "normal" as const,
+                    topologyPreset: "blank" as const
+                };
+
+            setCommunities((previous) => {
+                const next =
+                    nextCommunities.length > 0
+                        ? nextCommunities
+                        : [community, ...previous.filter((item) => item.id !== community.id)];
+                writeStorage(STORAGE_KEYS.communities, next);
+                return next;
+            });
+            setActiveCommunityId(community.id);
+            setSelectedEntityId("community");
+            writeStorage(STORAGE_KEYS.communityId, community.id);
+            return community;
         },
-        ...previous
-      ]);
-
-      setToasts((previous) => [
-        {
-          id,
-          title: input.title,
-          message: input.message,
-          severity: input.severity,
-          createdAt
-        },
-        ...previous
-      ]);
-
-      window.setTimeout(() => {
-        setToasts((previous) => previous.filter((item) => item.id !== id));
-      }, 4500);
-    },
-    []
-  );
-
-  const dismissToast = useCallback((id: string) => {
-    setToasts((previous) => previous.filter((item) => item.id !== id));
-  }, []);
-
-  const markNotificationRead = useCallback((id: string) => {
-    setNotifications((previous) =>
-      previous.map((item) => (item.id === id ? { ...item, read: true } : item))
+        []
     );
-  }, []);
 
-  const markAllNotificationsRead = useCallback(() => {
-    setNotifications((previous) => previous.map((item) => ({ ...item, read: true })));
-  }, []);
+    const pushNotification = useCallback(
+        (input: Omit<NotificationItem, "id" | "timestamp" | "read">) => {
+            const id = createId("notif");
+            const createdAt = Date.now();
+            setNotifications((previous) => [
+                {
+                    id,
+                    timestamp: createdAt,
+                    read: false,
+                    ...input
+                },
+                ...previous
+            ]);
 
-  const removeNotification = useCallback((id: string) => {
-    setNotifications((previous) => previous.filter((item) => item.id !== id));
-  }, []);
+            setToasts((previous) => [
+                {
+                    id,
+                    title: input.title,
+                    message: input.message,
+                    severity: input.severity,
+                    createdAt
+                },
+                ...previous
+            ]);
 
-  const clearNotifications = useCallback(() => {
-    setNotifications([]);
-  }, []);
+            window.setTimeout(() => {
+                setToasts((previous) => previous.filter((item) => item.id !== id));
+            }, 4500);
+        },
+        []
+    );
 
-  const toggleTreeCollapsed = useCallback(() => {
-    setTreeCollapsed((previous) => !previous);
-  }, []);
+    const dismissToast = useCallback((id: string) => {
+        setToasts((previous) => previous.filter((item) => item.id !== id));
+    }, []);
 
-  const unreadCount = useMemo(
-    () => notifications.reduce((acc, item) => acc + (item.read ? 0 : 1), 0),
-    [notifications]
-  );
+    const markNotificationRead = useCallback((id: string) => {
+        setNotifications((previous) =>
+            previous.map((item) => (item.id === id ? { ...item, read: true } : item))
+        );
+    }, []);
 
-  const value = useMemo<UIContextValue>(
-    () => ({
-      theme,
-      setTheme,
-      toggleTheme,
-      communities,
-      activeCommunity,
-      setActiveCommunity,
-      addCommunity,
-      notifications,
-      toasts,
-      unreadCount,
-      pushNotification,
-      dismissToast,
-      markNotificationRead,
-      markAllNotificationsRead,
-      removeNotification,
-      clearNotifications,
-      treeCollapsed,
-      toggleTreeCollapsed,
-      mobileTreeOpen,
-      setMobileTreeOpen,
-      selectedEntityId,
-      setSelectedEntityId
-    }),
-    [
-      theme,
-      setTheme,
-      toggleTheme,
-      communities,
-      activeCommunity,
-      setActiveCommunity,
-      addCommunity,
-      notifications,
-      toasts,
-      unreadCount,
-      pushNotification,
-      dismissToast,
-      markNotificationRead,
-      markAllNotificationsRead,
-      removeNotification,
-      clearNotifications,
-      treeCollapsed,
-      toggleTreeCollapsed,
-      mobileTreeOpen,
-      setMobileTreeOpen,
-      selectedEntityId,
-      setSelectedEntityId
-    ]
-  );
+    const markAllNotificationsRead = useCallback(() => {
+        setNotifications((previous) => previous.map((item) => ({ ...item, read: true })));
+    }, []);
 
-  return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
+    const removeNotification = useCallback((id: string) => {
+        setNotifications((previous) => previous.filter((item) => item.id !== id));
+    }, []);
+
+    const clearNotifications = useCallback(() => {
+        setNotifications([]);
+    }, []);
+
+    const toggleTreeCollapsed = useCallback(() => {
+        setTreeCollapsed((previous) => !previous);
+    }, []);
+
+    const unreadCount = useMemo(
+        () => notifications.reduce((acc, item) => acc + (item.read ? 0 : 1), 0),
+        [notifications]
+    );
+
+    const value = useMemo<UIContextValue>(
+        () => ({
+            theme,
+            setTheme,
+            toggleTheme,
+            communities,
+            activeCommunity,
+            setActiveCommunity,
+            addCommunity,
+            notifications,
+            toasts,
+            unreadCount,
+            pushNotification,
+            dismissToast,
+            markNotificationRead,
+            markAllNotificationsRead,
+            removeNotification,
+            clearNotifications,
+            treeCollapsed,
+            toggleTreeCollapsed,
+            mobileTreeOpen,
+            setMobileTreeOpen,
+            selectedEntityId,
+            setSelectedEntityId
+        }),
+        [
+            theme,
+            setTheme,
+            toggleTheme,
+            communities,
+            activeCommunity,
+            setActiveCommunity,
+            addCommunity,
+            notifications,
+            toasts,
+            unreadCount,
+            pushNotification,
+            dismissToast,
+            markNotificationRead,
+            markAllNotificationsRead,
+            removeNotification,
+            clearNotifications,
+            treeCollapsed,
+            toggleTreeCollapsed,
+            mobileTreeOpen,
+            setMobileTreeOpen,
+            selectedEntityId,
+            setSelectedEntityId
+        ]
+    );
+
+    return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
 }
 
 export function useUI(): UIContextValue {
-  const context = useContext(UIContext);
-  if (!context) {
-    throw new Error("useUI must be used inside UIProvider");
-  }
-  return context;
+    const context = useContext(UIContext);
+    if (!context) {
+        throw new Error("useUI must be used inside UIProvider");
+    }
+    return context;
 }

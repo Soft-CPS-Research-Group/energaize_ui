@@ -4,9 +4,9 @@ const api = axios.create({
     baseURL: 'http://193.136.62.78:8000',
 })
 
-async function getCommunitiesData() {
+async function getCommunitiesData(): Promise<string[]> {
     const response = await api.get('/energy-communities')
-    return response.data;
+    return response.data.energy_communities;
 }
 
 async function getHistoricDataByCommunity(
