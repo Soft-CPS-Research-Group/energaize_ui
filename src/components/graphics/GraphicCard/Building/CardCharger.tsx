@@ -7,12 +7,6 @@ import { Button } from "react-bootstrap";
 import DateRangeSlider from "../DateRangeSlider";
 import "./CardCharger.css";
 
-const floorToMidnightLocal = (ts: number): number => {
-    const d = new Date(ts);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-};
-
 const ceilToEndOfDayLocal = (ts: number): number => {
     const d = new Date(ts);
     d.setHours(23, 59, 59, 999);
@@ -189,7 +183,11 @@ const getEVEvents = (data: any[], aggregatedData: any[]) => {
     return { arrivals, departures, collisions, swaps, eventMap };
 };
 
-const shortenEVName = (name: string) => name.replace(/Electric_Vehicle?-?/i, 'EV-');
+const shortenEVName = (name: string | number): string => {
+    const value = String(name);
+
+    return value.replace(/Electric_Vehicle?-?/i, "EV-");
+};
 
 const EVENT_LABELS: Record<EVEventType, string> = {
     arrival:   'Arrival',
@@ -323,13 +321,43 @@ function CardCharger({ data, title, isLive}: Props) {
     }, [data]);
 
     const metadata = useMemo(() => {
-        if (updatedData.length === 0) return { min: 0, max: 0, baseInt: 1 };
-        const min     = floorToMidnightLocal(updatedData[0].timestamp);
-        const max     = ceilToEndOfDayLocal(updatedData[updatedData.length - 1].timestamp);
+        if (updatedData.length === 0) {
+            return {
+                min: 0,
+                max: 0,
+                baseInt: 1,
+                sliderStep: 24 * 60 * 60 * 1000,
+            };
+        }
+
+        const min = updatedData[0].timestamp;
+        const max = updatedData[updatedData.length - 1].timestamp;
+
         const baseInt = updatedData.length > 1
-            ? Math.max(0.25, (updatedData[1].timestamp - updatedData[0].timestamp) / 60000)
+            ? Math.max(
+                0.25,
+                (updatedData[1].timestamp - updatedData[0].timestamp) / 60000
+            )
             : 1;
-        return { min, max, baseInt };
+
+        const totalMinutes = (max - min) / 60000;
+
+        let sliderStep: number;
+
+        if (totalMinutes < 60) {
+            sliderStep = 60 * 1000;              // 1 minuto
+        } else if (totalMinutes < 24 * 60) {
+            sliderStep = 60 * 60 * 1000;         // 1 hora
+        } else {
+            sliderStep = 24 * 60 * 60 * 1000;    // 1 dia
+        }
+
+        return {
+            min,
+            max,
+            baseInt,
+            sliderStep,
+        };
     }, [updatedData]);
 
     const [sliderValues,   setSliderValues]   = useState<number[]>([0, 0]);
@@ -516,6 +544,7 @@ function CardCharger({ data, title, isLive}: Props) {
                         maxTimestamp={metadata.max}
                         sliderValues={sliderValues}
                         onSliderChange={handleSliderChange}
+                        step={metadata.sliderStep}
                     />
                 </div>
             </div>

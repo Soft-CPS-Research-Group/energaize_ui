@@ -78,14 +78,6 @@ export default function App(): JSX.Element {
                     <Route element={<RoleGuard allowed={["rec_manager", "prosumer"]} />}>
                         <Route path="community">
                             <Route index element={<Navigate to="dashboard" replace />} />
-
-                            {/*
-                                O GraphicsView já não é renderizado aqui. Ele vive persistentemente
-                                dentro do AppShell (fora do Outlet), escondido por CSS quando esta
-                                rota não está ativa, para não perder estado/dados nem recalcular
-                                os gráficos ao trocar de página. Esta Route existe só para o
-                                path-matching (RoleGuard, isDashboardRoute no AppShell, redirects).
-                            */}
                             <Route path="dashboard" element={<></>} />
                             <Route path="topology" element={<MapBuildings community={isRecManager ? communityData : null} />} />
                             <Route path="logs" element={<CommunityLogsPage />} />

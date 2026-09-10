@@ -26,257 +26,628 @@ interface CardPricingProps {
 const PRICING_KEY = 'electricity_pricing-$/kWh';
 
 const intervals = [
-    { value: 0.25,  label: "15 sec"  },
-    { value: 0.5,   label: "30 sec"  },
-    { value: 1,     label: "1 min" },
-    { value: 5,     label: "5 min" },
+    { value: 0.25, label: "15 sec" },
+    { value: 0.5, label: "30 sec" },
+    { value: 1, label: "1 min" },
+    { value: 5, label: "5 min" },
     { value: 15, label: "15 min" },
     { value: 60, label: "1h" },
-    { value: 720, label: "12h"},
+    { value: 720, label: "12h" },
     { value: 1440, label: "1d" },
-    { value: 10080, label: "7d"},
-    { value: 43200, label: "30d"}
+    { value: 10080, label: "7d" },
+    { value: 43200, label: "30d" }
 ];
 
 const MAX_POINTS = 500;
 const LIVE_WINDOW_MIN = 10;
 
-const floorToMidnightUTC = (ts: number): number => {
-    const d = new Date(ts);
-    d.setUTCHours(0, 0, 0, 0);
-    return d.getTime();
-};
-
-const ceilToEndOfDayUTC = (ts: number): number => {
-    const d = new Date(ts);
-    d.setUTCHours(23, 59, 59, 999);
-    return d.getTime();
-};
-
 const getDayTransitionTicks = (data: InternalDataItem[]): string[] => {
     if (data.length === 0) return [];
+
     const ticks: string[] = [];
     let lastDateStr = "";
+
     data.forEach((item) => {
-        const currentDateStr = new Date(item.timestamp).toISOString().slice(0, 10);
+        const currentDateStr = new Date(item.timestamp)
+            .toISOString()
+            .slice(0, 10);
+
         if (currentDateStr !== lastDateStr) {
             ticks.push(item['Time Step']);
             lastDateStr = currentDateStr;
         }
     });
+
     return ticks;
 };
 
-const aggregateGroup = (groupStart: number, group: InternalDataItem[]) => {
+const aggregateGroup = (
+    groupStart: number,
+    group: InternalDataItem[]
+) => {
     if (group.length === 0) return null;
+
     const values = group
         .map((item) => parseFloat(item[PRICING_KEY]))
         .filter((val) => !isNaN(val));
+
     return {
         timestamp: groupStart,
         'Time Step': group[0]['Time Step'],
-        [PRICING_KEY]: values.length > 0 ? values.reduce((sum, v) => sum + v, 0) : null,
+        [PRICING_KEY]:
+            values.length > 0
+                ? values.reduce((sum, v) => sum + v, 0)
+                : null,
     };
 };
 
-const aggregateData = (data: InternalDataItem[], intervalMinutes: number) => {
+const aggregateData = (
+    data: InternalDataItem[],
+    intervalMinutes: number
+) => {
     if (!data.length) return [];
-    const intervalMs = intervalMinutes * 60 * 1000;
+
+    const intervalMs =
+        intervalMinutes * 60 * 1000;
+
     const result: any[] = [];
+
     let groupStart = data[0].timestamp;
     let tempGroup: InternalDataItem[] = [];
 
     for (const item of data) {
-        if (item.timestamp - groupStart < intervalMs) {
+        if (
+            item.timestamp - groupStart <
+            intervalMs
+        ) {
             tempGroup.push(item);
         } else {
-            if (tempGroup.length > 0) result.push(aggregateGroup(groupStart, tempGroup));
+            if (tempGroup.length > 0) {
+                result.push(
+                    aggregateGroup(
+                        groupStart,
+                        tempGroup
+                    )
+                );
+            }
+
             groupStart = item.timestamp;
             tempGroup = [item];
         }
     }
-    if (tempGroup.length > 0) result.push(aggregateGroup(groupStart, tempGroup));
+
+    if (tempGroup.length > 0) {
+        result.push(
+            aggregateGroup(
+                groupStart,
+                tempGroup
+            )
+        );
+    }
+
     return result.filter(Boolean);
 };
 
-// Dados já vêm ordenados por timestamp (garantido em updatedData), por isso
-// usamos binary search em vez de filter() linear sobre o array inteiro.
-const lowerBound = (arr: InternalDataItem[], target: number): number => {
-    let l = 0, r = arr.length;
+// Dados já vêm ordenados por timestamp (garantido em updatedData),
+// por isso usamos binary search em vez de filter() linear.
+const lowerBound = (
+    arr: InternalDataItem[],
+    target: number
+): number => {
+    let l = 0;
+    let r = arr.length;
+
     while (l < r) {
         const m = (l + r) >> 1;
-        if (arr[m].timestamp < target) l = m + 1; else r = m;
+
+        if (arr[m].timestamp < target) {
+            l = m + 1;
+        } else {
+            r = m;
+        }
     }
+
     return l;
 };
 
-const upperBound = (arr: InternalDataItem[], target: number): number => {
-    let l = 0, r = arr.length;
+const upperBound = (
+    arr: InternalDataItem[],
+    target: number
+): number => {
+    let l = 0;
+    let r = arr.length;
+
     while (l < r) {
         const m = (l + r) >> 1;
-        if (arr[m].timestamp <= target) l = m + 1; else r = m;
+
+        if (arr[m].timestamp <= target) {
+            l = m + 1;
+        } else {
+            r = m;
+        }
     }
+
     return l;
 };
 
-function CardPricing({ data, title, isLive}: CardPricingProps) {
+function CardPricing({
+                         data,
+                         title,
+                         isLive
+                     }: CardPricingProps) {
+
     const updatedData = useMemo<InternalDataItem[]>(() => {
         if (!data || data.length === 0) return [];
-        return data.map((item) => ({
-            ...item,
-            'Time Step': String(item['timestamp']),
-            timestamp: new Date(item['timestamp']).getTime(),
-        })).sort((a, b) => a.timestamp - b.timestamp);
+
+        return data
+            .map((item) => ({
+                ...item,
+                'Time Step': String(item['timestamp']),
+                timestamp: new Date(
+                    item['timestamp']
+                ).getTime(),
+            }))
+            .sort(
+                (a, b) =>
+                    a.timestamp - b.timestamp
+            );
+
     }, [data]);
 
+    // -----------------------------------------------------------------------
+    // Metadata
+    // -----------------------------------------------------------------------
+
     const metadata = useMemo(() => {
-        if (updatedData.length === 0) return { min: 0, max: 0, baseInt: 1 };
-        const min = floorToMidnightUTC(updatedData[0].timestamp);
-        const max = ceilToEndOfDayUTC(updatedData[updatedData.length - 1].timestamp);
-        const baseInt = updatedData.length > 1
-            ? Math.max(0.25, (updatedData[1].timestamp - updatedData[0].timestamp) / 60000)
-            : 1;
-        return { min, max, baseInt };
+
+        if (updatedData.length === 0) {
+            return {
+                min: 0,
+                max: 0,
+                baseInt: 1,
+                sliderStep: 24 * 60 * 60 * 1000,
+            };
+        }
+
+        // Usamos os timestamps reais dos dados.
+        const min =
+            updatedData[0].timestamp;
+
+        const max =
+            updatedData[
+            updatedData.length - 1
+                ].timestamp;
+
+        const baseInt =
+            updatedData.length > 1
+                ? Math.max(
+                    0.25,
+                    (
+                        updatedData[1].timestamp -
+                        updatedData[0].timestamp
+                    ) / 60000
+                )
+                : 1;
+
+        // Duração total dos dados em minutos.
+        const totalMinutes =
+            (max - min) / 60000;
+
+        let sliderStep: number;
+
+        // Menos de 1 hora -> minuto a minuto
+        if (totalMinutes < 60) {
+            sliderStep =
+                60 * 1000;
+
+            // Entre 1 hora e menos de 1 dia -> hora a hora
+        } else if (totalMinutes < 24 * 60) {
+            sliderStep =
+                60 * 60 * 1000;
+
+            // 1 dia ou mais -> dia a dia
+        } else {
+            sliderStep =
+                24 * 60 * 60 * 1000;
+        }
+
+        return {
+            min,
+            max,
+            baseInt,
+            sliderStep,
+        };
+
     }, [updatedData]);
 
-    const [sliderValues, setSliderValues] = useState<number[]>([0, 0]);
-    const [intervalInput, setIntervalInput] = useState<number>(0);
-    const [init, setInit] = useState(false);
+    // -----------------------------------------------------------------------
+    // State
+    // -----------------------------------------------------------------------
 
-    const checkViability = (interval: number): boolean => {
-        if (isLive){
-            const timeMs = LIVE_WINDOW_MIN * 60 * 1000;
-            const intervalMs = interval * 60 * 1000;
+    const [sliderValues, setSliderValues] =
+        useState<number[]>([0, 0]);
+
+    const [intervalInput, setIntervalInput] =
+        useState<number>(0);
+
+    const [init, setInit] =
+        useState(false);
+
+    // -----------------------------------------------------------------------
+    // Interval viability
+    // -----------------------------------------------------------------------
+
+    const checkViability = (
+        interval: number
+    ): boolean => {
+
+        if (isLive) {
+
+            const timeMs =
+                LIVE_WINDOW_MIN *
+                60 *
+                1000;
+
+            const intervalMs =
+                interval *
+                60 *
+                1000;
 
             return intervalMs < timeMs;
         }
-        const timeMs = sliderValues[1] - sliderValues[0];
-        const intervalMs = interval * 60 * 1000;
 
-        if (intervalMs > timeMs) return false;
+        const timeMs =
+            sliderValues[1] -
+            sliderValues[0];
 
-        const qtdPoints = timeMs / intervalMs;
+        const intervalMs =
+            interval *
+            60 *
+            1000;
+
+        if (intervalMs > timeMs) {
+            return false;
+        }
+
+        const qtdPoints =
+            timeMs / intervalMs;
+
         return qtdPoints <= MAX_POINTS;
     };
 
-    // Filtro via binary search (O(log n)) em vez de .filter() linear (O(n)) sobre o array inteiro
+    // -----------------------------------------------------------------------
+    // Filter via binary search
+    // -----------------------------------------------------------------------
+
     const filteredData = useMemo(() => {
-        if (updatedData.length === 0) return [];
-        const lo = lowerBound(updatedData, sliderValues[0]);
-        const hi = upperBound(updatedData, sliderValues[1]);
-        return updatedData.slice(lo, hi);
-    }, [updatedData, sliderValues]);
+
+        if (updatedData.length === 0) {
+            return [];
+        }
+
+        const lo =
+            lowerBound(
+                updatedData,
+                sliderValues[0]
+            );
+
+        const hi =
+            upperBound(
+                updatedData,
+                sliderValues[1]
+            );
+
+        return updatedData.slice(
+            lo,
+            hi
+        );
+
+    }, [
+        updatedData,
+        sliderValues
+    ]);
+
+    // -----------------------------------------------------------------------
+    // Initial slider
+    // -----------------------------------------------------------------------
 
     useEffect(() => {
-        if (!init && updatedData.length > 0) {
-            const pointsPerDay = Math.floor((24 * 60) / metadata.baseInt);
-            const defaultEnd = ceilToEndOfDayUTC(updatedData[pointsPerDay * 10]?.timestamp ?? metadata.max);
-            const initialSlider: number[] = [metadata.min, defaultEnd];
-            setSliderValues(initialSlider);
 
-            // Bug corrigido: faltava o "return" dentro do .find(), o que fazia
-            // "viable" ser sempre undefined e este ramo nunca definir o intervalInput.
-            const viable = intervals.find(({ value }) => checkViability(value));
-            setIntervalInput(viable ? viable.value : Math.max(metadata.baseInt, 1));
+        if (
+            !init &&
+            updatedData.length > 0
+        ) {
+
+            // Usa o intervalo real dos dados.
+            const initialSlider: number[] = [
+                metadata.min,
+                metadata.max
+            ];
+
+            setSliderValues(
+                initialSlider
+            );
+
+            const viable =
+                intervals.find(
+                    ({ value }) =>
+                        checkViability(value)
+                );
+
+            setIntervalInput(
+                viable
+                    ? viable.value
+                    : Math.max(
+                        metadata.baseInt,
+                        1
+                    )
+            );
 
             setInit(true);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [updatedData, init, metadata]);
 
-    // Corrigido: estava num useMemo (anti-padrão — side-effects/setState não pertencem
-    // a um useMemo, o React pode recalculá-lo ou descartá-lo sem aviso). Passou a useEffect.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        updatedData,
+        init,
+        metadata
+    ]);
+
+    // -----------------------------------------------------------------------
+    // Automatically select viable interval
+    // -----------------------------------------------------------------------
+
     useEffect(() => {
-        const viable = intervals.find(({ value }) => checkViability(value));
+
+        const viable =
+            intervals.find(
+                ({ value }) =>
+                    checkViability(value)
+            );
+
         if (viable) {
-            const currentIsButton = intervals.some(({ value }) => value === intervalInput && checkViability(value));
-            if (!currentIsButton) setIntervalInput(viable.value);
+
+            const currentIsButton =
+                intervals.some(
+                    ({ value }) =>
+                        value === intervalInput &&
+                        checkViability(value)
+                );
+
+            if (!currentIsButton) {
+                setIntervalInput(
+                    viable.value
+                );
+            }
+
         } else {
+
             const auto = Math.max(
                 metadata.baseInt,
-                Math.ceil((sliderValues[1] - sliderValues[0]) / (MAX_POINTS * 60 * 1000))
+                Math.ceil(
+                    (
+                        sliderValues[1] -
+                        sliderValues[0]
+                    ) /
+                    (
+                        MAX_POINTS *
+                        60 *
+                        1000
+                    )
+                )
             );
+
             setIntervalInput(auto);
         }
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sliderValues, isLive]);
+    }, [
+        sliderValues,
+        isLive
+    ]);
 
-    // Clamp de segurança: nunca deixa o intervalo cair a 0 (o que faria aggregateData
-    // não agregar nada e desenhar um ponto por cada registo bruto).
-    const safeInterval = Math.max(intervalInput, metadata.baseInt || 1);
+    // -----------------------------------------------------------------------
+    // Safe interval
+    // -----------------------------------------------------------------------
 
-    const aggregatedData = useMemo(
-        () => aggregateData(filteredData, safeInterval),
-        [filteredData, safeInterval]
-    );
+    const safeInterval =
+        Math.max(
+            intervalInput,
+            metadata.baseInt || 1
+        );
 
-    const xAxisTicks = useMemo(
-        () => getDayTransitionTicks(aggregatedData),
-        [aggregatedData]
-    );
+    // -----------------------------------------------------------------------
+    // Aggregated data
+    // -----------------------------------------------------------------------
 
-    const handleSliderChange = (values: SetStateAction<number[]>) => {
+    const aggregatedData =
+        useMemo(
+            () =>
+                aggregateData(
+                    filteredData,
+                    safeInterval
+                ),
+            [
+                filteredData,
+                safeInterval
+            ]
+        );
+
+    // -----------------------------------------------------------------------
+    // X axis ticks
+    // -----------------------------------------------------------------------
+
+    const xAxisTicks =
+        useMemo(
+            () =>
+                getDayTransitionTicks(
+                    aggregatedData
+                ),
+            [aggregatedData]
+        );
+
+    // -----------------------------------------------------------------------
+    // Handlers
+    // -----------------------------------------------------------------------
+
+    const handleSliderChange = (
+        values: SetStateAction<number[]>
+    ) => {
+
         if (!isLive) {
-            setSliderValues(values as number[]);
+            setSliderValues(
+                values as number[]
+            );
         }
-    }
-    const handleApplyInterval = (interval: number) => setIntervalInput(Math.max(metadata.baseInt, interval));
+    };
 
-    if (!data || data.length === 0) {
-        return <div style={{ color: '#9e9e9e', padding: '20px' }}>No pricing data available.</div>;
+    const handleApplyInterval = (
+        interval: number
+    ) => {
+        setIntervalInput(
+            Math.max(
+                metadata.baseInt,
+                interval
+            )
+        );
+    };
+
+    // -----------------------------------------------------------------------
+    // Empty state
+    // -----------------------------------------------------------------------
+
+    if (
+        !data ||
+        data.length === 0
+    ) {
+        return (
+            <div
+                style={{
+                    color: '#9e9e9e',
+                    padding: '20px'
+                }}
+            >
+                No pricing data available.
+            </div>
+        );
     }
+
+    // -----------------------------------------------------------------------
+    // Render
+    // -----------------------------------------------------------------------
 
     return (
         <div className="pricing-card">
+
             <div className="card-body">
+
                 <div className="card-top">
-                    <span className="fw-bold">{title}</span>
+
+                    <span className="fw-bold">
+                        {title}
+                    </span>
+
                     <div className="card-info">
-                        {intervals.filter(({ value }) => checkViability(value)).length > 0 ? (
-                            intervals
-                                .filter(({ value }) => checkViability(value))
-                                .map(({ value, label }) => (
-                                    <Button
-                                        key={value}
-                                        size="sm"
-                                        variant={safeInterval === value ? "primary" : "secondary"}
-                                        className={safeInterval === value ? "btn-interval active" : "btn-interval"}
-                                        onClick={() => handleApplyInterval(value)}
-                                    >
-                                        {label}
-                                    </Button>
-                                ))
-                        ) : (
-                            <span className="auto-adj-badge">
-                                <i className="bi bi-cpu-fill me-1"></i>
-                                AUTO: {safeInterval} MIN
-                            </span>
-                        )}
+
+                        {
+                            intervals.filter(
+                                ({ value }) =>
+                                    checkViability(value)
+                            ).length > 0
+                                ? (
+                                    intervals
+                                        .filter(
+                                            ({ value }) =>
+                                                checkViability(value)
+                                        )
+                                        .map(
+                                            ({
+                                                 value,
+                                                 label
+                                             }) => (
+                                                <Button
+                                                    key={value}
+                                                    size="sm"
+                                                    variant={
+                                                        safeInterval === value
+                                                            ? "primary"
+                                                            : "secondary"
+                                                    }
+                                                    className={
+                                                        safeInterval === value
+                                                            ? "btn-interval active"
+                                                            : "btn-interval"
+                                                    }
+                                                    onClick={() =>
+                                                        handleApplyInterval(
+                                                            value
+                                                        )
+                                                    }
+                                                >
+                                                    {label}
+                                                </Button>
+                                            )
+                                        )
+                                )
+                                : (
+                                    <span className="auto-adj-badge">
+                                        <i className="bi bi-cpu-fill me-1"></i>
+                                        AUTO: {safeInterval} MIN
+                                    </span>
+                                )
+                        }
+
                     </div>
                 </div>
 
-                <ResponsiveContainer width="100%" height={363}>
+                <ResponsiveContainer
+                    width="100%"
+                    height={363}
+                >
+
                     <ComposedChart
                         data={aggregatedData}
                         barGap={0}
-                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                        margin={{
+                            top: 10,
+                            right: 30,
+                            left: 0,
+                            bottom: 0
+                        }}
                     >
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333" />
+
+                        <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke="#333"
+                        />
+
                         <XAxis
                             dataKey="Time Step"
                             ticks={xAxisTicks}
-                            tickFormatter={(t) => t.slice(0, 10)}
+                            tickFormatter={(t) =>
+                                t.slice(0, 10)
+                            }
                             angle={-30}
                             textAnchor="end"
                             height={70}
                             dy={5}
                             interval="preserveStartEnd"
-                            tick={{ fontSize: 10, fill: '#888' }}
+                            tick={{
+                                fontSize: 10,
+                                fill: '#888'
+                            }}
                         />
+
                         <YAxis
-                            tick={{ fontSize: 11, fill: '#888' }}
+                            tick={{
+                                fontSize: 11,
+                                fill: '#888'
+                            }}
                             width={80}
-                            tickFormatter={(value) => Number(value).toString()}
+                            tickFormatter={(value) =>
+                                Number(value).toString()
+                            }
                             label={{
                                 value: '$/kWh',
                                 angle: -90,
@@ -286,62 +657,133 @@ function CardPricing({ data, title, isLive}: CardPricingProps) {
                                 offset: 10
                             }}
                         />
+
                         <Tooltip
-                            content={({ active, payload, label }) => {
-                                if (!active || !payload?.length) return null;
+                            content={({
+                                          active,
+                                          payload,
+                                          label
+                                      }) => {
+
+                                if (
+                                    !active ||
+                                    !payload?.length
+                                ) {
+                                    return null;
+                                }
 
                                 return (
-                                    <div style={{
-                                        backgroundColor: '#1a1a1a',
-                                        border: '1px solid #333',
-                                        borderRadius: 8,
-                                        padding: '10px 14px',
-                                        color: '#fff',
-                                        fontSize: 12,
-                                        minWidth: 180,
-                                    }}>
-                                        <div style={{ marginBottom: 6 }}>
-                                            {label ? new Date(label).toLocaleString() : ''}
+                                    <div
+                                        style={{
+                                            backgroundColor:
+                                                '#1a1a1a',
+                                            border:
+                                                '1px solid #333',
+                                            borderRadius: 8,
+                                            padding:
+                                                '10px 14px',
+                                            color: '#fff',
+                                            fontSize: 12,
+                                            minWidth: 180,
+                                        }}
+                                    >
+
+                                        <div
+                                            style={{
+                                                marginBottom: 6
+                                            }}
+                                        >
+                                            {
+                                                label
+                                                    ? new Date(
+                                                        label
+                                                    ).toLocaleString()
+                                                    : ''
+                                            }
                                         </div>
 
-                                        {payload.map((entry: any, i: number) => {
-                                            if (entry.value === null || entry.value === undefined) return null;
+                                        {
+                                            payload.map(
+                                                (
+                                                    entry: any,
+                                                    i: number
+                                                ) => {
 
-                                            return (
-                                                <div
-                                                    key={i}
-                                                    style={{
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 8,
-                                                        marginBottom: 4,
-                                                    }}
-                                                >
-                                                    <span
-                                                        style={{
-                                                            width: 10,
-                                                            height: 10,
-                                                            borderRadius: '50%',
-                                                            background: entry.color,
-                                                            flexShrink: 0,
-                                                        }}
-                                                    />
+                                                    if (
+                                                        entry.value === null ||
+                                                        entry.value === undefined
+                                                    ) {
+                                                        return null;
+                                                    }
 
-                                                    <span style={{ color: '#bbb' }}>
-                                                        {entry.name}
-                                                    </span>
+                                                    return (
+                                                        <div
+                                                            key={i}
+                                                            style={{
+                                                                display:
+                                                                    'flex',
+                                                                alignItems:
+                                                                    'center',
+                                                                gap: 8,
+                                                                marginBottom: 4,
+                                                            }}
+                                                        >
 
-                                                    <span style={{ marginLeft: 'auto', fontWeight: 'bold' }}>
-                                                        {`${Number(entry.value)} $/kWh`}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })}
+                                                            <span
+                                                                style={{
+                                                                    width: 10,
+                                                                    height: 10,
+                                                                    borderRadius:
+                                                                        '50%',
+                                                                    background:
+                                                                    entry.color,
+                                                                    flexShrink:
+                                                                        0,
+                                                                }}
+                                                            />
+
+                                                            <span
+                                                                style={{
+                                                                    color:
+                                                                        '#bbb'
+                                                                }}
+                                                            >
+                                                                {
+                                                                    entry.name
+                                                                }
+                                                            </span>
+
+                                                            <span
+                                                                style={{
+                                                                    marginLeft:
+                                                                        'auto',
+                                                                    fontWeight:
+                                                                        'bold'
+                                                                }}
+                                                            >
+                                                                {
+                                                                    `${Number(
+                                                                        entry.value
+                                                                    )} $/kWh`
+                                                                }
+                                                            </span>
+
+                                                        </div>
+                                                    );
+                                                }
+                                            )
+                                        }
+
                                     </div>
                                 );
                             }}
                         />
-                        <Legend verticalAlign="top" height={36} />
+
+                        <Legend
+                            verticalAlign="top"
+                            height={36}
+                        />
+
                         <Line
                             type="monotone"
                             dataKey={PRICING_KEY}
@@ -350,18 +792,35 @@ function CardPricing({ data, title, isLive}: CardPricingProps) {
                             dot={false}
                             strokeWidth={2}
                         />
+
                     </ComposedChart>
+
                 </ResponsiveContainer>
 
                 <div className="mt-4">
+
                     <DateRangeSlider
-                        minTimestamp={metadata.min}
-                        maxTimestamp={metadata.max}
-                        sliderValues={sliderValues}
-                        onSliderChange={handleSliderChange}
+                        minTimestamp={
+                            metadata.min
+                        }
+                        maxTimestamp={
+                            metadata.max
+                        }
+                        sliderValues={
+                            sliderValues
+                        }
+                        onSliderChange={
+                            handleSliderChange
+                        }
+                        step={
+                            metadata.sliderStep
+                        }
                     />
+
                 </div>
+
             </div>
+
         </div>
     );
 }

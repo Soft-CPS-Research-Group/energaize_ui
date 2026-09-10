@@ -8,7 +8,11 @@ import {
     type ReactNode
 } from "react";
 import { createRec, isCommunityBackendMode, listCommunityContexts } from "../api/communityApi";
-import { getCommunitiesData } from "../api/communityDataApi";
+import {
+    getCommunitiesData,
+    getCommunityContextsWithInfo,
+    buildFallbackCommunityContexts
+} from "../api/communityDataApi";
 import { useAuth } from "./AuthContext";
 import { INITIAL_COMMUNITIES } from "../constants";
 import type { CommunityContext, NotificationItem, ThemeMode, ToastItem } from "../types";
@@ -63,22 +67,6 @@ function resolvePreferredTheme(): ThemeMode {
     return "light";
 }
 
-// A API /energy-communities devolve apenas uma lista de nomes (string[]).
-// Preenchemos os restantes campos de CommunityContext com defaults, já que
-// o endpoint não fornece localização, nº de edifícios, etc.
-function mapEnergyCommunityNamesToContext(names: string[]): CommunityContext[] {
-    return names.map((name) => ({
-        id: name,
-        name,
-        location: "Location not set",
-        description: undefined,
-        buildings: 0,
-        assets: 0,
-        status: "normal" as const,
-        topologyPreset: "blank" as const
-    }));
-}
-
 export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
     const { session } = useAuth();
     const isRecManager = session?.role === "rec_manager";
@@ -102,23 +90,33 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
         writeStorage(STORAGE_KEYS.theme, theme);
     }, [theme]);
 
-    // rec_manager: vai buscar as comunidades reais ao backend do INESC TEC (/energy-communities).
-    // Restantes roles: mantêm o comportamento existente (listCommunityContexts / mock).
     useEffect(() => {
         if (isRecManager) {
             let cancelled = false;
+
             getCommunitiesData()
                 .then((names: string[]) => {
                     if (cancelled || !names || names.length === 0) return;
-                    const mapped = mapEnergyCommunityNamesToContext(names);
-                    setCommunities(mapped);
-                    writeStorage(STORAGE_KEYS.communities, mapped);
-                    if (!mapped.some((community) => community.id === activeCommunityId)) {
-                        const nextActive = mapped[0];
+
+                    const fallback = buildFallbackCommunityContexts(names);
+                    setCommunities(fallback);
+                    writeStorage(STORAGE_KEYS.communities, fallback);
+                    if (!fallback.some((community) => community.id === activeCommunityId)) {
+                        const nextActive = fallback[0];
                         setActiveCommunityId(nextActive.id);
                         setSelectedEntityId("community");
                         writeStorage(STORAGE_KEYS.communityId, nextActive.id);
                     }
+
+                    getCommunityContextsWithInfo(names)
+                        .then((enriched) => {
+                            if (cancelled) return;
+                            setCommunities(enriched);
+                            writeStorage(STORAGE_KEYS.communities, enriched);
+                        })
+                        .catch((error) => {
+                            console.warn("Community extra info could not be loaded from backend", error);
+                        });
                 })
                 .catch((error) => {
                     console.warn("Energy communities could not be loaded from backend", error);

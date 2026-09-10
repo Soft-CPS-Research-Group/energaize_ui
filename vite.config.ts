@@ -5,9 +5,10 @@ export default defineConfig({
   plugins: [react()],
   assetsInclude: ["**/*.onnx"],
   server: {
+
     proxy: {
       "/community-api": {
-        target: "http://193.136.62.78:8017",
+        target: "http://193.136.62.78:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/community-api/, "")
       },

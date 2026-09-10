@@ -105,7 +105,15 @@ export function AppShell({
         <div className={`app-body${showTree ? "" : " no-tree"}`}>
           {showTree ? (
               isRecManager ? (
-                  <div style={{ position: "relative", height: "100%", flexShrink: 0, zIndex: 20 }}>
+                  <div
+                      style={{
+                        position: "relative",
+                        height: "100%",
+                        minHeight: 0,
+                        flexShrink: 0,
+                        zIndex: 20,
+                      }}
+                  >
                     {isDashboardRoute && (
                         <button
                             className="sidebar-edge-toggle"

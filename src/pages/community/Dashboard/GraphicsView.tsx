@@ -461,6 +461,23 @@ function GraphicsView({
                     ) {
                         return;
                     }
+                    const data = isLive
+                        ? mapChargerDataToChargerDTOMap(
+                            mappingSource,
+                            equipment.building,
+                            equipment.id
+                        )
+                        : chargerMapperRef.current(
+                            mappingSource,
+                            equipment.building,
+                            equipment.id
+                        );
+
+                    console.log(
+                        "CHARGER DATA",
+                        equipment.id,
+                        data
+                    );
 
                     map.set(
                         `${equipment.building}:${equipment.id}`,
