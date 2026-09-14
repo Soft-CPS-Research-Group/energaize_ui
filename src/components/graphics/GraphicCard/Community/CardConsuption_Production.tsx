@@ -313,7 +313,7 @@ function CardConsumption_Production({
                 60 * 1000;
 
             // Menos de 1 dia -> hora a hora
-        } else if (totalMinutes < 24 * 60) {
+        } else if (totalMinutes <= 24 * 60) {
 
             sliderStep =
                 60 * 60 * 1000;
