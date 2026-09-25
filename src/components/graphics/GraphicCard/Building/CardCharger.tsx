@@ -111,30 +111,11 @@ const getEVEvents = (data: any[], aggregatedData: any[]) => {
         if (prevEV === currEV) continue;
 
         const aux        = getClosestData(curr.timestamp, aggregatedData);
-        
+
         const isArrival  = prevEV === 'none' && currEV !== 'none';
         const isDeparture = prevEV !== 'none' && currEV === 'none';
         const existing   = eventsByStep[aux];
-        
-        /*if (isArrival || isDeparture) {
-            const options: Intl.DateTimeFormatOptions = {
-                timeZone: 'Europe/Lisbon',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                day: '2-digit',
-                month: '2-digit'
-            };
 
-            const tipo = isArrival ? 'ARRIVAL' : 'DEPARTURE';
-            const originalHora = new Date(curr.timestamp).toLocaleString('pt-PT', options);
-
-            // O aux é o "Time Step" (ISO String) vindo do getClosestData
-            const aproxHora = new Date(aux).toLocaleString('pt-PT', options);
-
-            console.log(`[${tipo}] Original: ${originalHora} | Aproximada (5min): ${aproxHora} | Veículo: ${isArrival ? currEV : prevEV}`);
-        }*/
-        
         if (existing) {
             if (existing.type === 'collision') {
                 existing.events!.push({
@@ -395,6 +376,12 @@ function CardCharger({ data, title, isLive}: Props) {
             setInit(true);
         }
     }, [updatedData, init, metadata]);
+
+    useEffect(() => {
+        if (isLive && init && updatedData.length > 0) {
+            setSliderValues([metadata.min, metadata.max]);
+        }
+    }, [isLive, init, metadata.min, metadata.max]);
 
     useEffect(() => {
         const viable = intervals.find(({ value }) => checkViability(value));

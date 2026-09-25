@@ -256,9 +256,7 @@ function CardEV({ data, title, isLive }: EVProps) {
     const [intervalInput, setIntervalInput] = useState<number>(0);
     const [init, setInit] = useState(false);
 
-    const [visibleSeries, setVisibleSeries] = useState<
-        Record<SeriesKey, boolean>
-    >({
+    const [visibleSeries, setVisibleSeries] = useState<Record<SeriesKey, boolean>>({
         'EV Estimated SOC Arrival-%': true,
         'EV Required SOC Departure-%': true,
         'EV SOC-%': true,
@@ -314,6 +312,12 @@ function CardEV({ data, title, isLive }: EVProps) {
             setInit(true);
         }
     }, [updatedData, init, metadata]);
+
+    useEffect(() => {
+        if (isLive && init && updatedData.length > 0) {
+            setSliderValues([metadata.min, metadata.max]);
+        }
+    }, [isLive, init, metadata.min, metadata.max]);
 
     useEffect(() => {
         const viable = intervals.find(
@@ -702,70 +706,48 @@ function CardEV({ data, title, isLive }: EVProps) {
                         )}
 
                         {visibleSeries['EV Arrival Time'] &&
-                            (evEvents.get('Arrival') ?? []).map(
-                                (ts, i) => {
-                                    const nearest =
-                                        aggregatedData.reduce(
-                                            (prev, curr) =>
-                                                Math.abs(
-                                                    curr.timestamp - ts
-                                                ) <
-                                                Math.abs(
-                                                    prev.timestamp - ts
-                                                )
-                                                    ? curr
-                                                    : prev
-                                        );
+                            (evEvents.get('Arrival') ?? []).map((ts, i) => {
+                                const nearest = aggregatedData.reduce(
+                                    (prev, curr) =>
+                                        Math.abs(curr.timestamp - ts) <
+                                        Math.abs(prev.timestamp - ts)
+                                            ? curr
+                                            : prev
+                                );
 
-                                    return (
-                                        <ReferenceLine
-                                            key={`arr-${i}`}
-                                            yAxisId="right"
-                                            x={nearest['Time Step']}
-                                            stroke={
-                                                SERIES_COLORS[
-                                                    'EV Arrival Time'
-                                                    ]
-                                            }
-                                            strokeWidth={2}
-                                            strokeDasharray="4 4"
-                                        />
-                                    );
-                                }
-                            )}
+                                return (
+                                    <ReferenceLine
+                                        key={`arr-${i}`}
+                                        yAxisId="right"
+                                        x={nearest['Time Step']}
+                                        stroke={SERIES_COLORS['EV Arrival Time']}
+                                        strokeWidth={2}
+                                        strokeDasharray="4 4"
+                                    />
+                                );
+                            })}
 
                         {visibleSeries['EV Departure Time'] &&
-                            (evEvents.get('Departure') ?? []).map(
-                                (ts, i) => {
-                                    const nearest =
-                                        aggregatedData.reduce(
-                                            (prev, curr) =>
-                                                Math.abs(
-                                                    curr.timestamp - ts
-                                                ) <
-                                                Math.abs(
-                                                    prev.timestamp - ts
-                                                )
-                                                    ? curr
-                                                    : prev
-                                        );
+                            (evEvents.get('Departure') ?? []).map((ts, i) => {
+                                const nearest = aggregatedData.reduce(
+                                    (prev, curr) =>
+                                        Math.abs(curr.timestamp - ts) <
+                                        Math.abs(prev.timestamp - ts)
+                                            ? curr
+                                            : prev
+                                );
 
-                                    return (
-                                        <ReferenceLine
-                                            key={`dep-${i}`}
-                                            yAxisId="right"
-                                            x={nearest['Time Step']}
-                                            stroke={
-                                                SERIES_COLORS[
-                                                    'EV Departure Time'
-                                                    ]
-                                            }
-                                            strokeWidth={2}
-                                            strokeDasharray="4 4"
-                                        />
-                                    );
-                                }
-                            )}
+                                return (
+                                    <ReferenceLine
+                                        key={`dep-${i}`}
+                                        yAxisId="right"
+                                        x={nearest['Time Step']}
+                                        stroke={SERIES_COLORS['EV Departure Time']}
+                                        strokeWidth={2}
+                                        strokeDasharray="4 4"
+                                    />
+                                );
+                            })}
                     </ComposedChart>
                 </ResponsiveContainer>
 

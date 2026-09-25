@@ -87,8 +87,7 @@ const aggregateData = (
 ) => {
     if (!data.length) return [];
 
-    const intervalMs =
-        intervalMinutes * 60 * 1000;
+    const intervalMs = intervalMinutes * 60 * 1000;
 
     const result: any[] = [];
 
@@ -96,33 +95,19 @@ const aggregateData = (
     let tempGroup: InternalDataItem[] = [];
 
     for (const item of data) {
-        if (
-            item.timestamp - groupStart <
-            intervalMs
-        ) {
+        if (item.timestamp - groupStart < intervalMs) {
             tempGroup.push(item);
         } else {
             if (tempGroup.length > 0) {
-                result.push(
-                    aggregateGroup(
-                        groupStart,
-                        tempGroup
-                    )
-                );
+                result.push(aggregateGroup(groupStart, tempGroup));
             }
-
             groupStart = item.timestamp;
             tempGroup = [item];
         }
     }
 
     if (tempGroup.length > 0) {
-        result.push(
-            aggregateGroup(
-                groupStart,
-                tempGroup
-            )
-        );
+        result.push(aggregateGroup(groupStart, tempGroup));
     }
 
     return result.filter(Boolean);
@@ -130,16 +115,12 @@ const aggregateData = (
 
 // Dados já vêm ordenados por timestamp (garantido em updatedData),
 // por isso usamos binary search em vez de filter() linear.
-const lowerBound = (
-    arr: InternalDataItem[],
-    target: number
-): number => {
+const lowerBound = (arr: InternalDataItem[], target: number): number => {
     let l = 0;
     let r = arr.length;
 
     while (l < r) {
         const m = (l + r) >> 1;
-
         if (arr[m].timestamp < target) {
             l = m + 1;
         } else {
@@ -150,16 +131,12 @@ const lowerBound = (
     return l;
 };
 
-const upperBound = (
-    arr: InternalDataItem[],
-    target: number
-): number => {
+const upperBound = (arr: InternalDataItem[], target: number): number => {
     let l = 0;
     let r = arr.length;
 
     while (l < r) {
         const m = (l + r) >> 1;
-
         if (arr[m].timestamp <= target) {
             l = m + 1;
         } else {
@@ -170,11 +147,7 @@ const upperBound = (
     return l;
 };
 
-function CardPricing({
-                         data,
-                         title,
-                         isLive
-                     }: CardPricingProps) {
+function CardPricing({ data, title, isLive }: CardPricingProps) {
 
     const updatedData = useMemo<InternalDataItem[]>(() => {
         if (!data || data.length === 0) return [];
@@ -183,14 +156,9 @@ function CardPricing({
             .map((item) => ({
                 ...item,
                 'Time Step': String(item['timestamp']),
-                timestamp: new Date(
-                    item['timestamp']
-                ).getTime(),
+                timestamp: new Date(item['timestamp']).getTime(),
             }))
-            .sort(
-                (a, b) =>
-                    a.timestamp - b.timestamp
-            );
+            .sort((a, b) => a.timestamp - b.timestamp);
 
     }, [data]);
 
@@ -209,54 +177,29 @@ function CardPricing({
             };
         }
 
-        // Usamos os timestamps reais dos dados.
-        const min =
-            updatedData[0].timestamp;
+        const min = updatedData[0].timestamp;
+        const max = updatedData[updatedData.length - 1].timestamp;
 
-        const max =
-            updatedData[
-            updatedData.length - 1
-                ].timestamp;
+        const baseInt = updatedData.length > 1
+            ? Math.max(
+                0.25,
+                (updatedData[1].timestamp - updatedData[0].timestamp) / 60000
+            )
+            : 1;
 
-        const baseInt =
-            updatedData.length > 1
-                ? Math.max(
-                    0.25,
-                    (
-                        updatedData[1].timestamp -
-                        updatedData[0].timestamp
-                    ) / 60000
-                )
-                : 1;
-
-        // Duração total dos dados em minutos.
-        const totalMinutes =
-            (max - min) / 60000;
+        const totalMinutes = (max - min) / 60000;
 
         let sliderStep: number;
 
-        // Menos de 1 hora -> minuto a minuto
         if (totalMinutes < 60) {
-            sliderStep =
-                60 * 1000;
-
-            // Entre 1 hora e menos de 1 dia -> hora a hora
+            sliderStep = 60 * 1000;
         } else if (totalMinutes < 24 * 60) {
-            sliderStep =
-                60 * 60 * 1000;
-
-            // 1 dia ou mais -> dia a dia
+            sliderStep = 60 * 60 * 1000;
         } else {
-            sliderStep =
-                24 * 60 * 60 * 1000;
+            sliderStep = 24 * 60 * 60 * 1000;
         }
 
-        return {
-            min,
-            max,
-            baseInt,
-            sliderStep,
-        };
+        return { min, max, baseInt, sliderStep };
 
     }, [updatedData]);
 
@@ -264,53 +207,30 @@ function CardPricing({
     // State
     // -----------------------------------------------------------------------
 
-    const [sliderValues, setSliderValues] =
-        useState<number[]>([0, 0]);
-
-    const [intervalInput, setIntervalInput] =
-        useState<number>(0);
-
-    const [init, setInit] =
-        useState(false);
+    const [sliderValues, setSliderValues] = useState<number[]>([0, 0]);
+    const [intervalInput, setIntervalInput] = useState<number>(0);
+    const [init, setInit] = useState(false);
 
     // -----------------------------------------------------------------------
     // Interval viability
     // -----------------------------------------------------------------------
 
-    const checkViability = (
-        interval: number
-    ): boolean => {
+    const checkViability = (interval: number): boolean => {
 
         if (isLive) {
-
-            const timeMs =
-                LIVE_WINDOW_MIN *
-                60 *
-                1000;
-
-            const intervalMs =
-                interval *
-                60 *
-                1000;
-
+            const timeMs = LIVE_WINDOW_MIN * 60 * 1000;
+            const intervalMs = interval * 60 * 1000;
             return intervalMs < timeMs;
         }
 
-        const timeMs =
-            sliderValues[1] -
-            sliderValues[0];
-
-        const intervalMs =
-            interval *
-            60 *
-            1000;
+        const timeMs = sliderValues[1] - sliderValues[0];
+        const intervalMs = interval * 60 * 1000;
 
         if (intervalMs > timeMs) {
             return false;
         }
 
-        const qtdPoints =
-            timeMs / intervalMs;
+        const qtdPoints = timeMs / intervalMs;
 
         return qtdPoints <= MAX_POINTS;
     };
@@ -325,73 +245,41 @@ function CardPricing({
             return [];
         }
 
-        const lo =
-            lowerBound(
-                updatedData,
-                sliderValues[0]
-            );
+        const lo = lowerBound(updatedData, sliderValues[0]);
+        const hi = upperBound(updatedData, sliderValues[1]);
 
-        const hi =
-            upperBound(
-                updatedData,
-                sliderValues[1]
-            );
+        return updatedData.slice(lo, hi);
 
-        return updatedData.slice(
-            lo,
-            hi
-        );
-
-    }, [
-        updatedData,
-        sliderValues
-    ]);
+    }, [updatedData, sliderValues]);
 
     // -----------------------------------------------------------------------
-    // Initial slider
+    // Initial slider (só corre uma vez, ao carregar dados)
     // -----------------------------------------------------------------------
 
     useEffect(() => {
 
-        if (
-            !init &&
-            updatedData.length > 0
-        ) {
+        if (!init && updatedData.length > 0) {
 
-            // Usa o intervalo real dos dados.
-            const initialSlider: number[] = [
-                metadata.min,
-                metadata.max
-            ];
+            const initialSlider: number[] = [metadata.min, metadata.max];
 
-            setSliderValues(
-                initialSlider
-            );
+            setSliderValues(initialSlider);
 
-            const viable =
-                intervals.find(
-                    ({ value }) =>
-                        checkViability(value)
-                );
+            const viable = intervals.find(({ value }) => checkViability(value));
 
             setIntervalInput(
-                viable
-                    ? viable.value
-                    : Math.max(
-                        metadata.baseInt,
-                        1
-                    )
+                viable ? viable.value : Math.max(metadata.baseInt, 1)
             );
 
             setInit(true);
         }
 
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [
-        updatedData,
-        init,
-        metadata
-    ]);
+    }, [updatedData, init, metadata]);
+
+    useEffect(() => {
+        if (isLive && init && updatedData.length > 0) {
+            setSliderValues([metadata.min, metadata.max]);
+        }
+    }, [isLive, init, metadata.min, metadata.max]);
 
     // -----------------------------------------------------------------------
     // Automatically select viable interval
@@ -399,134 +287,76 @@ function CardPricing({
 
     useEffect(() => {
 
-        const viable =
-            intervals.find(
-                ({ value }) =>
-                    checkViability(value)
-            );
+        const viable = intervals.find(({ value }) => checkViability(value));
 
         if (viable) {
 
-            const currentIsButton =
-                intervals.some(
-                    ({ value }) =>
-                        value === intervalInput &&
-                        checkViability(value)
-                );
+            const currentIsButton = intervals.some(
+                ({ value }) => value === intervalInput && checkViability(value)
+            );
 
             if (!currentIsButton) {
-                setIntervalInput(
-                    viable.value
-                );
+                setIntervalInput(viable.value);
             }
 
         } else {
 
             const auto = Math.max(
                 metadata.baseInt,
-                Math.ceil(
-                    (
-                        sliderValues[1] -
-                        sliderValues[0]
-                    ) /
-                    (
-                        MAX_POINTS *
-                        60 *
-                        1000
-                    )
-                )
+                Math.ceil((sliderValues[1] - sliderValues[0]) / (MAX_POINTS * 60 * 1000))
             );
 
             setIntervalInput(auto);
         }
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [
-        sliderValues,
-        isLive
-    ]);
+    }, [sliderValues, isLive]);
 
     // -----------------------------------------------------------------------
     // Safe interval
     // -----------------------------------------------------------------------
 
-    const safeInterval =
-        Math.max(
-            intervalInput,
-            metadata.baseInt || 1
-        );
+    const safeInterval = Math.max(intervalInput, metadata.baseInt || 1);
 
     // -----------------------------------------------------------------------
     // Aggregated data
     // -----------------------------------------------------------------------
 
-    const aggregatedData =
-        useMemo(
-            () =>
-                aggregateData(
-                    filteredData,
-                    safeInterval
-                ),
-            [
-                filteredData,
-                safeInterval
-            ]
-        );
+    const aggregatedData = useMemo(
+        () => aggregateData(filteredData, safeInterval),
+        [filteredData, safeInterval]
+    );
 
     // -----------------------------------------------------------------------
     // X axis ticks
     // -----------------------------------------------------------------------
 
-    const xAxisTicks =
-        useMemo(
-            () =>
-                getDayTransitionTicks(
-                    aggregatedData
-                ),
-            [aggregatedData]
-        );
+    const xAxisTicks = useMemo(
+        () => getDayTransitionTicks(aggregatedData),
+        [aggregatedData]
+    );
 
     // -----------------------------------------------------------------------
     // Handlers
     // -----------------------------------------------------------------------
 
-    const handleSliderChange = (
-        values: SetStateAction<number[]>
-    ) => {
-
+    const handleSliderChange = (values: SetStateAction<number[]>) => {
         if (!isLive) {
-            setSliderValues(
-                values as number[]
-            );
+            setSliderValues(values as number[]);
         }
     };
 
-    const handleApplyInterval = (
-        interval: number
-    ) => {
-        setIntervalInput(
-            Math.max(
-                metadata.baseInt,
-                interval
-            )
-        );
+    const handleApplyInterval = (interval: number) => {
+        setIntervalInput(Math.max(metadata.baseInt, interval));
     };
 
     // -----------------------------------------------------------------------
     // Empty state
     // -----------------------------------------------------------------------
 
-    if (
-        !data ||
-        data.length === 0
-    ) {
+    if (!data || data.length === 0) {
         return (
-            <div
-                style={{
-                    color: '#9e9e9e',
-                    padding: '20px'
-                }}
-            >
+            <div style={{ color: '#9e9e9e', padding: '20px' }}>
                 No pricing data available.
             </div>
         );
@@ -550,44 +380,21 @@ function CardPricing({
                     <div className="card-info">
 
                         {
-                            intervals.filter(
-                                ({ value }) =>
-                                    checkViability(value)
-                            ).length > 0
+                            intervals.filter(({ value }) => checkViability(value)).length > 0
                                 ? (
                                     intervals
-                                        .filter(
-                                            ({ value }) =>
-                                                checkViability(value)
-                                        )
-                                        .map(
-                                            ({
-                                                 value,
-                                                 label
-                                             }) => (
-                                                <Button
-                                                    key={value}
-                                                    size="sm"
-                                                    variant={
-                                                        safeInterval === value
-                                                            ? "primary"
-                                                            : "secondary"
-                                                    }
-                                                    className={
-                                                        safeInterval === value
-                                                            ? "btn-interval active"
-                                                            : "btn-interval"
-                                                    }
-                                                    onClick={() =>
-                                                        handleApplyInterval(
-                                                            value
-                                                        )
-                                                    }
-                                                >
-                                                    {label}
-                                                </Button>
-                                            )
-                                        )
+                                        .filter(({ value }) => checkViability(value))
+                                        .map(({ value, label }) => (
+                                            <Button
+                                                key={value}
+                                                size="sm"
+                                                variant={safeInterval === value ? "primary" : "secondary"}
+                                                className={safeInterval === value ? "btn-interval active" : "btn-interval"}
+                                                onClick={() => handleApplyInterval(value)}
+                                            >
+                                                {label}
+                                            </Button>
+                                        ))
                                 )
                                 : (
                                     <span className="auto-adj-badge">
@@ -600,54 +407,32 @@ function CardPricing({
                     </div>
                 </div>
 
-                <ResponsiveContainer
-                    width="100%"
-                    height={363}
-                >
+                <ResponsiveContainer width="100%" height={363}>
 
                     <ComposedChart
                         data={aggregatedData}
                         barGap={0}
-                        margin={{
-                            top: 10,
-                            right: 30,
-                            left: 0,
-                            bottom: 0
-                        }}
+                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                     >
 
-                        <CartesianGrid
-                            strokeDasharray="3 3"
-                            vertical={false}
-                            stroke="#333"
-                        />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333" />
 
                         <XAxis
                             dataKey="Time Step"
                             ticks={xAxisTicks}
-                            tickFormatter={(t) =>
-                                t.slice(0, 10)
-                            }
+                            tickFormatter={(t) => t.slice(0, 10)}
                             angle={-30}
                             textAnchor="end"
                             height={70}
                             dy={5}
                             interval="preserveStartEnd"
-                            tick={{
-                                fontSize: 10,
-                                fill: '#888'
-                            }}
+                            tick={{ fontSize: 10, fill: '#888' }}
                         />
 
                         <YAxis
-                            tick={{
-                                fontSize: 11,
-                                fill: '#888'
-                            }}
+                            tick={{ fontSize: 11, fill: '#888' }}
                             width={80}
-                            tickFormatter={(value) =>
-                                Number(value).toString()
-                            }
+                            tickFormatter={(value) => Number(value).toString()}
                             label={{
                                 value: '$/kWh',
                                 angle: -90,
@@ -659,130 +444,74 @@ function CardPricing({
                         />
 
                         <Tooltip
-                            content={({
-                                          active,
-                                          payload,
-                                          label
-                                      }) => {
+                            content={({ active, payload, label }) => {
 
-                                if (
-                                    !active ||
-                                    !payload?.length
-                                ) {
+                                if (!active || !payload?.length) {
                                     return null;
                                 }
 
                                 return (
                                     <div
                                         style={{
-                                            backgroundColor:
-                                                '#1a1a1a',
-                                            border:
-                                                '1px solid #333',
+                                            backgroundColor: '#1a1a1a',
+                                            border: '1px solid #333',
                                             borderRadius: 8,
-                                            padding:
-                                                '10px 14px',
+                                            padding: '10px 14px',
                                             color: '#fff',
                                             fontSize: 12,
                                             minWidth: 180,
                                         }}
                                     >
 
-                                        <div
-                                            style={{
-                                                marginBottom: 6
-                                            }}
-                                        >
-                                            {
-                                                label
-                                                    ? new Date(
-                                                        label
-                                                    ).toLocaleString()
-                                                    : ''
-                                            }
+                                        <div style={{ marginBottom: 6 }}>
+                                            {label ? new Date(label).toLocaleString() : ''}
                                         </div>
 
-                                        {
-                                            payload.map(
-                                                (
-                                                    entry: any,
-                                                    i: number
-                                                ) => {
+                                        {payload.map((entry: any, i: number) => {
 
-                                                    if (
-                                                        entry.value === null ||
-                                                        entry.value === undefined
-                                                    ) {
-                                                        return null;
-                                                    }
+                                            if (entry.value === null || entry.value === undefined) {
+                                                return null;
+                                            }
 
-                                                    return (
-                                                        <div
-                                                            key={i}
-                                                            style={{
-                                                                display:
-                                                                    'flex',
-                                                                alignItems:
-                                                                    'center',
-                                                                gap: 8,
-                                                                marginBottom: 4,
-                                                            }}
-                                                        >
+                                            return (
+                                                <div
+                                                    key={i}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 8,
+                                                        marginBottom: 4,
+                                                    }}
+                                                >
 
-                                                            <span
-                                                                style={{
-                                                                    width: 10,
-                                                                    height: 10,
-                                                                    borderRadius:
-                                                                        '50%',
-                                                                    background:
-                                                                    entry.color,
-                                                                    flexShrink:
-                                                                        0,
-                                                                }}
-                                                            />
+                                                    <span
+                                                        style={{
+                                                            width: 10,
+                                                            height: 10,
+                                                            borderRadius: '50%',
+                                                            background: entry.color,
+                                                            flexShrink: 0,
+                                                        }}
+                                                    />
 
-                                                            <span
-                                                                style={{
-                                                                    color:
-                                                                        '#bbb'
-                                                                }}
-                                                            >
-                                                                {
-                                                                    entry.name
-                                                                }
-                                                            </span>
+                                                    <span style={{ color: '#bbb' }}>
+                                                        {entry.name}
+                                                    </span>
 
-                                                            <span
-                                                                style={{
-                                                                    marginLeft:
-                                                                        'auto',
-                                                                    fontWeight:
-                                                                        'bold'
-                                                                }}
-                                                            >
-                                                                {
-                                                                    `${Number(
-                                                                        entry.value
-                                                                    )} $/kWh`
-                                                                }
-                                                            </span>
+                                                    <span style={{ marginLeft: 'auto', fontWeight: 'bold' }}>
+                                                        {`${Number(entry.value)} $/kWh`}
+                                                    </span>
 
-                                                        </div>
-                                                    );
-                                                }
-                                            )
-                                        }
+                                                </div>
+                                            );
+                                        })}
 
                                     </div>
                                 );
                             }}
                         />
 
-                        <Legend
-                            verticalAlign="top"
-                            height={36}
-                        />
+                        <Legend verticalAlign="top" height={36} />
 
                         <Line
                             type="monotone"
@@ -800,21 +529,11 @@ function CardPricing({
                 <div className="mt-4">
 
                     <DateRangeSlider
-                        minTimestamp={
-                            metadata.min
-                        }
-                        maxTimestamp={
-                            metadata.max
-                        }
-                        sliderValues={
-                            sliderValues
-                        }
-                        onSliderChange={
-                            handleSliderChange
-                        }
-                        step={
-                            metadata.sliderStep
-                        }
+                        minTimestamp={metadata.min}
+                        maxTimestamp={metadata.max}
+                        sliderValues={sliderValues}
+                        onSliderChange={handleSliderChange}
+                        step={metadata.sliderStep}
                     />
 
                 </div>
