@@ -46,9 +46,7 @@ const KPI_TABS = [
 const COMMUNITY_TABS = [
   { to: '/app/community/dashboard', label: 'Overview' },
   { to: '/app/community/inventory', label: 'Inventory' },
-  { to: '/app/community/insights', label: 'Insights' },
   { to: '/app/community/flexibility', label: 'Flexibility' },
-  { to: '/app/community/contracts', label: 'Contracts' }
 ];
 const PROSUMER_TABS = [
   { to: '/app/community/dashboard', label: 'Overview' },

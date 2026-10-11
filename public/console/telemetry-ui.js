@@ -60,8 +60,6 @@ const tOldSite=siteDetailOriginal;
 siteDetailOriginal=function(){let html=tOldSite();if(state.tab==='summary'){html=html.replace(/<section class="measurement-empty">[\s\S]*?<\/section>/,siteGraph(chosen())).replace('No observations connected',chosen().assets.flatMap(a=>a.channels).filter(c=>c.mongo_binding||c.simulation_binding).length+' measurement sources linked').replace('DEMFLEX / Site',esc(comm().name)+' / Site');}return html;};
 const tOldAdmin=admin;
 admin=function(){return tOldAdmin()+`<section class="surface"><h2>Measurement sources</h2><p>Explore stored readings through the Telemetry API.</p><button class="btn" data-t-explore>Open measurement explorer</button></section>`;};
-const tOldOverview=overview;
-overview=function(){return tOldOverview()+`<section class="surface"><div class="sectionhead"><div><h2>Stored measurements</h2><p class="subtitle">Inspect available sources before linking them to this community.</p></div><button class="btn" data-t-explore>Explore measurements</button></div></section>`;};
 const tOldRender=render;
 render=function(){tOldRender();if(connection.loading||connection.error||!state.loggedIn)return;if(person().role==='manager'&&state.page==='measurements'){document.querySelector('main.content').innerHTML=tExplorer();return;}document.querySelectorAll('[data-telemetry-panel]').forEach(p=>tLoad(p));};
 document.addEventListener('click',async e=>{

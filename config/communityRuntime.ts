@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
-export const communityModules = ['inventory-model', 'app', 'inventory-ui', 'people-model', 'people-ui', 'backend-client', 'connected-ui', 'telemetry-ui', 'domain-form', 'operations-ui', 'price-rules', 'community-charts'];
+export const communityModules = ['inventory-model', 'app', 'inventory-ui', 'people-model', 'people-ui', 'backend-client', 'connected-ui', 'telemetry-ui', 'domain-form', 'operations-ui', 'price-rules', 'community-charts', 'workspace-refinement'];
 const exportsByFile: Record<string, string> = {'inventory-model':'InventoryModel','people-model':'PeopleModel','backend-client':'ConsoleBackend','domain-form':'DomainForm','price-rules':'PriceRules'};
 
 /** Compile the existing workspace into a normal module, inside the React app.
@@ -52,8 +52,9 @@ export function communityRuntime(): Plugin {
             if(part==='flexibility')state.operationsPage='sessions';
           }else{
             state.page=path==='/communities'?'communities':({dashboard:'overview',inventory:'sites',topology:'sites',administration:'admin'}[part]||'overview');
-            if(part==='flexibility'||part==='contracts')state.operationsPage=part==='flexibility'?'sessions':'contracts';
-            if(part==='insights')state.page='insights';
+            if(part==='flexibility')state.operationsPage='sessions';
+            if(part==='contracts'||part==='settings')state.page='settings';
+            if(part==='insights')state.page='overview';
           }
           if(part==='topology')state.view='topology';
           render();
