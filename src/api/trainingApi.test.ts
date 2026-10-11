@@ -1,4 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { listExampleJobs } from "../mocks/exampleJobs";
+
+// Developer example/ files are deliberately untracked. Supply a deterministic
+// fixture here so CI tests the fallback without depending on a local checkout.
+vi.mock("../mocks/exampleJobs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../mocks/exampleJobs")>();
+  return {
+    ...original,
+    listExampleJobs: vi.fn(() => [{
+      job_id: "live-rbc-ev-native-2000-300s-post026",
+      status: "completed",
+      job_info: { experiment_name: "Local example", target_host: "local" }
+    }])
+  };
+});
 import {
   archiveJob,
   authenticateWorker,
@@ -33,6 +48,25 @@ describe("training API jobs", () => {
 
     expect(jobs?.some((job) => job.job_id === "live-rbc-ev-native-2000-300s-post026")).toBe(true);
     expect(listLocalJobs().length).toBeGreaterThan(0);
+  });
+
+  it("has no initial jobs when developer examples are absent", () => {
+    vi.mocked(listExampleJobs).mockReturnValueOnce([]);
+    expect(listJobsInitialData()).toBeUndefined();
+  });
+
+  it("returns only backend jobs when developer examples are absent", async () => {
+    vi.mocked(listExampleJobs).mockReturnValueOnce([]);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([
+      { job_id: "backend-only", status: "queued", job_info: {} }
+    ]), { status: 200, headers: { "Content-Type": "application/json" } })));
+    expect((await listJobs()).map(job => job.job_id)).toEqual(["backend-only"]);
+  });
+
+  it("reports backend failures when no developer examples are available", async () => {
+    vi.mocked(listExampleJobs).mockReturnValueOnce([]);
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("Backend unavailable"); }));
+    await expect(listJobs()).rejects.toThrow("Backend unavailable");
   });
 
   it("returns local example jobs when the backend list request stalls in dev", async () => {
