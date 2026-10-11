@@ -8,6 +8,12 @@ export interface TelemetryCapability {
   capability_type: string;
   unit: string;
   data_type: string;
+  tag?: string | null;
+  source?: string | null;
+  quantity?: string | null;
+  sampling_interval_seconds?: number | null;
+  value_semantics?: "unknown" | "instantaneous" | "interval" | "cumulative" | "state" | "command";
+  enabled?: boolean;
 }
 
 export interface TelemetryProfile {
@@ -30,6 +36,12 @@ export interface CreateTelemetryCapabilityPayload {
   capability_type: string;
   unit: string;
   data_type: string;
+  tag?: string | null;
+  source?: string | null;
+  quantity?: string | null;
+  sampling_interval_seconds?: number | null;
+  value_semantics?: "unknown" | "instantaneous" | "interval" | "cumulative" | "state" | "command";
+  enabled?: boolean;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -84,4 +96,8 @@ export function createTelemetryCapability(payload: CreateTelemetryCapabilityPayl
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export function updateTelemetryCapability(id: string, payload: Partial<Omit<TelemetryCapability, "capability_id" | "profile_id">>): Promise<TelemetryCapability> {
+  return request<TelemetryCapability>(`/api/capabilities/${id}`, { method: "PUT", body: JSON.stringify(payload) });
 }

@@ -11,7 +11,8 @@ import { isTrainingManagerRole, roleLabel } from "../utils/roles";
 export function AccountPage(): JSX.Element {
   const { session, updateProfile } = useAuth();
   const { theme, setTheme } = useUI();
-  const { notifySuccess } = useApiFeedback();
+  const { notifySuccess, notifyError } = useApiFeedback();
+  const [saving,setSaving]=useState(false);
   const [name, setName] = useState(session?.name || "");
   const [email, setEmail] = useState(session?.email || "");
   const currentRoleLabel = roleLabel(session?.role);
@@ -57,12 +58,16 @@ export function AccountPage(): JSX.Element {
             <Button
               variant="primary"
               iconLeft={<Save size={14} />}
-              onClick={() => {
-                updateProfile({ name, email });
-                notifySuccess("Profile updated", "Changes were saved in your local session.");
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                try { await updateProfile({ name, email });
+                  notifySuccess('Profile updated', session?.role==='rec_manager'||session?.role==='prosumer'?'Your community profile was saved.':'Changes were saved in your local session.');
+                } catch(error) { notifyError('Unable to save profile',error); }
+                finally { setSaving(false); }
               }}
             >
-              Save changes
+              {saving?'Saving…':'Save changes'}
             </Button>
           </div>
         </article>

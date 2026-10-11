@@ -1,29 +1,45 @@
+import { loadEnv } from "vite";
 import { defineConfig } from "vitest/config";
+import { communityRuntime } from './config/communityRuntime';
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
-  plugins: [react()],
+export default defineConfig(({ mode }) => {
+ const env = loadEnv(mode, process.cwd(), "");
+ return {
+  plugins: [react(), communityRuntime(), {
+    name: "console-entry",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = (req.url || "/").split("?", 1)[0];
+        if (["/console", "/console/", "/console/index.html"].includes(path)) {
+          res.writeHead(302, { Location: '/communities', "Cache-Control": "no-store" });
+          res.end();
+        } else next();
+      });
+    }
+  }],
   assetsInclude: ["**/*.onnx"],
   server: {
 
     proxy: {
+      "/measurement-api": { target: env.MEASUREMENT_PROXY_TARGET || "http://193.136.62.78:8000", changeOrigin: true, ws: true, rewrite: (path) => path.replace(/^\/measurement-api/, "") },
       "/community-api": {
-        target: "http://193.136.62.78:8000",
+        target: env.COMMUNITY_PROXY_TARGET || "http://127.0.0.1:8017",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/community-api/, "")
       },
       "/access-api": {
-        target: "http://193.136.62.78:8018",
+        target: env.ACCESS_PROXY_TARGET || "http://127.0.0.1:8018",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/access-api/, "")
       },
       "/telemetry-api": {
-        target: "http://193.136.62.78:8019",
+        target: env.TELEMETRY_PROXY_TARGET || "http://127.0.0.1:8019",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/telemetry-api/, "")
       },
       "/flexibility-api": {
-        target: "http://193.136.62.78:8020",
+        target: env.FLEXIBILITY_PROXY_TARGET || "http://127.0.0.1:8020",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/flexibility-api/, "")
       }
@@ -35,9 +51,11 @@ export default defineConfig({
     }
   },
   test: {
+    include: ['src/**/*.test.{ts,tsx}'],
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
     globals: true,
     css: true
   }
+};
 });

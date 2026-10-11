@@ -7,8 +7,8 @@ import {
   useState,
   type ReactNode
 } from "react";
-import { MOCK_USERS } from "../constants";
-import type { Session, UserRole } from "../types";
+import { authenticateWorkspace, updateCommunityIdentity } from '../api/workspaceIdentity';
+import type { Session } from "../types";
 import { STORAGE_KEYS } from "../utils/storage";
 
 interface LoginPayload {
@@ -21,9 +21,9 @@ interface AuthContextValue {
   session: Session | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (payload: LoginPayload) => Promise<void>;
+  login: (payload: LoginPayload) => Promise<Session>;
   logout: () => void;
-  updateProfile: (patch: Partial<Pick<Session, "name" | "email">>) => void;
+  updateProfile: (patch: Partial<Pick<Session, "name" | "email">>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -54,6 +54,7 @@ function writePersistedSession(session: Session): void {
 function clearPersistedSession(): void {
   localStorage.removeItem(STORAGE_KEYS.session);
   sessionStorage.removeItem(STORAGE_KEYS.session);
+  sessionStorage.removeItem('console-session-email');
 }
 
 export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
@@ -61,29 +62,17 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    sessionStorage.removeItem('console-session-email');
     setSession(readPersistedSession());
     setIsLoading(false);
   }, []);
 
   const login = useCallback(async ({ email, password, remember }: LoginPayload) => {
-    await new Promise((resolve) => setTimeout(resolve, 450));
-
-    const key = email.trim().toLowerCase();
-    const user = MOCK_USERS[key];
-
-    if (!user || user.password !== password) {
-      throw new Error("Invalid credentials. Try tiago.fonseca@energaize.io / TfTm#2026!");
-    }
-
-    const next: Session = {
-      email: key,
-      name: user.name,
-      role: user.role as UserRole,
-      remember
-    };
+    const next = await authenticateWorkspace(email,password,remember);
 
     setSession(next);
     writePersistedSession(next);
+    return next;
   }, []);
 
   const logout = useCallback(() => {
@@ -91,14 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     clearPersistedSession();
   }, []);
 
-  const updateProfile = useCallback((patch: Partial<Pick<Session, "name" | "email">>) => {
+  const updateProfile = useCallback(async (patch: Partial<Pick<Session, "name" | "email">>) => {
+    if(!session)return;
+    const normalized={...patch,...(patch.email?{email:patch.email.trim().toLowerCase()}:{})};
+    if(['rec_manager','prosumer'].includes(session.role))await updateCommunityIdentity(session.email,normalized);
     setSession((previous) => {
-      if (!previous) return previous;
-      const next = { ...previous, ...patch };
+      if (!previous || previous.email!==session.email) return previous;
+      const next = { ...previous, ...normalized };
       writePersistedSession(next);
       return next;
     });
-  }, []);
+  }, [session]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

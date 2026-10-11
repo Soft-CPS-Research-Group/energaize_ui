@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "react-router-dom";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
+import { isCommunityUserRole, isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
 import { useUI } from "../../contexts/UIContext";
 import { useAlerts } from "../../hooks/useAlerts";
 import { CommunityTree } from "./CommunityTree";
@@ -85,6 +85,7 @@ export function AppShell({
   });
 
   const hideTree =
+      isCommunityUserRole(session?.role) ||
       isTrainingManagerRole(session?.role) ||
       isPredictorRole(session?.role) ||
       isKpiManagerRole(session?.role) ||

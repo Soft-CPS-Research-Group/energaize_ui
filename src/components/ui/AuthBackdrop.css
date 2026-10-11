@@ -1,0 +1,8 @@
+.auth-backdrop{position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#17392e}
+.auth-backdrop-image{position:absolute;inset:0;background-size:cover;background-position:center;opacity:0;transition:opacity 1.6s ease}
+.auth-backdrop-image.is-visible{opacity:1}
+.auth-backdrop-shade{position:absolute;inset:0;background:linear-gradient(110deg,rgba(6,26,22,.4),rgba(5,19,16,.24) 45%,rgba(4,17,14,.66))}
+.auth-motion-toggle{position:absolute;z-index:3;bottom:22px;left:28px;color:#fff;background:#102b237d;border:1px solid #ffffff40;border-radius:20px;padding:9px 14px;font:500 11px var(--font, sans-serif);cursor:pointer;backdrop-filter:blur(12px)}
+.auth-motion-toggle:hover{background:#102b23c7}.auth-motion-toggle:focus-visible{outline:2px solid white;outline-offset:4px}
+.login-page>.auth-motion-toggle{bottom:calc(var(--institutional-dock-offset,76px) + 20px)}
+@media(prefers-reduced-motion:reduce){.auth-backdrop-image{transition:none}}

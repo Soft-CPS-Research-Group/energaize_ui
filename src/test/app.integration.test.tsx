@@ -1,5 +1,6 @@
+import { useCommunityBackendFixture } from './communityBackendFixture';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
@@ -462,8 +463,12 @@ describe("App integration", () => {
     await user.click(screen.getByRole("button", { name: /open kpi compare/i }));
 
     expect(await screen.findByRole("heading", { name: /compare jobs/i })).toBeInTheDocument();
-    expect(screen.getAllByRole("columnheader", { name: "job-completed-001" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("columnheader", { name: "job-completed-002" }).length).toBeGreaterThan(0);
+    // Two jobs use the reference/candidate scorecard; the full table is optional.
+    expect(await screen.findByText("job-completed-001", { selector: "code" })).toBeInTheDocument();
+    expect(await screen.findByText("job-completed-002", { selector: "code" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Decision scorecard" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /All KPI drill-down/i }));
+    expect(await screen.findByRole("button", { name: /All KPI drill-down/i })).toHaveAttribute("aria-expanded", "true");
   });
 
   it("returns from job detail and restores jobs filters from querystring", async () => {
@@ -539,48 +544,48 @@ describe("App integration", () => {
     expect(screen.getByDisplayValue("completed")).toBeInTheDocument();
   });
 
-  it("opens REC manager community dashboard from community selection", async () => {
-    seedCommunitySession("rec_manager");
-    const user = userEvent.setup();
-    renderApp("/communities");
+  async function communityScreen() {
+    await waitFor(()=>expect(document.querySelector('[data-community-workspace]')?.shadowRoot).toBeTruthy());
+    return within(document.querySelector('[data-community-workspace]')!.shadowRoot! as unknown as HTMLElement);
+  }
 
-    expect(await screen.findByRole("heading", { name: /choose a community/i })).toBeInTheDocument();
-    await user.click(screen.getAllByRole("button", { name: /view/i })[0]);
-
-    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Topology" })).toBeInTheDocument();
+  it("opens the backend community workspace inside the same app and logs out through the common account menu", async () => {
+    useCommunityBackendFixture();seedCommunitySession('rec_manager');
+    const user=userEvent.setup();renderApp('/communities');const view=await communityScreen();
+    expect(await view.findByRole('heading',{name:'Choose a community'})).toBeInTheDocument();
+    await user.click(view.getByRole('button',{name:'View'}));
+    expect(await view.findByRole('heading',{name:'Overview'})).toBeInTheDocument();
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(sessionStorage.getItem('console-session-email')).toBeNull();
+    await user.click(view.getByRole('button',{name:'Open user menu'}));
+    await user.click(await view.findByRole('button',{name:'Logout'}));
+    expect(await screen.findByRole('button',{name:'Log in'})).toBeInTheDocument();
+    expect(localStorage.getItem('energaize_session')).toBeNull();
   });
 
-  it("creates a blank community and opens the editable topology builder", async () => {
-    seedCommunitySession("rec_manager");
-    const user = userEvent.setup();
-    renderApp("/communities");
-
-    await user.click(await screen.findByRole("button", { name: /new community/i }));
-    await user.type(screen.getByLabelText(/^name$/i), "Pilot REC");
-    await user.type(screen.getByLabelText(/^location$/i), "Lisbon, PT");
-    await user.click(screen.getByRole("button", { name: /^create$/i }));
-
-    expect(await screen.findByRole("heading", { name: "Topology" })).toBeInTheDocument();
-    expect(screen.getByText(/start with the first building or shared asset/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /add element/i })).toBeInTheDocument();
-    expect(screen.queryByText("Building A")).not.toBeInTheDocument();
+  it("creates a community using the new backend form", async () => {
+    const fixture=useCommunityBackendFixture();seedCommunitySession('rec_manager');
+    const user=userEvent.setup();renderApp('/communities');const view=await communityScreen();
+    await user.click(await view.findByRole('button',{name:'New Community'}));
+    await user.type(view.getByLabelText('Name',{exact:true}),'Pilot REC');
+    await user.type(view.getByLabelText('Location',{exact:true}),'Lisbon');
+    await user.type(view.getByLabelText('Latitude',{exact:true}),'38');
+    await user.type(view.getByLabelText('Longitude',{exact:true}),'-9');
+    await user.click(view.getByRole('button',{name:'Save changes'}));
+    expect(await view.findByRole('heading',{name:'Pilot REC'})).toBeInTheDocument();
+    expect(fixture.recs.find(rec=>rec.id==='new-rec')?.name).toBe('Pilot REC');
   });
 
-  it("sends a prosumer with one assigned building straight to that dashboard", async () => {
-    seedCommunitySession("prosumer");
-    renderApp("/communities");
-
-    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByText(/Solar Community \/ House 1/i)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /choose a community/i })).not.toBeInTheDocument();
+  it("opens only the resident's owned site through the common session", async () => {
+    useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/communities');const view=await communityScreen();
+    expect(await view.findByRole('heading',{name:'My connected home'})).toBeInTheDocument();
+    expect(view.queryByText('Another member’s home')).not.toBeInTheDocument();
+    expect(view.queryByRole('heading',{name:'Choose a community'})).not.toBeInTheDocument();
   });
 
-  it("shows the prosumer flexibility workspace", async () => {
-    seedCommunitySession("prosumer");
-    renderApp("/app/community/flexibility");
-
-    expect(await screen.findByRole("heading", { name: "Flexibility" })).toBeInTheDocument();
-    expect(screen.getByText(/comfort limits are always enforced/i)).toBeInTheDocument();
+  it("opens the connected flexibility area from a direct resident route", async () => {
+    useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/app/community/flexibility');const view=await communityScreen();
+    expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
+    expect(view.getByText('No sessions yet.')).toBeInTheDocument();
   });
 });

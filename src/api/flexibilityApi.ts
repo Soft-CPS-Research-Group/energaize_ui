@@ -56,9 +56,13 @@ export interface CreateEvChargingSessionPayload {
   recurrence?: Record<string, unknown> | null;
   title: string;
   description?: string;
-  soc_at_arrival: number;
+  starts_at: string;
+  ends_at: string;
+  timezone?: string;
+  soc_at_arrival?: number | null;
   soc_at_departure: number;
-  charger_id: string;
+  charger_id?: string | null;
+  vehicle_id?: string | null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

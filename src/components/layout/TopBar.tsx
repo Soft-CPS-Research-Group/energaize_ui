@@ -7,11 +7,10 @@ import {
   Settings2
 } from "lucide-react";
 import { useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { AI_AVATAR_URL, APP_NAME } from "../../constants";
 import { useAuth } from "../../contexts/AuthContext";
 import { useUI } from "../../contexts/UIContext";
-import { getProsumerBuildingScopes, getProsumerScopeForEntity } from "../../data/energyCommunity";
 import { isCommunityUserRole, isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { NotificationPanel } from "./NotificationPanel";
@@ -45,19 +44,24 @@ const KPI_TABS = [
 ];
 
 const COMMUNITY_TABS = [
-  { to: "/app/community/dashboard", label: "Dashboard" },
-  { to: "/app/community/topology", label: "Topology" },
-  //{ to: "/app/community/logs", label: "Logs" }
+  { to: '/app/community/dashboard', label: 'Overview' },
+  { to: '/app/community/inventory', label: 'Inventory' },
+  { to: '/app/community/insights', label: 'Insights' },
+  { to: '/app/community/flexibility', label: 'Flexibility' },
+  { to: '/app/community/contracts', label: 'Contracts' }
 ];
-
-const PROSUMER_TABS = [...COMMUNITY_TABS, { to: "/app/community/flexibility", label: "Flexibility" }];
+const PROSUMER_TABS = [
+  { to: '/app/community/dashboard', label: 'Overview' },
+  { to: '/app/community/equipment', label: 'Equipment' },
+  { to: '/app/community/vehicles', label: 'My vehicles' },
+  { to: '/app/community/flexibility', label: 'Flexibility' }
+];
 
 export function TopBar(): JSX.Element {
   const { session } = useAuth();
-  const { activeCommunity, selectedEntityId, unreadCount } = useUI();
+  const { unreadCount } = useUI();
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
-  const navigate = useNavigate();
   const location = useLocation();
 
   const isTrainingManager = isTrainingManagerRole(session?.role);
@@ -65,8 +69,6 @@ export function TopBar(): JSX.Element {
   const isKpiManager = isKpiManagerRole(session?.role);
   const isCommunityUser = isCommunityUserRole(session?.role);
   const isProsumer = session?.role === "prosumer";
-  const prosumerScopes = isProsumer ? getProsumerBuildingScopes(activeCommunity) : [];
-  const prosumerScope = isProsumer ? getProsumerScopeForEntity(activeCommunity, selectedEntityId) : null;
 
   const tabs = isTrainingManager
     ? session?.role === "training_manager"
@@ -108,46 +110,7 @@ export function TopBar(): JSX.Element {
           />
         </Link>
 
-        {isCommunityUser ? (
-          <div className="community-context">
-            {isProsumer ? (
-              prosumerScopes.length > 1 ? (
-                <button
-                  className="community-context-main"
-                  type="button"
-                  title="Change building"
-                  onClick={() => navigate("/communities")}
-                >
-                  <span className="community-context-copy">
-                    <small>My building</small>
-                    <strong>{prosumerScope?.label ?? "Choose building"}</strong>
-                  </span>
-                  <ChevronDown size={15} />
-                </button>
-              ) : (
-                <div className="community-context-main is-static" title={prosumerScope?.label ?? "My building"}>
-                  <span className="community-context-copy">
-                    <small>My building</small>
-                    <strong>{prosumerScope?.label ?? activeCommunity.name}</strong>
-                  </span>
-                </div>
-              )
-            ) : (
-              <button
-                className="community-context-main"
-                type="button"
-                title="Change community"
-                onClick={() => navigate("/communities")}
-              >
-                <span className="community-context-copy">
-                  <small>Community</small>
-                  <strong>{activeCommunity.name}</strong>
-                </span>
-                <ChevronDown size={15} />
-              </button>
-            )}
-          </div>
-        ) : null}
+        {isCommunityUser ? <Link className="community-context-main" to={isProsumer?'/app/community/dashboard':'/communities'}><span className="community-context-copy"><small>Workspace</small><strong>{isProsumer?'My energy':'Communities'}</strong></span><ChevronDown size={15}/></Link> : null}
       </div>
 
       <nav className="topbar-nav" aria-label="Primary navigation">
@@ -217,6 +180,8 @@ export function TopBar(): JSX.Element {
 
         <button
           className="avatar-btn"
+          aria-label="Open user menu"
+          aria-expanded={userOpen}
           type="button"
           onClick={() => {
             setUserOpen((prev) => !prev);

@@ -1,9 +1,14 @@
-name: Build and Push Docker image
+name: UI tests and Docker Hub
 
 on:
   push:
     branches:
       - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -13,15 +18,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate the unified app
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run test:console
+          npm run build
+
       - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker image
-        run: docker build -t calof/energaize_ui:latest .
+        run: docker build -t calof/energaize_ui:${{ github.sha }} -t calof/energaize_ui:latest .
 
       - name: Push Docker image
-        run: docker push calof/energaize_ui:latest
-
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          docker push calof/energaize_ui:${{ github.sha }}
+          docker push calof/energaize_ui:latest

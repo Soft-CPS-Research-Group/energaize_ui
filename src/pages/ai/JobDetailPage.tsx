@@ -1,3 +1,4 @@
+import { TimeseriesPlot } from "../../components/charts/TimeseriesPlot";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -29,12 +30,9 @@ import {
 } from "lucide-react";
 import {
   Bar,
-  CartesianGrid,
-  ComposedChart,
   Line,
   ReferenceArea,
   ReferenceLine,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis
@@ -2247,8 +2245,7 @@ function TimeseriesChart({
       ) : (
         <div className="sim-chart-canvas" ref={canvasRef}>
           {zoomOverlayStyle ? <div className="sim-zoom-overlay" style={zoomOverlayStyle} /> : null}
-          <ResponsiveContainer width="100%" height={TIMESERIES_CHART_HEIGHT}>
-            <ComposedChart
+          <TimeseriesPlot height={TIMESERIES_CHART_HEIGHT}
               data={chartRows}
               margin={{ top: 16, right: 12, left: 8, bottom: 10 }}
               barCategoryGap="24%"
@@ -2262,7 +2259,6 @@ function TimeseriesChart({
                 onZoomReset();
               }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
               <XAxis
                 type="number"
                 dataKey="epochMs"
@@ -2370,8 +2366,7 @@ function TimeseriesChart({
                   strokeWidth={2.1}
                 />
               ))}
-            </ComposedChart>
-          </ResponsiveContainer>
+            </TimeseriesPlot>
         </div>
       )}
     </article>

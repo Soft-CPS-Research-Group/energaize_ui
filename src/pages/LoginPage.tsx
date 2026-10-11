@@ -1,3 +1,4 @@
+import { AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Info, Lock, Mail } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -5,7 +6,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { InstitutionalDock } from "../components/layout/InstitutionalDock";
 import { Modal } from "../components/ui/Modal";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
-import { APP_NAME, AUTH_SCENE_STORAGE_KEY, LOGIN_BACKGROUNDS, MOCK_USERS } from "../constants";
+import { APP_NAME, AUTH_SCENE_STORAGE_KEY, MOCK_USERS } from "../constants";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
 import { roleHomePath, roleLabel } from "../utils/roles";
@@ -83,7 +84,6 @@ export function LoginPage(): JSX.Element {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bgIndex, setBgIndex] = useState(0);
   const [claimIndex, setClaimIndex] = useState(0);
   const [authScene, setAuthScene] = useState<AuthSceneMode>("none");
   const [authSceneLine, setAuthSceneLine] = useState("");
@@ -101,13 +101,6 @@ export function LoginPage(): JSX.Element {
         .sort((left, right) => left.name.localeCompare(right.name)),
     []
   );
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setBgIndex((previous) => (previous + 1) % LOGIN_BACKGROUNDS.length);
-    }, 9000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -165,10 +158,9 @@ export function LoginPage(): JSX.Element {
     let succeeded = false;
 
     try {
-      await login({ email, password, remember });
+      const signedIn = await login({ email, password, remember });
       succeeded = true;
-      const role = MOCK_USERS[email.trim().toLowerCase()]?.role;
-      const target = roleHomePath(role ?? null);
+      const target = roleHomePath(signedIn.role);
       setAuthScene("login");
       setAuthSceneLine(pickRandomLine(LOGIN_SCENE_LINES));
       if (sceneTimeoutRef.current) {
@@ -191,16 +183,7 @@ export function LoginPage(): JSX.Element {
 
   return (
     <div className="login-page">
-      <motion.div
-        key={LOGIN_BACKGROUNDS[bgIndex]}
-        className="login-bg"
-        initial={{ opacity: 0.72 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
-        style={{
-          backgroundImage: `linear-gradient(120deg, rgba(12, 27, 21, 0.2), rgba(8, 12, 18, 0.7)), url("${LOGIN_BACKGROUNDS[bgIndex]}")`
-        }}
-      />
+      <AuthBackdrop />
       <div className="login-overlay" />
       {authScene === "login" || authScene === "logout" ? (
         <AuthTransitionScene mode={authScene} line={authSceneLine} />
@@ -209,8 +192,8 @@ export function LoginPage(): JSX.Element {
       <button
         className="login-accounts-trigger"
         type="button"
-        title="Contas de teste"
-        aria-label="Ver contas de teste"
+        title="Test accounts"
+        aria-label="View test accounts"
         onClick={() => setAccountsModalOpen(true)}
       >
         <Info size={16} />
@@ -233,9 +216,9 @@ export function LoginPage(): JSX.Element {
         </button>
       </div>
 
-      <Modal title="Contas de teste disponíveis" open={accountsModalOpen} onClose={() => setAccountsModalOpen(false)} width="md">
+      <Modal title="Available test accounts" open={accountsModalOpen} onClose={() => setAccountsModalOpen(false)} width="md">
         <section className="login-accounts-modal">
-          <p>Seleciona uma conta para preencher automaticamente o login.</p>
+          <p>Select a test account to fill in the sign-in form. Community access follows the users and permissions registered in the backend.</p>
           <ul className="login-accounts-list">
             {loginAccounts.map((account) => (
               <li key={account.email}>

@@ -1,3 +1,5 @@
+import "./EVChargingLoader.css";
+
 interface EVChargingLoaderProps {
   label?: string;
   compact?: boolean;

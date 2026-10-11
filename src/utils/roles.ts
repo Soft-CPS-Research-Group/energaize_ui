@@ -23,6 +23,7 @@ export function communityWorkspaceHomePath(role: UserRole | null | undefined): s
 }
 
 export function roleHomePath(role: UserRole | null | undefined): string {
+  if (role === 'prosumer') return '/app/community/dashboard';
   if (isTrainingManagerRole(role)) return "/app/ai/jobs";
   if (isPredictorRole(role)) return "/app/predictor";
   if (isKpiManagerRole(role)) return "/app/kpi-manager";

@@ -107,14 +107,14 @@ export interface RecMembership {
   user_id: string;
   rec_id: string;
   member_type: "individual" | "organization";
-  membership_status: "pending" | "active" | "suspended";
+  membership_status: "pending" | "active" | "inactive";
 }
 
 export interface SiteAccess {
   id: string;
   user_id: string;
   site_id: string;
-  relation: "owner" | "visitor" | "operator" | "manager";
+  relation: "owner" | "visitor" | "manager";
   validity_start?: string;
   validity_end?: string;
 }
@@ -123,7 +123,7 @@ export interface AssetOwnership {
   id: string;
   user_id: string;
   energy_asset_id: string;
-  ownership_type: "owned" | "leased" | "managed";
+  ownership_type: "owned" | "leased" | "shared";
 }
 
 export interface CommunityDomainSnapshot {
@@ -454,10 +454,10 @@ function canUseStorage(): boolean {
   return typeof window !== "undefined" && Boolean(window.localStorage);
 }
 
-function mergeById<T extends { id: string }>(base: T[], persisted?: T[]): T[] {
+function restoreCollection<T extends { id: string }>(base: T[], persisted?: T[]): T[] {
   if (!persisted) return base;
-  const persistedIds = new Set(persisted.map((item) => item.id));
-  return [...persisted, ...base.filter((item) => !persistedIds.has(item.id))];
+  // A saved empty collection is intentional. Never resurrect revoked relations.
+  return persisted;
 }
 
 export function readCommunityDomainSnapshot(): CommunityDomainSnapshot {
@@ -468,15 +468,15 @@ export function readCommunityDomainSnapshot(): CommunityDomainSnapshot {
     const base = cloneSnapshot(INITIAL_DOMAIN);
     const persisted = JSON.parse(raw) as Partial<CommunityDomainSnapshot>;
     return {
-      recs: mergeById(base.recs, persisted.recs),
-      sites: mergeById(base.sites, persisted.sites),
-      assets: mergeById(base.assets, persisted.assets),
-      users: mergeById(base.users, persisted.users),
-      roles: mergeById(base.roles, persisted.roles),
-      grants: mergeById(base.grants, persisted.grants),
-      recMemberships: mergeById(base.recMemberships, persisted.recMemberships),
-      siteAccesses: mergeById(base.siteAccesses, persisted.siteAccesses),
-      assetOwnerships: mergeById(base.assetOwnerships, persisted.assetOwnerships)
+      recs: restoreCollection(base.recs, persisted.recs),
+      sites: restoreCollection(base.sites, persisted.sites),
+      assets: restoreCollection(base.assets, persisted.assets),
+      users: restoreCollection(base.users, persisted.users),
+      roles: restoreCollection(base.roles, persisted.roles),
+      grants: restoreCollection(base.grants, persisted.grants),
+      recMemberships: restoreCollection(base.recMemberships, persisted.recMemberships),
+      siteAccesses: restoreCollection(base.siteAccesses, persisted.siteAccesses),
+      assetOwnerships: restoreCollection(base.assetOwnerships, persisted.assetOwnerships)
     };
   } catch {
     return cloneSnapshot(INITIAL_DOMAIN);
@@ -604,18 +604,24 @@ function resolveProsumerUserId(snapshot: CommunityDomainSnapshot): string {
   return snapshot.users.find((user) => user.email.toLowerCase() === PROSUMER_EMAIL)?.id || PROSUMER_USER_ID;
 }
 
+function activeSiteAccess(access: SiteAccess): boolean {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Lisbon" });
+  return !!access.validity_start && !!access.validity_end
+    && access.validity_start <= today && today <= access.validity_end;
+}
+
 function siteOwnerScope(site: CommunitySite, role: UserRole | null | undefined, snapshot: CommunityDomainSnapshot): EnergyEntity["ownerScope"] {
   if (role !== "prosumer") return "community";
   const prosumerUserId = resolveProsumerUserId(snapshot);
   return snapshot.siteAccesses.some(
-    (access) => access.user_id === prosumerUserId && access.site_id === site.id
+    (access) => access.user_id === prosumerUserId && access.site_id === site.id && activeSiteAccess(access) && access.relation !== "visitor"
   )
     ? "prosumer"
     : "community";
 }
 
 function assetOwnerScope(asset: CommunityAsset, siteOwner: EnergyEntity["ownerScope"], snapshot: CommunityDomainSnapshot): EnergyEntity["ownerScope"] {
-  if (siteOwner === "prosumer") return "prosumer";
+  if (siteOwner === "prosumer" && asset.asset_type !== "ev") return "prosumer";
   const prosumerUserId = resolveProsumerUserId(snapshot);
   return snapshot.assetOwnerships.some(
     (ownership) => ownership.user_id === prosumerUserId && ownership.energy_asset_id === asset.id
@@ -626,7 +632,7 @@ function assetOwnerScope(asset: CommunityAsset, siteOwner: EnergyEntity["ownerSc
 
 function prosumerAllowedSiteIds(snapshot: CommunityDomainSnapshot): Set<string> {
   const prosumerUserId = resolveProsumerUserId(snapshot);
-  return new Set(snapshot.siteAccesses.filter((access) => access.user_id === prosumerUserId).map((access) => access.site_id));
+  return new Set(snapshot.siteAccesses.filter((access) => access.user_id === prosumerUserId && activeSiteAccess(access)).map((access) => access.site_id));
 }
 
 export function energyEntitiesFromDomain(

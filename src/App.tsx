@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { CommunityConsoleEntry } from "./routes/CommunityConsoleEntry";
+import { usesCommunityConsole } from "./routes/communityConsole";
 import { AppShell } from "./components/layout/AppShell";
 import { useAuth } from "./contexts/AuthContext";
 import { AccountPage } from "./pages/AccountPage";
@@ -35,6 +37,7 @@ import type { SelectedEquipment } from "./models/energy.selectedEquipment";
 
 export default function App(): JSX.Element {
     const { session } = useAuth();
+    const { pathname } = useLocation();
     const isRecManager = session?.role === "rec_manager";
 
     const [communityData, setCommunityData] = useState<EnergyCommunity | null>(null);
@@ -49,6 +52,8 @@ export default function App(): JSX.Element {
         if (!isRecManager) return;
         setSelectedEquipment(equipment);
     };
+
+    if (usesCommunityConsole(session?.role, pathname)) return <CommunityConsoleEntry />;
 
     return (
         <Routes>

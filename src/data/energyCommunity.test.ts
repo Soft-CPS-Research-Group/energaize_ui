@@ -43,7 +43,7 @@ describe("energy community demo data", () => {
       ...INITIAL_COMMUNITIES
     ]);
 
-    expect(defaultScope?.community.id).toBe("solar-community");
+    expect(defaultScope?.community.id).toBe(INITIAL_COMMUNITIES[0].id);
     expect(defaultScope?.scope.id).toBe("site-house-1");
   });
 

@@ -8,11 +8,6 @@ import {
     type ReactNode
 } from "react";
 import { createRec, isCommunityBackendMode, listCommunityContexts } from "../api/communityApi";
-import {
-    getCommunitiesData,
-    getCommunityContextsWithInfo,
-    buildFallbackCommunityContexts
-} from "../api/communityDataApi";
 import { useAuth } from "./AuthContext";
 import { INITIAL_COMMUNITIES } from "../constants";
 import type { CommunityContext, NotificationItem, ThemeMode, ToastItem } from "../types";
@@ -69,7 +64,7 @@ function resolvePreferredTheme(): ThemeMode {
 
 export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
     const { session } = useAuth();
-    const isRecManager = session?.role === "rec_manager";
+    const isCommunityUser = session?.role === "rec_manager" || session?.role === "prosumer";
 
     const [theme, setThemeState] = useState<ThemeMode>(resolvePreferredTheme);
     const [communities, setCommunities] = useState<CommunityContext[]>(resolveInitialCommunities);
@@ -91,41 +86,8 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
     }, [theme]);
 
     useEffect(() => {
-        if (isRecManager) {
-            let cancelled = false;
-
-            getCommunitiesData()
-                .then((names: string[]) => {
-                    if (cancelled || !names || names.length === 0) return;
-
-                    const fallback = buildFallbackCommunityContexts(names);
-                    setCommunities(fallback);
-                    writeStorage(STORAGE_KEYS.communities, fallback);
-                    if (!fallback.some((community) => community.id === activeCommunityId)) {
-                        const nextActive = fallback[0];
-                        setActiveCommunityId(nextActive.id);
-                        setSelectedEntityId("community");
-                        writeStorage(STORAGE_KEYS.communityId, nextActive.id);
-                    }
-
-                    getCommunityContextsWithInfo(names)
-                        .then((enriched) => {
-                            if (cancelled) return;
-                            setCommunities(enriched);
-                            writeStorage(STORAGE_KEYS.communities, enriched);
-                        })
-                        .catch((error) => {
-                            console.warn("Community extra info could not be loaded from backend", error);
-                        });
-                })
-                .catch((error) => {
-                    console.warn("Energy communities could not be loaded from backend", error);
-                });
-
-            return () => {
-                cancelled = true;
-            };
-        }
+        // The integrated community workspace owns its backend context.
+        if (isCommunityUser || !session) return;
 
         if (!isCommunityBackendMode()) return;
 
@@ -149,7 +111,7 @@ export function UIProvider({ children }: { children: ReactNode }): JSX.Element {
         return () => {
             cancelled = true;
         };
-    }, [activeCommunityId, isRecManager]);
+    }, [activeCommunityId, isCommunityUser, session?.role]);
 
     const setTheme = useCallback((mode: ThemeMode) => {
         setThemeState(mode);

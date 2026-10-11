@@ -5,7 +5,7 @@ import type { EnergyCommunityDTO } from "../dto/energy.dto";
 import type { CommunityContext } from "../types";
 
 const api = axios.create({
-    baseURL: "/community-api",
+    baseURL: import.meta.env.VITE_MEASUREMENT_API_URL || "/measurement-api",
 });
 
 async function getCommunitiesData(): Promise<string[]> {
@@ -158,7 +158,7 @@ function connectRealTimeData(
     onMessageReceived: (data: any) => void
 ) {
     const socket = new WebSocket(
-        `ws://193.136.62.78:8000/ws/data?exchange_name=${encodeURIComponent(
+        `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/measurement-api/ws/data?exchange_name=${encodeURIComponent(
             exchangeName
         )}`
     );
