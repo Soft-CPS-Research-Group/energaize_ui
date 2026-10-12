@@ -14,7 +14,8 @@ FROM nginx:1.27-alpine
 ENV COMMUNITY_API_URL=http://193.136.62.78:8017 \
     ACCESS_API_URL=http://193.136.62.78:8018 \
     TELEMETRY_API_URL=http://193.136.62.78:8019 \
-    FLEXIBILITY_API_URL=http://193.136.62.78:8020
+    FLEXIBILITY_API_URL=http://193.136.62.78:8020 \
+    RUNTIME_API_URL=http://193.136.62.78:8021
 COPY docker/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
 

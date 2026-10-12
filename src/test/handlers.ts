@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { API_BASE_URL, JOB_ORCHESTRATOR_API_URL } from "../api/client";
+import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
 
 type JobRecord = {
   job_id: string;
@@ -51,7 +51,7 @@ const deployTargets = [
     bundle_mount_path: "/data/bundles"
   }
 ];
-const backendApi = API_BASE_URL.replace(/\/$/, "");
+const backendApi = "/runtime-api";
 const jobOrchestratorApi = JOB_ORCHESTRATOR_API_URL.replace(/\/$/, "");
 const backendEndpoint = (path: string) => `${backendApi}${path}`;
 const endpoint = (path: string) => `${jobOrchestratorApi}${path}`;

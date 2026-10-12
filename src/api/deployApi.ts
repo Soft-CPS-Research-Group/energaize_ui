@@ -1,4 +1,6 @@
-import { ApiError, apiFileUrl, http } from "./client";
+import { ApiError } from "./client";
+import { runtimeRequest as http, RUNTIME_API_URL } from "./runtimeApi";
+const apiFileUrl = (path: string) => RUNTIME_API_URL + path;
 
 export interface DeployInferenceTarget {
   id: string;

@@ -82,3 +82,12 @@ EnergAIze has one React application and one `/login` for Jobs, REC Manager, Pros
 Telemetry stores signal configuration and now provides read-only Mongo measurement queries. The connected console uses its explicit sensor bindings, source explorer, history and optional incremental refresh. Percepta remains the measurement writer. The old API also serves Deploy, bundles and inference logs; see the transition audit in the console guide before retiring it.
 
 For a coordinated first test rollout, see `docs/COMMUNITY_CONSOLE.md` (latest deployment review) and the infrastructure repository's `energaize_ui/README.md`. The Docker image accepts `COMMUNITY_API_URL`, `ACCESS_API_URL`, `TELEMETRY_API_URL` and `FLEXIBILITY_API_URL` at startup. Set these to reachable backend addresses without trailing slashes; the infrastructure compose uses internal Docker names. Pin the published UI commit SHA alongside the backend SHA for reproducibility.
+
+### Site runtime
+
+Percepta and Algorithm tabs use `/runtime-api` (development target 127.0.0.1:8021;
+server proxy configured with `RUNTIME_API_URL`). Administration shows registered
+hosts and existing instances, with explicit site association. Simulation instances
+are labelled and never represent real equipment data. Controller models and recent
+logs are available inside the site; the existing training-manager Deploy page uses
+the same new Runtime backend. Jobs continue using their own orchestrator.

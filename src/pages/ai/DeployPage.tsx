@@ -938,7 +938,8 @@ export function DeployPage(): JSX.Element {
     onSuccess: (result) => {
       const bundles = bundlesQuery.data || [];
       const matchedBundle = bundles.find((item) => item.bundle_id === result.bundle_id);
-      notifySuccess("Bundle switched", `${result.target_id} now running ${bundleDisplayName(matchedBundle)}.`);
+      if (result.status === "switched") notifySuccess("Bundle switched", `${result.target_id} now running ${bundleDisplayName(matchedBundle)}.`);
+      else notifyInfo("Load requested", "The active model has not been confirmed. Check controller health before retrying.");
       setSwitchTarget(null);
       setSwitchBundleId("");
       queryClient.invalidateQueries({ queryKey: ["deploy-health", result.target_id] });

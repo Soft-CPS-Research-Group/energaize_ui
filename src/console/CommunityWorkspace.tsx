@@ -14,10 +14,12 @@ import { mountWorkspace } from 'virtual:community-runtime';
 import baseCss from 'virtual:community-styles';
 import calendarCss from 'react-day-picker/style.css?inline';
 import telemetryCss from './telemetry.css?inline';
+import { RuntimePanel } from './RuntimePanel';
+import runtimeCss from './runtime.css?inline';
 import presentationCss from './presentation.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [baseCss,calendarCss,telemetryCss,presentationCss,loaderCss].join('\n')
+const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,loaderCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
 type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
@@ -54,6 +56,11 @@ export function CommunityWorkspace(): JSX.Element {
     const environment=createWorkspaceEnvironment(shadow,body,bridge);
     const sync=()=>{
       roots.forEach((root,node)=>{if(!node.isConnected){root.unmount();roots.delete(node);}});
+      shadow.querySelectorAll<HTMLElement>('[data-runtime-site], [data-runtime-admin]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);
+        root.render(<RuntimePanel siteId={node.dataset.runtimeSite} siteName={node.dataset.runtimeName} kind={node.dataset.runtimeKind as 'percepta'|'controller'|undefined} navigate={path=>navigation.current(path)}/>);
+      });
       setAccountSlot(shadow.querySelector<HTMLElement>('[data-shared-user-menu]'));
       setLoaderSlot(shadow.querySelector<HTMLElement>('[data-console-loader]'));
     };
