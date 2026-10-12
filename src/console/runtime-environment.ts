@@ -1,3 +1,4 @@
+import { expandFlexEvents } from './flexRecurrence';
 import type { Session } from '../types';
 export interface WorkspaceBridge {
   session: Session;
@@ -31,7 +32,7 @@ export function createWorkspaceEnvironment(root: ShadowRoot, body: HTMLElement, 
   });
   return {
     document: scopedDocument,
-    window: { AppBridge: bridge, TelemetryCharts: bridge.charts, workbookInventory: {entities:[]}, connectedConsole:true, addEventListener:add(window) },
+    window: { FlexRecurrence: {expand:expandFlexEvents}, AppBridge: bridge, TelemetryCharts: bridge.charts, workbookInventory: {entities:[]}, connectedConsole:true, addEventListener:add(window) },
     fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, {...init, signal: init?.signal ? AbortSignal.any([init.signal, abort.signal]) : abort.signal}),
     setTimeout: (callback: () => void, delay?: number) => { const id=window.setTimeout(()=>{timeouts.delete(id);if(!disposed)callback();}, delay);timeouts.add(id);return id; },
     clearTimeout: (id: number) => {window.clearTimeout(id);timeouts.delete(id);},

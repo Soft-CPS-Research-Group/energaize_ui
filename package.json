@@ -39,6 +39,7 @@
     "react-router-dom": "^6.30.0",
     "reactflow": "^11.11.4",
     "recharts": "^3.8.1",
+    "rrule": "^2.8.1",
     "simpleheat": "^0.4.0",
     "tailwind-merge": "^3.5.0",
     "yaml": "^2.8.3"
