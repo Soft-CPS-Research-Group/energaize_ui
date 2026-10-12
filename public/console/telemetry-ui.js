@@ -6,7 +6,7 @@ const sourcePath=s=>'/sources/'+encodeURIComponent(s.database)+'/'+encodeURIComp
 const tDate=value=>new Date(value).toLocaleString('en-GB');
 function tPanel(channels,key){
  T.panels.set(key,channels);
- return `<section class="surface chart-section" data-telemetry-panel="${esc(key)}"><div class="sectionhead"><h2>Measurements</h2></div><div data-t-chart><p class="muted">Loading measurement workspace…</p></div></section>`;
+ return `<section class="surface chart-section" data-telemetry-panel="${esc(key)}"><div data-t-chart><p class="muted">Loading measurement workspace…</p></div></section>`;
 }
 const tRequest=(path,signal)=>B.request('telemetry','/api/measurements'+path,'GET',undefined,signal);
 async function tUnbind(panel,cid){
@@ -22,7 +22,7 @@ function tLoad(panel){
  if(!window.TelemetryCharts)return;
  const key=panel.dataset.telemetryPanel,channels=T.panels.get(key)||[];
  window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{
-  request:tRequest,title:'Measurements',channels:channels.map(c=>({
+  request:tRequest,title:'Measurements',showChannelConfiguration:false,channels:channels.map(c=>({
    id:c.backendId,assetId:c.assetId,assetName:c.assetName,tag:c.tag,source:c.source,valueSemantics:c.value_semantics,enabled:c.enabled,sourceKind:c.source_kind,externalDeviceId:c.external_device_id,sourceField:c.source_field,simulated:!!c.simulation_binding,name:c.name,title:c.label||c.name,unit:c.canonical_unit||c.unit,
    endpoint:(c.mongo_binding||c.simulation_binding)?'/capabilities/'+c.backendId+'/series':undefined,
    latestEndpoint:(c.mongo_binding||c.simulation_binding)?'/capabilities/'+c.backendId+'/latest':undefined,

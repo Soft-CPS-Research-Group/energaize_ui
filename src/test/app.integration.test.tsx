@@ -554,7 +554,7 @@ describe("App integration", () => {
     const user=userEvent.setup();renderApp('/communities');const view=await communityScreen();
     expect(await view.findByRole('heading',{name:'Choose a community'})).toBeInTheDocument();
     await user.click(view.getByRole('button',{name:'View'}));
-    expect(await view.findByRole('heading',{name:'Overview'})).toBeInTheDocument();
+    expect(await view.findByRole('heading',{name:'Connected community'})).toBeInTheDocument();
     expect(document.querySelector('iframe')).toBeNull();
     expect(sessionStorage.getItem('console-session-email')).toBeNull();
     await user.click(view.getByRole('button',{name:'Open user menu'}));
@@ -571,6 +571,8 @@ describe("App integration", () => {
     await user.type(view.getByLabelText('Location',{exact:true}),'Lisbon');
     await user.type(view.getByLabelText('Latitude',{exact:true}),'38');
     await user.type(view.getByLabelText('Longitude',{exact:true}),'-9');
+    await user.click(view.getByRole('button',{name:'Continue'}));
+    expect(fixture.recs.some(rec=>rec.id==='new-rec')).toBe(false);
     await user.click(view.getByRole('button',{name:'Save changes'}));
     expect(await view.findByRole('heading',{name:'Pilot REC'})).toBeInTheDocument();
     expect(fixture.recs.find(rec=>rec.id==='new-rec')?.name).toBe('Pilot REC');
@@ -586,6 +588,24 @@ describe("App integration", () => {
   it("opens the connected flexibility area from a direct resident route", async () => {
     useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/app/community/flexibility');const view=await communityScreen();
     expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
-    expect(view.getByText('No sessions yet.')).toBeInTheDocument();
+    expect(view.getByText('No plans for this day')).toBeInTheDocument();
+    expect(view.getByRole('region',{name:'Flexibility calendar'})).toBeInTheDocument();
+  });
+
+  it("lets a resident leave Flexibility through every primary menu destination", async () => {
+    const user = userEvent.setup();
+    useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/app/community/flexibility');
+    const view=await communityScreen();
+    expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
+    for (const [menu, heading] of [['Overview','My connected home'],['Equipment','Equipment'],['My vehicles','My vehicles']]) {
+      const nav=within(view.getByRole('navigation',{name:'Primary navigation'}));
+      await user.click(nav.getByRole('button',{name:menu}));
+      await waitFor(() => expect(view.queryByRole('heading',{name:heading})).toBeInTheDocument());
+      expect(view.queryByRole('region',{name:'Flexibility calendar'})).not.toBeInTheDocument();
+      const currentNav=within(view.getByRole('navigation',{name:'Primary navigation'}));
+      expect(currentNav.getByRole('button',{name:menu})).toHaveClass('is-active');
+      await user.click(currentNav.getByRole('button',{name:'Flexibility'}));
+      expect(await view.findByRole('region',{name:'Flexibility calendar'})).toBeInTheDocument();
+    }
   });
 });

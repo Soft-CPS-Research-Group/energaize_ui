@@ -13,7 +13,8 @@ export function useCommunityBackendFixture() {
   const responses:Record<string,unknown>={
     '/community-api/api/recs/':recs,'/community-api/api/users/':users,'/community-api/api/sites/':sites,'/community-api/api/assets/':[],
     '/access-api/api/roles/':roles,'/access-api/api/grants/':grants,'/telemetry-api/api/telemetry-profiles/':[],
-    '/flexibility-api/api/flexibility-events/':[],'/flexibility-api/api/calendars/':[]
+    '/flexibility-api/api/flexibility-events/':[],'/flexibility-api/api/calendars/':[],
+    '/runtime-api/api/runtime/instances':[]
   };
   server.use(...Object.entries(responses).map(([path,value])=>http.get('*'+path,()=>new HttpResponse(JSON.stringify(value),{headers:{'Content-Type':'application/json'}}))),
     http.get('*/access-api/api/access/check',()=>HttpResponse.json({allowed:true})),

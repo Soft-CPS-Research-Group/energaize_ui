@@ -15,13 +15,15 @@ import baseCss from 'virtual:community-styles';
 import calendarCss from 'react-day-picker/style.css?inline';
 import telemetryCss from './telemetry.css?inline';
 import { RuntimePanel } from './RuntimePanel';
+import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
 import presentationCss from './presentation.css?inline';
+import experienceCss from './experience.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,loaderCss].join('\n')
+const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
-type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
+type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'showChannelConfiguration'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
 /** Community is a route of the main React app. Shadow DOM only isolates the
  * existing workspace styles from Jobs while its views migrate to components. */
@@ -56,6 +58,11 @@ export function CommunityWorkspace(): JSX.Element {
     const environment=createWorkspaceEnvironment(shadow,body,bridge);
     const sync=()=>{
       roots.forEach((root,node)=>{if(!node.isConnected){root.unmount();roots.delete(node);}});
+      shadow.querySelectorAll<HTMLElement>('[data-resident-services]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);
+        root.render(<ResidentServices siteId={node.dataset.residentServices!}/>);
+      });
       shadow.querySelectorAll<HTMLElement>('[data-runtime-site], [data-runtime-admin]').forEach(node=>{
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);

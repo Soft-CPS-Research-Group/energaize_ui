@@ -3,6 +3,7 @@ import { MeasurementChart, type MeasurementChartProps } from './MeasurementChart
 import { channelRequest, initialChannels, SERIES_COLORS, type MeasurementChannel } from './measurementChannels';
 export interface MeasurementWorkspaceProps extends MeasurementChartProps {
   channels: MeasurementChannel[];
+  showChannelConfiguration?: boolean;
   onLinkChannel?: (id: string) => void;
   onUnlinkChannel?: (id: string) => void;
   onConfigureChannel?: (id: string) => void;
@@ -17,14 +18,18 @@ export function MeasurementWorkspace(props: MeasurementWorkspaceProps) {
   const groups = new Map<string, MeasurementChannel[]>();
   props.channels.forEach(c => { const id = c.assetId || 'unassigned'; groups.set(id, [...(groups.get(id) || []), c]); });
   const label = (c: MeasurementChannel) => groups.size > 1 && c.assetName ? `${c.assetName} · ${c.title}` : c.title;
-  const origins = [...new Set(active.map(c => c.simulated ? 'Simulated' : c.sourceKind === 'historical' ? 'Historical replay' : c.sourceKind === 'physical' ? 'Physical device' : c.sourceKind === 'derived' ? 'Calculated' : 'Origin unconfirmed'))];
   const series = active.map(c => ({ ...c, title: label(c), color: SERIES_COLORS[linked.findIndex(v => v.id === c.id) % SERIES_COLORS.length] }));
   return <div className="telemetry-multiseries">
+    <MeasurementChart {...props} incremental={!active.some(c => c.incremental === false)} endpoint={linked.length ? '/selected/series' : undefined} latestEndpoint={linked.length ? '/selected/latest' : undefined}
+      queryKey={key} series={series} request={request} title={active.length === 1 ? label(active[0]) : 'Selected measurements'}
+      unit={active.length === 1 ? active[0].unit : undefined} note={active.map(c => c.note).filter(Boolean).join(' · ')}
+      expectedSeconds={active.length ? Math.max(...active.map(c => c.expectedSeconds || 15)) : 15}
+      onLink={props.onConfigureChannel || props.onLinkChannel ? () => setConfiguring(v => !v) : undefined} onUnlink={undefined} />
     <div className="telemetry-series-legend" role="group" aria-label="Visible measurements">
       {linked.map(c => <button key={c.id} aria-pressed={selected.includes(c.id)} onClick={() => setSelected(ids => ids.includes(c.id) ? ids.filter(id => id !== c.id) : [...ids, c.id])}>
         <i style={{ background: SERIES_COLORS[linked.findIndex(v => v.id === c.id) % SERIES_COLORS.length] }} />{label(c)}<small>{c.unit || 'Unit unconfirmed'}</small>
       </button>)}
-      {props.channels.some(c => c.sourceKind !== 'derived') && <button className="telemetry-configure" onClick={() => setConfiguring(v => !v)} aria-expanded={configuring}>Measurement channels</button>}
+      {props.showChannelConfiguration !== false && props.channels.some(c => c.sourceKind !== 'derived') && <button className="telemetry-configure" onClick={() => setConfiguring(v => !v)} aria-expanded={configuring}>Measurement channels</button>}
     </div>
     {configuring && <div className="telemetry-sensor-config">
       <p>Each channel measures one quantity from an equipment item. Collection settings and stored readings are configured separately.</p>
@@ -44,11 +49,6 @@ export function MeasurementWorkspace(props: MeasurementWorkspaceProps) {
         </div>)}
       </section>)}
     </div>}
-    {active.length > 0 && <p className="telemetry-origin">{origins.join(' · ')}</p>}
-    <MeasurementChart {...props} incremental={!active.some(c => c.incremental === false)} endpoint={linked.length ? '/selected/series' : undefined} latestEndpoint={linked.length ? '/selected/latest' : undefined}
-      queryKey={key} series={series} request={request} title={active.length === 1 ? label(active[0]) : 'Selected measurements'}
-      unit={active.length === 1 ? active[0].unit : undefined} note={active.map(c => c.note).filter(Boolean).join(' · ')}
-      expectedSeconds={active.length ? Math.max(...active.map(c => c.expectedSeconds || 15)) : 15}
-      onLink={props.onConfigureChannel || props.onLinkChannel ? () => setConfiguring(v => !v) : undefined} onUnlink={undefined} />
+
   </div>;
 }

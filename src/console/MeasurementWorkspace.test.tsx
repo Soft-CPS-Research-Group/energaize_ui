@@ -27,7 +27,7 @@ it('toggles real series together, preserves the chosen period and separates inco
   fireEvent.click(screen.getByRole('button', { name: /^Grid power/ }));
   await waitFor(() => expect(screen.getAllByTestId('line')).toHaveLength(1));
   fireEvent.click(screen.getByRole('button', { name: /^Battery charge/ }));
-  await waitFor(() => expect(screen.getByText('Select a measurement above')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText('Select a measurement below')).toBeInTheDocument());
 });
 
 it('keeps identically named sensors with their equipment and separates collection from history', () => {
@@ -57,7 +57,7 @@ it('identifies simulation separately from channel names and shows a shared devic
     { id: 'soc', title: 'State of charge', assetId: 'b', assetName: 'Battery', source: 'simulator', externalDeviceId: 'battery-01', sourceField: 'soc', simulated: true, unit: '%', endpoint: '/soc/series', latestEndpoint: '/soc/latest' },
     { id: 'power', title: 'Power', assetId: 'b', assetName: 'Battery', source: 'simulator', externalDeviceId: 'battery-01', sourceField: 'power', simulated: true, unit: 'kW', endpoint: '/power/series', latestEndpoint: '/power/latest' }
   ]} />);
-  expect(screen.getByText('Simulated', { exact: true })).toBeInTheDocument();
+  expect(screen.queryByText('Simulated', { exact: true })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^State of charge/ })).toHaveAttribute('aria-pressed', 'true');
   fireEvent.click(screen.getByRole('button', { name: 'Measurement channels' }));
   expect(screen.getByText(/Device: battery-01 → soc/)).toBeInTheDocument();

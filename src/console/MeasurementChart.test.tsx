@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MeasurementChart } from './MeasurementChart';
 vi.mock('../components/charts/TimeseriesPlot', () => ({ TimeseriesPlot: ({children}: {children: ReactNode}) => <div>Chart{children}</div> }));
-vi.mock('recharts', () => ({ Line: () => null, ReferenceArea: () => null, ReferenceLine: () => <span>Live boundary</span>, Tooltip: () => null, XAxis: () => null, YAxis: () => null }));
+vi.mock('recharts', () => ({ Line: ({data}:{data:unknown[]}) => <span data-testid="chart-series" data-points={JSON.stringify(data)}/>, ReferenceArea: () => null, ReferenceLine: () => <span>Live boundary</span>, Tooltip: () => null, XAxis: ({label}:{label:{value:string}}) => <span data-testid="x-axis-label">{label.value}</span>, YAxis: ({label}:{label:{value:string}}) => <span data-testid="y-axis-label">{label.value}</span> }));
 const now = Date.parse('2026-10-11T12:00:00Z');
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 afterEach(() => vi.useRealTimers());
@@ -53,7 +53,7 @@ describe('Live chart lifecycle', () => {
     resumed = true; await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
     expect(screen.queryByText(/No recent readings. Showing stored history/)).not.toBeInTheDocument();
     expect(screen.getByText('Live boundary')).toBeInTheDocument();
-    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByTestId('chart-series').getAttribute('data-points')).toContain('"value":7');
   });
   it('uses two explicit day clicks, includes the full end day, and disables an incomplete range', async () => {
     const request = vi.fn(async (_path: string, _signal: AbortSignal) => ({ points: [] }));
@@ -76,6 +76,15 @@ describe('Live chart lifecycle', () => {
     });
     const view = render(<MeasurementChart title="A" endpoint="/a/series" initialEnd={now} request={request} />); await flush();
     view.rerender(<MeasurementChart title="B" endpoint="/b/series" initialEnd={now} request={request} />); await flush();
-    expect(oldSignal?.aborted).toBe(true); expect(screen.getByText('B')).toBeInTheDocument();
+    expect(oldSignal?.aborted).toBe(true); expect(screen.getByRole('region',{name:'B chart'})).toBeInTheDocument();expect(request.mock.calls.some(([path])=>path.includes('/b/'))).toBe(true);
   });
+});
+
+it('labels time and physical units without the old footer or duplicate live control',async()=>{
+ const request=vi.fn(async()=>({points:[{id:'a',timestamp:new Date(now-15000).toISOString(),value:4}]}));
+ render(<MeasurementChart title="Power" unit="kW" endpoint="/power/series" initialEnd={now} request={request}/>);await flush();
+ expect(screen.getByTestId('x-axis-label')).toHaveTextContent('Time (');
+ expect(screen.getByTestId('y-axis-label')).toHaveTextContent('kW');
+ expect(screen.queryByText('Drag to zoom')).not.toBeInTheDocument();
+ expect(screen.getAllByRole('button',{name:'Live'})).toHaveLength(1);
 });

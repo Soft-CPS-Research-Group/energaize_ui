@@ -29,6 +29,13 @@
    if(s.additionalProperties){
     dictionary=build({type:'array',items:{type:'object',required:['key','value'],properties:{key:{type:'string',minLength:1},value:s.additionalProperties===true?{}:s.additionalProperties}}},Object.entries(value||{}).map(([key,value])=>({key,value})),defs,options,'Entries',true,path);body.append(dictionary.node);
    }
+   if(optional&&options.inlineObjects?.includes(key)){
+    head.hidden=true;body.hidden=false;body.disabled=false;
+    const controls=[...body.querySelectorAll('input,select,textarea')];
+    const requiredInputs=controls.filter(n=>n.required);
+    const sync=()=>{const populated=controls.some(n=>n.value.trim()!=='');box.checked=populated;requiredInputs.forEach(n=>n.required=populated);};
+    body.addEventListener('input',sync);body.addEventListener('change',sync);sync();
+   }
    wrapper.append(body);return {node:wrapper,read:()=>{if(optional&&!box.checked)return value!=null?null:undefined;const result={};for(const [k,f] of fields){const v=f.read();if(v!==undefined)result[k]=v;}if(value?.id)result.id=value.id;if(dictionary){for(const row of dictionary.read()){if(!row.key||['__proto__','prototype','constructor'].includes(row.key))throw Error('Use a valid entry name');if(Object.hasOwn(result,row.key))throw Error('Duplicate entry '+row.key);result[row.key]=row.value;}}return result;}};
   }
   if(s.type==='array'&&s.prefixItems){const row=element('div',{class:'formcolumns'});const children=s.prefixItems.map((item,i)=>{const child=build(item,value?.[i],defs,options,(path.includes('power_curve')?['Wind speed (m/s)','Power (kW)'][i]:['X','Y'][i])||String(i+1),true,path+'.'+i);row.append(child.node);return child;});wrapper.append(row);return {node:wrapper,read:()=>children.map(c=>c.read())};}
