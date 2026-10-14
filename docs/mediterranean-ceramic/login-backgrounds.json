@@ -1,0 +1,29 @@
+{
+  "purpose": "Fullscreen login landscape additions",
+  "assets": [
+    {
+      "file": "login-sunset-villa.webp",
+      "prompt": "Use case: photorealistic-natural. Create one premium architectural photograph-like image for the full-screen login background of a Mediterranean clean energy product. Landscape 16:9, high resolution. Wide environmental composition: a beautiful Portuguese white limewashed villa with terracotta roofs and discreet rooftop solar, olive trees and warm limestone courtyard at sunset. IMPORTANT layout: entire upper 38 percent is clean pale warm sky with no architecture, houses mostly within x=12\u201362 percent and y=42\u201385 percent. The rightmost 30 percent contains only quiet garden, distant hills, paving and sky, because a login form will overlay it. House fully visible, elegantly framed, realistic materials, cinematic soft golden light, sage green accents, aspirational but believable, not a toy or illustration. No text, no logos, no UI, no borders. Do not make a collage.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-bd0b7913-acc8-4f2e-89f0-aba76ebc8cfc.png",
+      "generatedOn": "2026-10-14",
+      "generator": "image_gen (built-in)",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/login-sunset-villa.webp"
+    },
+    {
+      "file": "login-coastal-courtyard.webp",
+      "prompt": "Use case: photorealistic-natural. One premium full-screen website background photograph-like image, landscape 16:9 high resolution. A small beautiful Mediterranean coastal energy community in Portugal, three white limewash homes with terracotta roof tiles and tasteful solar panels, quiet olive courtyard, bougainvillea, ocean horizon, warm morning light. Wide architectural composition with houses grouped in the lower left and center (x=10\u201363%, y=43\u201386%), clean pale blue ivory sky across entire upper 38%. Rightmost 30% is quiet open stone plaza and coastal sky, no buildings, reserved for an overlaid sign-in form. Real proportions, tactile plaster and ceramic surfaces, calm luxury startup editorial photography, no humans, no words, no logos, no UI, no frames, no collage.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-598d1da3-a3f5-423c-b5c7-d02a912922dd.png",
+      "generatedOn": "2026-10-14",
+      "generator": "image_gen (built-in)",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/login-coastal-courtyard.webp"
+    },
+    {
+      "file": "login-vineyard.webp",
+      "prompt": "Use case: photorealistic-natural. One cinematic architectural photograph-like Mediterranean clean-energy website full-screen background. Landscape 16:9 high resolution. Elegant restored Portuguese farmhouse among olive groves and vineyards, low white stucco architecture with warm red ceramic tile roofs and integrated solar panels, natural limestone path, discreet sage electric car parked next to a charging post. Soft late afternoon light, real believable house proportions and materials. Composition deliberately wide: farmhouse and car below y=43% and left of x=63%, full house visible. Upper 38% calm pale creamy sky, right 30% quiet open landscape without structures for a login form. Beautiful warm ivory, olive green, terracotta palette. No text, no UI, no watermark, no collage.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-447fde1a-d077-439a-a16e-90c6b7e52720.png",
+      "generatedOn": "2026-10-14",
+      "generator": "image_gen (built-in)",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/login-vineyard.webp"
+    }
+  ]
+}

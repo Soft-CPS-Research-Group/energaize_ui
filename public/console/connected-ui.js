@@ -36,8 +36,9 @@ availableAssets=function(u=person()){return peopleCatalog().assets.filter(a=>P.a
 function selectedPersonalSite(){const sites=availableSites();const id=state.activePersonalSite||sessionStorage.getItem('console-site-'+person().id);return sites.find(s=>s.id===id)||sites[0];}
 function sitePicker(){const sites=availableSites(),selected=selectedPersonalSite();return `<label class="personal-site-picker"><span>My site</span><select id="personal-site-picker" aria-label="Select my site">${sites.map(s=>`<option value="${s.id}" ${s.id===selected?.id?'selected':''}>${esc(s.name)}</option>`).join('')||'<option>No assigned site</option>'}</select></label>`;}
 personalHeader=function(){return `<header class="topbar"><div class="topbar-left"><button class="brand" data-personal-page="overview" aria-label="My energy"><img class="brand-logo" src="assets/energaize-light.png" alt="EnergAIze"></button>${sitePicker()}</div><nav class="topbar-nav" aria-label="Primary navigation">${[['overview','Overview'],['sites','Equipment'],['vehicles','My vehicles']].map(([id,label])=>`<button class="top-tab ${state.personalPage===id?'is-active':''}" data-personal-page="${id}">${label}</button>`).join('')}</nav><div class="topbar-right"><button class="avatar-btn" data-action="account" aria-label="Open user menu">${userChip(person())}</button>${userMenu()}</div></header>`;};
-function connectionScreen(){return `<main class="workspace-connection"><section><img src="/assets/logos/energaize-light.png" alt="EnergAIze"><h1>${connection.error?'Unable to open your workspace':'Preparing your workspace'}</h1>${connection.error?`<p role="alert">${esc(connection.error)}</p><div class="actions"><button class="btn primary" data-reconnect>Try again</button><button class="btn" data-action="logout">Sign out</button></div>`:'<div data-console-loader role="status">Loading your community, equipment and permissions…</div>'}</section></main>`;}
+function connectionScreen(){return `<main class="workspace-connection"><section><img src="/assets/logos/energaize-light.png" alt="EnergAIze"><h1>${connection.error?'Unable to open your workspace':'Preparing your workspace'}</h1>${connection.error?`<p role="alert">${esc(connection.error)}</p><div class="actions"><button class="btn primary" data-reconnect>Try again</button><button class="btn" data-action="logout">Sign out</button></div>`:'<div data-console-loader></div>'}</section></main>`;}
 
+function personalEquipmentLanding(site){return personalTitle('Equipment',site?esc(site.name):'Direct equipment associations')+personalAssetsTable(availableAssets().filter(a=>a.asset_type!=='ev'&&(!site||a.site_id===site.id)));}
 function siteGraph(s){return '<p>Loading Telemetry…</p>';}
 async function refreshHistory(){}
 personalSiteView=function(){
@@ -64,13 +65,13 @@ render=function(){
  if(person().role==='manager'){
   if(!communities.length){app.innerHTML=`${personalHeader()}<main class="main"><h1>No communities yet</h1>${button('New community','new-community','plus')}</main>`;return;}
   beforeConnectedRender();
-  document.querySelectorAll('.prototypebar').forEach(el=>el.textContent='Connected workspace · Test authentication');
+  document.querySelectorAll('.prototypebar').forEach(el=>el.remove());
   document.querySelectorAll('[data-person-switch]').forEach(el=>el.remove());
   document.querySelectorAll('.subtitle,.footnote,.inventory-summary,.device-status').forEach(el=>{el.innerHTML=el.innerHTML.replaceAll('Workbook inventory','Backend inventory').replaceAll('tags from the workbook','configured tags').replaceAll('Imported from workbook','Registered sites');});
  }else{
   if(state.personalSite){state.activePersonalSite=state.personalSite;state.personalSite=null;state.personalPage='overview';}
   const site=selectedPersonalSite();if(site)focusSite(site.id);
-  const content=state.personalAsset?personalEquipmentView():state.personalPage==='vehicles'?myVehicles():state.personalPage==='sites'?personalTitle('Equipment',site?esc(site.name):'Direct equipment associations')+personalAssetsTable(availableAssets().filter(a=>a.asset_type!=='ev'&&(!site||a.site_id===site.id))):personalSiteView();
+  const content=state.personalAsset?personalEquipmentView():state.personalPage==='vehicles'?myVehicles():state.personalPage==='sites'?personalEquipmentLanding(site):personalSiteView();
   app.innerHTML=personalHeader()+`<div class="shell resident-shell"><main class="main content">${content}</main></div>`;
  }
 };

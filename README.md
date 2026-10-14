@@ -91,3 +91,21 @@ hosts and existing instances, with explicit site association. Simulation instanc
 are labelled and never represent real equipment data. Controller models and recent
 logs are available inside the site; the existing training-manager Deploy page uses
 the same new Runtime backend. Jobs continue using their own orchestrator.
+
+### Community administration
+
+The community editor and account creation use centred, staged forms. A manager can create
+a resident, assign community homes immediately and retry access reconciliation without
+creating a duplicate account. Sign-in still uses the existing test password `pros123`;
+invitation codes and personal passwords are not implemented.
+
+Simple comparison contracts expose fixed EUR/kWh, contracted kVA and standing charges.
+The community tariff links an existing EUR/kWh sensor channel to a named price source
+and expresses member sales as a percentage (initially 80%) of that same stream. Percepta
+is expected to supply the price every 15 minutes; this editor does not create a producer
+or invent readings. Existing contract versions and unrelated price components are
+preserved; contracts outside this simple model retain the detailed editor.
+
+Managers can open Configuration changes from the community/site header or Administration.
+Each inventory change remains pending until algorithm, Percepta and other integrations
+have individual manual confirmations with notes. These confirmations do not deploy services.

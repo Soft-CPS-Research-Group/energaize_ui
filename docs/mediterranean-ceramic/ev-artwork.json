@@ -1,0 +1,24 @@
+{
+  "generator": "OpenAI imagegen",
+  "date": "2026-10-14",
+  "assets": [
+    {
+      "file": "ev-side.webp",
+      "prompt": "Use case: stylized-concept. Asset: isolated animation sprite, premium Mediterranean Ceramic energy app. One small charming modern electric compact hatchback made of matte sage-green glazed ceramic, softly rounded dimensional clay model, ivory details, dark sage glass, charcoal rubber wheels, subtle realistic ceramic material. EXACT clean SIDE PROFILE facing RIGHT, both wheels visible at the same baseline, vehicle nearly fills image with 12% padding, no perspective foreshortening. Genuine transparent background, soft tiny contact shadow only. No road, no charging station, no cable, no labels, no logos, no text, no UI. Landscape 3:2. Beautiful crafted 3D icon, matching a warm ivory terracotta Mediterranean product icon family. This car will drive horizontally as an independent sprite.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-5d59d09c-f99a-4d3e-a214-6479f76e1e50.png",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/ev-side.webp"
+    },
+    {
+      "file": "ev-station.webp",
+      "prompt": "Use case: stylized-concept. Asset: isolated charging-station animation sprite for a Mediterranean Ceramic energy app. One compact premium EV charging pedestal, matte sage green ceramic body and warm ivory front panel, rounded handcrafted dimensional clay render, simple small pale mint indicator. Three-quarter FRONT view facing slightly LEFT to meet a car on its left side, entire freestanding pedestal visible, nearly fills canvas with generous 12% clear padding. True transparent background, small soft contact shadow only. No car, no cable (animated separately in code), no road, no typography, no logo, no UI, no words. Portrait 2:3. Sophisticated soft natural studio light, tactile glazed ceramic texture, gentle bevels.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-c940994d-9d2e-47e0-81f7-68685554c117.png",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/ev-station.webp"
+    },
+    {
+      "file": "ev-front.webp",
+      "prompt": "Use case: stylized-concept. Asset: isolated car for an interactive Mediterranean Ceramic garage UI. One beautiful compact electric hatchback, FRONT VIEW straight on, symmetrical, headlights and front wheels visible, full car, matte sage green ceramic body, warm ivory details, dark olive glass, soft dimensional handcrafted clay, high quality 3D product icon. True transparent background with only small soft grounding shadow. Car fills 76 percent of canvas, square composition. No people, no charging station, no cable, no building, no road, no text, no logos, no license plate writing. Quiet Mediterranean material palette, charming but sophisticated, coherent with ceramic houses and solar panels.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-4848dac5-20c2-44b9-9a3e-c0d88b521d24.png",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/ev-front.webp"
+    }
+  ]
+}

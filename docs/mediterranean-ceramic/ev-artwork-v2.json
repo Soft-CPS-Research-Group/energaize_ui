@@ -1,0 +1,24 @@
+{
+  "generator": "OpenAI imagegen (built-in)",
+  "reference": "public/assets/mediterranean/ceramic.webp",
+  "assets": [
+    {
+      "file": "ev-side-v2.webp",
+      "prompt": "Create a NEW isolated animation sprite, using the attached sheet ONLY as the material and style reference, especially its small ivory car at bottom left. One charming small modern electric hatchback, warm IVORY off-white ceramic body, subtle sand beige roof and details, charcoal grey windows, no green body. EXACT orthographic SIDE PROFILE facing RIGHT, wheels circular, two visible wheels with plain cream hubcaps and dark grey tires, no visible spokes (spokes will animate in code). Car centered, fills 90% of landscape 3:2 canvas, baseline wheels at 80% image height. Soft handcrafted matte ceramic like the original Mediterranean house icons, warm natural light. Entire isolated car on TRUE transparent background, minimal shadow. No road, no station, no cable, no people, no text, no brand. Refined simple forms, no metallic photorealistic auto advertising look. Visible small round charging port on front fender ABOVE front wheel.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-5f786b44-f31c-4a8e-bc12-fbf9ed376387.png",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/ev-side-v2.webp"
+    },
+    {
+      "file": "ev-station-v2.webp",
+      "prompt": "Create a NEW isolated animation sprite using attached sheet ONLY as material and Mediterranean style reference. A small elegant EV charging pedestal made of warm IVORY matte ceramic with a narrow muted TERRACOTTA inset panel and a tiny subdued sage status light. Simple contemporary rectangular pillar with softened edges, clearly a charging point, not a gas pump. No ornament, no leaves, no botanical decoration. Strict FRONT view, small connector socket facing viewer at mid-height for an animated cable added in code. Fully visible, centered, pillar fills 80% of portrait 2:3 canvas, soft minimal grounding shadow. TRUE transparent background. No car, no cable, no road, no letters, no words or logo. Match warm limewashed Mediterranean architecture, pale limestone, tactile artisan ceramics, soft sunlight.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-1688cadc-1fcb-4bde-b989-cfe7fb8f2685.png",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/ev-station-v2.webp"
+    },
+    {
+      "file": "ev-front-v2.webp",
+      "prompt": "Create a NEW isolated FRONT VIEW electric car garage illustration using attached sheet only as material and style reference, especially its ivory car bottom left. One small modern hatchback, warm IVORY off-white matte ceramic body, sand beige details, charcoal grey windows, circular headlights, dark rubber tires. EXACT straight symmetrical FRONT VIEW, entire car fully visible, fills 78% of square canvas. True transparent background with subtle soft contact shadow. Sophisticated handcrafted Mediterranean ceramic, softly rounded forms matching the little ceramic houses. NO green body, no station, no cable, no architecture, no text, no logo, no license plate writing.",
+      "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-e9823f4b-8568-421b-b56d-625899eb9202.png",
+      "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/ev-front-v2.webp"
+    }
+  ]
+}

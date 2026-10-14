@@ -37,6 +37,7 @@ function workspace() {
     "experience-ui",
     "product-art",
     "flexibility-calendar",
+    "community-management",
   ])
     run(fs.readFileSync("public/console/" + f + ".js", "utf8"));
   return { dom, w, run };
@@ -282,5 +283,90 @@ test('configuration completeness never asserts live readings or working control'
  const {dom,run}=workspace();try{
  const html=run(`siteOperationalSummary({assets:[{assetType:'generic_device',specification:{device_category:'other'},channels:[{capability_type:'sensor',simulation_binding:{},unit:'kW',value_semantics:'instantaneous',sampling_interval_seconds:15}]}]})`);
  assert.match(html,/Complete/);assert.match(html,/Simulated source/);assert.match(html,/Physical collection not confirmed/);assert.match(html,/Control<\/span><strong>Not confirmed/);
+ }finally{dom.window.close();}
+});
+
+function managementSetup(run) {
+  run(`state.personId='manager'; state.community=0; state.site=null;
+    communities[0].recId='rec-1'; communities[0].sourcePayload={name:'Community',action_interval_seconds:15,localization:{name:'Porto',latitude:41,longitude:-8}};
+    communities[0].sites=[{id:'home-1',name:'Home',type:'residential',assets:[],sourcePayload:{reference_contracts:[]}}];
+    var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};
+    B.request=async(s,p,m,b)=>{writes.push({s,p,m,b});return {id:'resident-1'};};`);
+}
+function formSubmit(w){w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));}
+test('comparison contract wizard preserves existing components and history', async () => {
+ const {dom,w,run}=workspace();try{
+  managementSetup(run);
+  run(`chosen().sourcePayload.reference_contracts=[{id:'old',valid_from:'2025-01-01',valid_until:'2026-01-01'},
+   {id:'current',name:'Retail',version:2,valid_from:'2026-01-01',tariff_option:'single',components:[
+   {code:'energy',flow:'grid_import',category:'energy',unit:'EUR/kWh',price:{kind:'fixed',value:'0.21'}},
+   {code:'tax',flow:'standing',category:'tax',unit:'EUR/day',price:{kind:'fixed',value:'0.03'}},
+   {code:'network',flow:'grid_import',category:'network_access',unit:'EUR/kWh',price:{kind:'fixed',value:'0.02'}}]}];`);
+  await run("contractEditor('reference')");formSubmit(w);
+  w.document.querySelector('[name=energy]').value='0.25';w.document.querySelector('[name=power]').value='6.9';formSubmit(w);formSubmit(w);
+  assert.equal(run('writes.length'),0);formSubmit(w);await new Promise(setImmediate);
+  const patch=JSON.parse(run('JSON.stringify(writes[0].b)'));
+  assert.equal(patch.reference_contracts.length,2);assert.equal(patch.reference_contracts[0].id,'old');
+  const v=patch.reference_contracts[1];assert.equal(v.contracted_power_kva,6.9);
+  assert.equal(v.components.find(c=>c.code==='energy').price.value,0.25);
+  assert.equal(v.components.find(c=>c.code==='tax').category,'tax');
+  assert.equal(v.components.find(c=>c.code==='network').price.value,'0.02');
+ }finally{dom.window.close();}
+});
+test('community price stores channel binding and the 80 percent member sale rule',async()=>{
+ const {dom,w,run}=workspace();try{
+  managementSetup(run);run(`communityChannels=()=>[{backendId:'channel-price',capability_type:'sensor',canonical_unit:'EUR/kWh',siteName:'Home',assetName:'Meter',label:'Price'}];`);
+  await run("contractEditor('community')");formSubmit(w);
+  w.document.querySelector('[name=channel]').value='channel-price';formSubmit(w);formSubmit(w);await new Promise(setImmediate);
+  const patch=JSON.parse(run('JSON.stringify(writes[0].b)'));
+  assert.equal(patch.price_sources.community_price,'channel-price');
+  const [buy,sell]=patch.community_contracts[0].components;
+  assert.equal(buy.price.source,'community_price');assert.equal(sell.price.reference_component,buy.code);assert.equal(sell.price.multiplier,.8);
+ }finally{dom.window.close();}
+});
+test('resident is created with ownership and retry does not duplicate an account',async()=>{
+ const {dom,w,run}=workspace();try{
+  managementSetup(run);run(`var failAccess=true;B.request=async(s,p,m,b)=>{writes.push({s,p,m,b});if(s==='access'&&failAccess){failAccess=false;throw Error('Offline');}return {id:'new-resident'};};editProfile();`);
+  w.document.querySelector('[name=name]').value='New resident';w.document.querySelector('[name=email]').value='resident@example.org';
+  formSubmit(w);w.document.querySelector('[name=home]').checked=true;formSubmit(w);formSubmit(w);
+  assert.equal(run('writes.length'),0);formSubmit(w);await new Promise(setImmediate);
+  assert.match(w.document.querySelector('[role=alert]').textContent,/Account created/);
+  formSubmit(w);await new Promise(setImmediate);
+  const calls=JSON.parse(run('JSON.stringify(writes)'));assert.equal(calls.filter(c=>c.s==='community').length,1);
+  assert.equal(calls[0].b.site_accesses[0].site_id,'home-1');assert.equal(calls[0].b.site_accesses[0].relation,'owner');
+  assert.equal(calls.filter(c=>c.s==='access').length,2);
+ }finally{dom.window.close();}
+});
+test('configuration resolution sends only the selected change and requires a note',async()=>{
+ const {dom,w,run}=workspace();try{
+  managementSetup(run);run(`configurationWork.rows=[{id:'change-1',rec_id:'rec-1',resource_name:'Battery',reason:'equipment_created'}];resolveConfigurationWork('change-1','percepta');`);
+  formSubmit(w);assert.equal(run('writes.length'),0);
+  w.document.querySelector('[name=note]').value='Regenerated and reviewed v3';formSubmit(w);formSubmit(w);await new Promise(setImmediate);
+  assert.equal(run('writes[0].p'),'/api/configuration-reviews/change-1/resolve');assert.equal(run('writes[0].b.target'),'percepta');
+  assert.equal(run('writes[0].b.note'),'Regenerated and reviewed v3');
+ }finally{dom.window.close();}
+});
+test('community wizard keeps the chosen cadence and converts displayed kW to the API unit',async()=>{
+ const {dom,w,run}=workspace();try{
+  managementSetup(run);run('editCommunitySimple()');formSubmit(w);formSubmit(w);
+  w.document.querySelector('[name=import_limit]').value='25';formSubmit(w);
+  const review=w.document.querySelector('.stage-review').textContent;
+  assert.match(review,/15 s/);assert.doesNotMatch(review,/30 min/);
+  formSubmit(w);await new Promise(setImmediate);
+  assert.equal(run('writes[0].b.action_interval_seconds'),15);assert.equal(run('writes[0].b.power_limit_import.megawatts'),.025);
+  assert.equal(run('writes[0].b.localization.latitude'),41);
+ }finally{dom.window.close();}
+});
+
+test("departure slider is a single visible control and keeps arrival charge and vehicle independent", async () => {
+ const {dom,w,run}=workspace();
+ try {
+ run(`state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Home charger'}},{id:'ev-one',asset_type:'ev',data:{name:'First EV'}},{id:'ev-two',asset_type:'ev',data:{name:'Second EV'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};B.request=async()=>({session_types:['ev_charging']});operationSchemas=async()=>({EVChargingSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number',minimum:0,maximum:1},soc_at_arrival:{anyOf:[{type:'number'},{type:'null'}]},vehicle_id:{type:'string'}}}});`);
+ await run("editSession(null,'charger','ev-two')");
+ const doc=w.document,slider=doc.querySelector('input[type="range"]'),arrival=doc.querySelector('[data-field="soc_at_arrival"]'),vehicle=doc.querySelector('[data-field="vehicle_id"]');
+ assert.equal(vehicle.value,'ev-two','Vehicle detail preselects the requested EV even when it is not first');
+ arrival.value='25';vehicle.value='ev-two';slider.value='90';slider.dispatchEvent(new w.Event('input',{bubbles:true}));
+ assert.equal(doc.querySelector('[data-field="soc_at_departure"]').value,'90');assert.equal(arrival.value,'25');assert.equal(vehicle.value,'ev-two');assert.equal(vehicle.querySelectorAll('option[value^="ev-"]').length,2);
+ assert.equal(doc.querySelector('.charge-exact').hidden,true);assert.equal(slider.getAttribute('aria-label'),'Minimum departure charge');assert.equal(doc.querySelector('[data-charge-label]').textContent,'90%');
  }finally{dom.window.close();}
 });

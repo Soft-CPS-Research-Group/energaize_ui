@@ -197,8 +197,8 @@ h2 { letter-spacing: -.25px; }
 .console-auth .ev-loader-label { margin-top: 6px; font-size: 12px; }
 .console-auth .auth-motion-toggle { position: absolute; }
 .workspace-connection { min-height: 80vh; display: grid; place-items: center; padding: 32px; text-align: center; }
-.workspace-connection>section { max-width: 520px; }
-.workspace-connection img { width: 220px; height: 100px; object-fit: contain; }
+.workspace-connection>section { width: min(100%, 440px); }
+.workspace-connection>section>img { width: 220px; height: 100px; object-fit: contain; }
 .workspace-connection h1 { font-size: 24px; margin: 20px 0; }
 .workspace-connection .actions { justify-content: center; margin-top: 24px; }
 .user-menu .btn-danger { background: #fcf0ed; border-color: #f1d9d4; color: #a13f34; justify-content: center; }
@@ -404,3 +404,8 @@ h2 { letter-spacing: -.25px; }
 .tree .dot.is-complete { background: #228958; }
 .tree .dot.is-partial { background: #c18a12; }
 .tree .dot.is-empty { background: #d05b53; }
+
+.workspace-connection [data-console-loader] { min-height: 145px; }
+.workspace-connection .ev-loader { flex-direction: column; gap: 12px; flex-wrap: nowrap; }
+.workspace-connection .ev-loader .ceramic-charge-scene { width: min(240px,100%); }
+.workspace-connection .ev-loader-label { max-width: 310px; line-height: 1.6; text-wrap: balance; }

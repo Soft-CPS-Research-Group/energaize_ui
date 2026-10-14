@@ -1,0 +1,60 @@
+/* Original identity, an open architectural canvas, and a quiet sign-in surface. */
+.mediterranean-login{--login-ink:#2c3c34;--login-muted:#667168;background:#f4f1eb;color:var(--login-ink);min-height:100svh;padding:90px 5.5vw calc(var(--institutional-dock-offset,76px) + 75px);overflow:auto;align-items:center}
+.mediterranean-login .auth-backdrop{background:#e3e4d6}
+.mediterranean-login .auth-backdrop-image{background-position:35% center}
+.mediterranean-login .auth-backdrop-shade{background:linear-gradient(180deg,#f4f1ebed 0%,#f4f1eb87 22%,#f4f1eb03 52%,#f4f1eb30 100%),linear-gradient(90deg,#f4f1eb33,#f4f1eb00 55%,#f4f1eb66)}
+.mediterranean-login .login-overlay{display:none}
+.mediterranean-login .login-content{width:100%;max-width:1600px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(340px,.7fr);align-items:start;gap:8vw;margin:auto}
+.mediterranean-login .login-story{padding-top:8px;align-self:start;text-shadow:0 1px 20px #f4f1eb99}
+.mediterranean-login .login-story .logo-row{justify-content:flex-start;margin-bottom:26px}
+.mediterranean-login .login-brand{width:clamp(220px,25vw,365px);height:auto;max-height:none;object-fit:contain}
+.mediterranean-login .login-story h1{font-size:clamp(36px,4.25vw,68px);line-height:1.06;font-weight:500;letter-spacing:-2.4px;margin:0 0 18px;max-width:650px;color:var(--login-ink)}
+.mediterranean-login .login-story p{font-size:15px;font-weight:500;color:var(--login-ink);margin:0}
+.mediterranean-login .login-card{width:100%;max-width:425px;justify-self:end;margin:48px 0 0;padding:34px;border:1px solid #ffffffbd;border-radius:26px;background:#fbf9f4f0;color:var(--login-ink);box-shadow:0 24px 80px #2732251c;backdrop-filter:blur(22px);gap:20px}
+.mediterranean-login .login-welcome{margin-bottom:10px}
+.mediterranean-login .login-welcome>span{font-size:10px;letter-spacing:1.8px;color:#687269;font-weight:600}
+.mediterranean-login .login-welcome h2{font-size:31px;font-weight:500;letter-spacing:-1px;margin:13px 0 8px;color:var(--login-ink)}
+.mediterranean-login .login-welcome p{font-size:13px;color:var(--login-muted);margin:0}
+.mediterranean-login .login-card label>span{color:var(--login-ink);font-size:12px}
+.mediterranean-login .input-wrap{background:#fff9;border:1px solid #d9ded4;border-radius:12px;color:#7c867d;min-height:48px}
+.mediterranean-login .input-wrap input{color:var(--login-ink);background:transparent}
+.mediterranean-login .ghost-inline,.mediterranean-login .link-btn{color:#52715b}
+.mediterranean-login .login-submit{background:#536e57;border-color:#536e57;border-radius:12px;min-height:48px;color:white;box-shadow:none}
+.mediterranean-login .login-submit:hover{background:#405d46;transform:translateY(-1px)}
+.mediterranean-login .institutional-dock{background:#f4f1ebed;border-color:#e0e1d5;color:#687166;backdrop-filter:blur(16px)}
+.mediterranean-login .institutional-dock img{filter:grayscale(1);opacity:.76}
+.mediterranean-login .login-theme-switch,.mediterranean-login .login-accounts-trigger{background:#f9f8f0df;color:#33473a;border-color:#ffffffa8;backdrop-filter:blur(14px)}
+.mediterranean-login .login-theme-switch .theme-mini{color:#506154}
+.mediterranean-login .login-theme-switch .theme-mini.is-active{background:#e1e7dc;color:#243d2d}
+[data-theme="dark"] .mediterranean-login{--login-ink:#f4f0e8;--login-muted:#b9c3b9}
+[data-theme="dark"] .mediterranean-login .auth-backdrop-shade{background:linear-gradient(180deg,#182b29cc,#182b2920 65%)}
+[data-theme="dark"] .mediterranean-login .login-story{text-shadow:0 2px 15px #12262155}
+[data-theme="dark"] .mediterranean-login .login-card{background:#24332eea;border-color:#ffffff20}
+[data-theme="dark"] .mediterranean-login .login-welcome>span{color:#c1cabb}
+[data-theme="dark"] .mediterranean-login .input-wrap{background:#17272077;border-color:#657166}
+@media(max-width:850px){.mediterranean-login{padding:82px 26px calc(var(--institutional-dock-offset,96px) + 66px)}.mediterranean-login .login-content{grid-template-columns:1fr;gap:30px}.mediterranean-login .login-story h1{font-size:40px;letter-spacing:-1.5px}.mediterranean-login .login-story .logo-row{margin-bottom:20px}.mediterranean-login .login-card{justify-self:end;margin:0;max-width:400px;padding:28px}.mediterranean-login .auth-backdrop-image{background-position:35% center}.mediterranean-login .auth-backdrop-shade{background:linear-gradient(180deg,#f4f1ebee,#f4f1eb10 60%)}.mediterranean-login .login-story p{font-size:13px}}
+@media(prefers-reduced-motion:reduce){.mediterranean-login *{animation:none!important;transition:none!important;transform:none!important}}
+
+
+
+/* Full-bleed landscape. Text stays in the sky, form in the quiet right edge. */
+.mediterranean-login{isolation:isolate;min-height:100svh;padding:48px 5vw calc(var(--institutional-dock-offset,76px) + 24px);align-items:start}
+.mediterranean-login>.auth-backdrop{position:fixed;inset:0;z-index:-2;background:#d7dfd3}
+.mediterranean-login .auth-backdrop-image{background-size:cover;background-position:50% 20%;background-repeat:no-repeat}
+.mediterranean-login .auth-backdrop-shade{background:linear-gradient(180deg,#f8f4e5cf,#f8f4e57a 23%,transparent 43%),linear-gradient(90deg,transparent 64%,#f1eee33d)}
+.mediterranean-login .login-content{max-width:none;min-height:calc(100svh - var(--institutional-dock-offset,76px) - 88px);grid-template-columns:minmax(0,1fr) minmax(330px,390px);gap:7vw;margin:0;align-items:center}
+.mediterranean-login .login-story{align-self:start;min-width:0;text-shadow:0 1px 18px #fff8e799;padding-top:0}
+.mediterranean-login .login-story .logo-row{margin-bottom:8px}
+.mediterranean-login .login-brand{width:clamp(230px,23vw,335px);height:56px;object-fit:contain;object-position:left center}
+.mediterranean-login .login-story h1{font-size:clamp(32px,2.7vw,46px);line-height:1.02;max-width:630px;margin-bottom:14px}
+.mediterranean-login .login-story p{font-size:13px}
+.mediterranean-login .login-card{margin:20px 0 0;max-width:390px;padding:30px;background:#fcfaf3e6;backdrop-filter:blur(18px)}
+.mediterranean-login .institutional-dock{background:#f4f1ebcc}.mediterranean-login .institutional-dock p{color:inherit}
+[data-theme="dark"] .mediterranean-login .auth-backdrop-shade{background:linear-gradient(180deg,#13251cbb,transparent 50%),linear-gradient(90deg,transparent 60%,#10271d44)}
+.mediterranean-login .auth-scene-overlay{background:#f4f1ebed;backdrop-filter:blur(18px)}
+.ceramic-auth-scene{text-align:center;color:#344a39;padding:24px;width:min(520px,95vw)}
+.ceramic-auth-road{width:100%;overflow:hidden}.ceramic-auth-road svg{display:block;width:100%}
+.ceramic-auth-scene p{font-size:21px;letter-spacing:-.5px;margin:20px 0 8px}.ceramic-auth-status{font-size:12px;color:#687668}
+@media(min-width:851px) and (max-height:780px){.mediterranean-login{padding-top:45px}.mediterranean-login .login-brand{width:230px}.mediterranean-login .login-story h1{font-size:34px}.mediterranean-login .login-card{padding:24px;gap:14px;margin:0}.mediterranean-login .login-welcome{margin-bottom:0}.mediterranean-login .login-content{min-height:calc(100svh - var(--institutional-dock-offset,76px) - 69px)}}
+@media(max-width:850px){.mediterranean-login{padding:66px 22px calc(var(--institutional-dock-offset,96px) + 28px)}.mediterranean-login .login-content{grid-template-columns:1fr;gap:clamp(150px,28svh,260px);min-height:0}.mediterranean-login .login-story h1{font-size:34px;letter-spacing:-1.2px}.mediterranean-login .login-brand{width:220px}.mediterranean-login .login-card{justify-self:center;max-width:390px;padding:26px;margin:0}.mediterranean-login .auth-backdrop-image{background-position:36% center}.mediterranean-login .auth-backdrop-shade{background:linear-gradient(180deg,#f8f4e5c7,transparent 45%,#263b2640)}.mediterranean-login .login-story .logo-row{margin-bottom:6px}}
+@media(prefers-reduced-motion:reduce){.mediterranean-login *{animation:none!important;transition:none!important}.ceramic-driving-car{transform:none!important}}

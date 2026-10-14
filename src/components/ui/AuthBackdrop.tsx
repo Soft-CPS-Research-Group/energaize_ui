@@ -3,7 +3,7 @@ import { LOGIN_BACKGROUNDS } from '../../constants';
 import './AuthBackdrop.css';
 
 /** Shared photographic scene for Jobs and the Community Console. */
-export function AuthBackdrop(): JSX.Element {
+export function AuthBackdrop({ images = LOGIN_BACKGROUNDS, showMotionControl = true }: { images?: readonly string[]; showMotionControl?: boolean }): JSX.Element {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [reduced, setReduced] = useState(false);
@@ -18,15 +18,15 @@ export function AuthBackdrop(): JSX.Element {
   useEffect(() => {
     if (paused || reduced) return;
     const timer = window.setInterval(() => {
-      if (!document.hidden) setIndex(value => (value + 1) % LOGIN_BACKGROUNDS.length);
+      if (!document.hidden) setIndex(value => (value + 1) % images.length);
     }, 9000);
     return () => window.clearInterval(timer);
-  }, [paused, reduced]);
+  }, [paused, reduced, images.length]);
   return <>
     <div className="auth-backdrop" aria-hidden="true">
-      {LOGIN_BACKGROUNDS.map((url, i) => <div key={url} className={`auth-backdrop-image${i === index ? ' is-visible' : ''}`} style={{ backgroundImage: `url("${url}")` }} />)}
+      {images.map((url, i) => <div key={url} className={`auth-backdrop-image${i === index ? ' is-visible' : ''}`} style={{ backgroundImage: `url("${url}")` }} />)}
       <div className="auth-backdrop-shade" />
     </div>
-    {!reduced && <button className="auth-motion-toggle" type="button" aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? 'Resume backgrounds' : 'Pause backgrounds'}</button>}
+    {showMotionControl && !reduced && <button className="auth-motion-toggle" type="button" aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? 'Resume backgrounds' : 'Pause backgrounds'}</button>}
   </>;
 }

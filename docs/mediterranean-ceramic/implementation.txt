@@ -1,0 +1,117 @@
+Mediterranean Ceramic — implementation notes
+
+Scope
+Login, REC Manager and Consumer. Jobs surfaces remain unchanged. The shared
+AuthBackdrop keeps its original default images; login supplies its own image list.
+Existing login accounts and credentials are unchanged.
+
+Visual system
+Warm ivory and sage, the original EnergAIze logo, generated ceramic illustrations,
+uniform community headers and the existing shared React account menu. Three newly generated login
+images rotate every nine seconds; reduced-motion preferences are respected.
+The login has no pause control. The landscape fills the viewport, with text over the sky and the sign-in form
+on the right on desktop. Ceramic plug transitions are shared
+by login and logout.
+Equipment selection updates only the scene, preserving mounted telemetry charts.
+Responsive scenes display the entire image; hotspot coordinates are percentages
+of that uncropped image. Visible illustration captions were removed at the user’s
+request; image provenance remains recorded alongside this implementation.
+
+Functional preservation
+Overview delegates to the existing site and community measurement workspaces when
+charts are expanded. Inventory, topology, settings, source configuration, runtime
+services, charging plans and the flexibility calendar/forms remain available.
+Equipment buttons use the existing manager/resident routes. Access filtering and
+control permissions apply before equipment, images and flexibility actions render.
+Topology uses containment and Ceramic icons instead of intersecting wires.
+SVG exports embed their icon artwork and remain self-contained.
+
+Image coverage
+Residential: no exterior energy equipment; solar; battery; solar + battery;
+solar + battery + EV charger. These cover the current residential catalog.
+Apartment/commercial buildings and factories: neutral and all-three variants.
+For other combinations, duplicate devices of one type, or unknown site types,
+no inaccurate hotspot is shown. This is a curated generated image library;
+there is no runtime image-generation service or claim of true site geometry.
+Interior meters/appliances remain accessible in the equipment dock without an
+invented outdoor location. The community image is conceptual, not a site map.
+
+Data
+Counts and equipment specifications come from the existing backend model.
+Repeated equipment types have one dock icon and a device list; individual device
+navigation, permissions and flexibility actions remain available. Missing specs
+are not replaced with invented values. Site strips support mouse-wheel scrolling,
+releasing page scrolling at either end. Scorecards use consistent internal padding
+and four columns on wide screens, two columns on narrow screens. Existing
+scorecard examples remain explicitly marked Illustrative values. Measurement
+charts retain their existing sources, loading states and empty states.
+
+Verification
+196 React/application tests passed; 55 console tests passed, including new
+coverage for exact image matching, denied equipment access, unsupported equipment
+locations, selection without chart remounting, control-only flexibility actions,
+grouped equipment, registered specifications, wheel boundaries, topology access
+filtering and self-contained SVG export.
+Production build passed. Browser review: login, account selector, manager overview,
+site scene, flexibility form opening, resident overview, measurement expansion,
+shared account menu, 390 px mobile layout and 1920 px wide login, 36-site community
+topology, Consumer charts and responsive scorecards. Browser checks used
+read-only interactions with the connected backend; no records were created.
+
+Workspace
+Implemented in /home/tiago/dev/energaize-mediterranean-ui on
+codex/mediterranean-ceramic, preserving the pre-existing work copied from the
+original checkout. No deployment was performed. Local preview runs on port 5184.
+
+Refinement — 14 October 2026
+The login now uses three newly generated full-screen backgrounds with quiet sky
+for copy and an open right edge for the form. Original images remain in the asset
+library. Full prompts and built-in image_gen source files are recorded in
+login-backgrounds.json. The car drives in and connects on sign-in, disconnects and
+drives out on sign-out. Reduced motion disables these decorative sequences.
+Image targets select registered solar/battery/charger equipment and bring its
+inspector into view. Unsupported or duplicate device scenes do not invent targets.
+Ceramic icons reveal with a brief wobble; the battery has a decorative glow.
+Site topology shows grid import/export limits, generation/charge/discharge ranges
+and flow directions, including explicit missing limits. SVG exports include the
+same configured limits. Multiple devices retain individual navigation and limits.
+The departure-charge slider is the only visible control for its value. Arrival
+charge and selected vehicle remain independent; the underlying percentage-to-
+fraction conversion is unchanged. A readable date/time summary accompanies the
+native date/time inputs. Browser validation opens and cancels requests only.
+
+2026-10-14 — Ceramic motion and garage
+- Generated transparent side-car, pedestal and front-car assets with OpenAI imagegen; prompts and paths in ev-artwork.json.
+- Sign-in is held for at least five seconds from submission, even with immediate authentication; sign-out is held for four seconds. Car disconnects and leaves left. Reduced motion keeps a still scene for the same interval. Shared loading indicator reuses the parked scene without adding artificial waits.
+- Consumer Equipment opens topology by default, with List toggle and full-row equipment buttons. Overview no longer carries a competing topology tab.
+- Vehicles use whole-button garage bays. Overview, Channels and Flexibility sessions are separate. EV detail keeps My vehicles active and its route. Existing charts are available on demand.
+- Vehicle session views filter by selected vehicle and accessible assets. Plan charging selects the EV, retains the existing charger/request wizard and backend permission checks; no backend records were created for validation.
+- Multiple devices of a type remain grouped into one dock entry with a device count and individual choices. Multiple cars each get their own garage bay; illustrations remain generic pending model-specific assets.
+- Brief battery-light, appliance-drum and sunlight feedback is decorative, not real-time telemetry.
+
+2026-10-14 — Motion correction after visual feedback
+- Replaced green vehicle artwork with ivory/sand ceramic cars and an ivory/terracotta charging pedestal, using the original icon sheet as the image-generation reference. Originals and exact prompts are recorded in ev-artwork-v2.json.
+- Kept the five-second arrival and four-second departure. Wheel hubs now rotate in proportion to distance, share the body's easing, stop at arrival and reverse during departure. Removed the bouncing body motion.
+- Put all scene elements in one SVG viewBox so car, pedestal, cable and wheels scale together. Scoped the workspace logo image rule to the logo only; it previously resized the pedestal. Removed duplicate placeholder loading text from the React portal mount point and stacked the workspace loader centrally.
+- Browser inspection: animated body and both wheel transforms verified; stationary compact/regular/workspace scenes inspected at normal width and 390px. Workspace scene measured 240x120, with one status message below. Reduced-motion support preserved.
+- Validation: 19 authentication/integration tests and 58 console tests passed, production build passed. Existing bundle-size warning remains.
+- Local motion-review.html uses the production components and includes replay controls for arrival/departure plus the actual workspace CSS inside a shadow root.
+
+2026-10-14 — Load the destination during the sign-in animation
+- Both auth transitions now last five seconds minimum. Arrival is owned above routing; after authentication, the real destination mounts immediately beneath the same overlay.
+- The console signals readiness only after its bootstrap data and permission checks have settled. The overlay releases when both readiness and the minimum duration are satisfied. A slow request keeps the same parked/charging scene; a failed bootstrap releases to the existing actionable error screen after the minimum duration.
+- The mounted destination is concealed and inert during the transition. It is revealed in place, with no remount, second fetch, or intervening workspace-loading screen.
+- Browser verification: during the five-second scene, the real consumer workspace was mounted, concealed and already ready; immediately afterwards Demo Home was visible with no loader. Integration coverage holds a bootstrap request beyond five seconds and asserts the identical scene and workspace DOM nodes, one request only, then direct reveal.
+- Validation: 201 application tests passed, production build passed. Console tests run separately. The charger artwork remains unchanged. Cable connection now draws outward from the pedestal and retracts back towards it; the energy flow starts only after connection and stops before retraction.
+
+2026-10-14 — Pearl-grey charger and shorter transition
+- Replaced only the charger's terracotta panel with pearl grey, preserving its ivory body and cable/socket alignment. ImageGen edit and saved asset path are recorded in ev-station-v3.json.
+- Entrance and exit now use three seconds, including wheel/cable timings and the review slider. Workspace loading still runs beneath the same overlay; slow responses retain it until ready.
+- Updated timing assertions and the delayed-backend integration case. All 21 targeted authentication/integration tests passed and the production build passed.
+
+2026-10-14 — Explicit site-to-equipment topology connections
+- Replaced detached icon stems with one continuous distribution rail: the site connects to the rail, and each equipment group has a visible branch ending at its ceramic icon. Flow captions remain next to branches, and configured limits remain beside equipment.
+- Kept equipment navigation, permission filtering and repeated-type grouping. Narrow screens scroll the whole connected canvas horizontally instead of wrapping branches into disconnected rows.
+- Site SVG exports now include individual equipment connection branches. Community exports retain their existing layout.
+- Browser checked two- and four-equipment sites, a 390px viewport, and opening the photovoltaic device directly from its topology branch. No backend records changed.
+- Validation: all 59 console tests passed, production build passed, and diff whitespace checks passed. Existing bundle-size warning remains.

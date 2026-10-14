@@ -1,0 +1,5 @@
+.auth-scene-overlay.ceramic-transition-overlay{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:16px;background:#f4f1eb;box-sizing:border-box}
+.ceramic-transition-overlay .ceramic-auth-scene{text-align:center;color:#344a39;padding:24px;width:min(520px,95vw);box-sizing:border-box}
+.ceramic-transition-overlay .ceramic-auth-scene p{font-size:21px;letter-spacing:-.5px;margin:20px 0 8px}
+.ceramic-transition-overlay .ceramic-auth-status{font-size:12px;color:#687668}
+.auth-transition-content[aria-hidden="true"]{visibility:hidden}

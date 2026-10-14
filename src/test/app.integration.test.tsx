@@ -1,6 +1,6 @@
 import { useCommunityBackendFixture } from './communityBackendFixture';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
@@ -89,8 +89,39 @@ describe("App integration", () => {
 
     await user.click(screen.getByRole("button", { name: /log in/i }));
 
-    expect(await screen.findByRole("heading", { name: "Jobs" })).toBeInTheDocument();
-  });
+    expect(await screen.findByRole("heading", { name: "Jobs" }, { timeout: 7000 })).toBeInTheDocument();
+  }, 10000);
+
+  it("loads the consumer workspace underneath sign-in and reveals the same mounted workspace", async () => {
+    useCommunityBackendFixture();
+    let profileRequests=0;
+    let releaseProfiles!: () => void;
+    const profilesBlocked=new Promise<void>(resolve=>{releaseProfiles=resolve;});
+    server.use(http.get('*/telemetry-api/api/telemetry-profiles/',async()=>{
+      profileRequests++;
+      await profilesBlocked;
+      return HttpResponse.json([]);
+    }));
+    renderApp('/login');
+    fireEvent.change(screen.getByRole('textbox',{name:'Email'}),{target:{value:'prosumer@energaize.io'}});
+    fireEvent.change(screen.getByLabelText('Password'),{target:{value:'pros123'}});
+    fireEvent.click(screen.getByRole('button',{name:'Log in'}));
+    await waitFor(()=>expect(profileRequests).toBe(1));
+    const workspace=document.querySelector('[data-community-workspace]');
+    const scene=document.querySelector('.is-arrive');
+    expect(workspace).toBeTruthy();expect(scene).toBeTruthy();
+    expect(workspace?.closest('[inert]')).toBeTruthy();
+    // Finish the three-second minimum while one real bootstrap request is pending.
+    await new Promise(resolve=>setTimeout(resolve,3100));
+    expect(document.querySelector('.is-arrive')).toBe(scene);
+    await act(async()=>releaseProfiles());
+    await waitFor(()=>expect(document.querySelector('.is-arrive')).toBeNull());
+    expect(document.querySelector('[data-community-workspace]')).toBe(workspace);
+    expect(workspace?.closest('[inert]')).toBeNull();
+    expect(workspace?.shadowRoot?.querySelector('[data-console-loader]')).toBeNull();
+    expect(workspace?.shadowRoot?.textContent).toContain('My connected home');
+    expect(profileRequests).toBe(1);
+  },10000);
 
   it("runs a simulation from jobs page", async () => {
     seedAiSession();

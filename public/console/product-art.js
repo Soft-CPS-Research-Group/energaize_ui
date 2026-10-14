@@ -1,7 +1,7 @@
 /* Small original product illustrations. Vector geometry stays crisp in exported topology SVGs. */
 "use strict";
 let productArtId = 0;
-function productArt(kind = "home") {
+function vectorProductArt(kind = "home") {
   const id = "product-" + ++productArtId,
     paint = `url(#${id})`,
     dark = "#284e49",
@@ -30,6 +30,8 @@ function productArt(kind = "home") {
   };
   return `<svg class="product-art" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#e2eeea"/></linearGradient></defs><ellipse cx="51" cy="87" rx="35" ry="5" fill="#173f36" opacity=".08"/>${shapes[kind] || shapes.home}</svg>`;
 }
+function productArt(kind) { return vectorProductArt(kind); }
+
 function siteIllustration(value) {
   return (
     {
@@ -102,5 +104,5 @@ symbolNode = function (cx, cy, label, ic, act, primary = false) {
   }
   const visible = lines.slice(0, 2);
   if (lines.length > 2) visible[1] = visible[1].slice(0, 20) + "…";
-  return `<g class="symbol-node product-node" role="button" tabindex="0" aria-label="${esc(label)}" data-${act[0]}="${esc(act[1])}" transform="translate(${cx} ${cy})"><g transform="translate(-42 -45)">${productArt(kind).replace('viewBox="0 0 100 100"', 'width="84" height="84" viewBox="0 0 100 100"')}</g><text x="0" y="54" text-anchor="middle" class="symbol-name">${visible.map((line, i) => `<tspan x="0" dy="${i ? 18 : 0}">${esc(line)}</tspan>`).join("")}</text></g>`;
+  return `<g class="symbol-node product-node" role="button" tabindex="0" aria-label="${esc(label)}" data-${act[0]}="${esc(act[1])}" transform="translate(${cx} ${cy})"><g transform="translate(-42 -45)">${vectorProductArt(kind).replace('viewBox="0 0 100 100"', 'width="84" height="84" viewBox="0 0 100 100"')}</g><text x="0" y="54" text-anchor="middle" class="symbol-name">${visible.map((line, i) => `<tspan x="0" dy="${i ? 18 : 0}">${esc(line)}</tspan>`).join("")}</text></g>`;
 };

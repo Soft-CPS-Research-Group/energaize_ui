@@ -1,0 +1,72 @@
+{
+  "purpose": "Mediterranean Ceramic architectural illustrations and icon library",
+  "generatedOn": "2026-10-13",
+  "generator": "image_gen",
+  "notice": "Conceptual AI-generated illustrations, not photographs or measured site geometry. Hotspots are image-relative and manually verified. Site scenes are selected by building type and the exact set of visible installed device types. Unsupported combinations or multiple devices of one type use a neutral architectural reference without hotspots.",
+  "assets": [
+    {
+      "file": "house-none.webp",
+      "prompt": "Use case: photorealistic-natural. Asset: generated architectural scene for an energy-management app, a single wide 16:9 architectural photograph. Beautiful credible Portuguese Mediterranean two-storey family house, ivory lime plaster, terracotta pitched roof, olive landscaping confined to FAR LEFT edge, pale limestone paved court, calm warm daylight, sophisticated architectural magazine realism. Whole building fully visible, generous margin all sides, camera front three-quarter perspective, not a mansion, not miniature, no dramatic shadows. House takes x=15% to76%, roof y=18% to42%, facade y=42% to83%. RIGHT quarter is open court with clean cream wall. CRITICAL configured equipment: NO solar panels anywhere, NO battery cabinet, NO charger or car, clear bare terracotta roof and clean unobstructed exterior wall. The equipment is a meaningful clearly readable part of this photograph, not a pasted icon. No trees hiding facade or roof; no text, labels, logo, watermarks, UI, icons, frames. This is conceptual generated architecture, not a photograph of an actual user's property.",
+      "original": "exec-288392a5-ed6a-44c5-ac8e-689e83d9d869.png"
+    },
+    {
+      "file": "house-solar.webp",
+      "prompt": "Use case: photorealistic-natural. Asset: generated architectural scene for an energy-management app, a single wide 16:9 architectural photograph. Beautiful credible Portuguese Mediterranean two-storey family house, ivory lime plaster, terracotta pitched roof, olive landscaping confined to FAR LEFT edge, pale limestone paved court, calm warm daylight, sophisticated architectural magazine realism. Whole building fully visible, generous margin all sides, camera front three-quarter perspective, not a mansion, not miniature, no dramatic shadows. House takes x=15% to76%, roof y=18% to42%, facade y=42% to83%. RIGHT quarter is open court with clean cream wall. CRITICAL configured equipment: Include a clearly visible blue-black photovoltaic array centered on the main roof at x=43%, y=30%. NO battery, NO EV charger, NO car. The equipment is a meaningful clearly readable part of this photograph, not a pasted icon. No trees hiding facade or roof; no text, labels, logo, watermarks, UI, icons, frames. This is conceptual generated architecture, not a photograph of an actual user's property.",
+      "original": "exec-7e04271f-f07a-4e4a-b691-0ce945e59283.png"
+    },
+    {
+      "file": "house-battery.webp",
+      "prompt": "Use case: photorealistic-natural. Asset: generated architectural scene for an energy-management app, a single wide 16:9 architectural photograph. Beautiful credible Portuguese Mediterranean two-storey family house, ivory lime plaster, terracotta pitched roof, olive landscaping confined to FAR LEFT edge, pale limestone paved court, calm warm daylight, sophisticated architectural magazine realism. Whole building fully visible, generous margin all sides, camera front three-quarter perspective, not a mansion, not miniature, no dramatic shadows. House takes x=15% to76%, roof y=18% to42%, facade y=42% to83%. RIGHT quarter is open court with clean cream wall. CRITICAL configured equipment: Bare terracotta roof WITHOUT any solar panels. Include a clearly visible large ivory wall-mounted home battery cabinet on front facade at x=69%, y=64%, no lettering. NO EV charger, NO car. The equipment is a meaningful clearly readable part of this photograph, not a pasted icon. No trees hiding facade or roof; no text, labels, logo, watermarks, UI, icons, frames. This is conceptual generated architecture, not a photograph of an actual user's property.",
+      "original": "exec-d6607fb2-2865-4af3-b6d0-8fef84cd9d3c.png"
+    },
+    {
+      "file": "house-solar-battery.webp",
+      "prompt": "Use case: photorealistic-natural. Asset: generated architectural scene for an energy-management app, a single wide 16:9 architectural photograph. Beautiful credible Portuguese Mediterranean two-storey family house, ivory lime plaster, terracotta pitched roof, olive landscaping confined to FAR LEFT edge, pale limestone paved court, calm warm daylight, sophisticated architectural magazine realism. Whole building fully visible, generous margin all sides, camera front three-quarter perspective, not a mansion, not miniature, no dramatic shadows. House takes x=15% to76%, roof y=18% to42%, facade y=42% to83%. RIGHT quarter is open court with clean cream wall. CRITICAL configured equipment: Include photovoltaic array on main roof at x=43%, y=30%, AND large ivory home battery cabinet fixed to front facade at x=69%, y=64%. NO EV charger, NO car. The equipment is a meaningful clearly readable part of this photograph, not a pasted icon. No trees hiding facade or roof; no text, labels, logo, watermarks, UI, icons, frames. This is conceptual generated architecture, not a photograph of an actual user's property.",
+      "original": "exec-7714f4e9-70f6-4de9-bdf5-081e377c1130.png"
+    },
+    {
+      "file": "house-solar-battery-charger.webp",
+      "prompt": "Use case: photorealistic-natural. Asset: generated architectural scene for an energy-management app, a single wide 16:9 architectural photograph. Beautiful credible Portuguese Mediterranean two-storey family house, ivory lime plaster, terracotta pitched roof, olive landscaping confined to FAR LEFT edge, pale limestone paved court, calm warm daylight, sophisticated architectural magazine realism. Whole building fully visible, generous margin all sides, camera front three-quarter perspective, not a mansion, not miniature, no dramatic shadows. House takes x=15% to76%, roof y=18% to42%, facade y=42% to83%. RIGHT quarter is open court with clean cream wall. CRITICAL configured equipment: Include photovoltaic array on main roof at x=43%, y=30%, a large ivory home battery cabinet fixed to front facade at x=69%, y=64%, AND a dark green freestanding EV charging pedestal with visible coiled cable at x=84%, y=73%. No car so the charger remains completely visible. The equipment is a meaningful clearly readable part of this photograph, not a pasted icon. No trees hiding facade or roof; no text, labels, logo, watermarks, UI, icons, frames. This is conceptual generated architecture, not a photograph of an actual user's property.",
+      "original": "exec-cbe506cd-349d-4ba6-94ac-f5e46d63f4d9.png"
+    },
+    {
+      "file": "building-none.webp",
+      "prompt": "Create a photorealistic architectural photograph, wide 16:9. A beautiful four-storey Mediterranean apartment building, ivory plaster, restrained terracotta accents, balconies. Full structure entirely visible, no cropping. Portuguese setting, calm olive landscaping, warm daylight, premium architecture editorial. Absolutely NO solar panels, batteries, chargers, or vehicles visible. Bare roof and clear walls. Natural photographic realism, not a miniature, not clay, no UI or typography, no logo, no watermark. Room around entire structure, no foreground vegetation obscuring devices.",
+      "original": "exec-8a774d4c-5884-4f3a-9a71-31f8c34a747c.png"
+    },
+    {
+      "file": "building-solar-battery-charger.webp",
+      "prompt": "Create a photorealistic architectural photograph, wide 16:9. A beautiful four-storey Mediterranean apartment building, ivory plaster, restrained terracotta accents, balconies. Full structure entirely visible, no cropping. Portuguese setting, calm olive landscaping, warm daylight, premium architecture editorial. Large realistic blue solar panel array visibly mounted on the roof in upper middle area. One white energy storage cabinet visible against the lower right exterior wall. One freestanding dark sage EV charging pedestal, cable visible, clearly separate on the right in open courtyard. No cars. These three devices must be clearly legible and unoccluded. Natural photographic realism, not a miniature, not clay, no UI or typography, no logo, no watermark. Room around entire structure, no foreground vegetation obscuring devices.",
+      "original": "exec-c9b65c01-f1ef-4d1a-a017-7a1f3f4c4f56.png"
+    },
+    {
+      "file": "factory-none.webp",
+      "prompt": "Create a photorealistic architectural photograph, wide 16:9. A beautiful contemporary Mediterranean light-industrial factory, long low ivory structure, realistic warehouse geometry, clean industrial courtyard. Full structure entirely visible, no cropping. Portuguese setting, calm olive landscaping, warm daylight, premium architecture editorial. Absolutely NO solar panels, batteries, chargers, or vehicles visible. Bare roof and clear walls. Natural photographic realism, not a miniature, not clay, no UI or typography, no logo, no watermark. Room around entire structure, no foreground vegetation obscuring devices.",
+      "original": "exec-1ecf0e25-2143-4445-a7ce-fd118901fcb0.png"
+    },
+    {
+      "file": "factory-solar-battery-charger.webp",
+      "prompt": "Create a photorealistic architectural photograph, wide 16:9. A beautiful contemporary Mediterranean light-industrial factory, long low ivory structure, realistic warehouse geometry, clean industrial courtyard. Full structure entirely visible, no cropping. Portuguese setting, calm olive landscaping, warm daylight, premium architecture editorial. Large realistic blue solar panel array visibly mounted on the roof in upper middle area. One white energy storage cabinet visible against the lower right exterior wall. One freestanding dark sage EV charging pedestal, cable visible, clearly separate on the right in open courtyard. No cars. These three devices must be clearly legible and unoccluded. Natural photographic realism, not a miniature, not clay, no UI or typography, no logo, no watermark. Room around entire structure, no foreground vegetation obscuring devices.",
+      "original": "exec-2bf69329-f4f2-4d64-90b1-163c9bfdbb45.png"
+    },
+    {
+      "file": "ceramic-extra.webp",
+      "prompt": "Create a NEW companion icon sheet matching the Mediterranean Ceramic visual language of the reference. Preserve the warm cream seamless background, handmade glazed ceramic material, sage olive accents, terracotta accents, soft studio shadows, charming semi-real miniature product objects, same lighting and viewpoint. Exactly 3 columns x 2 rows of equal square tiles on a 3:2 canvas, isolated object centered in each tile, generous clear margins, no boundaries, no text or labels. TOP ROW: left a residential digital electricity meter with a tiny dark sage display; middle a domestic washing machine with round glass door, warm ivory and sage ceramic; right an outdoor air-source heat pump with circular fan, warm ivory casing. BOTTOM ROW: left a low contemporary industrial factory with ivory walls and terracotta roof accent; middle a four-storey Mediterranean apartment block with balconies and terracotta roof; right a small Mediterranean shop or office with ivory walls, sage window frames. Clean legible silhouettes at small icon size. Do not include an entire house from reference or repeat its solar, battery or car objects. No blue or turquoise. Rich tactile material, beautifully designed functional icons.",
+      "original": "exec-d87a1c7d-9abd-40b4-b907-3da2de5d9ad1.png"
+    }
+  ],
+  "reused": [
+    {
+      "file": "login-villa.webp",
+      "source": "Approved Mediterranean Ceramic proposal, villa-original.png"
+    },
+    {
+      "file": "login-community.webp",
+      "source": "Approved Mediterranean Ceramic proposal, community-original.png"
+    },
+    {
+      "file": "ceramic.webp",
+      "source": "Approved Mediterranean Ceramic proposal, ceramic-original.png"
+    }
+  ]
+}

@@ -6,6 +6,7 @@ export interface WorkspaceBridge {
   logout: () => void;
   navigate: (path: string) => void;
   onRoute: (path: string | null) => void;
+  onReady?: () => void;
   charts: unknown;
 }
 

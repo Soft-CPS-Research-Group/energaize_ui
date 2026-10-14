@@ -1,0 +1,194 @@
+/* Scoped to the community shadow root. Jobs keeps its existing design. */
+:host,:host([data-theme="light"]){--bg:#f4f1eb;--surface:#fcfaf6;--soft:#edece4;--text:#2d3931;--muted:#6c756d;--line:#dddfd4;--brand:#59765b;--brand-strong:#405d43;--tint:#e7eddf;--bg-elev:#fcfaf6;--bg-elev-2:#efeee6;--text-soft:#6c756d;--glass:#faf8f2ed;--glass-edge:#ffffffa8;--glass-shadow:0 15px 45px #364b2e0a}
+:host([data-theme="dark"]){--bg:#202a25;--surface:#29352d;--soft:#303d33;--text:#f1eee5;--muted:#bdc5b9;--line:#475347;--brand:#afc79f;--brand-strong:#d0dfc5;--tint:#3b4e3c;--bg-elev:#29352d;--bg-elev-2:#334136;--text-soft:#bdc5b9;--glass:#27332ce8;--glass-edge:#67715b55}
+.console-root{background:var(--bg);color:var(--text)}
+.topbar{min-height:78px;background:var(--glass);border-bottom:1px solid var(--line);backdrop-filter:blur(24px);box-shadow:none;gap:24px;padding:14px 32px}
+.topbar .brand{width:auto;flex-shrink:0;padding:0}
+.topbar .brand-logo{width:160px;height:44px;object-fit:contain;max-width:none;max-height:none}
+.topbar .top-tab{border-radius:12px;font-size:13px;padding:11px 16px;font-weight:500}
+.topbar .top-tab.is-active{background:var(--tint);color:var(--text);box-shadow:none}
+.topbar .avatar-btn{width:40px;height:40px;min-width:40px;padding:0;border-radius:50%;background:var(--soft);border:1px solid var(--line)}
+.topbar .person-avatar{width:36px;height:36px;background:#dfe7d8;color:#40523d;border-radius:50%;font-size:12px;font-weight:600;display:grid;place-items:center}
+.topbar .community-context,.topbar .personal-site-picker{border-left:1px solid var(--line);padding-left:22px}
+.personal-site-picker select{max-width:210px;background:transparent;border:0;color:var(--text);font-size:13px;font-weight:500}
+.main{max-width:1600px;padding:30px 38px 90px;margin:auto}
+.community-identity,.resident-heading{margin-bottom:22px;gap:16px}
+.community-identity h1,.resident-heading h1,.sitehead h1{font-size:27px;font-weight:500;letter-spacing:-.9px}
+.community-emblem,.site-product-art{width:64px;height:64px;flex:0 0 64px}
+.community-emblem .ceramic-art{width:100%;height:100%}
+.energy-overview{max-width:none}.site-energy{padding-top:0}
+.ceramic-art{display:block;width:68px;height:68px;flex:0 0 68px;border-radius:14px;background-image:url('/assets/mediterranean/ceramic.webp');background-size:300% 200%;background-repeat:no-repeat;mix-blend-mode:multiply}
+:host([data-theme="dark"]) .ceramic-art{mix-blend-mode:normal;opacity:.94}
+.ceramic-site{margin-top:18px}.ceramic-site-stage{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:32px;align-items:center}
+.ceramic-photo{margin:0;min-width:0}.ceramic-photo-plane{position:relative;border-radius:24px;overflow:hidden;background:var(--soft)}
+.ceramic-photo-plane>img{display:block;width:100%;height:auto;object-fit:contain;aspect-ratio:1672/941}
+.ceramic-photo figcaption{display:flex;justify-content:space-between;gap:12px;margin:11px 3px 0;font-size:10px;color:var(--muted);line-height:1.5}
+.ceramic-photo figcaption>span:first-child{flex-shrink:0}
+.ceramic-inspector{padding:0 4px 20px;animation:ceramic-reveal .3s ease-out;min-width:0}
+.ceramic-kicker{font-size:9px;font-weight:600;letter-spacing:1.6px;color:var(--muted)}
+.ceramic-inspector-art{height:95px;display:flex;align-items:center;margin:12px 0 4px}
+.ceramic-inspector-art .ceramic-art,.ceramic-inspector-art svg{width:95px;height:95px;flex-basis:95px}
+.ceramic-inspector h2{font-size:25px;font-weight:500;letter-spacing:-.7px;line-height:1.2;margin:8px 0 10px;overflow-wrap:anywhere}
+.ceramic-inspector p,.ceramic-community-summary p{font-size:12px;line-height:1.65;color:var(--muted);margin:0 0 20px}
+.ceramic-facts{margin:16px 0 22px;display:grid;gap:0;font-size:12px}
+.ceramic-facts>div{display:flex;align-items:baseline;gap:16px;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.ceramic-facts dt{color:var(--muted)}.ceramic-facts dd{margin:0;font-weight:500;text-align:right;overflow-wrap:anywhere}.ceramic-facts small{font-weight:400;color:var(--muted)}
+.ceramic-inspector .btn{width:100%;justify-content:center;min-height:42px;border-radius:12px;font-size:12px}.ceramic-inspector .btn.text{margin-top:8px}
+.ceramic-hotspot{position:absolute;transform:translate(-50%,-50%);width:34px;height:34px;display:grid;place-items:center;border:1px solid #fff;border-radius:50%;box-shadow:0 0 0 8px #ffffff42,0 3px 16px #18332933;background:#ffffff4d;animation:ceramic-marker .45s ease-out}
+.ceramic-hotspot i{width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 2px 8px #1a34283b}
+.ceramic-no-photo{min-height:300px;background:var(--soft);border-radius:24px;display:grid;justify-items:center;align-content:center;gap:20px;color:var(--muted);font-size:12px}.ceramic-no-photo svg{width:130px;height:130px}
+.ceramic-equipment-dock{display:flex;gap:12px;overflow-x:auto;padding:18px 3px 15px;margin-top:2px;scroll-snap-type:x proximity;scrollbar-width:thin}
+.ceramic-equipment{display:flex;flex-direction:column;align-items:center;justify-content:start;gap:10px;min-width:136px;max-width:180px;flex:1;padding:12px 14px 16px;background:transparent;border:1px solid transparent;border-radius:19px;text-align:center;scroll-snap-align:start;transition:background .2s,transform .2s,border-color .2s}
+.ceramic-equipment>.ceramic-art,.ceramic-equipment>svg{width:80px;height:80px;flex:0 0 80px;transition:transform .24s cubic-bezier(.2,.8,.2,1)}
+.ceramic-equipment:hover>.ceramic-art,.ceramic-equipment:hover>svg{transform:translateY(-5px) rotate(-2deg)}
+.ceramic-equipment:hover{background:var(--surface)}.ceramic-equipment.is-selected{border-color:var(--line);background:var(--surface);box-shadow:0 6px 20px #354e2907}
+.ceramic-equipment>span:last-child{font-size:12px;font-weight:500;line-height:1.5;overflow-wrap:anywhere;max-width:100%}.ceramic-equipment small{display:block;font-size:10px;color:var(--muted);font-weight:400;margin-top:3px}
+.ceramic-chart-toggle{display:flex;align-items:center;justify-content:space-between;gap:20px;width:100%;padding:23px 3px;margin-top:18px;border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:transparent;text-align:left;font-size:12px;color:var(--text)}
+.ceramic-chart-toggle>span{display:flex;align-items:center;gap:12px}.ceramic-chart-toggle strong{font-size:14px;font-weight:500}.ceramic-chart-toggle small{font-size:11px;color:var(--muted)}
+.ceramic-chart-toggle:hover{background:var(--soft)}.ceramic-chart-content{padding-top:20px;animation:ceramic-reveal .3s ease-out}
+.ceramic-community{display:grid;grid-template-columns:minmax(0,1fr) 290px;align-items:center;gap:40px;margin-top:20px}
+.ceramic-community .ceramic-photo-plane>img{aspect-ratio:1672/941}
+.ceramic-community-summary{padding:0 4px 20px}.ceramic-community-summary h2{font-size:64px;font-weight:400;letter-spacing:-2px;line-height:1.15;margin:20px 0 18px}.ceramic-community-summary h2 small{display:block;font-size:20px;letter-spacing:-.4px;margin-top:6px}
+.ceramic-community-summary .btn{width:100%;justify-content:center;border-radius:12px}
+.ceramic-sites-section{margin-top:26px}.ceramic-sites-section h2{font-size:16px;font-weight:500}.ceramic-sites-strip{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(235px,28%);gap:12px;overflow:auto;scrollbar-width:thin;padding:8px 0 16px}
+.ceramic-sites-strip>button{display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border:1px solid var(--line);border-radius:16px;padding:10px 14px;transition:background .2s,transform .2s}.ceramic-sites-strip>button:hover{background:var(--surface);transform:translateY(-2px)}
+.ceramic-sites-strip>button>.ceramic-art,.ceramic-sites-strip>button>svg:first-child{width:57px;height:57px;flex:0 0 57px}.ceramic-sites-strip>button>span:not(.ceramic-art){flex:1;min-width:0}.ceramic-sites-strip strong{display:block;font-size:12px;font-weight:500}.ceramic-sites-strip small{display:block;font-size:10px;color:var(--muted);margin-top:5px}
+.energy-indicator-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}.energy-indicators{padding:30px 3px}.energy-indicators h2{font-size:17px;font-weight:500}.energy-indicator-row strong{font-size:29px;font-weight:400}
+.ceramic-example-label{font-size:9px;color:var(--muted);font-weight:400;margin-left:12px;border:1px solid var(--line);border-radius:8px;padding:4px 7px}
+.kpi-section-title{display:flex;align-items:center}.supporting-indicators{background:transparent}.resident-overview{max-width:none}.site-main .detail{min-width:0}
+@keyframes ceramic-reveal{from{opacity:.4;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes ceramic-marker{from{opacity:0;transform:translate(-50%,-50%) scale(.5)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@media(max-width:1200px){.topbar{padding:12px 22px;gap:16px}.topbar .brand-logo{width:170px}.topbar .top-tab{padding:10px 11px}.ceramic-site-stage,.ceramic-community{grid-template-columns:minmax(0,1fr) 235px;gap:24px}.main{padding:26px 26px 85px}.ceramic-chart-toggle small{display:none}}
+@media(max-width:850px){.topbar{flex-wrap:wrap;gap:10px;padding:10px 18px}.topbar-left{flex:1;min-width:0}.topbar-nav{order:3;width:100%;justify-content:center;overflow-x:auto}.topbar .brand-logo{width:125px;height:38px}.topbar .community-context,.topbar .personal-site-picker{padding-left:12px}.personal-site-picker select{max-width:155px}.main{padding:24px 18px 80px}.ceramic-site-stage,.ceramic-community{grid-template-columns:1fr;gap:22px}.ceramic-inspector,.ceramic-community-summary{padding:0 4px;max-width:none}.ceramic-inspector-art{float:right;margin:0 0 15px 16px}.ceramic-facts{margin-bottom:18px}.ceramic-inspector .btn,.ceramic-community-summary .btn{width:auto;padding-inline:20px}.ceramic-community-summary h2{font-size:45px;display:flex;align-items:baseline;gap:14px;margin:12px 0}.ceramic-community-summary h2 small{display:inline}.ceramic-community-summary .ceramic-facts{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}.ceramic-equipment{min-width:120px;padding:10px}.ceramic-equipment>.ceramic-art,.ceramic-equipment>svg{width:70px;height:70px;flex-basis:70px}.ceramic-photo figcaption{flex-direction:column;gap:2px;font-size:9px}.energy-indicator-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.energy-indicator-row>div:nth-child(2){border:0}.ceramic-sites-strip{grid-auto-columns:260px}.community-identity h1,.resident-heading h1{font-size:24px}.ceramic-example-label{margin-left:6px}.ceramic-chart-toggle{gap:10px;font-size:11px}.ceramic-chart-toggle>span{gap:8px}}
+@media(prefers-reduced-motion:reduce){.ceramic-site *,.ceramic-community *,.ceramic-sites-strip *,.ceramic-chart-content{animation:none!important;transition:none!important;transform:none}.ceramic-hotspot{transform:translate(-50%,-50%)!important}}
+
+.ceramic-product-art{overflow:hidden!important;border-radius:14px;mix-blend-mode:multiply}
+:host([data-theme="dark"]) .ceramic-product-art{mix-blend-mode:normal}
+.ceramic-site .ceramic-photo-plane{max-width:780px;margin-inline:auto}
+@media(max-width:500px){.topbar .top-tab{padding:10px 9px;font-size:12px}.topbar-nav{gap:0}.resident-heading .eyebrow{font-size:8px;letter-spacing:1px}.resident-heading .site-product-art{width:50px;height:50px;flex-basis:50px}.resident-heading h1{font-size:22px}.resident-heading{gap:10px}}
+@media(max-width:850px){.ceramic-site{display:grid;grid-template-columns:minmax(0,1fr)}.ceramic-site-stage{display:contents}.ceramic-site .ceramic-photo{grid-row:1}.ceramic-equipment-dock{grid-row:2;margin:0 0 18px}.ceramic-site .ceramic-inspector{grid-row:3}.ceramic-site .ceramic-equipment{min-width:100px;max-width:130px}.ceramic-site .ceramic-equipment>.ceramic-art,.ceramic-site .ceramic-equipment>svg{width:62px;height:62px;flex-basis:62px}}
+:host([data-theme="dark"]) .topbar .brand-logo{content:url('/assets/logos/energaize-dark.png')}
+
+/* Keep the image, dock and scorecard on a shared, balanced canvas. */
+.ceramic-site .ceramic-photo-plane{max-width:none}
+.ceramic-site-stage{grid-template-columns:minmax(0,1fr) minmax(245px,27%);gap:clamp(24px,3vw,48px)}
+.ceramic-inspector-art{justify-content:center}
+.ceramic-equipment-dock{justify-content:safe center}
+.ceramic-device-list{display:grid;gap:8px;max-height:360px;overflow:auto}
+.ceramic-device-list>button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px;color:var(--text)}
+.ceramic-device-list>button:hover{background:var(--tint)}
+.ceramic-device-list strong{display:block;font-size:12px;font-weight:500}
+.ceramic-device-list small{display:block;color:var(--muted);font-size:11px;line-height:1.6;margin-top:5px}
+.energy-indicators{padding:28px 32px;width:100%;box-sizing:border-box;overflow:hidden}
+.energy-indicators>.sectionhead{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:18px;margin-bottom:28px}
+.energy-indicators .kpi-section-title{flex-wrap:wrap;gap:8px}
+.energy-indicators .ceramic-example-label{margin:0}
+.energy-indicators .pilltabs{flex-shrink:0;margin:0}
+.energy-indicator-row{gap:24px;align-items:stretch}
+.energy-indicator-row>div{min-width:0;padding-right:20px}
+.energy-indicator-row>div>span:first-child{min-height:36px;line-height:1.4}
+.energy-indicator-row strong{white-space:nowrap;font-size:clamp(24px,2.2vw,32px)}
+.supporting-indicators dl>div{min-width:0}
+.supporting-indicators dt{min-height:36px}
+.ceramic-topology{padding:26px 0 10px}
+.ceramic-topology-root{display:flex;flex-direction:column;align-items:center;gap:8px;max-width:380px;margin:auto;padding:12px 24px;background:transparent;border:0;color:var(--text);text-align:center}
+.ceramic-topology-root .ceramic-art{width:100px;height:100px;flex-basis:100px}
+.ceramic-topology strong{font-size:15px;font-weight:500;overflow-wrap:anywhere}
+.ceramic-topology small{font-size:11px;color:var(--muted);line-height:1.6}
+.ceramic-topology-stem{height:30px;width:1px;background:var(--line);margin:auto}
+.ceramic-topology-members{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:22px;overflow:hidden}
+.ceramic-topology-node{display:flex;flex-direction:column;align-items:center;gap:9px;padding:24px 18px;border:0;background:var(--surface);color:var(--text);text-align:center;transition:background .2s}
+.ceramic-topology-node:hover,.ceramic-topology-node.is-selected{background:var(--tint)}
+.ceramic-topology-node .ceramic-art{width:80px;height:80px;flex-basis:80px}
+.ceramic-topology-open{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--brand);margin-top:auto;padding-top:8px}
+.ceramic-topology-supply{display:flex;align-items:center;justify-content:center;gap:20px}
+.ceramic-topology-supply>button:first-child{display:flex;flex-direction:column;align-items:center;gap:8px;border:0;background:transparent;color:var(--muted);font-size:11px}
+.ceramic-topology-supply .ceramic-topology-root{margin:0}
+.ceramic-topology-supply-line{width:70px;height:1px;background:var(--line)}
+.ceramic-topology-devices{max-width:680px;margin:24px auto}.ceramic-topology-devices h3{font-weight:500;font-size:15px}
+.ceramic-export{display:none!important}
+.ceramic-topology>.footnote{text-align:center;margin-top:20px}
+@media(max-width:1100px){.energy-indicator-row,.supporting-indicators dl{grid-template-columns:repeat(2,minmax(0,1fr))}.energy-indicator-row>div:nth-child(2){border-right:0}}
+@media(max-width:850px){.ceramic-site-stage{display:contents}.energy-indicators{padding:24px}.ceramic-inspector-art{justify-content:center}.ceramic-topology-members{grid-template-columns:repeat(2,minmax(0,1fr))}.ceramic-topology-node{padding:20px 12px}.ceramic-topology-supply{gap:8px}.ceramic-topology-supply-line{width:30px}}
+@media(max-width:480px){.energy-indicators{padding:20px 16px}.energy-indicator-row{gap:22px 16px}.energy-indicator-row>div{padding-right:8px}.energy-indicator-row strong{font-size:24px}.energy-indicators .pilltabs{width:100%}.energy-indicators .pilltabs button{flex:1}.ceramic-topology-root{padding:12px}.ceramic-topology strong{font-size:13px}}
+
+.ceramic-photo-plane{isolation:isolate}
+.ceramic-hotspot{pointer-events:none;z-index:2}
+.ceramic-image-target{position:absolute;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;border:1px solid transparent;background:transparent;cursor:pointer;z-index:3}
+.ceramic-image-target::after{content:'';position:absolute;inset:12px;border:1px solid white;border-radius:50%;background:#ffffff60;box-shadow:0 0 0 6px #fff3;opacity:0;transition:opacity .2s,transform .2s;transform:scale(.7)}
+.ceramic-image-target:hover::after,.ceramic-image-target:focus-visible::after{opacity:1;transform:scale(1)}
+.ceramic-image-target:focus-visible{outline:2px solid white;outline-offset:3px}
+.ceramic-image-target>span{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#fcfaf6ed;color:#344a39;border-radius:8px;padding:7px 10px;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;font-size:11px;opacity:0;pointer-events:none;box-shadow:0 3px 16px #203d2522}
+.ceramic-image-target:hover>span,.ceramic-image-target:focus-visible>span{opacity:1}
+.ceramic-inspector-art{position:relative;isolation:isolate}
+.ceramic-inspector-art>.ceramic-art{animation:ceramic-unfold .65s cubic-bezier(.22,.8,.3,1) both}
+.ceramic-inspector-art[data-equipment-kind="battery"]::before{content:'';position:absolute;width:85px;height:85px;border-radius:50%;background:#a8c08355;filter:blur(12px);z-index:-1;animation:ceramic-battery-glow 1.25s ease-in-out 2}
+.ceramic-equipment.is-selected>.ceramic-art{animation:ceramic-unfold .65s ease both}
+@keyframes ceramic-unfold{0%{opacity:.3;transform:translateY(12px) scale(.92) rotate(-6deg)}55%{transform:translateY(-3px) scale(1.03) rotate(3deg)}80%{transform:rotate(-1deg)}100%{opacity:1;transform:none}}
+@keyframes ceramic-battery-glow{0%,100%{opacity:.15;transform:scale(.7)}50%{opacity:1;transform:scale(1.15)}}
+.ceramic-grid-link{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:145px;text-align:center}.ceramic-grid-link>span{font-size:30px;font-weight:300;color:var(--brand);line-height:1}.ceramic-grid-link small{font-size:12px}
+.ceramic-flow-bus{text-align:center;border-top:1px solid var(--line);padding:12px 0;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+.ceramic-flow-label{font-size:10px;color:var(--brand);min-height:18px}
+.ceramic-connection-limits{display:flex;flex-direction:column;gap:4px;min-height:42px}
+.ceramic-flow-topology .ceramic-topology-node{position:relative;padding-top:22px}
+.ceramic-flow-topology .ceramic-topology-node::before{content:'';width:1px;height:16px;background:var(--line);position:absolute;top:0;left:50%}
+.charge-exact[hidden]{display:none!important}
+@media(max-width:600px){.ceramic-grid-link{min-width:106px}.ceramic-grid-link small{font-size:10px}.ceramic-topology-supply .ceramic-topology-root{max-width:135px}.ceramic-topology-supply .ceramic-art{width:68px;height:68px;flex-basis:68px}.ceramic-topology-supply{gap:5px}.ceramic-topology-supply>button:first-child{max-width:75px}.ceramic-image-target{width:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){.ceramic-inspector-art::before,.ceramic-inspector-art>.ceramic-art,.ceramic-equipment.is-selected>.ceramic-art{animation:none!important}.ceramic-image-target,.ceramic-image-target::after{transition:none!important}}
+.ceramic-image-target{min-width:44px;min-height:44px;border-radius:12px}
+.ceramic-image-target::after{inset:auto;left:50%;top:50%;width:26px;height:26px;transform:translate(-50%,-50%) scale(.7)}
+.ceramic-image-target:hover::after,.ceramic-image-target:focus-visible::after{transform:translate(-50%,-50%) scale(1)}
+.ceramic-flow-topology .ceramic-topology-supply{display:grid;grid-template-columns:1fr 220px 1fr;gap:0}
+.ceramic-flow-topology .ceramic-topology-supply>button:first-child{grid-column:1;grid-row:1;justify-self:end;margin-right:155px}
+.ceramic-flow-topology .ceramic-grid-link{grid-column:1;grid-row:1;justify-self:end;width:145px}
+.ceramic-flow-topology .ceramic-topology-supply .ceramic-topology-root{grid-column:2;grid-row:1;max-width:220px;width:100%;margin:0}
+@media(max-width:700px){.ceramic-flow-topology .ceramic-topology-supply{display:flex;flex-direction:column;gap:8px}.ceramic-flow-topology .ceramic-topology-supply>button:first-child{margin:0;max-width:none}.ceramic-flow-topology .ceramic-grid-link>span{transform:rotate(90deg)}.ceramic-flow-topology .ceramic-grid-link small{font-size:12px}.ceramic-flow-topology .ceramic-topology-supply .ceramic-art{width:72px;height:72px;flex-basis:72px}}
+.ceramic-time-summary{font-size:12px;line-height:1.7;color:var(--brand);border-top:1px solid var(--line);padding:14px 0 0;margin:16px 0 0}
+.flex-request input[type="datetime-local"]{min-width:0;font-variant-numeric:tabular-nums}
+.flex-request input[type="datetime-local"]::-webkit-calendar-picker-indicator{opacity:.6;cursor:pointer}
+
+/* A walk through the garage, with full-size selectable parking bays. */
+.ceramic-garage{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px;align-items:start;padding:26px 0 40px;max-width:1300px}
+.ceramic-parking-bay{position:relative;display:flex;flex-direction:column;text-align:left;padding:0;background:none;border:0;color:var(--ink);cursor:pointer;max-width:410px;width:100%;border-radius:160px 160px 18px 18px}
+.ceramic-garage-arch{display:grid;place-items:center;width:100%;aspect-ratio:1/.95;border-radius:180px 180px 12px 12px;background:radial-gradient(ellipse at 50% 70%,#e2dfcf 0,transparent 65%),linear-gradient(110deg,#e7dfcf,#f9f5ec 45%,#ddd8c8);border:12px solid #eee7da;box-shadow:inset 12px 9px 20px #96876a15,inset -5px 0 12px #fff9;overflow:hidden}
+.ceramic-garage-arch img{width:94%;height:auto;align-self:end;transition:transform .45s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 12px 10px #6a745018)}
+.ceramic-parking-bay:hover img{transform:translateY(-5px) scale(1.025)}.ceramic-parking-bay:focus-visible{outline:3px solid #82916c;outline-offset:5px}
+.ceramic-bay-number{position:absolute;top:24px;left:50%;transform:translateX(-50%);z-index:1;font-size:11px;letter-spacing:3px;color:#8a8874}
+.ceramic-car-label{display:flex;flex-direction:column;gap:8px;padding:20px 12px}.ceramic-car-label strong{font-size:21px;font-weight:550}.ceramic-car-label small{color:#7b8172;font-size:12px}.ceramic-car-label>span{font-size:12px;color:#587050;display:flex;align-items:center;gap:8px;margin-top:4px}
+.ceramic-vehicle-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:20px 0}.ceramic-vehicle-heading h1{margin-top:7px}.ceramic-vehicle-overview{display:grid;grid-template-columns:1fr 1fr;gap:5%;align-items:center;background:linear-gradient(110deg,#eee8da,#fbf8f1);border-radius:24px;margin:24px 0;padding:10px 6% 10px 2%}.ceramic-vehicle-portrait{max-height:360px;display:grid;place-items:center}.ceramic-vehicle-portrait img{width:100%;height:100%;max-height:360px;object-fit:contain}.ceramic-vehicle-overview h2{font-weight:500;font-size:28px;letter-spacing:-.8px}.ceramic-vehicle-overview .ceramic-facts{margin-top:24px}
+.ceramic-session-row{display:flex;align-items:center;gap:20px;padding:22px 0;border-bottom:1px solid #e4e3d7}.ceramic-session-row>.ceramic-art{width:70px;height:70px;flex-shrink:0}.ceramic-session-row>div{flex:1}.ceramic-session-row h3{font-size:16px;margin:0 0 6px}.ceramic-session-row p{margin:4px 0;color:#727c6b;font-size:13px}.ceramic-vehicle-empty{padding:35px;background:#f0eee6;border-radius:18px;margin:18px 0}
+.ceramic-equipment-row{display:flex;align-items:center;gap:18px;width:100%;padding:14px 18px;background:transparent;border:0;border-bottom:1px solid #e5e3d8;text-align:left;color:inherit;cursor:pointer}.ceramic-equipment-row:hover{background:#eeeade}.ceramic-equipment-row>.ceramic-art{width:64px;height:64px;flex-shrink:0}.ceramic-equipment-row>span:nth-child(2){display:flex;flex-direction:column;gap:6px}.ceramic-equipment-row small{color:#76806e}.ceramic-row-spec{margin-left:auto;color:#76806e;font-size:13px}
+@media(max-width:700px){.ceramic-vehicle-overview{grid-template-columns:1fr;padding:16px 24px}.ceramic-vehicle-portrait{max-height:240px}.ceramic-vehicle-portrait img{max-height:240px}.ceramic-vehicle-heading{align-items:start;flex-direction:column}.ceramic-session-row{flex-wrap:wrap}.ceramic-row-spec{display:none}.ceramic-equipment-row>svg:last-child{margin-left:auto}.ceramic-garage{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.ceramic-garage-arch{aspect-ratio:1/0.8}}
+@media(prefers-reduced-motion:reduce){.ceramic-parking-bay img{transition:none}.ceramic-parking-bay:hover img{transform:none}}
+/* Brief decorative feedback follows the equipment, never a claimed live reading. */
+.ceramic-inspector-art>.ceramic-art{position:relative}
+.ceramic-inspector-art [data-ceramic-kind="battery"]::after{content:'';position:absolute;left:35%;top:49%;width:13%;height:3.6%;border-radius:6px;background:#d9f2a7;box-shadow:0 7px #d9f2a7,0 14px #d9f2a7;transform:rotate(10deg);animation:ceramic-battery-lights 1.8s steps(3) both}
+.ceramic-inspector-art [data-ceramic-kind="appliance"]::after{content:'';position:absolute;left:34%;top:43%;width:18%;height:23%;border-radius:50%;border:2px dashed #b6c8a588;animation:ceramic-wash-drum 1.8s ease-in-out both}
+.ceramic-inspector-art [data-ceramic-kind="sun"]::after{content:'';position:absolute;left:70%;top:20%;width:17%;height:17%;border-radius:50%;background:#ffe5a466;box-shadow:0 0 12px #edcf77aa;animation:ceramic-sunrise 1.6s ease both}
+@keyframes ceramic-battery-lights{0%{opacity:.1;box-shadow:0 7px #d9f2a711,0 14px #d9f2a711}35%{opacity:1;box-shadow:0 7px #d9f2a755,0 14px #d9f2a711}70%,100%{opacity:1;box-shadow:0 7px #d9f2a7,0 14px #d9f2a7}}
+@keyframes ceramic-wash-drum{0%{transform:rotate(0);opacity:0}20%{opacity:1}85%{opacity:1}100%{transform:rotate(400deg);opacity:0}}
+@keyframes ceramic-sunrise{0%{opacity:0;transform:translateY(9px)}55%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.ceramic-inspector-art .ceramic-art::after{animation:none!important;display:none}}
+
+/* One continuous distribution rail; every branch reaches its equipment icon.
+   Keep one row and pan on small screens so wrapping can never detach a branch. */
+.ceramic-wiring-scroll{overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding:4px 0 14px}
+.ceramic-wiring-canvas{min-width:calc(var(--branch-count) * 180px);--wire:var(--brand)}
+.ceramic-wiring-canvas .ceramic-topology-stem{width:2px;height:18px;background:var(--wire)}
+.ceramic-wiring-canvas .ceramic-flow-bus{height:34px;border:0;padding:0;position:relative;overflow:visible}
+.ceramic-wiring-canvas .ceramic-flow-bus::before{content:'';position:absolute;left:calc(50% - 1px);top:0;bottom:0;width:2px;background:var(--wire)}
+.ceramic-wiring-canvas .ceramic-flow-bus>span{position:absolute;left:calc(50% + 12px);top:3px;white-space:nowrap;color:var(--brand);font-weight:500}
+.ceramic-wiring-canvas .ceramic-wired-members{display:grid;grid-template-columns:repeat(var(--branch-count),minmax(0,1fr));gap:0;background:none;border:0;border-radius:0;overflow:visible}
+.ceramic-wired-members>.ceramic-topology-node{position:relative;min-width:0;padding:92px 14px 20px;background:transparent;border-radius:0;gap:10px}
+.ceramic-wired-members>.ceramic-topology-node::before{content:'';position:absolute;left:calc(50% - 1px);top:0;width:2px;height:92px;background:var(--wire)}
+.ceramic-wired-members>.ceramic-topology-node::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:var(--wire)}
+.ceramic-wired-members>.ceramic-topology-node:first-child::after{left:50%}
+.ceramic-wired-members>.ceramic-topology-node:last-child::after{right:50%}
+.ceramic-wired-members>.ceramic-topology-node:only-child::after{display:none}
+.ceramic-wired-members .ceramic-flow-label{position:absolute;top:25px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 18px);padding:5px 7px;background:var(--bg);font-size:11px;line-height:1.4;color:var(--brand)}
+.ceramic-wired-members .ceramic-connection-port{position:absolute;top:87px;left:calc(50% - 4px);width:8px;height:8px;border-radius:50%;background:var(--wire)}
+.ceramic-wired-members>.ceramic-topology-node:hover .ceramic-art,.ceramic-wired-members>.ceramic-topology-node.is-selected .ceramic-art{box-shadow:0 0 0 3px var(--tint)}
+.ceramic-wired-members>.ceramic-topology-node:hover>strong,.ceramic-wired-members>.ceramic-topology-node:focus-visible>strong{color:var(--brand-strong)}
+.ceramic-connection-context{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.ceramic-grid-wire{display:block;width:100%;height:20px;fill:none;stroke:var(--brand);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:700px){.ceramic-wiring-canvas .ceramic-grid-link{position:relative;min-height:68px;padding:12px 0 12px 100px;width:250px;align-items:flex-start}.ceramic-wiring-canvas .ceramic-grid-wire{position:absolute;width:72px;height:20px;left:50%;top:24px;transform:translateX(-50%) rotate(90deg)}.ceramic-wiring-canvas .ceramic-grid-link small{background:var(--bg);white-space:nowrap;font-size:11px;margin-left:45px}.ceramic-wiring-canvas .ceramic-topology-root{padding-top:0}}

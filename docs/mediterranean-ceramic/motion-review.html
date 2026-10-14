@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ceramic motion review</title><body style="margin:0;background:#f4f1eb;color:#344a39;font:14px system-ui"><main style="max-width:980px;margin:auto;padding:28px"><h1 style="font-size:22px">Ceramic motion review</h1><div id="scene"></div><div id="workspace"></div></main><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {CeramicChargingScene} from '/src/components/ui/CeramicChargingScene.tsx';
+import {EVChargingLoader} from '/src/components/ui/EVChargingLoader.tsx';
+import loaderCss from '/src/components/ui/EVChargingLoader.css?raw';
+import presentationCss from '/src/console/presentation.css?raw';
+const e=React.createElement;
+function Review(){const [mode,setMode]=React.useState('charging'),[key,setKey]=React.useState(0);return e('section',null,e('div',{style:{display:'flex',gap:12}},...['arrive','depart','charging'].map(m=>e('button',{key:m,onClick:()=>{setMode(m);setKey(key+1)}},m))),e('div',{style:{width:'min(480px,100%)',margin:'15px auto'}},e(CeramicChargingScene,{key,mode})),e('label',null,'Animation time ',e('input',{type:'range',min:0,max:3000,defaultValue:1500,onInput:event=>{document.querySelector('#scene').getAnimations({subtree:true}).forEach(a=>{a.pause();a.currentTime=+event.target.value})}})),e('div',{style:{display:'flex',gap:24,alignItems:'center',justifyContent:'center'}},e(EVChargingLoader,{compact:true,label:'Loading…'}),e(EVChargingLoader,{label:'Loading data…'})));}
+createRoot(document.querySelector('#scene')).render(e(Review));
+const shadow=document.querySelector('#workspace').attachShadow({mode:'open'});const style=document.createElement('style');style.textContent=presentationCss+loaderCss;shadow.append(style);const shell=document.createElement('main');shell.className='workspace-connection';shell.style.minHeight='360px';shell.innerHTML='<section><img src="/assets/logos/energaize-light.png" alt="EnergAIze"><h1>Preparing your workspace</h1><div data-console-loader></div></section>';shadow.append(shell);createRoot(shell.querySelector('[data-console-loader]')).render(e(EVChargingLoader,{label:'Loading your community, equipment and permissions…'}));
+</script></body></html>

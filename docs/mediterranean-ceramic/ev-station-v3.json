@@ -1,0 +1,6 @@
+{
+  "generator": "OpenAI imagegen (built-in edit)",
+  "prompt": "Precise object edit of the attached transparent EV charging pedestal sprite. Change ONLY the terracotta/brown/orange inset front panel to a soft light neutral stone GREY, a desaturated pearl grey, no brown, no green. Preserve everything else exactly: warm ivory ceramic exterior, silhouette, proportions, identical framing and canvas padding, base, socket center and its position, small pale green status light, camera angle, lighting, matte ceramic texture, shadows, and genuine transparent background. Do not add objects, cable, car, text or logos. This sprite is aligned to an animated cable, so all geometry and placement MUST stay the same. The finished charger should feel refined, pale, Mediterranean ceramic, with a quiet pearl-grey front.",
+  "original": "/home/tiago/.codex/generated_images/01a1372a-cdec-76d2-aed4-105e83b2b807/exec-7ca51b88-1eae-4485-b006-bea3d5efec62.png",
+  "savedPath": "/home/tiago/dev/energaize-mediterranean-ui/public/assets/mediterranean/ev-station-v3.webp"
+}

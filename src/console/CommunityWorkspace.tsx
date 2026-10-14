@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuthTransition } from '../contexts/AuthTransitionContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUI } from '../contexts/UIContext';
 import { UserMenu } from '../components/layout/UserMenu';
@@ -19,9 +20,10 @@ import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
 import presentationCss from './presentation.css?inline';
 import experienceCss from './experience.css?inline';
+import mediterraneanCss from './mediterranean.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss].join('\n')
+const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
 type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'showChannelConfiguration'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
@@ -29,6 +31,7 @@ type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps
  * existing workspace styles from Jobs while its views migrate to components. */
 export function CommunityWorkspace(): JSX.Element {
   const {session,logout}=useAuth();
+  const {ready:workspaceReady}=useAuthTransition();
   const {theme}=useUI();
   const {pathname}=useLocation();
   const navigate=useNavigate();
@@ -51,6 +54,7 @@ export function CommunityWorkspace(): JSX.Element {
       root.render(props.channels?<MeasurementWorkspace key={key} {...props} channels={props.channels}/>:<MeasurementChart key={key} {...props}/>);
     }};
     const bridge={session,path:activePath.current,charts,
+      onReady:workspaceReady,
       logout:()=>{sessionStorage.setItem(AUTH_SCENE_STORAGE_KEY,'logout');logout();},
       navigate:(path:string)=>navigation.current(path),
       onRoute:(path:string|null)=>{if(path&&path!==activePath.current){activePath.current=path;navigation.current(path);}}
@@ -74,7 +78,7 @@ export function CommunityWorkspace(): JSX.Element {
     const observer=new MutationObserver(sync);observer.observe(body,{childList:true,subtree:true});
     runtime.current=mountWorkspace(environment,bridge);sync();
     return ()=>{environment.dispose();observer.disconnect();runtime.current=undefined;const retired=[...roots.values()];queueMicrotask(()=>retired.forEach(root=>root.unmount()));};
-  },[session?.email,session?.role,logout]);
+  },[session?.email,session?.role,logout,workspaceReady]);
   useEffect(()=>{if(pathname!==activePath.current){activePath.current=pathname;runtime.current?.setPath(pathname);}},[pathname]);
   return <>
     <div ref={host} data-community-workspace data-theme={theme} />

@@ -1,5 +1,7 @@
-import { AuthBackdrop } from "../components/ui/AuthBackdrop";
+import { AuthTransitionScene } from "../components/ui/AuthTransitionScene";
+import { AUTH_TRANSITION_DURATION_MS, useAuthTransition } from "../contexts/AuthTransitionContext";
 import { motion } from "framer-motion";
+import { AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { Eye, EyeOff, Info, Lock, Mail } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
@@ -10,6 +12,14 @@ import { APP_NAME, AUTH_SCENE_STORAGE_KEY, MOCK_USERS } from "../constants";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
 import { roleHomePath, roleLabel } from "../utils/roles";
+
+import "./MediterraneanLogin.css";
+
+const MEDITERRANEAN_BACKGROUNDS = [
+  "/assets/mediterranean/login-sunset-villa.webp",
+  "/assets/mediterranean/login-coastal-courtyard.webp",
+  "/assets/mediterranean/login-vineyard.webp",
+] as const;
 
 const LOGIN_CLAIMS = [
   "Monitor. Optimize. Coordinate.",
@@ -24,58 +34,27 @@ const LOGIN_CLAIMS = [
 ] as const;
 
 const LOGIN_SCENE_LINES = [
-  "Plugging into genius mode.",
-  "Booting optimism and clean electrons.",
-  "Charging the brain grid. Please honk once."
+  "A brighter day starts here.",
+  "Your energy, connected.",
+  "Welcome to your energy community."
 ] as const;
 
 const LOGOUT_SCENE_LINES = [
-  "Unplugged. No sparks, no drama.",
-  "Charging session complete. Grid says thanks.",
-  "Disconnecting like a very polite EV."
+  "You have signed out.",
+  "You have signed out.",
+  "You have signed out."
 ] as const;
 
-type AuthSceneMode = "none" | "login" | "logout";
-const LOGIN_SCENE_DURATION_MS = 1500;
-const LOGOUT_SCENE_DURATION_MS = 1200;
+type AuthSceneMode = "none" | "logout";
+const LOGOUT_SCENE_DURATION_MS = AUTH_TRANSITION_DURATION_MS;
 
 function pickRandomLine(lines: readonly string[]): string {
   return lines[Math.floor(Math.random() * lines.length)] || "";
 }
 
-function AuthTransitionScene({
-  mode,
-  line
-}: {
-  mode: Exclude<AuthSceneMode, "none">;
-  line: string;
-}): JSX.Element {
-  return (
-    <motion.div
-      className="auth-scene-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut" }}
-    >
-      <div className={`auth-scene${mode === "login" ? " is-login" : " is-logout"}`}>
-        <div className="auth-scene-track" aria-hidden="true">
-          {line ? <p className="auth-scene-caption">{line}</p> : null}
-          <span className="auth-scene-station" />
-          <span className="auth-scene-cable" />
-          <span className="auth-scene-car" />
-          <span className="auth-scene-energy e1" />
-          <span className="auth-scene-energy e2" />
-          <span className="auth-scene-energy e3" />
-          <span className="auth-scene-pulse" />
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
 export function LoginPage(): JSX.Element {
   const { session, login } = useAuth();
+  const transition = useAuthTransition();
   const { theme, setTheme } = useUI();
   const navigate = useNavigate();
   const [email, setEmail] = useState("tiago.fonseca@energaize.io");
@@ -146,46 +125,34 @@ export function LoginPage(): JSX.Element {
     };
   }, []);
 
-  if (session && authScene !== "login") {
+  if (session && !transition.pending) {
     return <Navigate to={roleHomePath(session.role)} replace />;
   }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (authScene === "login") return;
+    if (authScene !== "none" || transition.pending) return;
     setLoading(true);
     setError(null);
-    let succeeded = false;
-
+    transition.begin(pickRandomLine(LOGIN_SCENE_LINES));
     try {
       const signedIn = await login({ email, password, remember });
-      succeeded = true;
-      const target = roleHomePath(signedIn.role);
-      setAuthScene("login");
-      setAuthSceneLine(pickRandomLine(LOGIN_SCENE_LINES));
-      if (sceneTimeoutRef.current) {
-        window.clearTimeout(sceneTimeoutRef.current);
-        sceneTimeoutRef.current = null;
-      }
-      sceneTimeoutRef.current = window.setTimeout(() => {
-        setLoading(false);
-        navigate(target, { replace: true });
-        sceneTimeoutRef.current = null;
-      }, LOGIN_SCENE_DURATION_MS);
+      // Mount the real workspace now. Its readiness signal releases the overlay
+      // after the minimum animation time, without remounting or fetching twice.
+      navigate(roleHomePath(signedIn.role), { replace: true });
+      if (signedIn.role !== "prosumer" && signedIn.role !== "rec_manager") transition.ready();
     } catch (err) {
+      transition.cancel();
+      setLoading(false);
       setError(err instanceof Error ? err.message : "Unexpected authentication error");
-    } finally {
-      if (!succeeded) {
-        setLoading(false);
-      }
     }
   }
 
   return (
-    <div className="login-page">
-      <AuthBackdrop />
+    <div className="login-page mediterranean-login">
+      <AuthBackdrop images={MEDITERRANEAN_BACKGROUNDS} showMotionControl={false} />
       <div className="login-overlay" />
-      {authScene === "login" || authScene === "logout" ? (
+      {authScene === "logout" ? (
         <AuthTransitionScene mode={authScene} line={authSceneLine} />
       ) : null}
 
@@ -252,20 +219,21 @@ export function LoginPage(): JSX.Element {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
       >
+        <section className="login-story" aria-label="EnergAIze">
+          <div className="logo-row">
+            <img className="login-brand login-brand-light" src="/assets/logos/energaize-light.png" alt={APP_NAME} />
+            <img className="login-brand login-brand-dark" src="/assets/logos/energaize-dark.png" alt={APP_NAME} />
+          </div>
+          <h1>A brighter way<br />to live with energy.</h1>
+          <motion.p key={LOGIN_CLAIMS[claimIndex]} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}>
+            {LOGIN_CLAIMS[claimIndex]}
+          </motion.p>
+        </section>
         <form className="login-card" onSubmit={onSubmit}>
-          <header className="login-branding">
-            <div className="logo-row login-logo-center">
-              <img
-                className="login-brand login-brand-light"
-                src="/assets/logos/energaize-light.png"
-                alt={APP_NAME}
-              />
-              <img
-                className="login-brand login-brand-dark"
-                src="/assets/logos/energaize-dark.png"
-                alt={APP_NAME}
-              />
-            </div>
+          <header className="login-welcome">
+            <span>YOUR ENERGY, CONNECTED</span>
+            <h2>Welcome back.</h2>
+            <p>Sign in to your workspace.</p>
           </header>
 
           <label>
@@ -324,15 +292,7 @@ export function LoginPage(): JSX.Element {
             {loading ? <EVChargingLoader compact /> : "Log in"}
           </button>
 
-          <motion.p
-            key={LOGIN_CLAIMS[claimIndex]}
-            className="login-claim"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.26, ease: "easeOut" }}
-          >
-            {LOGIN_CLAIMS[claimIndex]}
-          </motion.p>
+
         </form>
 
       </motion.main>

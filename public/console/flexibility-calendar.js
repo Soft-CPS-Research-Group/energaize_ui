@@ -122,7 +122,7 @@ document.addEventListener("click", (e) => {
     editSession().catch((e) => toast(e.message));
   }
 });
-editSession = async function (id = null, assetId = null) {
+editSession = async function (id = null, assetId = null, vehicleId = null) {
   const event = id
     ? connection.raw.events.find((e) => e.event_id === id)
     : null;
@@ -312,6 +312,7 @@ editSession = async function (id = null, assetId = null) {
               starts_at: start.toISOString(),
               ends_at: end.toISOString(),
               soc_at_departure: 0.8,
+              ...(vehicleId && kind === "ev_charging" && sessionAssets().some(a => a.id === vehicleId && a.asset_type === "ev") ? { vehicle_id: vehicleId } : {}),
               duration_minutes: 60,
             });
       const keys = [
@@ -363,13 +364,28 @@ editSession = async function (id = null, assetId = null) {
         "",
         true,
       );
+      const departureTime = editor.node.querySelector('[data-field="ends_at"]');
+      const departureLabel = departureTime?.closest('.domain-field')?.querySelector('.formlabel');
+      if (departureLabel) departureLabel.firstChild.textContent = 'Ready by *';
       originalInputs = editor.read();
       modal.querySelector("[data-flex-fields]").replaceChildren(editor.node);
+      const timeSummary = document.createElement('p');
+      timeSummary.className = 'ceramic-time-summary';
+      timeSummary.setAttribute('aria-live','polite');
+      const arrivalTime = editor.node.querySelector('[data-field="starts_at"]');
+      const updateTimeSummary = () => {
+        const from = new Date(arrivalTime?.value), until = new Date(departureTime?.value);
+        const format = new Intl.DateTimeFormat('en-GB', {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+        timeSummary.textContent = Number.isFinite(+from) && Number.isFinite(+until) ? format.format(from) + ' → ' + format.format(until) : 'Choose your availability window.';
+      };
+      [arrivalTime,departureTime].forEach(input => input?.addEventListener('input',updateTimeSummary));
+      updateTimeSummary();
+      editor.node.append(timeSummary);
       const soc = editor.node.querySelector('[data-field="soc_at_departure"]');
       if (soc) {
         const hero = document.createElement("div");
         hero.className = "charge-target";
-        hero.innerHTML = `${productArt("car")}<div><span>Ready at departure</span><strong data-charge-label></strong><input type="range" min="0" max="100" step="1" aria-label="Departure battery charge"><small>Minimum battery charge</small></div>`;
+        hero.innerHTML = `${productArt("car")}<div><span>Minimum departure charge</span><strong data-charge-label></strong><input type="range" min="0" max="100" step="1" aria-label="Minimum departure charge"><small>The minimum charge you need when you leave.</small></div>`;
         const slider = hero.querySelector("input"),
           output = hero.querySelector("[data-charge-label]");
         const sync = () => {
@@ -384,6 +400,9 @@ editSession = async function (id = null, assetId = null) {
         sync();
         const exact = soc.closest(".domain-field");
         exact.classList.add("charge-exact");
+        exact.hidden = true;
+        soc.tabIndex = -1;
+        soc.setAttribute("aria-hidden", "true");
         hero.querySelector("div").append(exact);
         editor.node.prepend(hero);
       }

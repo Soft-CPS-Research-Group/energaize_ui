@@ -211,13 +211,14 @@ function stageForm(labels, groups) {
           .filter(
             (n) =>
               !n.disabled &&
+              (!(n.type === "radio" || n.type === "checkbox") || n.checked) &&
               !n.closest("fieldset:disabled") &&
               n.value &&
               !n.closest(".domain-object[hidden]"),
           )
           .map(
             (n) =>
-              `<div><dt>${esc(n.labels?.[0]?.childNodes?.[0]?.textContent?.trim() || n.dataset.field || n.name || "Value")}</dt><dd>${esc(n.tagName === "SELECT" ? n.selectedOptions[0]?.textContent : n.type === "checkbox" ? (n.checked ? "Yes" : "No") : n.value)}</dd></div>`,
+              `<div><dt>${esc(n.labels?.[0]?.childNodes?.[0]?.textContent?.trim() || n.dataset.field || n.name || "Value")}</dt><dd>${esc(n.tagName === "SELECT" ? n.selectedOptions[0]?.textContent : (n.type === "checkbox" || n.type === "radio") ? n.labels?.[0]?.textContent?.trim() || n.value : n.value)}</dd></div>`,
           )
           .join("") +
         "</dl>";
@@ -258,6 +259,7 @@ function stageForm(labels, groups) {
           [...panels[i].querySelectorAll("input,select,textarea")].some(
             (n) =>
               !n.disabled &&
+              (!(n.type === "radio" || n.type === "checkbox") || n.checked) &&
               !n.closest("fieldset:disabled") &&
               !n.checkValidity(),
           )

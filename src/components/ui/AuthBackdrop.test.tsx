@@ -21,6 +21,16 @@ describe('shared login backgrounds', () => {
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+  it('rotates custom backgrounds without rendering a motion control', () => {
+    vi.useFakeTimers();
+    const view = render(<AuthBackdrop images={['/villa.webp', '/community.webp']} showMotionControl={false} />);
+    const first = view.container.querySelector('.is-visible');
+    expect(view.container.querySelector('button')).toBeNull();
+    act(() => { vi.advanceTimersByTime(9000); });
+    expect(view.container.querySelector('.is-visible')).not.toBe(first);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('keeps the scene still for reduced motion', () => {
     vi.useFakeTimers();
     const remove = vi.fn();

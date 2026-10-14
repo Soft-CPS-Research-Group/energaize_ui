@@ -1,3 +1,4 @@
+import { AuthTransitionProvider } from "./contexts/AuthTransitionContext";
 import { useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { CommunityConsoleEntry } from "./routes/CommunityConsoleEntry";
@@ -36,6 +37,10 @@ import type { EnergyCommunity } from "./models/energy.model";
 import type { SelectedEquipment } from "./models/energy.selectedEquipment";
 
 export default function App(): JSX.Element {
+    return <AuthTransitionProvider><AppRoutes /></AuthTransitionProvider>;
+}
+
+function AppRoutes(): JSX.Element {
     const { session } = useAuth();
     const { pathname } = useLocation();
     const isRecManager = session?.role === "rec_manager";
