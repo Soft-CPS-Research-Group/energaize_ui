@@ -70,7 +70,7 @@ function setupScene(run) {
  {id:'solar',backendId:'solar',assetType:'pv_system',name:'Roof solar',channels:[],sourcePayload:{}},
  {id:'battery',backendId:'battery',assetType:'battery',name:'Home battery',channels:[],sourcePayload:{}},
  {id:'charger',backendId:'charger',assetType:'ev_charger',name:'EV charger',channels:[],sourcePayload:{}},
- {id:'meter',backendId:'meter',assetType:'grid_meter',name:'Grid meter',channels:[],sourcePayload:{}}]};
+ {id:'meter',backendId:'meter',assetType:'grid_meter',name:'Grid meter',channels:[{backendId:'grid-import',name:'active_power_import',capability_type:'sensor',enabled:true}],sourcePayload:{}}]};
  communities[0].sites=[sceneSite];state.community=0;sessionAssets=()=>sceneSite.assets.map(a=>({id:a.id,asset_type:a.assetType}));
  render=()=>{app.innerHTML=siteGraph(sceneSite);};render();`);
 }

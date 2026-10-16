@@ -52,7 +52,7 @@ function tPreview(){
  window.TelemetryCharts.mount(node,{request:tRequest,endpoint:sourcePath(T.source)+'/series?field='+encodeURIComponent(T.field),initialEnd:Date.parse(T.latest)+1,title:T.field.split('.').slice(-2).join(' · '),note:'Unmapped source preview · source units are not inferred. Link a field to a sensor only after confirming its meaning and unit.'},sourcePath(T.source)+':'+T.field);
 }
 // Replace legacy source fetches; both manager and resident graph components use Telemetry.
-siteGraph=function(s){return tPanel(s.assets.flatMap(a=>a.channels.filter(c=>c.capability_type==='sensor')),'site:'+s.id);};
+siteGraph=function(s){const channels=s.assets.filter(a=>a.assetType==='grid_meter').flatMap(a=>a.channels.filter(c=>c.capability_type==='sensor'&&(/total|active_power_(import|export)/.test(c.name))));return channels.length?tPanel(channels,'site:'+s.id):'<div class="percepta-grid-unavailable"><h3>Site grid measurements unavailable</h3><p>Open an equipment item to see its own readings.</p></div>';};
 refreshHistory=async function(){};
 const tOldEquipment=equipmentContent;
 equipmentContent=function(){let html=tOldEquipment().replace(/<label class="metric-select">Measurement<select id="channel-series">[\s\S]*?<\/select><\/label>/,'');const a=currentAssets().find(a=>a.id===state.equipment);if(a&&state.deviceTab!=='sensors'){html=html.replace(/<div class="device-readout">[\s\S]*?<\/div><\/div>/,'');html=html.replace(/<section class="measurement-empty">[\s\S]*?<\/section>/,tPanel(a.channels.filter(c=>c.capability_type==='sensor'),'asset:'+a.id));}return html;};

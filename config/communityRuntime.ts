@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
-export const communityModules = ['inventory-model', 'app', 'inventory-ui', 'people-model', 'people-ui', 'backend-client', 'connected-ui', 'telemetry-ui', 'domain-form', 'operations-ui', 'price-rules', 'community-charts', 'workspace-refinement', 'equipment-wizard', 'runtime-ui', 'experience-ui', 'product-art', 'flexibility-calendar', 'community-management', 'mediterranean-scenes', 'mediterranean-ui'];
+export const communityModules = ['inventory-model', 'app', 'inventory-ui', 'people-model', 'people-ui', 'backend-client', 'connected-ui', 'telemetry-ui', 'domain-form', 'operations-ui', 'price-rules', 'community-charts', 'workspace-refinement', 'equipment-wizard', 'runtime-ui', 'experience-ui', 'product-art', 'flexibility-calendar', 'community-management', 'mediterranean-scenes', 'mediterranean-ui', 'percepta-demo'];
 const exportsByFile: Record<string, string> = {'inventory-model':'InventoryModel','people-model':'PeopleModel','backend-client':'ConsoleBackend','domain-form':'DomainForm','price-rules':'PriceRules'};
 
 /** Compile the existing workspace into a normal module, inside the React app.

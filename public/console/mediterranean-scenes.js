@@ -23,6 +23,8 @@ const MediterraneanScenes = (() => {
     return null;
   }
   function select(site, assets) {
+    const hq = site.sourcePayload?.external_references?.some(r => r.system === 'percepta-mongo' && r.identifier === 'i-charging_headquarters_3Phase/building_i-charging_headquarters_3Phase');
+    if (hq) return {file:'office-charging-hq',src:'/assets/mediterranean/office-charging-hq.webp',points:{solar:[52,10],charger:[60.5,72]},exact:false,type:'office with EV charging',signature:'charger+solar'};
     const type = building(site);
     const devices = assets.filter(a => a.sourcePayload?.lifecycle_status !== 'retired').map(kind).filter(Boolean);
     const signature = [...new Set(devices)].sort().join('+') || 'none';
