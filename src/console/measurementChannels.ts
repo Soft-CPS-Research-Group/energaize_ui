@@ -1,5 +1,6 @@
 import { loadWindow, type MeasurementRequest, type MeasurementSeries } from './measurementData';
 export interface MeasurementChannel {
+  defaultVisible?: boolean; displayScale?: number; curve?: 'linear' | 'stepAfter'; forecastEndpoint?: string;
   incremental?: boolean; id: string; title: string; unit?: string; endpoint?: string; latestEndpoint?: string;
   expectedSeconds?: number | null; note?: string; name?: string;
   assetId?: string; assetName?: string; tag?: string | null; source?: string | null;
@@ -9,6 +10,8 @@ export interface MeasurementChannel {
 export const SERIES_COLORS = ['#12845a', '#377bb5', '#b57b23', '#9367bb', '#d16472', '#397f82'];
 export function initialChannels(channels: MeasurementChannel[]) {
   const linked = channels.filter(c => c.endpoint);
+  const defaults = linked.filter(c => c.defaultVisible);
+  if (defaults.length) return defaults.map(c => c.id);
   const preferred = linked.filter(c => /active_power|power_import|power_export/.test(c.name || ''));
   const first = preferred[0] || linked.find(c => c.simulated) || linked[0];
   return first ? [first.id, ...preferred.filter(c => c.id !== first.id && c.unit === first.unit).slice(0, 1).map(c => c.id)] : [];
@@ -39,7 +42,7 @@ export function channelRequest(channels: MeasurementChannel[], request: Measurem
     const successful = results.filter(r => r.data);
     if (!successful.length) throw Error(results.map(r => `${r.channel.title}: ${r.error}`).join('; '));
     return {
-      points: successful.flatMap(({ channel, data }) => data!.points.map(p => ({ ...p, id: `${channel.id}:${p.id}`, channelId: channel.id }))).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp) || a.id.localeCompare(b.id)),
+      points: successful.flatMap(({ channel, data }) => data!.points.map(p => ({ ...p, value: typeof p.value === 'number' ? p.value * (channel.displayScale ?? 1) : p.value, id: `${channel.id}:${p.id}`, channelId: channel.id }))).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp) || a.id.localeCompare(b.id)),
       sample_count: successful.reduce((n, r) => n + (r.data!.sample_count ?? r.data!.points.length), 0),
       generated_count: successful.reduce((n, r) => n + (r.data!.generated_count ?? r.data!.points.filter(p => p.generated).length), 0),
       bucket_seconds: Math.max(...successful.map(r => r.data!.bucket_seconds || 0)),

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { MeasurementChart, type MeasurementChartProps } from './MeasurementChart';
 import { channelRequest, initialChannels, SERIES_COLORS, type MeasurementChannel } from './measurementChannels';
+import { ChargerActivity } from './ChargerActivity';
+import type { TimeWindow } from './measurementData';
 export interface MeasurementWorkspaceProps extends MeasurementChartProps {
   channels: MeasurementChannel[];
   showChannelConfiguration?: boolean;
@@ -11,6 +13,7 @@ export interface MeasurementWorkspaceProps extends MeasurementChartProps {
 export function MeasurementWorkspace(props: MeasurementWorkspaceProps) {
   const [selected, setSelected] = useState(() => initialChannels(props.channels));
   const [configuring, setConfiguring] = useState(false);
+  const [window, setWindow] = useState<TimeWindow | null>(null);
   const linked = props.channels.filter(c => c.endpoint);
   const active = props.channels.filter(c => c.endpoint && selected.includes(c.id));
   const key = active.map(c => c.id).sort().join(',');
@@ -20,7 +23,7 @@ export function MeasurementWorkspace(props: MeasurementWorkspaceProps) {
   const label = (c: MeasurementChannel) => groups.size > 1 && c.assetName ? `${c.assetName} · ${c.title}` : c.title;
   const series = active.map(c => ({ ...c, title: label(c), color: SERIES_COLORS[linked.findIndex(v => v.id === c.id) % SERIES_COLORS.length] }));
   return <div className="telemetry-multiseries">
-    <MeasurementChart {...props} incremental={!active.some(c => c.incremental === false)} endpoint={linked.length ? '/selected/series' : undefined} latestEndpoint={linked.length ? '/selected/latest' : undefined}
+    <MeasurementChart {...props} forecastEndpoint={active.find(c=>c.forecastEndpoint)?.forecastEndpoint} forecastRequest={props.request} onWindowChange={props.activityEndpoint ? setWindow : props.onWindowChange} incremental={!active.some(c => c.incremental === false)} endpoint={linked.length ? '/selected/series' : undefined} latestEndpoint={linked.length ? '/selected/latest' : undefined}
       queryKey={key} series={series} request={request} title={active.length === 1 ? label(active[0]) : 'Selected measurements'}
       unit={active.length === 1 ? active[0].unit : undefined} note={active.map(c => c.note).filter(Boolean).join(' · ')}
       expectedSeconds={active.length ? Math.max(...active.map(c => c.expectedSeconds || 15)) : 15}
@@ -31,6 +34,7 @@ export function MeasurementWorkspace(props: MeasurementWorkspaceProps) {
       </button>)}
       {props.showChannelConfiguration !== false && props.channels.some(c => c.sourceKind !== 'derived') && <button className="telemetry-configure" onClick={() => setConfiguring(v => !v)} aria-expanded={configuring}>Measurement channels</button>}
     </div>
+    {props.activityEndpoint && <ChargerActivity endpoint={props.activityEndpoint} request={props.request} range={window} />}
     {configuring && <div className="telemetry-sensor-config">
       <p>Each channel measures one quantity from an equipment item. Collection settings and stored readings are configured separately.</p>
       {Array.from(groups, ([assetId, channels]) => <section key={assetId} aria-label={channels[0].assetName || 'Equipment not identified'}>

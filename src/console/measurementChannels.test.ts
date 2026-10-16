@@ -31,3 +31,13 @@ it('preserves each selected channel extrema when compacting live windows', () =>
   expect(result.some(p => p.channelId === 'a' && p.value === 10000)).toBe(true);
   expect(result.some(p => p.channelId === 'b' && p.value === -500)).toBe(true);
 });
+
+it('opens explicitly selected aggregate curves without selecting unrelated sources', () => {
+  expect(initialChannels(channels.map((c, i) => ({...c, defaultVisible:i===1||i===2})))).toEqual(['b','c']);
+});
+
+it('converts configured interval energy into display power without altering other channels',async()=>{
+ const request=vi.fn(async()=>({points:[{id:'x',timestamp:'2026-09-30T07:30:00Z',value:.01}]}));
+ const r=await channelRequest([{...channels[0],displayScale:60},channels[1]],request)(path,new AbortController().signal);
+ expect(r.points.map(p=>p.value)).toEqual([.6,.01]);
+});

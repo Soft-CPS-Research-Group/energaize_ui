@@ -8,6 +8,21 @@ const now = Date.parse('2026-10-11T12:00:00Z');
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 afterEach(() => vi.useRealTimers());
 describe('Live chart lifecycle', () => {
+  it('identifies source-generated values even when live documents are fresh', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    let generated = true;
+    const request = vi.fn(async (path: string) => {
+      const point = { id: 'latest', timestamp: new Date(Date.now() - 1000).toISOString(), value: 0, generated };
+      return path.endsWith('/latest') ? { points: [], point } : { points: [point] };
+    });
+    render(<MeasurementChart title="Charger" endpoint="/a/series" latestEndpoint="/a/latest" request={request} expectedSeconds={15} />);
+    await flush();
+    expect(screen.getByRole('button', { name: 'Live' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/Includes source-generated values/)).toBeInTheDocument();
+    generated = false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+    expect(screen.queryByText(/Includes source-generated values/)).not.toBeInTheDocument();
+  });
   it('polls only the incremental tail every 15 seconds and stops after unmount', async () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     const request = vi.fn(async (path: string, _signal: AbortSignal) => path.endsWith('/latest')
@@ -87,4 +102,20 @@ it('labels time and physical units without the old footer or duplicate live cont
  expect(screen.getByTestId('y-axis-label')).toHaveTextContent('kW');
  expect(screen.queryByText('Drag to zoom')).not.toBeInTheDocument();
  expect(screen.getAllByRole('button',{name:'Live'})).toHaveLength(1);
+});
+
+it('shows published prices only in live mode and keeps them out of recorded readings',async()=>{
+ vi.useFakeTimers();vi.setSystemTime(now);
+ const observed={id:'observed',channelId:'price',timestamp:new Date(now-15000).toISOString(),value:.1};
+ const request=vi.fn(async(path:string)=>path.endsWith('/latest')?{points:[],point:observed}:{points:[observed]});
+ const horizon=vi.fn(async()=>({points:[{id:'p0',timestamp:new Date(now).toISOString(),value:.11},{id:'p1',timestamp:new Date(now+900000).toISOString(),value:.15}]}));
+ render(<MeasurementChart title="Price" endpoint="/prices/series" latestEndpoint="/prices/latest" expectedSeconds={15} request={request} forecastEndpoint="/prices/forecast" forecastRequest={horizon} series={[{id:'price',title:'Price',unit:'EUR/kWh',color:'green',curve:'stepAfter',forecastEndpoint:'/prices/forecast'}]}/>);
+ // Series data normally has channel IDs supplied by the workspace adapter.
+ await flush();
+ expect(horizon).toHaveBeenCalled();
+ expect(screen.getByText('Published prices')).toBeInTheDocument();
+ expect(screen.getAllByTestId('chart-series')).toHaveLength(2);
+ fireEvent.click(screen.getByRole('button',{name:'Live'}));await flush();
+ expect(screen.queryByText('Published prices')).not.toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Live'})).toHaveAttribute('aria-pressed','false');
 });

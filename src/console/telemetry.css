@@ -29,3 +29,12 @@
 @media(max-width:800px){.telemetry-channel-row{flex-wrap:wrap;gap:8px 16px}.telemetry-channel-actions{width:100%;justify-content:flex-start}}
 .telemetry-axis-label{font-size:11px;color:var(--muted);padding-left:18px;margin-top:12px}.telemetry-unit-plot+.telemetry-unit-plot{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}.telemetry-tooltip>div{display:grid;gap:4px}.telemetry-series-errors{font-size:11px;color:var(--warn)}
 .telemetry-origin{margin:0 0 12px;color:var(--muted);font-size:11px}.channel-simulation{margin:16px 0;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.channel-simulation>summary{font-size:12px;cursor:pointer}
+
+.charger-observations{margin-top:28px;padding-top:24px;border-top:1px solid var(--line)}
+.charger-observations h3{font-size:15px;font-weight:600;margin:0 0 8px}.charger-observations .muted{font-size:12px;line-height:1.5}
+.charger-observed-timeline{height:28px;position:relative;background:var(--soft);border-radius:8px;overflow:hidden;margin-top:16px}
+.charger-observed-timeline span{position:absolute;top:5px;height:18px;background:var(--brand);border-radius:4px;min-width:3px}
+.charger-observed-timeline span.is-generated{background:repeating-linear-gradient(135deg,var(--brand),var(--brand) 5px,var(--tint) 5px,var(--tint) 8px)}
+.charger-timeline-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin:6px 0 16px}.charger-observations table{font-size:12px}.charger-observations th{white-space:normal}
+.charger-live-reading{display:flex;align-items:center;gap:22px;padding:18px 0;border-bottom:1px solid var(--line);margin-bottom:20px}.charger-live-reading>strong{font-size:32px;font-weight:500;font-variant-numeric:tabular-nums}.charger-live-reading strong small{font-size:16px;color:var(--muted)}.charger-live-reading>span{font-size:14px}.charger-live-reading>span small{display:block;font-size:11px;color:var(--muted);margin-top:6px}
+.price-horizon-key{display:flex;justify-content:flex-end;gap:20px;color:var(--muted);font-size:11px;padding:0 20px 8px}.price-horizon-key span{display:flex;align-items:center;gap:8px}.price-horizon-key span:before{content:'';width:24px;border-top:2px solid var(--brand)}.price-horizon-key span+span:before{border-top-style:dashed;opacity:.65}
