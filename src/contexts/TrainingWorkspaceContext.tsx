@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Check, ChevronDown, FlaskConical, Search } from 'lucide-react';
 import { useQuery, QueryClient, QueryClientProvider, useIsMutating } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthContext';
@@ -44,11 +45,44 @@ export function TrainingWorkspaceSelector() {
   const { workspace, id, workspaces, select, warnings, pending: mutations } = useTrainingWorkspace();
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
-  return <div className="training-workspace-picker">
-    <button type="button" className="training-workspace-trigger" aria-expanded={open} onClick={() => setOpen(!open)}><small>AI Manager · Workspace</small><strong>{workspace?.name || 'Select workspace'} <span aria-hidden>⌄</span></strong></button>
-    {open && <div className="training-workspace-menu"><input autoFocus aria-label="Search workspaces" placeholder="Search communities…" value={search} onChange={e => setSearch(e.target.value)} />
-      {workspaces.filter(w => w.name.toLowerCase().includes(search.toLowerCase())).map(w => <button type="button" key={w.id} disabled={mutations > 0} aria-current={id === w.id} onClick={() => { select(w.id); setOpen(false); setSearch(''); }}><strong>{w.name}</strong><small>{w.kind === 'laboratory' ? 'Personal training folders' : 'Community workspace'}</small></button>)}
-      {warnings.map(w => <p role="status" key={w}>{w}</p>)}
+  const picker = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  const laboratory = workspaces.find(w => w.kind === 'laboratory');
+  const communities = workspaces.filter(w => w.kind === 'community' && w.name.toLowerCase().includes(search.trim().toLowerCase()));
+  const close = () => { setOpen(false); setSearch(''); };
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (!picker.current?.contains(event.target as Node)) { setOpen(false); setSearch(''); }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setOpen(false); setSearch(''); trigger.current?.focus(); }
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+  }, [open]);
+  const choose = (next: string) => { select(next); close(); trigger.current?.focus(); };
+  return <div className="training-workspace-picker" ref={picker} onBlur={event => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close();
+  }}>
+    <button ref={trigger} type="button" className="training-workspace-trigger" aria-expanded={open} aria-controls={menuId} onClick={() => { if (open) close(); else setOpen(true); }}>
+      <span className="training-workspace-copy"><small>AI Manager · Workspace</small><strong>{workspace?.name || 'Select workspace'}</strong></span><ChevronDown size={15} aria-hidden="true" />
+    </button>
+    {open && <div id={menuId} className="training-workspace-menu" role="region" aria-label="Workspace picker">
+      {laboratory && <>
+        <button className="training-workspace-option training-workspace-lab" type="button" disabled={mutations > 0} aria-current={id === laboratory.id} onClick={() => choose(laboratory.id)}>
+          <FlaskConical size={17} aria-hidden="true" /><span><strong>{laboratory.name}</strong><small>Personal training</small></span>{id === laboratory.id && <Check size={16} aria-hidden="true" />}
+        </button>
+        <div className="training-workspace-divider" role="separator" />
+      </>}
+      <label className="training-workspace-search"><Search size={14} aria-hidden="true" /><input aria-label="Search communities" placeholder="Find a community…" value={search} onChange={e => setSearch(e.target.value)} /></label>
+      <div className="training-workspace-communities">
+        {communities.map(w => <button className="training-workspace-option" type="button" key={w.id} disabled={mutations > 0} aria-current={id === w.id} onClick={() => choose(w.id)}><strong>{w.name}</strong>{id === w.id && <Check size={16} aria-hidden="true" />}</button>)}
+        {!communities.length && <p className="training-workspace-empty" role="status">{search ? 'No matching communities.' : 'No communities available.'}</p>}
+      </div>
+      {warnings.map(w => <p className="training-workspace-warning" role="status" key={w}>{w}</p>)}
     </div>}
   </div>;
 }

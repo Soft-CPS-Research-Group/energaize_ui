@@ -27,3 +27,11 @@ have dedicated tests. Dataset preparation includes site search and explicit miss
 telemetry messages. Model registration selects finished jobs; KPI results use a table
 and missing associations are explained before requesting data. Cleanup controls
 respect workspace control permissions.
+
+## 0.2.2 — compact workspace picker
+
+The picker follows the REC Manager menu proportions, with Laboratory pinned above
+an explicit divider. A compact community search only filters the community list;
+Laboratory remains visible even for an empty result or while the list scrolls.
+Selected workspaces have a check mark, and Escape/outside clicks close the menu.
+The existing mutation guard and workspace cache isolation remain in place.
