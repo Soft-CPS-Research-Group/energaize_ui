@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Settings2, X } from 'lucide-react';
+import { Settings2, Pencil, X } from 'lucide-react';
 import { runtimeRequest as runtime, type RuntimeSnapshot } from '../api/runtimeApi';
 
 type Connection = {id:string; name:string; provider:string; settings?:{url?:string;host?:string;port?:number;vhost?:string;data_path?:string};has_credentials?:boolean};
@@ -12,10 +12,13 @@ async function api<T>(path:string, body?:unknown, method='GET'):Promise<T>{
  if(!r.ok){const e=await r.json().catch(()=>({}));throw Error(typeof e.detail==='string'?e.detail:JSON.stringify(e.detail||'Unable to save configuration'));}return r.json();
 }
 const initial:Contract={parameter_type_id:'energy_in_total',necessary:true,privacy:'private',role:'input',temporal_behavior:{cumulative:true,periodicity:{value:60,unit:'seconds'},aggregation_operation:'sum',fill_operation:'linear'}};
-export function PerceptaSetup({siteId,onChange,configured=false}:{siteId:string;onChange:()=>void;configured?:boolean}){
+export function PerceptaSetup({siteId,onChange,configured=false,compact=false}:{siteId:string;onChange:()=>void;configured?:boolean;compact?:boolean}){
  const [open,setOpen]=useState(false);
- return <><div className="percepta-configuration-entry"><div><h3>Collection configuration</h3><p>Connections, house channels and the configuration used by Percepta.</p></div><button className="btn" onClick={()=>setOpen(true)}><Settings2 size={16}/>{configured?'Edit configuration':'Configure collection'}</button></div>{open&&<PerceptaWizard siteId={siteId} onChange={onChange} onClose={()=>setOpen(false)}/>}</>;
+ const label=configured?'Edit configuration':'Configure collection';
+ const trigger=<button className={compact?'btn runtime-icon-button':'btn'} aria-label={label} title={label} onClick={()=>setOpen(true)}>{compact?<Pencil size={17}/>:<><Settings2 size={16}/>{label}</>}</button>;
+ return <>{compact?trigger:<div className="percepta-configuration-entry"><div><h3>Collection configuration</h3><p>Connections, house channels and the configuration used by Percepta.</p></div>{trigger}</div>}{open&&<PerceptaWizard siteId={siteId} onChange={onChange} onClose={()=>setOpen(false)}/>}</>;
 }
+
 function PerceptaWizard({siteId,onChange,onClose}:{siteId:string;onChange:()=>void;onClose:()=>void}){
  const dialog=useRef<HTMLDialogElement>(null);
  useEffect(()=>{const node=dialog.current!;const root=document.documentElement;const overflow=root.style.overflow;root.style.overflow='hidden';node.showModal();return()=>{node.close();root.style.overflow=overflow;};},[]);

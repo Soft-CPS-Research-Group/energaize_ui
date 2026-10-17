@@ -49,6 +49,5 @@ export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checki
   <header><div><Activity size={17}/><h4>Health check</h4></div>{actions||<button className="btn" disabled={checking||!!item.active_operation} onClick={onCheck}><RefreshCw size={14}/>Check now</button>}</header>
   <dl><div><dt>Service</dt><dd>{serviceState(item)}</dd><small>{item.last_checked_at?'Checked '+new Date(item.last_checked_at).toLocaleTimeString('en-GB'):'Not checked yet'}</small></div><div><dt>Configuration</dt><dd>{configurationState(item)}</dd><small>{confirmedConfiguration?'Applied version confirmed':'Generate and apply the latest configuration'}</small></div><div><dt>Readings</dt><dd>{readings}</dd><small>{status?.last_received_at?'Last reading '+new Date(status.last_received_at).toLocaleString('en-GB'):'Waiting for collection'}</small></div></dl>
   {error&&<p role="alert">{error}</p>}
-  <small className="percepta-health-time">Readings checked every 15 seconds while this panel is open. This status updates automatically{lastCheck?' · Last check '+new Date(lastCheck).toLocaleTimeString('en-GB'):''}</small>
  </section></>;
 }
