@@ -19,7 +19,7 @@ export function useCommunityBackendFixture() {
   };
   server.use(...Object.entries(responses).map(([path,value])=>http.get('*'+path,()=>new HttpResponse(JSON.stringify(value),{headers:{'Content-Type':'application/json'}}))),
     http.get('*/access-api/api/access/check',()=>HttpResponse.json({allowed:true})),
-    http.post('*/community-api/api/recs/',async({request})=>{const rec={...await request.json() as typeof recs[0],id:'new-rec'};recs.push(rec);return HttpResponse.json(rec,{status:201});}),
+    http.post('*/community-api/api/identity/communities',async({request})=>{const rec={...await request.json() as typeof recs[0],id:'new-rec'};recs.push(rec);return HttpResponse.json(rec,{status:201});}),
     http.post('*/access-api/api/grants/',()=>HttpResponse.json({id:'new-grant'},{status:201}))
   );
   return {recs,users,roles,grants};
