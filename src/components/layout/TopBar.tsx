@@ -1,3 +1,5 @@
+import { TRAINING_ENABLED } from '../../api/trainingContext';
+import { TrainingWorkspaceSelector } from '../../contexts/TrainingWorkspaceContext';
 import {
   Bell,
   Boxes,
@@ -87,7 +89,7 @@ export function TopBar(): JSX.Element {
   const isProsumer = session?.role === "prosumer";
 
   const tabs = isTrainingManager
-    ? session?.role === "training_manager"
+    ? TRAINING_ENABLED || session?.role === "training_manager"
       ? AI_TABS_WITH_DEPLOY
       : AI_TABS
     : isPredictor
@@ -126,7 +128,7 @@ export function TopBar(): JSX.Element {
         </Link>
 
         {isTrainingManager ? (
-          <div className="ai-workspace-context"><small>Workspace</small><strong>AI Manager</strong></div>
+          TRAINING_ENABLED ? <TrainingWorkspaceSelector /> : <div className="ai-workspace-context"><small>Workspace</small><strong>AI Manager</strong></div>
         ) : null}
         {isCommunityUser ? <Link className="community-context-main" to={isProsumer?'/app/community/dashboard':'/communities'}><span className="community-context-copy"><small>Workspace</small><strong>{isProsumer?'My energy':'Communities'}</strong></span><ChevronDown size={15}/></Link> : null}
       </div>

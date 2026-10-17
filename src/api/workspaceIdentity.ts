@@ -1,3 +1,4 @@
+import { TRAINING_ENABLED, TRAINING_API } from './trainingContext';
 import { MOCK_USERS } from '../constants';
 import type { Session } from '../types';
 
@@ -10,6 +11,11 @@ async function read<T>(url:string):Promise<T>{
  * new backends; Jobs, predictor and KPI accounts retain their existing fixtures. */
 export async function authenticateWorkspace(email:string,password:string,remember:boolean):Promise<Session>{
   const key=email.trim().toLowerCase(),fixture=MOCK_USERS[key];
+  if (TRAINING_ENABLED && (!fixture || ['ai_manager','training_manager'].includes(fixture.role))) {
+    const response = await fetch(TRAINING_API + '/api/training/session', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:key,password})});
+    if (response.ok) return {...await response.json(),remember};
+    if (fixture) throw new Error('Training sign-in failed. Check your credentials or service connection.');
+  }
   if(fixture&&!['rec_manager','prosumer'].includes(fixture.role)){
     if(fixture.password!==password)throw new Error('Invalid email or password.');
     return {email:key,name:fixture.name,role:fixture.role,remember};

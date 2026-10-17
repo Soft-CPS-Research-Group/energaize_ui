@@ -1,3 +1,4 @@
+import { TRAINING_ENABLED } from './trainingContext';
 import { http, jobOrchestratorFileUrl, jobOrchestratorHttp } from "./client";
 import type {
   DatasetItem,
@@ -228,6 +229,7 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
 }
 
 export function listLocalJobs(): JobItem[] {
+  if (TRAINING_ENABLED) return [];
   return listExampleJobs().map((item) => ({
     ...item,
     status: normalizeJobStatus(item.status)

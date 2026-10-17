@@ -1,3 +1,5 @@
+import { TRAINING_ENABLED } from '../../api/trainingContext';
+import { useTrainingWorkspace } from '../../contexts/TrainingWorkspaceContext';
 import {
   useEffect,
   useMemo,
@@ -785,6 +787,8 @@ function readDispatchSnapshot(job: JobItem): SlurmDispatchSnapshot {
 }
 
 export function JobsPage(): JSX.Element {
+  const training = useTrainingWorkspace();
+  const sharedWorkspace = TRAINING_ENABLED && training.workspace?.kind === "community";
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -795,7 +799,7 @@ export function JobsPage(): JSX.Element {
     resolveSubmittedByLabel(session?.name) || resolveSubmittedByLabel(session?.email);
   const organizationOwner = currentSubmittedFilter || "";
   const initialState = buildJobsListStateFromSearchParams(searchParams, {
-    defaultSubmitted: currentSubmittedFilter
+    defaultSubmitted: sharedWorkspace ? "all" : currentSubmittedFilter
   });
   const { notifyError, notifyInfo, notifySuccess } = useApiFeedback();
 
@@ -845,9 +849,9 @@ export function JobsPage(): JSX.Element {
   const unionAuthTimeoutRef = useRef<number | null>(null);
   const organizationSelectionAnchorRef = useRef<string | null>(null);
   const suppressRowClickRef = useRef(false);
-  const collectionOwner = submittedFilter === "all" ? "" : submittedFilter;
+  const collectionOwner = sharedWorkspace ? organizationOwner : submittedFilter === "all" ? "" : submittedFilter;
   const canManageCollection = Boolean(
-    collectionOwner &&
+    (sharedWorkspace && training.workspace?.actions.includes("manage")) || collectionOwner &&
       normalizeOrganizationOwner(collectionOwner) === normalizeOrganizationOwner(organizationOwner)
   );
 
@@ -959,7 +963,7 @@ export function JobsPage(): JSX.Element {
         host: hostFilter,
         submitted: submittedFilter
       },
-      { defaultSubmitted: currentSubmittedFilter }
+      { defaultSubmitted: sharedWorkspace ? "all" : currentSubmittedFilter }
     );
     if (collectionView !== "general") nextParams.set("collection", collectionView);
     if (nextParams.toString() !== searchParams.toString()) {
@@ -1069,13 +1073,13 @@ export function JobsPage(): JSX.Element {
 
       const ownerKey = normalizeOrganizationOwner(collectionOwner);
       if (
-        !ownerKey ||
+        !sharedWorkspace && (!ownerKey ||
         selectedJobs.some((job) => {
           const submittedBy =
             resolveSubmittedByLabel(job.job_info.submitted_by) ||
             resolveSubmittedByLabel(job.job_meta?.submitted_by);
           return normalizeOrganizationOwner(submittedBy) !== ownerKey;
-        })
+        }))
       ) {
         throw new Error("Only your own jobs can be organized.");
       }
@@ -1271,7 +1275,7 @@ export function JobsPage(): JSX.Element {
   const filteredJobs = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const collectionOwnerKey = normalizeOrganizationOwner(collectionOwner);
-    const aggregateView = submittedFilter === "all";
+    const aggregateView = submittedFilter === "all" && !sharedWorkspace;
 
     return (jobsQuery.data || []).filter((job) => {
       const archived = Boolean(job.organization?.archived);
@@ -1279,7 +1283,7 @@ export function JobsPage(): JSX.Element {
         resolveSubmittedByLabel(job.job_info.submitted_by) ||
         resolveSubmittedByLabel(job.job_meta?.submitted_by);
       const ownedByCollectionOwner = Boolean(
-        collectionOwnerKey && normalizeOrganizationOwner(submittedBy) === collectionOwnerKey
+        sharedWorkspace || collectionOwnerKey && normalizeOrganizationOwner(submittedBy) === collectionOwnerKey
       );
       if (collectionView === "archive") {
         if (!archived || (!aggregateView && !ownedByCollectionOwner)) return false;
@@ -1316,7 +1320,7 @@ export function JobsPage(): JSX.Element {
 
   const collectionCounts = useMemo(() => {
     const collectionOwnerKey = normalizeOrganizationOwner(collectionOwner);
-    const aggregateView = submittedFilter === "all";
+    const aggregateView = submittedFilter === "all" && !sharedWorkspace;
     const folders = new Map<string, number>();
     let general = 0;
     let archive = 0;
@@ -1325,7 +1329,7 @@ export function JobsPage(): JSX.Element {
         resolveSubmittedByLabel(job.job_info.submitted_by) ||
         resolveSubmittedByLabel(job.job_meta?.submitted_by);
       const owned = Boolean(
-        collectionOwnerKey && normalizeOrganizationOwner(submittedBy) === collectionOwnerKey
+        sharedWorkspace || collectionOwnerKey && normalizeOrganizationOwner(submittedBy) === collectionOwnerKey
       );
       if (!aggregateView && !owned) return;
       if (job.organization?.archived) {
@@ -1688,7 +1692,7 @@ export function JobsPage(): JSX.Element {
       resolveSubmittedByLabel(job.job_meta?.submitted_by);
     return Boolean(
       canManageCollection &&
-        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(collectionOwner)
+        (sharedWorkspace || normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(collectionOwner))
     );
   }
 
@@ -2428,7 +2432,7 @@ export function JobsPage(): JSX.Element {
                       resolveSubmittedByLabel(job.job_meta?.submitted_by);
                     const canOrganizeThisJob = Boolean(
                       canManageCollection &&
-                        normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(collectionOwner)
+                        (sharedWorkspace || normalizeOrganizationOwner(submittedBy) === normalizeOrganizationOwner(collectionOwner))
                     );
                     const mlflowUrl = resolveMlflowRunUrl(job.job_info, job.job_meta);
                     const baseConfigPath =

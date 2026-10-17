@@ -1,6 +1,8 @@
+import { TRAINING_ENABLED, TRAINING_API, trainingScopeUrl, trainingHeaders, trainingRequest } from './trainingContext';
 import { ApiError } from "./client";
-import { runtimeRequest as http, RUNTIME_API_URL } from "./runtimeApi";
-const apiFileUrl = (path: string) => RUNTIME_API_URL + path;
+import { runtimeRequest, RUNTIME_API_URL } from "./runtimeApi";
+const apiFileUrl = (path: string) => TRAINING_ENABLED ? TRAINING_API + trainingScopeUrl(path) : RUNTIME_API_URL + path;
+const http = <T,>(path: string, init?: RequestInit): Promise<T> => TRAINING_ENABLED ? trainingRequest<T>(trainingScopeUrl(path), init) : runtimeRequest<T>(path, init);
 
 export interface DeployInferenceTarget {
   id: string;
@@ -153,7 +155,7 @@ export async function openDeployLogsStream(
   const url = apiFileUrl(
     `/deploy/inferences/${encodeURIComponent(targetId)}/logs/stream?tail=${encodeURIComponent(String(tail))}`
   );
-  const response = await fetch(url, { signal });
+  const response = await fetch(url, { signal, headers: TRAINING_ENABLED ? trainingHeaders() : undefined });
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
     try {

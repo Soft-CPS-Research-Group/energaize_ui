@@ -1,3 +1,4 @@
+import { ResourceFolders, ResourceFolderSelect, useResourceFolders } from '../../components/training/ResourceFolders';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -841,6 +842,7 @@ function ConfigStepShell({
 }
 
 export function ConfigsPage(): JSX.Element {
+  const folderState = useResourceFolders("config");
   const queryClient = useQueryClient();
   const { notifyError, notifySuccess, notifyInfo } = useApiFeedback();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1149,6 +1151,7 @@ export function ConfigsPage(): JSX.Element {
         </div>
       </header>
 
+      <ResourceFolders state={folderState} />
       <section className="jobs-main">
         {refreshingVisual ? (
           <section className="datasets-loader-preview">
@@ -1166,7 +1169,7 @@ export function ConfigsPage(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {configFiles.map((config) => (
+                {configFiles.filter(config => folderState.visible(config)).map((config) => (
                   <tr key={config}>
                     <td>
                       <div className="configs-name-cell">
@@ -1179,6 +1182,7 @@ export function ConfigsPage(): JSX.Element {
                     </td>
                     <td className="configs-actions-col">
                       <div className="table-actions configs-table-actions">
+                        <ResourceFolderSelect name={config} state={folderState} />
                         <Button
                           size="sm"
                           variant="ghost"

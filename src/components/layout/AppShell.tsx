@@ -1,3 +1,4 @@
+import { TrainingWorkspaceGate } from '../../contexts/TrainingWorkspaceContext';
 import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -196,7 +197,7 @@ export function AppShell({
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.2, ease: "easeOut" }}
                 >
-                  <Outlet />
+                  <TrainingWorkspaceGate><Outlet /></TrainingWorkspaceGate>
                 </motion.div>
             )}
           </div>

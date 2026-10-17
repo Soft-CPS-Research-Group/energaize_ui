@@ -9,6 +9,7 @@ export type UserRole =
 export type ThemeMode = "light" | "dark";
 
 export interface Session {
+  training_token?: string;
   email: string;
   name: string;
   role: UserRole;

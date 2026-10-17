@@ -1,3 +1,5 @@
+import { TRAINING_ENABLED } from '../../api/trainingContext';
+import { WorkspaceOperations } from '../../components/training/WorkspaceOperations';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -808,7 +810,7 @@ export function DeployPage(): JSX.Element {
   const targets = targetsQuery.data || [];
   const bundles = bundlesQuery.data || [];
   const visibleTargets = useMemo(() => targets.filter(isDeployTargetVisible), [targets]);
-  const visibleTargetCount = visibleTargets.length + DEPLOY_HOUSE_PLACEHOLDERS.length;
+  const visibleTargetCount = visibleTargets.length + (TRAINING_ENABLED ? 0 : DEPLOY_HOUSE_PLACEHOLDERS.length);
 
   const healthQueries = useQueries({
     queries: visibleTargets.map((target) => ({
@@ -1421,6 +1423,7 @@ export function DeployPage(): JSX.Element {
 
   return (
     <div className="page jobs-page">
+      <WorkspaceOperations />
       <header className="jobs-hero">
         <div>
           <h1>Deploy</h1>
@@ -1645,7 +1648,7 @@ export function DeployPage(): JSX.Element {
                         ) : null}
                         <td className="deploy-data-cell">
                           <div className="deploy-data-cell-content">
-                            <span className="deploy-investor-coverage-badge is-good">{DEPLOY_DATA_COVERAGE_LABEL}</span>
+                            <span className="deploy-investor-coverage-badge is-good">{TRAINING_ENABLED ? "Coverage not verified" : DEPLOY_DATA_COVERAGE_LABEL}</span>
                           </div>
                         </td>
                         <td className="deploy-actions-cell">
@@ -1683,7 +1686,7 @@ export function DeployPage(): JSX.Element {
                       </tr>
                     );
                   })}
-                  {DEPLOY_HOUSE_PLACEHOLDERS.map((target) => (
+                  {!TRAINING_ENABLED && DEPLOY_HOUSE_PLACEHOLDERS.map((target) => (
                     <tr key={target.id} className="deploy-placeholder-row">
                       <td>
                         <div className="deploy-target-name">
@@ -1704,7 +1707,7 @@ export function DeployPage(): JSX.Element {
                       ) : null}
                       <td className="deploy-data-cell">
                         <div className="deploy-data-cell-content">
-                          <span className="deploy-investor-coverage-badge is-good">{DEPLOY_DATA_COVERAGE_LABEL}</span>
+                          <span className="deploy-investor-coverage-badge is-good">{TRAINING_ENABLED ? "Coverage not verified" : DEPLOY_DATA_COVERAGE_LABEL}</span>
                         </div>
                       </td>
                       <td className="deploy-actions-cell">

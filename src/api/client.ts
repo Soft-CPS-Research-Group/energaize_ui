@@ -1,3 +1,4 @@
+import { TRAINING_ENABLED, TRAINING_API, trainingScopeUrl, trainingHeaders } from './trainingContext';
 import type { ApiErrorShape } from "../types";
 
 export class ApiError extends Error {
@@ -97,6 +98,11 @@ export async function jobOrchestratorHttp<T>(
   init?: RequestInit,
   options?: { responseType?: "json" | "text" | "blob" }
 ): Promise<T> {
+  if (TRAINING_ENABLED) {
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", trainingHeaders().Authorization);
+    return request<T>(TRAINING_API, trainingScopeUrl("/bridge" + path), {...init, headers}, options);
+  }
   return request<T>(JOB_ORCHESTRATOR_API_URL, path, init, options);
 }
 

@@ -7,11 +7,14 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+ARG VITE_AI_TRAINING_ENABLED=false
+ENV VITE_AI_TRAINING_ENABLED=$VITE_AI_TRAINING_ENABLED
 RUN npm run build
 
 FROM nginx:1.27-alpine
 # Override at container startup; one image works with local or server APIs.
-ENV COMMUNITY_API_URL=http://193.136.62.78:8017 \
+ENV AI_TRAINING_API_URL=http://127.0.0.1:8022 \
+    COMMUNITY_API_URL=http://193.136.62.78:8017 \
     ACCESS_API_URL=http://193.136.62.78:8018 \
     TELEMETRY_API_URL=http://193.136.62.78:8019 \
     FLEXIBILITY_API_URL=http://193.136.62.78:8020 \
@@ -22,4 +25,3 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]
-

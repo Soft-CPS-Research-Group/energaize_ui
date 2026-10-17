@@ -1,3 +1,8 @@
+import { CommunityDatasetGenerator } from '../../components/training/CommunityDatasetGenerator';
+import { useTrainingWorkspace } from '../../contexts/TrainingWorkspaceContext';
+import { TRAINING_ENABLED } from '../../api/trainingContext';
+import { jobOrchestratorHttp } from '../../api/client';
+import { ResourceFolders, ResourceFolderSelect, useResourceFolders } from '../../components/training/ResourceFolders';
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpDown, Download, Plus, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
@@ -95,6 +100,10 @@ function buildCityLearnConfigs(
 }
 
 export function DatasetsPage(): JSX.Element {
+  const folderState = useResourceFolders("dataset");
+  const training = useTrainingWorkspace();
+  const communityMode = TRAINING_ENABLED && training.workspace?.kind === "community";
+  const [communityGeneratorOpen, setCommunityGeneratorOpen] = useState(false);
   const queryClient = useQueryClient();
   const { notifyError, notifySuccess, notifyInfo } = useApiFeedback();
   const [sort, setSort] = useState<{ key: "name" | "type"; direction: "asc" | "desc" } | null>(null);
@@ -250,6 +259,7 @@ export function DatasetsPage(): JSX.Element {
 
   return (
     <div className="page">
+      {communityMode && <CommunityDatasetGenerator open={communityGeneratorOpen} onClose={() => setCommunityGeneratorOpen(false)} />}
       <header className="jobs-hero">
         <div>
           <h1>Datasets</h1>
@@ -266,7 +276,7 @@ export function DatasetsPage(): JSX.Element {
           <Button
             variant="primary"
             iconLeft={<Plus size={14} />}
-            onClick={() => setModalOpen(true)}
+            onClick={() => communityMode ? setCommunityGeneratorOpen(true) : setModalOpen(true)}
             disabled={sitesQuery.isLoading || availableSites.length === 0}
           >
             Generate Dataset
@@ -302,6 +312,7 @@ export function DatasetsPage(): JSX.Element {
         </section>
       ) : null}
 
+      <ResourceFolders state={folderState} />
       <section className="jobs-main">
         {refreshingVisual ? (
           <section className="datasets-loader-preview">
@@ -331,7 +342,7 @@ export function DatasetsPage(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {sortedDatasets.map((dataset) => {
+                {sortedDatasets.filter(d => folderState.visible(d.name)).map((dataset) => {
                   const format = getDatasetFormat(dataset);
                   return (
                     <tr key={dataset.name}>
@@ -344,7 +355,11 @@ export function DatasetsPage(): JSX.Element {
                       <td>{dataset.description || "-"}</td>
                       <td>
                         <div className="table-actions">
-                          <a className="btn btn-ghost btn-sm" href={datasetDownloadUrl(dataset.name)}>
+                          <ResourceFolderSelect name={dataset.name} state={folderState} />
+                          <a className="btn btn-ghost btn-sm" href={TRAINING_ENABLED ? "#" : datasetDownloadUrl(dataset.name)} onClick={async event => {
+                            if (!TRAINING_ENABLED) return; event.preventDefault();
+                            try { const blob = await jobOrchestratorHttp<Blob>(`/dataset/download/${encodeURIComponent(dataset.name)}`, undefined, {responseType:"blob"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href=url; a.download=dataset.name+".zip"; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); } catch(error) { notifyError("Download failed",error); }
+                          }}>
                             <Download size={13} />
                             Download
                           </a>
@@ -369,7 +384,7 @@ export function DatasetsPage(): JSX.Element {
             title="No datasets"
             message="Generate your first dataset from site telemetry."
             action={
-              <Button variant="primary" onClick={() => setModalOpen(true)} disabled={availableSites.length === 0}>
+              <Button variant="primary" onClick={() => communityMode ? setCommunityGeneratorOpen(true) : setModalOpen(true)} disabled={availableSites.length === 0}>
                 Generate Dataset
               </Button>
             }

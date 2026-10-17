@@ -1,3 +1,4 @@
+import { TRAINING_ENABLED } from './api/trainingContext';
 import { AuthTransitionProvider } from "./contexts/AuthTransitionContext";
 import { useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
@@ -105,7 +106,7 @@ function AppRoutes(): JSX.Element {
                             <Route path="jobs/:jobId" element={<JobDetailPage />} />
                             <Route path="datasets" element={<DatasetsPage />} />
                             <Route path="configs" element={<ConfigsPage />} />
-                            <Route element={<RoleGuard allowed={["training_manager"]} />}>
+                            <Route element={<RoleGuard allowed={TRAINING_ENABLED ? ["training_manager", "ai_manager"] : ["training_manager"]} />}>
                                 <Route path="deploy" element={<DeployPage />} />
                                 <Route path="deploy/:targetId/charts" element={<DeployChartsPage />} />
                             </Route>
