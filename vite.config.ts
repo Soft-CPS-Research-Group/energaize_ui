@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
   server: {
 
     proxy: {
+      "/training-api": { target: env.TRAINING_PROXY_TARGET || "http://193.136.62.78:8011", changeOrigin: true, rewrite: path => path.replace(/^\/training-api/, "") },
       "/runtime-api": { target: env.RUNTIME_PROXY_TARGET || "http://127.0.0.1:8021", changeOrigin: true, rewrite: path => path.replace(/^\/runtime-api/, "") },
       "/measurement-api": { target: env.MEASUREMENT_PROXY_TARGET || "http://193.136.62.78:8000", changeOrigin: true, ws: true, rewrite: (path) => path.replace(/^\/measurement-api/, "") },
       "/community-api": {

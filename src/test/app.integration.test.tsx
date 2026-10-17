@@ -83,6 +83,62 @@ describe("App integration", () => {
     localStorage.setItem("energaize_active_community", JSON.stringify("solar-community"));
   }
 
+  it("shares the account photo and closes menus with Escape, outside click and navigation", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    renderApp("/app/account");
+    const trigger = screen.getByRole("button", { name: "Open user menu" });
+    await user.click(trigger);
+    expect(screen.getByRole("dialog", { name: "User menu" })).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: "Tiago Fonseca" })).toHaveLength(3);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "User menu" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await user.click(trigger);
+    await user.click(screen.getByRole("heading", { name: "Account" }));
+    expect(screen.queryByRole("dialog", { name: "User menu" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    await user.click(screen.getByRole("link", { name: "View all notifications" }));
+    expect(screen.getByRole("heading", { name: "Notifications" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("cycles dataset sorting through ascending, descending and original order", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    server.use(http.get(`${JOB_ORCHESTRATOR_API_URL}/datasets`, () => HttpResponse.json([
+      { name: "site10", format: "csv" },
+      { name: "site2", type: "parquet" },
+      { name: "Alpha", formats: ["csv", "parquet"] },
+      { name: "zeta" }
+    ])));
+    renderApp("/app/ai/datasets");
+    await screen.findByText("site10");
+    const names = () => within(screen.getByRole("table")).getAllByRole("row").slice(1)
+      .map(row => within(row).getAllByRole("cell")[0].textContent);
+    const originalOrder = ["site10", "site2", "Alpha", "zeta"];
+    expect(names()).toEqual(originalOrder);
+    await user.click(screen.getByRole("button", { name: "Sort by name ascending" }));
+    expect(names()).toEqual(["Alpha", "site2", "site10", "zeta"]);
+    await user.click(screen.getByRole("button", { name: "Sort by name descending" }));
+    expect(names()).toEqual(["zeta", "site10", "site2", "Alpha"]);
+    expect(screen.getByRole("columnheader", { name: /Name/ })).toHaveAttribute("aria-sort", "descending");
+    await user.click(screen.getByRole("button", { name: "Clear name sorting" }));
+    expect(names()).toEqual(originalOrder);
+    expect(screen.getByRole("columnheader", { name: /Name/ })).toHaveAttribute("aria-sort", "none");
+    await user.click(screen.getByRole("button", { name: "Sort by type ascending" }));
+    expect(names()).toEqual(["site10", "Alpha", "site2", "zeta"]);
+    await user.click(screen.getByRole("button", { name: "Sort by type descending" }));
+    expect(names()).toEqual(["zeta", "site2", "Alpha", "site10"]);
+    expect(screen.getByRole("columnheader", { name: /Type/ })).toHaveAttribute("aria-sort", "descending");
+    await user.click(screen.getByRole("button", { name: "Clear type sorting" }));
+    expect(names()).toEqual(originalOrder);
+    expect(screen.getByRole("columnheader", { name: /Type/ })).toHaveAttribute("aria-sort", "none");
+    await user.click(screen.getByRole("button", { name: "Sort by type ascending" }));
+    await user.click(screen.getByRole("button", { name: "Sort by name ascending" }));
+    expect(names()).toEqual(["Alpha", "site2", "site10", "zeta"]);
+  });
+
   it("logs in and lands in AI jobs page", async () => {
     const user = userEvent.setup();
     renderApp("/login");
@@ -582,13 +638,16 @@ describe("App integration", () => {
 
   it("opens the backend community workspace inside the same app and logs out through the common account menu", async () => {
     useCommunityBackendFixture();seedCommunitySession('rec_manager');
+    localStorage.setItem('energaize_profile_photo:rec@energaize.io','data:image/jpeg;base64,community-photo');
     const user=userEvent.setup();renderApp('/communities');const view=await communityScreen();
     expect(await view.findByRole('heading',{name:'Choose a community'})).toBeInTheDocument();
+    expect(await view.findByRole('img',{name:'REC Manager'})).toHaveAttribute('src','data:image/jpeg;base64,community-photo');
     await user.click(view.getByRole('button',{name:'View'}));
     expect(await view.findByRole('heading',{name:'Connected community'})).toBeInTheDocument();
     expect(document.querySelector('iframe')).toBeNull();
     expect(sessionStorage.getItem('console-session-email')).toBeNull();
     await user.click(view.getByRole('button',{name:'Open user menu'}));
+    await waitFor(()=>expect(view.getAllByRole('img',{name:'REC Manager'})).toHaveLength(2));
     await user.click(await view.findByRole('button',{name:'Logout'}));
     expect(await screen.findByRole('button',{name:'Log in'})).toBeInTheDocument();
     expect(localStorage.getItem('energaize_session')).toBeNull();

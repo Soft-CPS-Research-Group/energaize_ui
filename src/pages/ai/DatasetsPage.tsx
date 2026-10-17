@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Plus, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Plus, RefreshCcw, Trash2, UploadCloud } from "lucide-react";
 import {
   createDataset,
   datasetDownloadUrl,
@@ -97,6 +97,7 @@ function buildCityLearnConfigs(
 export function DatasetsPage(): JSX.Element {
   const queryClient = useQueryClient();
   const { notifyError, notifySuccess, notifyInfo } = useApiFeedback();
+  const [sort, setSort] = useState<{ key: "name" | "type"; direction: "asc" | "desc" } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<DatasetForm>(initialForm);
   const [windowInfo, setWindowInfo] = useState<string>("");
@@ -112,6 +113,24 @@ export function DatasetsPage(): JSX.Element {
     queryFn: listDatasets,
     refetchInterval: 10000
   });
+
+  const sortedDatasets = useMemo(() => {
+    if (!sort) return datasetsQuery.data ?? [];
+    const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+    return [...(datasetsQuery.data ?? [])].sort((a, b) => {
+      const left = sort.key === "name" ? a.name : getDatasetFormatLabel(getDatasetFormat(a));
+      const right = sort.key === "name" ? b.name : getDatasetFormatLabel(getDatasetFormat(b));
+      const primary = collator.compare(left, right) * (sort.direction === "asc" ? 1 : -1);
+      return primary || collator.compare(a.name, b.name);
+    });
+  }, [datasetsQuery.data, sort]);
+
+  function toggleSort(key: "name" | "type") {
+    setSort(current => {
+      if (current?.key !== key) return { key, direction: "asc" };
+      return current.direction === "asc" ? { key, direction: "desc" } : null;
+    });
+  }
 
   const sitesQuery = useQuery({
     queryKey: ["dataset-sites"],
@@ -291,18 +310,28 @@ export function DatasetsPage(): JSX.Element {
         ) : null}
 
         {datasetsQuery.data && datasetsQuery.data.length > 0 ? (
-          <section className="panel">
+          <section className="panel ai-datasets-table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Type</th>
+                  {(["name", "type"] as const).map(key => {
+                    const active = sort?.key === key;
+                    const SortIcon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+                    return (
+                      <th key={key} scope="col" aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                        <button type="button" className="ai-table-sort" onClick={() => toggleSort(key)}
+                          aria-label={active && sort.direction === "desc" ? `Clear ${key} sorting` : `Sort by ${key}${active ? " descending" : " ascending"}`}>
+                          {key === "name" ? "Name" : "Type"}<SortIcon size={12} aria-hidden="true" />
+                        </button>
+                      </th>
+                    );
+                  })}
                   <th>Description</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {datasetsQuery.data.map((dataset) => {
+                {sortedDatasets.map((dataset) => {
                   const format = getDatasetFormat(dataset);
                   return (
                     <tr key={dataset.name}>

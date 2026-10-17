@@ -4418,10 +4418,13 @@ export function JobDetailPage(): JSX.Element {
           {activeTab === "overview" ? (
             <section className="panel job-overview-shell">
               <header className="job-overview-hero">
+                <div className="ai-job-identity">
+                <span className="ai-ceramic-compute" aria-hidden="true" />
                 <div className="job-overview-title-block">
                   <small className="job-overview-kicker">Training job</small>
                   <h2>{overviewJobName}</h2>
                   <small className="job-overview-jobid">{jobId}</small>
+                </div>
                 </div>
                 <div className="job-overview-hero-status">
                   <StatusPill status={displayStatus} />

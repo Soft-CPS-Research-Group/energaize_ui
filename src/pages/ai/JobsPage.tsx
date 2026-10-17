@@ -2177,20 +2177,19 @@ export function JobsPage(): JSX.Element {
 
   return (
     <div className="page jobs-page">
-      <header className="jobs-hero">
-        <div>
-          <h1>Jobs</h1>
+      <header className="jobs-hero ai-jobs-heading">
+        <div className="ai-heading-copy">
+          <span className="ai-ceramic-compute" aria-hidden="true" />
+          <div><span className="ai-eyebrow">Training workspace</span><h1>Jobs</h1>
+            <p>Run experiments, follow progress and compare results.</p></div>
         </div>
+        {refreshingVisual ? (
+          <div className="ai-heading-actions"><EVChargingLoader compact label="Refreshing jobs..." /></div>
+        ) : null}
       </header>
 
       <section className="jobs-surface">
         <section className="jobs-main-stack">
-          {refreshingVisual ? (
-            <section className="datasets-loader-preview jobs-loader-card">
-              <EVChargingLoader label="Refreshing jobs..." />
-            </section>
-          ) : null}
-
           <section className="jobs-main">
           <section className="jobs-collections" aria-label="Job folders">
             <div className="jobs-collection-tabs">
@@ -2291,13 +2290,7 @@ export function JobsPage(): JSX.Element {
           </section>
           <div className="jobs-command-bar">
             <div className="jobs-command-group">
-              <Button
-                variant="primary"
-                iconLeft={<Play size={14} />}
-                onClick={openRunWizard}
-              >
-                Run Job
-              </Button>
+              <Button size="sm" variant="primary" iconLeft={<Play size={13} />} onClick={openRunWizard}>Run Job</Button>
               <Button
                 variant="secondary"
                 className="btn-square"
@@ -2322,10 +2315,11 @@ export function JobsPage(): JSX.Element {
                 <input
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search jobs..."
+                  placeholder="Search jobs…"
+                  aria-label="Search jobs"
                 />
               </label>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <select aria-label="Filter jobs by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                 <option value="all">All Statuses</option>
                 {statusOptions.map((status) => (
                   <option key={status} value={status}>
@@ -2333,7 +2327,7 @@ export function JobsPage(): JSX.Element {
                   </option>
                 ))}
               </select>
-              <select value={hostFilter} onChange={(event) => setHostFilter(event.target.value)}>
+              <select aria-label="Filter jobs by host" value={hostFilter} onChange={(event) => setHostFilter(event.target.value)}>
                 <option value="all">All Hosts</option>
                 {hostOptions.map((host) => (
                   <option key={host.name} value={host.name}>
@@ -2362,7 +2356,12 @@ export function JobsPage(): JSX.Element {
             </div>
           </div>
 
-          {filteredJobs.length === 0 ? (
+          {jobsQuery.isLoading ? (
+            <section className="ai-jobs-loading"><EVChargingLoader label="Loading jobs..." /></section>
+          ) : jobsQuery.isError && !jobsQuery.data ? (
+            <EmptyState title="Jobs unavailable" message="Could not reach the job orchestrator. Refresh to try again."
+              action={<Button variant="secondary" onClick={refreshWithPreview}>Retry</Button>} />
+          ) : filteredJobs.length === 0 ? (
             <EmptyState
               title={collectionView === "archive" ? "Archive is empty" : activeFolder ? `No jobs in ${activeFolder.name}` : "No jobs found"}
               message={collectionView === "archive" ? "Archived terminal jobs will appear here." : activeFolder ? "Move jobs into this folder or adjust the filters." : "Create a simulation or adjust filters."}
@@ -2794,31 +2793,27 @@ export function JobsPage(): JSX.Element {
                         onClick={() => openHostDetails(host.name, host)}
                         title={`Open details for ${formatHostName(host.name)}`}
                       >
-                        <div className="jobs-host-line">
-                          <Server size={14} />
-                          <span className={`host-live-dot${isLive ? " is-online" : ""}`} />
-                          <strong>{formatHostName(host.name)}</strong>
-                          {unionAuthRequired && canAuthenticateUnion ? (
-                            <TriangleAlert
-                              size={14}
-                              className="host-auth-warning-icon"
-                              aria-label="Union authentication required"
-                            />
-                          ) : null}
-                          <span
-                            className={`host-compute-pill is-${computeBadge.kind}`}
-                            title={computeBadge.title}
-                            aria-label={computeBadge.title}
-                          >
-                            <Cpu size={11} />
-                            {computeBadge.label}
+                        <span className="ai-ceramic-compute ai-host-art" aria-hidden="true" />
+                        <span className="ai-host-copy">
+                          <span className="jobs-host-line">
+                            <strong>{formatHostName(host.name)}</strong>
+                            {unionAuthRequired && canAuthenticateUnion ? (
+                              <TriangleAlert size={14} className="host-auth-warning-icon" aria-label="Union authentication required" />
+                            ) : null}
+                            <span className="ai-host-status">
+                              <span className={`host-live-dot${isLive ? " is-online" : ""}`} />
+                              {isLive ? "Live" : "Offline"}
+                            </span>
                           </span>
-                          <small>{isLive ? "Live" : "Offline"}</small>
-                          <Info size={13} />
-                        </div>
-                        <small className={`jobs-capacity-line${capacitySummary.overCapacity ? " is-over-capacity" : ""}`}>
-                          {capacitySummary.label}
-                        </small>
+                          <span className="ai-host-details">
+                            <span className={`host-compute-pill is-${computeBadge.kind}`} title={computeBadge.title} aria-label={computeBadge.title}>
+                              <Cpu size={10} />{computeBadge.label}
+                            </span>
+                            <small className={`jobs-capacity-line${capacitySummary.overCapacity ? " is-over-capacity" : ""}`}>
+                              {capacitySummary.label}
+                            </small>
+                          </span>
+                        </span>
                         {cardActiveJobId ? (
                           <small className="jobs-meta">
                             Active: {cardActiveJobLabel}
@@ -2860,7 +2855,7 @@ export function JobsPage(): JSX.Element {
               ) : null}
             </header>
             <div className="jobs-queue-filters">
-              <select value={queueHostFilter} onChange={(event) => setQueueHostFilter(event.target.value)}>
+              <select aria-label="Filter queue by host" value={queueHostFilter} onChange={(event) => setQueueHostFilter(event.target.value)}>
                 <option value="all">All queue hosts</option>
                 {queueHostOptions.map((host) => (
                   <option key={host} value={host}>
@@ -3547,7 +3542,7 @@ export function JobsPage(): JSX.Element {
             </>
           ) : null}
           {!logsQuery.loading && !logsQuery.error && !hasRawLogs ? (
-            <p className="jobs-meta">{logsQuery.message || "Ainda não há logs para este job (ou o ficheiro está vazio)."}</p>
+            <p className="jobs-meta">{logsQuery.message || "No logs available for this job yet."}</p>
           ) : null}
         </section>
       </Modal>

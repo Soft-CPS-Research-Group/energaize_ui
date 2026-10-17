@@ -2,6 +2,8 @@ import { LogOut, User } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AUTH_SCENE_STORAGE_KEY } from "../../constants";
 import { useAuth } from "../../contexts/AuthContext";
+import { ProfileAvatar } from "../ui/ProfileAvatar";
+import { roleLabel } from "../../utils/roles";
 import { Button } from "../ui/Button";
 
 interface Props {
@@ -15,15 +17,15 @@ export function UserMenu({ open, onClose }: Props): JSX.Element | null {
   if (!open || !session) return null;
 
   return (
-    <section className="user-menu" role="dialog" aria-label="User menu">
-      <header>
-        <strong>{session.name}</strong>
-        <small>{session.email}</small>
+    <section id="profile-menu" className="user-menu" role="dialog" aria-label="User menu">
+      <header className="profile-menu-identity">
+        <ProfileAvatar session={session} />
+        <div><strong>{session.name}</strong><small>{session.email}</small><small>{roleLabel(session.role)}</small></div>
       </header>
 
       <Link className="menu-link" to="/app/account" onClick={onClose}>
         <User size={15} />
-        <span>Profile</span>
+        <span>Account & preferences</span>
       </Link>
 
       <Button

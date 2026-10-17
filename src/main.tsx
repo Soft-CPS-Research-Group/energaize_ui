@@ -6,6 +6,8 @@ import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
 import { UIProvider } from "./contexts/UIContext";
 import "./styles/index.css";
+import "./styles/ai-ceramic.css";
+import "./styles/profile.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

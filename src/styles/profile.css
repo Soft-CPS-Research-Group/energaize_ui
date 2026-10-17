@@ -1,0 +1,17 @@
+/* The same avatar and account menu are used by React and the community shell. */
+.profile-avatar { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border-radius: 50%; overflow: hidden; background: var(--ai-tint,#e7eddf); color: var(--brand-strong,#405d43); font-size: 12px; font-weight: 600; }
+.profile-avatar.profile-avatar--large { width: 80px; height: 80px; font-size: 24px; }
+.profile-avatar>img { display: block; width: 100%; height: 100%; max-width: none; object-fit: cover; border-radius: inherit; }
+.topbar .avatar-btn { width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
+[data-shared-avatar] { display: contents; }
+.user-menu { width: min(310px,calc(100vw - 32px)); padding: 14px; border-radius: 16px; gap: 8px; }
+.user-menu header.profile-menu-identity { display: flex; align-items: center; gap: 12px; padding: 4px 0 14px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.profile-menu-identity>div { display: grid; gap: 3px; min-width: 0; }
+.profile-menu-identity strong { font-size: 13px; font-weight: 600; }
+.profile-menu-identity small { font-size: 11px; overflow-wrap: anywhere; }
+.profile-menu-identity small:last-child { text-transform: capitalize; }
+.user-menu .menu-link { border: 0; border-radius: 10px; font-size: 12px; padding: 10px; }
+.user-menu .menu-link:hover { background: var(--ai-tint,var(--soft,#e7eddf)); }
+.user-menu .btn-danger { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; justify-content: flex-start; padding: 12px 10px 4px; color: var(--danger,#b34e43); font-size: 12px; }
+.user-menu :is(a,button):focus-visible { outline: 2px solid var(--brand,#59765b); outline-offset: 2px; }
+@media(max-width:600px) { .topbar .user-menu { right: 12px; } }

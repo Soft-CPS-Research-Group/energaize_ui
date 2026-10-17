@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Bell, Circle, Trash2 } from "lucide-react";
 import { useUI } from "../../contexts/UIContext";
 import { formatRelativeTime } from "../../utils/time";
@@ -21,7 +22,7 @@ export function NotificationPanel({ open, onClose }: Props): JSX.Element | null 
   if (!open) return null;
 
   return (
-    <section className="notif-panel" role="dialog" aria-label="Notifications">
+    <section id="notification-menu" className="notif-panel" role="dialog" aria-label="Notifications">
       <header className="notif-head">
         <div>
           <h3>Notifications</h3>
@@ -33,7 +34,7 @@ export function NotificationPanel({ open, onClose }: Props): JSX.Element | null 
       </header>
 
       <div className="notif-actions">
-        <Button variant="secondary" size="sm" onClick={markAllNotificationsRead}>
+        <Button variant="secondary" size="sm" onClick={markAllNotificationsRead} disabled={unreadCount === 0}>
           Mark all read
         </Button>
         <Button variant="ghost" size="sm" onClick={clearNotifications} disabled={notifications.length === 0}>
@@ -75,6 +76,7 @@ export function NotificationPanel({ open, onClose }: Props): JSX.Element | null 
           ))
         )}
       </ul>
+      <Link className="menu-link notification-view-all" to="/app/notifications" onClick={onClose}>View all notifications</Link>
     </section>
   );
 }

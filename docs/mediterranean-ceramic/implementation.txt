@@ -1,5 +1,28 @@
 Mediterranean Ceramic — implementation notes
 
+2026-10-17 — AI Manager extension
+- Applied the existing ivory/sage Ceramic palette to the training workspace,
+  including dark mode, shared navigation/account menu, Jobs, job detail, dialogs,
+  Datasets, Experiment Configs and Deploy. The original logo is preserved;
+  account initials replace the unrelated stock portrait. Server illustrations
+  reuse the existing ceramic asset sheet.
+- Jobs prioritizes the experiment table, with lighter folder/filter controls,
+  quieter host and queue sections, and readable detail sections. Horizontal
+  scrolling stays within wide tables; the header wraps without overlapping
+  content. Loading and unavailable states no longer suggest an empty job list.
+- Existing routes, permissions, folders, comparison, logs, submission and host
+  actions are retained. Reduced-motion preferences suppress decorative motion.
+  AI theme variables are scoped to the signed-in training shell and its portals.
+- Verification: 211 tests across 35 files passed; production build passed
+  (existing large-bundle warning). Browser review covered real Jobs, detail,
+  Run simulation opening/cancel, Datasets, Configs, Deploy, 390px mobile and
+  dark mode. Live-backend checks were read-only; no jobs were submitted.
+- Worktree: /home/tiago/dev/energaize-ai-manager-ui, codex/ai-manager-ceramic.
+  Preview: http://localhost:5185. Existing staged work in energaize_ui was
+  preserved. This extension has not been committed or deployed.
+- Local preview can use VITE_JOB_ORCHESTRATOR_API_URL=/training-api with the
+  optional Vite proxy; production API configuration remains unchanged.
+
 Scope
 Login, REC Manager and Consumer. Jobs surfaces remain unchanged. The shared
 AuthBackdrop keeps its original default images; login supplies its own image list.
@@ -115,3 +138,65 @@ native date/time inputs. Browser validation opens and cancels requests only.
 - Site SVG exports now include individual equipment connection branches. Community exports retain their existing layout.
 - Browser checked two- and four-equipment sites, a 390px viewport, and opening the photovoltaic device directly from its topology branch. No backend records changed.
 - Validation: all 59 console tests passed, production build passed, and diff whitespace checks passed. Existing bundle-size warning remains.
+
+2026-10-17 — AI Manager density refinement
+- Restored Run Job to the left-hand action group beside Refresh and Compare KPIs;
+  reduced action sizing and heading scale while keeping folder navigation.
+- Available Hosts and Queue now have separate ivory panels. Host rows use a small
+  ceramic icon, aligned name/status and compact compute/capacity metadata; active
+  job information and authentication warnings remain visible when present.
+- Dataset Download/Delete actions share one row, reducing normal rows to roughly
+  54px. Long tables scroll within their container. Mobile Jobs filters use two
+  readable columns instead of shrinking down to arrows. Deploy rows are denser.
+- Validation: 17 existing application integration tests passed; production build
+  passed. Browser review used real read-only data at 1600px and 390px. No jobs,
+  datasets or backend records were created, modified or deleted during review.
+
+2026-10-17 — Dataset sorting, configuration editor and job detail
+- Dataset Name and Type headers now toggle ascending/descending ordering, with
+  direction icons and aria-sort. Names use natural numeric ordering; types use
+  the displayed format classification, with name as a stable tie-breaker.
+  Sorting clones query data and is retained during automatic refreshes.
+- Config list rows now match dataset density. The visual editor uses responsive
+  field grids, constrained inputs and an internally scrolling modal with a fixed
+  title and opaque action footer. Network diagrams retain their own horizontal
+  scrolling. No configuration values or validation rules changed.
+- Overview now uses a compact identity/state panel, summary strip and aligned
+  label/value rows. Long IDs, paths and configuration links wrap within sections.
+- Timeseries gives plots more width, uses a narrower selection tree, removes the
+  second chart-pane scroll, and adapts tree/toolbar/calendar on narrow screens.
+  Series, units, calculations, range controls and chart behavior are unchanged.
+- Verification: 18 integration tests passed, including new coverage for dataset
+  sort directions, numeric names and displayed types. Production build passed.
+  Browser checks covered the live visual editor (including Algorithm), overview,
+  real Community/Pricing plots and calendar at desktop and 390px widths. No live
+  configuration or experiment changes were submitted during verification.
+
+2026-10-17 — Three-state dataset ordering
+- Dataset ordering starts unset. Each column cycles ascending, descending, then
+  no ordering; the third click restores the latest API order. Switching columns
+  starts ascending. Accessible labels describe the next action.
+- The integration test verifies both full cycles, original-order restoration and
+  switching columns. The targeted test passed.
+
+2026-10-17 — Common account, menus and AI finishing
+- Shared profile avatar now renders the same photo in the header, personal menu,
+  account and community workspace. Existing AI portrait is preserved; failed or
+  removed photos fall back to initials. Account supports JPEG/PNG/WebP selection,
+  centre cropping/resizing and removal. Photos are stored per email on this
+  browser only, explicitly labelled in the UI; no backend photo endpoint exists.
+- Account now separates profile editing from appearance selection, with compact
+  fields, light/dark previews and responsive layout. Existing profile saving and
+  role permissions are retained. Common routes use the ceramic shell for all roles.
+- Personal and notification menus share spacing and type scale; the React header
+  closes menus on outside click, Escape and route changes. Notification panel links
+  to the full history, whose rows retain read/remove/clear actions on mobile.
+- Logs use named jobs, a compact search field and wrapping output with subtle row
+  dividers. AI comparison and deployment inspectors have consistent typography;
+  bundle names wrap and both actions remain visible without desktop side scrolling.
+- Verification: 216 Vitest tests and 65 console tests passed; final production
+  build passed (existing bundle-size advisory remains). Additional targeted test
+  verified the community photo survives navigation and appears in its account
+  menu. Browser review covered account/profile images, menus, notifications,
+  loaded logs and deployment at desktop, plus account/notifications at 390px and
+  dark mode. Preview stays on port 5185. No live backend records changed.
