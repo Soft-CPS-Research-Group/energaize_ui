@@ -13,7 +13,7 @@ export function TrainingWorkspaceProvider({ children }: { children: ReactNode })
   const [id, setId] = useState(trainingWorkspaceId);
   const [pending, setPending] = useState(0);
   const active = TRAINING_ENABLED && isTrainingManagerRole(session?.role);
-  const query = useQuery({ queryKey: ['training-workspaces', session?.email], queryFn: () => trainingRequest<{ items: TrainingWorkspace[]; warnings: string[] }>('/api/training/workspaces'), enabled: active && Boolean(session?.training_token), retry: false });
+  const query = useQuery({ queryKey: ['training-workspaces', session?.email], queryFn: () => trainingRequest<{ items: TrainingWorkspace[]; warnings: string[] }>('/api/training/workspaces'), enabled: active && Boolean(session), retry: false });
   const workspaces = query.data?.items || [];
   const workspace = workspaces.find(item => item.id === id);
   return <Context.Provider value={{ id, workspace, workspaces, loading: query.isLoading, pending, setPending,
@@ -24,7 +24,7 @@ export function TrainingWorkspaceGate({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const context = useTrainingWorkspace();
   if (!TRAINING_ENABLED || !isTrainingManagerRole(session?.role)) return <>{children}</>;
-  if (!session?.training_token) return <section className="training-notice"><h2>Sign in to your training workspace</h2><p>Your previous session needs to be renewed for the connected training service.</p><Link to="/login">Sign in</Link></section>;
+  if (!session) return <section className="training-notice"><h2>Sign in to your training workspace</h2><p>Your previous session needs to be renewed for the connected training service.</p><Link to="/login">Sign in</Link></section>;
   if (context.loading) return <p role="status">Loading workspaces…</p>;
   if (context.error) return <p role="alert">{context.error}</p>;
   if (!context.workspace) return <p role="status">Select an available workspace above.</p>;

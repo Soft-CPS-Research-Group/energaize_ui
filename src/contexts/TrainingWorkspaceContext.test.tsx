@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tansta
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { TrainingWorkspaceProvider, TrainingWorkspaceGate, TrainingWorkspaceSelector, useTrainingWorkspace } from './TrainingWorkspaceContext';
-vi.mock('./AuthContext', () => ({ useAuth: () => ({ session: { email: 'operator@test', role: 'training_manager', training_token: 'token' } }) }));
+vi.mock('./AuthContext', () => ({ useAuth: () => ({ session: { email: 'operator@test', role: 'training_manager', id: 'server-managed-account' } }) }));
 vi.mock('../api/trainingContext', () => ({ TRAINING_ENABLED: true, TRAINING_WORKSPACE_KEY: 'test-workspace', trainingWorkspaceId: () => 'laboratory', trainingRequest: async () => ({ items: [{ id: 'laboratory', name: 'Laboratory', kind: 'laboratory', actions: ['read', 'manage'] }, { id: 'community:one', name: 'Community One', kind: 'community', actions: ['read', 'manage'] }], warnings: [] }) }));
 function setup(child: React.ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
