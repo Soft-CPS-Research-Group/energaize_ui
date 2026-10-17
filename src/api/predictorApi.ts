@@ -1,6 +1,6 @@
 import { http } from "./client";
 
-export const PREDICTOR_API_URL = import.meta.env.VITE_PREDICTOR_API_URL?.replace(/\/$/, "") || "http://193.136.62.78:8006";
+export const PREDICTOR_API_URL = import.meta.env.VITE_PREDICTOR_API_URL?.replace(/\/$/, "") || "/predictor-api";
 
 function buildPredictorUrl(path: string): string {
   return `${PREDICTOR_API_URL}${path.startsWith("/") ? path : `/${path}`}`;

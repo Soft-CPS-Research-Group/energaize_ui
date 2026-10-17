@@ -6,7 +6,7 @@ import { LoginPage } from './LoginPage';
 const mocks = vi.hoisted(() => ({ auth: {session: null as unknown, login: vi.fn()}, navigate: vi.fn() }));
 vi.mock('../contexts/AuthContext', () => ({useAuth: () => mocks.auth}));
 vi.mock('../contexts/UIContext', () => ({useUI: () => ({theme:'light',setTheme:vi.fn()})}));
-vi.mock('react-router-dom', () => ({useNavigate: () => mocks.navigate, Navigate: () => <div>Authenticated destination</div>}));
+vi.mock('react-router-dom', () => ({useNavigate: () => mocks.navigate, Navigate: () => <div>Authenticated destination</div>, Link: ({children,to}:{children:React.ReactNode;to:string})=><a href={to}>{children}</a>}));
 vi.mock('../components/ui/AuthBackdrop', () => ({AuthBackdrop: () => null}));
 vi.mock('../components/layout/InstitutionalDock', () => ({InstitutionalDock: () => null}));
 let controls: ReturnType<typeof useAuthTransition>;

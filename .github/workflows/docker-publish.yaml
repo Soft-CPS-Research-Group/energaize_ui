@@ -40,7 +40,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker image
-        run: docker build -t calof/energaize_ui:${{ github.sha }} -t calof/energaize_ui:latest .
+        run: docker build --build-arg VITE_AI_TRAINING_ENABLED=true -t calof/energaize_ui:${{ github.sha }} -t calof/energaize_ui:latest .
 
       - name: Push Docker image
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

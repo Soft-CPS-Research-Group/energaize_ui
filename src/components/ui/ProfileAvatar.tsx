@@ -6,7 +6,7 @@ import type { Session } from "../../types";
 
 export function ProfileAvatar({ session, size = "small" }: { session: Session | null; size?: "small" | "large" }) {
   const saved = useProfilePhoto(session?.email || "");
-  const source = saved ?? (isTrainingManagerRole(session?.role) ? AI_AVATAR_URL : "");
+  const source = session?.avatar_url ?? (session?.id ? undefined : saved) ?? (isTrainingManagerRole(session?.role) ? AI_AVATAR_URL : "");
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const initials = session?.name.trim().split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase() || "U";
   return (

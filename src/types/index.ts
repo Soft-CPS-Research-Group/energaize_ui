@@ -10,6 +10,14 @@ export type ThemeMode = "light" | "dark";
 
 export interface Session {
   training_token?: string;
+  id?: string;
+  roles?: UserRole[];
+  contact_email?: string | null;
+  email_verified?: boolean;
+  timezone?: string;
+  language?: string;
+  avatar_url?: string | null;
+  demo?: boolean;
   email: string;
   name: string;
   role: UserRole;

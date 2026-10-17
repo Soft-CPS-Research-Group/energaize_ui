@@ -1,26 +1,19 @@
-import { describe, expect, it } from 'vitest';
-import { authenticateWorkspace } from './workspaceIdentity';
-import { useCommunityBackendFixture } from '../test/communityBackendFixture';
-import { MOCK_USERS } from '../constants';
-
-describe('one sign-in across workspaces',()=>{
-  it('preserves the Jobs account without requiring a community identity',async()=>{
-    const account=MOCK_USERS['tiago.fonseca@energaize.io'];
-    expect(await authenticateWorkspace('tiago.fonseca@energaize.io',account.password,true)).toMatchObject({role:'training_manager',remember:true});
+import {afterEach,describe,expect,it,vi} from 'vitest';
+import {authenticateWorkspace} from './workspaceIdentity';
+afterEach(()=>vi.unstubAllGlobals());
+describe('server identity sign-in',()=>{
+  it('sends credentials to the server and uses its roles',async()=>{
+    const fetch=vi.fn().mockResolvedValue(new Response(JSON.stringify({id:'1',email:'rec@energaize.io',role:'rec_manager',name:'Manager',roles:['rec_manager','prosumer']}),{status:200}));vi.stubGlobal('fetch',fetch);
+    const result=await authenticateWorkspace(' REC@energaize.io ','individual-password',true);
+    expect(result.roles).toEqual(['rec_manager','prosumer']);
+    expect(fetch).toHaveBeenCalledWith('/community-api/api/identity/login',expect.objectContaining({credentials:'same-origin',method:'POST',body:JSON.stringify({email:'rec@energaize.io',password:'individual-password',remember:true})}));
   });
-  it('resolves the manager and resident from current backend identities',async()=>{
-    useCommunityBackendFixture();
-    expect(await authenticateWorkspace(' REC@energaize.io ','rec123',false)).toMatchObject({role:'rec_manager',email:'rec@energaize.io'});
-    expect(await authenticateWorkspace('prosumer@energaize.io','pros123',false)).toMatchObject({role:'prosumer',name:'Resident'});
+  it('cannot authenticate a fixture account when the server rejects it',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({detail:'Invalid email or password.'}),{status:401})));
+    await expect(authenticateWorkspace('tiago.fonseca@energaize.io','TfTm#2026!',false)).rejects.toThrow('Invalid');
   });
-  it('does not grant manager access from the old frontend account fixture',async()=>{
-    const fixture=useCommunityBackendFixture();fixture.grants.splice(0);
-    await expect(authenticateWorkspace('rec@energaize.io','rec123',false)).rejects.toThrow('Invalid');
-    expect(await authenticateWorkspace('rec@energaize.io','pros123',false)).toMatchObject({role:'prosumer'});
-  });
-  it('supports registered members beyond the old mock account list',async()=>{
-    const fixture=useCommunityBackendFixture();fixture.users.push({...fixture.users[1],id:'new-member',email:'new@energaize.io'});
-    expect(await authenticateWorkspace('new@energaize.io','pros123',false)).toMatchObject({role:'prosumer'});
-    await expect(authenticateWorkspace('missing@energaize.io','pros123',false)).rejects.toThrow('Invalid');
+  it('does not fall back to local passwords when the server is unavailable',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockRejectedValue(Error('offline')));
+    await expect(authenticateWorkspace('prosumer@energaize.io','pros123',false)).rejects.toThrow('offline');
   });
 });

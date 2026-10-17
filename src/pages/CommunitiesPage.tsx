@@ -163,7 +163,7 @@ export function CommunitiesPage(): JSX.Element {
               aria-label="Open user menu"
               title="User menu"
             >
-              <span className="avatar-media">{avatarFallback}</span>
+              <span className="avatar-media">{session?.avatar_url?<img src={session.avatar_url} alt={session.name}/>:avatarFallback}</span>
               <Settings2 size={14} />
             </button>
 
@@ -261,7 +261,7 @@ export function CommunitiesPage(): JSX.Element {
             aria-label="Open user menu"
             title="User menu"
           >
-            <span className="avatar-media">{avatarFallback}</span>
+            <span className="avatar-media">{session?.avatar_url?<img src={session.avatar_url} alt={session.name}/>:avatarFallback}</span>
             <Settings2 size={14} />
           </button>
 

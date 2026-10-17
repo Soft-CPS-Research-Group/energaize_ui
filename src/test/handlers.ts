@@ -1,4 +1,6 @@
 import { http, HttpResponse } from "msw";
+import { MOCK_USERS } from "../constants";
+import type { Session } from "../types";
 import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
 
 type JobRecord = {
@@ -21,6 +23,8 @@ type JobFolderRecord = {
   updated_at: number;
 };
 
+let mockSession: Session|null=null;
+export function seedMockSession(value:Session):void {mockSession=value;}
 let jobs: JobRecord[] = [];
 let jobFolders: JobFolderRecord[] = [];
 let experimentConfigs: Record<string, string> = {};
@@ -69,6 +73,7 @@ self_consumption_pct,71.2
 `;
 
 export function resetMockState(): void {
+  mockSession=null;
   jobs = [
     {
       job_id: "job-completed-001",
@@ -162,6 +167,15 @@ export function setMockJobStatus(jobId: string, status: string): void {
 resetMockState();
 
 export const handlers = [
+  http.get('*/community-api/api/identity/me',()=>mockSession?HttpResponse.json(mockSession):HttpResponse.json({detail:'Sign in'},{status:401})),
+  http.post('*/community-api/api/identity/login',async({request})=>{
+    const data=await request.json() as {email:string;password:string;remember:boolean};
+    const account=MOCK_USERS[data.email];
+    if(!account||account.password!==data.password)return HttpResponse.json({detail:'Invalid email or password'},{status:401});
+    mockSession={email:data.email,name:account.name,role:account.role,remember:data.remember};
+    return HttpResponse.json(mockSession);
+  }),
+  http.post('*/community-api/api/identity/logout',()=>{mockSession=null;return HttpResponse.json({signed_out:true});}),
   http.get(endpoint("/datasets"), () => HttpResponse.json([])),
   http.get(endpoint("/dataset/sites"), () =>
     HttpResponse.json({
