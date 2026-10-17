@@ -8,7 +8,7 @@ const now = Date.parse('2026-10-11T12:00:00Z');
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 afterEach(() => vi.useRealTimers());
 describe('Live chart lifecycle', () => {
-  it('identifies source-generated values even when live documents are fresh', async () => {
+  it('retains source quality in chart data without adding a provenance banner', async () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     let generated = true;
     const request = vi.fn(async (path: string) => {
@@ -18,7 +18,8 @@ describe('Live chart lifecycle', () => {
     render(<MeasurementChart title="Charger" endpoint="/a/series" latestEndpoint="/a/latest" request={request} expectedSeconds={15} />);
     await flush();
     expect(screen.getByRole('button', { name: 'Live' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText(/Includes source-generated values/)).toBeInTheDocument();
+    expect(screen.queryByText(/Includes source-generated values/)).not.toBeInTheDocument();
+    expect(JSON.parse(screen.getByTestId('chart-series').getAttribute('data-points')!)[0].generated).toBe(true);
     generated = false;
     await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
     expect(screen.queryByText(/Includes source-generated values/)).not.toBeInTheDocument();

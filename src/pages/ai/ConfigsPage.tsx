@@ -1234,7 +1234,7 @@ export function ConfigsPage(): JSX.Element {
           </section>
         ) : (
           <form
-            className="form-grid"
+            className="form-grid config-editor-form"
             onSubmit={(event) => {
               event.preventDefault();
 

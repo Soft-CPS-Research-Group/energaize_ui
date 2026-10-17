@@ -3,17 +3,17 @@ import {
   Boxes,
   ChevronDown,
   FlaskConical,
-  FileText,
-  Settings2
+  FileText
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { AI_AVATAR_URL, APP_NAME } from "../../constants";
+import { APP_NAME } from "../../constants";
 import { useAuth } from "../../contexts/AuthContext";
 import { useUI } from "../../contexts/UIContext";
 import { isCommunityUserRole, isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { NotificationPanel } from "./NotificationPanel";
+import { ProfileAvatar } from "../ui/ProfileAvatar";
 import { UserMenu } from "./UserMenu";
 
 const AI_TABS = [
@@ -61,6 +61,24 @@ export function TopBar(): JSX.Element {
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const location = useLocation();
+  const toolsRef = useRef<HTMLDivElement>(null);
+  const userTriggerRef = useRef<HTMLButtonElement>(null);
+  const notificationTriggerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setUserOpen(false); setNotifOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!userOpen && !notifOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (!toolsRef.current?.contains(event.target as Node)) { setUserOpen(false); setNotifOpen(false); }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      (userOpen ? userTriggerRef : notificationTriggerRef).current?.focus();
+      setUserOpen(false); setNotifOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+  }, [userOpen, notifOpen]);
 
   const isTrainingManager = isTrainingManagerRole(session?.role);
   const isPredictor = isPredictorRole(session?.role);
@@ -90,7 +108,6 @@ export function TopBar(): JSX.Element {
         : isProsumer
           ? "/app/community/dashboard"
           : "/communities";
-  const avatarFallback = session?.name?.split(" ").map((part) => part[0]).slice(0, 2).join("") || "U";
 
   return (
     <header className="topbar">
@@ -108,6 +125,9 @@ export function TopBar(): JSX.Element {
           />
         </Link>
 
+        {isTrainingManager ? (
+          <div className="ai-workspace-context"><small>Workspace</small><strong>AI Manager</strong></div>
+        ) : null}
         {isCommunityUser ? <Link className="community-context-main" to={isProsumer?'/app/community/dashboard':'/communities'}><span className="community-context-copy"><small>Workspace</small><strong>{isProsumer?'My energy':'Communities'}</strong></span><ChevronDown size={15}/></Link> : null}
       </div>
 
@@ -128,7 +148,7 @@ export function TopBar(): JSX.Element {
         )}
       </nav>
 
-      <div className="topbar-right">
+      <div className="topbar-right" ref={toolsRef}>
         {isTrainingManager ? (
           <>
             <a
@@ -163,6 +183,10 @@ export function TopBar(): JSX.Element {
 
         <button
           className="icon-btn notif-trigger"
+          ref={notificationTriggerRef}
+          aria-expanded={notifOpen}
+          aria-haspopup="dialog"
+          aria-controls="notification-menu"
           type="button"
           title="Notifications"
           onClick={() => {
@@ -178,6 +202,9 @@ export function TopBar(): JSX.Element {
 
         <button
           className="avatar-btn"
+          ref={userTriggerRef}
+          aria-haspopup="dialog"
+          aria-controls="profile-menu"
           aria-label="Open user menu"
           aria-expanded={userOpen}
           type="button"
@@ -186,14 +213,8 @@ export function TopBar(): JSX.Element {
             setNotifOpen(false);
           }}
         >
-          <span className="avatar-media">
-            {isTrainingManager ? (
-              <img src={AI_AVATAR_URL} alt={session?.name ?? "User"} />
-            ) : (
-              avatarFallback
-            )}
-          </span>
-          <Settings2 size={14} />
+          <ProfileAvatar session={session} />
+
         </button>
 
         <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} />

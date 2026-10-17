@@ -16,8 +16,11 @@ import { roleHomePath, roleLabel } from "../utils/roles";
 import "./MediterraneanLogin.css";
 
 const MEDITERRANEAN_BACKGROUNDS = [
+  "/assets/mediterranean/login-olive-retreat.webp",
   "/assets/mediterranean/login-sunset-villa.webp",
+  "/assets/mediterranean/login-coastal-village.webp",
   "/assets/mediterranean/login-coastal-courtyard.webp",
+  "/assets/mediterranean/login-limestone-courtyard.webp",
   "/assets/mediterranean/login-vineyard.webp",
 ] as const;
 

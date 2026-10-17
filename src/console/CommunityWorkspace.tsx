@@ -5,7 +5,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthTransition } from '../contexts/AuthTransitionContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUI } from '../contexts/UIContext';
+import { ProfileAvatar } from '../components/ui/ProfileAvatar';
+import profileCss from '../styles/profile.css?inline';
 import { UserMenu } from '../components/layout/UserMenu';
+import { InstitutionalDock } from '../components/layout/InstitutionalDock';
+import './community-shell.css';
 import { EVChargingLoader } from '../components/ui/EVChargingLoader';
 import { AUTH_SCENE_STORAGE_KEY } from '../constants';
 import { MeasurementChart, type MeasurementChartProps } from './MeasurementChart';
@@ -23,7 +27,7 @@ import experienceCss from './experience.css?inline';
 import mediterraneanCss from './mediterranean.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss].join('\n')
+const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
 type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'showChannelConfiguration'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
@@ -39,6 +43,7 @@ export function CommunityWorkspace(): JSX.Element {
   const host=useRef<HTMLDivElement>(null);
   const runtime=useRef<ReturnType<typeof mountWorkspace>>();
   const activePath=useRef(pathname);
+  const [avatarSlot,setAvatarSlot]=useState<HTMLElement|null>(null);
   const [accountSlot,setAccountSlot]=useState<HTMLElement|null>(null);
   const [loaderSlot,setLoaderSlot]=useState<HTMLElement|null>(null);
   useEffect(()=>{
@@ -72,6 +77,10 @@ export function CommunityWorkspace(): JSX.Element {
         const root=createRoot(node);roots.set(node,root);
         root.render(<RuntimePanel siteId={node.dataset.runtimeSite} siteName={node.dataset.runtimeName} kind={node.dataset.runtimeKind as 'percepta'|'controller'|undefined} navigate={path=>navigation.current(path)}/>);
       });
+      const avatarButton=shadow.querySelector<HTMLElement>('.topbar .avatar-btn');
+      let avatar=avatarButton?.querySelector<HTMLElement>('[data-shared-avatar]') || null;
+      if(avatarButton&&!avatar){avatar=document.createElement('span');avatar.dataset.sharedAvatar='';avatarButton.replaceChildren(avatar);}
+      setAvatarSlot(avatar);
       setAccountSlot(shadow.querySelector<HTMLElement>('[data-shared-user-menu]'));
       setLoaderSlot(shadow.querySelector<HTMLElement>('[data-console-loader]'));
     };
@@ -80,9 +89,12 @@ export function CommunityWorkspace(): JSX.Element {
     return ()=>{environment.dispose();observer.disconnect();runtime.current=undefined;const retired=[...roots.values()];queueMicrotask(()=>retired.forEach(root=>root.unmount()));};
   },[session?.email,session?.role,logout,workspaceReady]);
   useEffect(()=>{if(pathname!==activePath.current){activePath.current=pathname;runtime.current?.setPath(pathname);}},[pathname]);
-  return <>
+  useEffect(()=>{if(host.current)host.current.scrollTop=0;},[pathname]);
+  return <div className="community-workspace-shell" data-theme={theme}>
     <div ref={host} data-community-workspace data-theme={theme} />
+    <InstitutionalDock />
+    {avatarSlot&&createPortal(<ProfileAvatar session={session}/>,avatarSlot)}
     {accountSlot&&createPortal(<UserMenu open onClose={()=>runtime.current?.closeAccount()}/>,accountSlot)}
     {loaderSlot&&createPortal(<EVChargingLoader label="Loading your community, equipment and permissions…"/>,loaderSlot)}
-  </>;
+  </div>;
 }

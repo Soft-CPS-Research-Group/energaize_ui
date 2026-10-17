@@ -54,14 +54,14 @@ export function LogsPage(): JSX.Element {
   const hasLogContent = logsQuery.text.trim().length > 0;
 
   return (
-    <div className="page logs-page">
-      <PageHeader title="System Logs" subtitle="Technical traces by job." />
+    <div className="page logs-page common-page">
+      <PageHeader title="System Logs" subtitle="Follow execution output and find messages by job." />
 
       <section className="toolbar">
-        <select value={selectedJobId} onChange={(event) => setSelectedJobId(event.target.value)}>
+        <select aria-label="Select job" value={selectedJobId} onChange={(event) => setSelectedJobId(event.target.value)}>
           {jobsQuery.data?.map((job) => (
             <option key={job.job_id} value={job.job_id}>
-              {job.job_id} - {job.status}
+              {String(job.job_info?.job_name || job.job_meta?.job_name || job.job_id)} — {job.status}
             </option>
           ))}
         </select>
@@ -70,13 +70,14 @@ export function LogsPage(): JSX.Element {
           <Search size={14} />
           <input
             placeholder="Search logs"
+            aria-label="Search logs"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
       </section>
 
-      {!selectedJobId ? (
+      {jobsQuery.isLoading ? <EVChargingLoader label="Loading jobs..." /> : !selectedJobId ? (
         <EmptyState
           title="No jobs available"
           message="Launch a simulation first to inspect logs."
@@ -93,7 +94,7 @@ export function LogsPage(): JSX.Element {
             <p>No log lines for current filter.</p>
           ) : null}
           {!logsQuery.loading && !hasLogContent ? (
-            <p>{logsQuery.message || "Ainda não há logs para este job (ou o ficheiro está vazio)."}</p>
+            <p>{logsQuery.message || "No logs available for this job yet."}</p>
           ) : null}
           {filteredLines.map((line, index) => (
             <code key={`${index}-${line.slice(0, 12)}`}>{line}</code>

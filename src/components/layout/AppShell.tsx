@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "react-router-dom";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
@@ -32,11 +32,23 @@ export function AppShell({
                            onCommunityChange,
                          }: AppShellProps): JSX.Element {
   const location = useLocation();
+  const reducedMotion = useReducedMotion();
   const { session } = useAuth();
   const { activeCommunity, pushNotification } = useUI();
   const unionAuthNoticeRef = useRef<string | null>(null);
   const isTiago = session?.email.trim().toLowerCase() === "tiago.fonseca@energaize.io";
   const isRecManager = session?.role === "rec_manager";
+  const usesCeramicShell = isTrainingManagerRole(session?.role) || ["/app/account", "/app/notifications", "/app/logs"].includes(location.pathname);
+  // The body scope also reaches shared dialogs rendered through portals.
+  useLayoutEffect(() => {
+    if (!usesCeramicShell) return;
+    const previous = document.body.getAttribute("data-workspace");
+    document.body.setAttribute("data-workspace", "ai");
+    return () => {
+      if (previous === null) document.body.removeAttribute("data-workspace");
+      else document.body.setAttribute("data-workspace", previous);
+    };
+  }, [usesCeramicShell]);
   const [showAssetTree, setShowAssetTree] = useState(true);
 
   const hostsQuery = useQuery({
@@ -180,7 +192,7 @@ export function AppShell({
             {!isDashboardRoute && (
                 <motion.div
                     key={location.pathname}
-                    initial={{ opacity: 0, y: 10 }}
+                    initial={reducedMotion ? false : { opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.2, ease: "easeOut" }}
                 >
