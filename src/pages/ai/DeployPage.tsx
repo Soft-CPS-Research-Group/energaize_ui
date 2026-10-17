@@ -1423,7 +1423,6 @@ export function DeployPage(): JSX.Element {
 
   return (
     <div className="page jobs-page">
-      <WorkspaceOperations />
       <header className="jobs-hero">
         <div>
           <h1>Deploy</h1>
@@ -1454,6 +1453,8 @@ export function DeployPage(): JSX.Element {
           />
         </div>
       </header>
+
+      <WorkspaceOperations />
 
       {DEPLOY_INVESTOR_KPIS_VISIBLE ? (
         <section className="panel deploy-investor-strip">
@@ -1544,7 +1545,7 @@ export function DeployPage(): JSX.Element {
           </header>
 
           {visibleTargetCount === 0 ? (
-            <EmptyState title="No inference targets" message="Configure DEPLOY_INFERENCE_TARGETS in backend settings." />
+            <EmptyState title="No inference targets" message={TRAINING_ENABLED ? "No inference controller is associated with this workspace yet." : "Configure DEPLOY_INFERENCE_TARGETS in backend settings."} />
           ) : (
             <div className="deploy-manager-table-wrap">
               <table className="table">

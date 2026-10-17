@@ -18,3 +18,12 @@ household data is presented in the connected training workspace.
 
 Verification: production build and 219 tests passed. The existing large frontend
 bundle warning remains; this release does not claim a code-splitting improvement.
+
+## 0.2.1 — integration findings
+
+Signed compatibility requests preserve Content-Type on JSON mutations and let the
+browser supply multipart boundaries. Workspace cache and mutation-blocking behaviour
+have dedicated tests. Dataset preparation includes site search and explicit missing
+telemetry messages. Model registration selects finished jobs; KPI results use a table
+and missing associations are explained before requesting data. Cleanup controls
+respect workspace control permissions.

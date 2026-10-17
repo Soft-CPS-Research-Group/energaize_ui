@@ -1450,8 +1450,8 @@ export function JobsPage(): JSX.Element {
     const job = (jobsQuery.data || []).find((candidate) => candidate.job_id === jobId);
     return !job || !canDeleteJobStatus(job.status);
   });
-  const canCleanupQueue = (queueQuery.data?.length || 0) > 0;
-  const canCleanupJobs = (jobsQuery.data?.length || 0) > 0;
+  const canCleanupQueue = (queueQuery.data?.length || 0) > 0 && (!TRAINING_ENABLED || training.workspace?.actions.includes("control"));
+  const canCleanupJobs = (jobsQuery.data?.length || 0) > 0 && (!TRAINING_ENABLED || training.workspace?.actions.includes("control"));
 
   const hostRows = useMemo(() => {
     return Object.entries(hostsQuery.data?.hosts || {}).map(([name, data]) => ({ name, ...data }));

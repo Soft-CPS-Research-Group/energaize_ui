@@ -57,8 +57,8 @@ async function request<T>(
   }
 
   const response = await fetch(buildUrl(path, baseUrl), {
-    headers,
-    ...init
+    ...init,
+    headers
   });
 
   const responseType = options?.responseType ?? "json";

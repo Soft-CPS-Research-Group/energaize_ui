@@ -11,6 +11,7 @@ export function CommunityDatasetGenerator({ open, onClose }: { open: boolean; on
   const client = useQueryClient();
   const inventory = useQuery({ queryKey: ['training-inventory'], queryFn: () => trainingRequest<{ sites: Site[] }>(trainingScopeUrl('/inventory')), enabled: open });
   const [name, setName] = useState('');
+  const [siteSearch, setSiteSearch] = useState('');
   const [from, setFrom] = useState(''); const [until, setUntil] = useState('');
   const [period, setPeriod] = useState(900);
   const [selections, setSelections] = useState<Record<string, Selection>>({});
@@ -29,7 +30,9 @@ export function CommunityDatasetGenerator({ open, onClose }: { open: boolean; on
     <label>Interval<select value={period} onChange={e => { setPeriod(Number(e.target.value)); setPreview(null); }}><option value={15}>15 seconds</option><option value={60}>1 minute</option><option value={900}>15 minutes</option><option value={3600}>1 hour</option></select></label>
     {inventory.isLoading && <p role="status">Loading sites and telemetry channels…</p>}
     {inventory.error && <p role="alert">{inventory.error.message}</p>}
-    {inventory.data?.sites.map(site => <fieldset key={site.id}><legend><label><input type="checkbox" checked={Boolean(selections[site.id])} onChange={e => { setSelections(old => { const next = { ...old }; if (e.target.checked) next[site.id] = { site_id: site.id, load_channel: '', solar_channel: '', price_channel: '' }; else delete next[site.id]; return next; }); setPreview(null); }} />{site.name || site.id}</label></legend>
+    {inventory.data && <label>Find a site<input type="search" value={siteSearch} onChange={e => setSiteSearch(e.target.value)} placeholder="Search sites…" /></label>}
+    {inventory.data?.sites.filter(site => (site.name || site.id).toLowerCase().includes(siteSearch.toLowerCase())).map(site => <fieldset key={site.id}><legend><label><input type="checkbox" disabled={!site.channels.some(c => c.bound)} checked={Boolean(selections[site.id])} onChange={e => { setSelections(old => { const next = { ...old }; if (e.target.checked) next[site.id] = { site_id: site.id, load_channel: '', solar_channel: '', price_channel: '' }; else delete next[site.id]; return next; }); setPreview(null); }} />{site.name || site.id}</label></legend>
+      {!site.channels.some(c => c.bound) && <p>No telemetry channels are connected to this site yet. Connect telemetry before preparing a dataset.</p>}
       {selections[site.id] && (['load_channel', 'solar_channel', 'price_channel'] as const).map(field => <label key={field}>{({ load_channel: 'Non-shiftable load', solar_channel: 'Solar generation (optional)', price_channel: 'Electricity price' })[field]}<select value={selections[site.id][field]} onChange={e => change(site.id, field, e.target.value)}><option value="">{field === 'solar_channel' ? 'Model without PV' : 'Select a bound channel'}</option>{site.channels.filter(c => c.bound).map(c => <option key={c.capability_id} value={c.capability_id}>{c.name} · {c.unit}</option>)}</select></label>)}
     </fieldset>)}
     <Button disabled={!valid || generate.isPending} onClick={() => generate.mutate(true)}>Review preparation</Button>

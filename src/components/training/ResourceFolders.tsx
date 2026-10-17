@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTrainingWorkspace } from '../../contexts/TrainingWorkspaceContext';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TRAINING_ENABLED, trainingRequest, trainingScopeUrl, type TrainingFolder, type TrainingResource } from '../../api/trainingContext';
 
@@ -15,6 +16,7 @@ export function useResourceFolders(kind: 'dataset' | 'config') {
 type FolderState = ReturnType<typeof useResourceFolders>;
 export function ResourceFolders({ state }: { state: FolderState }) {
   const [name, setName] = useState('');
+  const canManage = useTrainingWorkspace().workspace?.actions.includes('manage');
   const client = useQueryClient();
   const mutation = useMutation({ mutationFn: async (action: 'create' | 'rename' | 'delete') => {
     const path = action === 'create' ? '/folders' : `/folders/${encodeURIComponent(state.selected)}`;
@@ -24,14 +26,15 @@ export function ResourceFolders({ state }: { state: FolderState }) {
   const specific = !['all', 'general'].includes(state.selected);
   return <section className="training-folder-toolbar" aria-label="Resource folders"><label>Folder <select value={state.selected} onChange={e => state.setSelected(e.target.value)}><option value="all">All folders</option><option value="general">General</option>{state.folders.map(f => <option value={f.id} key={f.id}>{f.name}</option>)}</select></label>
     <input aria-label="Folder name" placeholder="Folder name" value={name} onChange={e => setName(e.target.value)} maxLength={80} />
-    <button type="button" disabled={!name.trim() || mutation.isPending} onClick={() => mutation.mutate('create')}>New folder</button>
-    {specific && <><button type="button" disabled={!name.trim() || mutation.isPending} onClick={() => mutation.mutate('rename')}>Rename</button><button type="button" disabled={mutation.isPending} onClick={() => mutation.mutate('delete')}>Remove folder</button></>}
+    <button type="button" disabled={!canManage || !name.trim() || mutation.isPending} onClick={() => mutation.mutate('create')}>New folder</button>
+    {specific && <><button type="button" disabled={!canManage || !name.trim() || mutation.isPending} onClick={() => mutation.mutate('rename')}>Rename</button><button type="button" disabled={!canManage || mutation.isPending} onClick={() => mutation.mutate('delete')}>Remove folder</button></>}
     {(state.error || mutation.error) && <p role="alert">{state.error || mutation.error?.message}</p>}
   </section>;
 }
 export function ResourceFolderSelect({ name, state }: { name: string; state: FolderState }) {
+  const canManage = useTrainingWorkspace().workspace?.actions.includes('manage');
   const client = useQueryClient(); const row = state.resources.find(r => r.name === name);
   const mutation = useMutation({ mutationFn: (folder: string) => trainingRequest(trainingScopeUrl(`/resources/${row?.id}/folder`), { method: 'PUT', body: JSON.stringify({ folder_id: folder || null }) }), onSuccess: () => client.invalidateQueries({ queryKey: ['training-resources', state.kind] }) });
   if (!TRAINING_ENABLED || !row) return null;
-  return <span className="training-folder-assignment"><select aria-label={`Folder for ${name}`} value={row.folder_id || ''} disabled={mutation.isPending} onChange={e => mutation.mutate(e.target.value)}><option value="">General</option>{state.folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>{mutation.error && <small role="alert">{mutation.error.message}</small>}</span>;
+  return <span className="training-folder-assignment"><select aria-label={`Folder for ${name}`} value={row.folder_id || ''} disabled={!canManage || mutation.isPending} onChange={e => mutation.mutate(e.target.value)}><option value="">General</option>{state.folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>{mutation.error && <small role="alert">{mutation.error.message}</small>}</span>;
 }
