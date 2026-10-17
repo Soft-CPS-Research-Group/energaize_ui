@@ -14,6 +14,7 @@ const time = (value: string | null) => value ? new Date(value).toLocaleString('e
 export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
   const [instances,setInstances]=useState<RuntimeInstance[]>([]), [hosts,setHosts]=useState<RuntimeHost[]>([]), [operations,setOperations]=useState<RuntimeOperation[]>([]);
   const loadSequence=useRef(0);
+  const [monitoringError,setMonitoringError]=useState('');
   const [healthRefresh,setHealthRefresh]=useState(0),[historyPage,setHistoryPage]=useState(0);
   const [loading,setLoading]=useState(true), [error,setError]=useState(''), [busy,setBusy]=useState(false);
   const [creating,setCreating]=useState(false), [step,setStep]=useState(0), [name,setName]=useState(''), [hostId,setHost]=useState(''), [image,setImage]=useState(''), [configDirectory]=useState('');
@@ -27,8 +28,8 @@ export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
         request<RuntimeInstance[]>('/api/runtime/instances'+(siteId?'?site_id='+encodeURIComponent(siteId):'')),
         request<RuntimeHost[]>('/api/runtime/hosts'), request<RuntimeOperation[]>('/api/runtime/operations?'+new URLSearchParams({limit:'4',offset:String(historyPage*3),...(siteId?{site_id:siteId}:{}),...(kind?{kind}:{})}))]);
       if(sequence!==loadSequence.current)return;
-      setInstances(items.filter(i=>!kind||i.kind===kind));setHosts(machines);setOperations(events);setError('');
-    } catch(e){if(sequence===loadSequence.current)setError((e as Error).message);}finally{if(sequence===loadSequence.current)setLoading(false);}
+      setMonitoringError('');setInstances(items.filter(i=>!kind||i.kind===kind));setHosts(machines);setOperations(events);setError('');
+    } catch(e){if(sequence===loadSequence.current){setError((e as Error).message);setMonitoringError((e as Error).message);}}finally{if(sequence===loadSequence.current)setLoading(false);}
   },[siteId,kind,historyPage]);
   useEffect(()=>{void load();const timer=setInterval(()=>void load(),10000);return()=>clearInterval(timer);},[load]);
   const act=async(work:()=>Promise<unknown>)=>{setBusy(true);setError('');try{await work();await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
@@ -76,10 +77,10 @@ export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
 
     {siteId&&kind==='percepta'&&<PerceptaSetup siteId={siteId} configured={active.some(i=>!!i.desired_config_version)} onChange={()=>{void load();}}/>}
     {loading?<p role="status">Loading runtime…</p>:!active.length?<div className="runtime-empty"><Box size={30}/><h3>No {kind==='percepta'?'Percepta':kind==='controller'?'controller':'runtime'} instance assigned</h3><p>{siteId?'Register an instance here, or associate an existing service from Administration → Runtime.':'Registered services will appear here. Host destinations are configured by the server operator.'}</p></div>:active.map(item=><article className="runtime-instance" key={item.id}>
-      <div className="runtime-instance-head"><div className="runtime-title"><span className="runtime-component-icon">{item.kind==='percepta'?<Radio size={24}/>:<Cpu size={24}/>}</span><div><h3>{item.name}</h3><p>{item.kind==='percepta'?'Site data collection':'Site energy controller'}</p></div></div><span className={'runtime-state state-'+item.observed_state}>{serviceState(item)}</span></div>
+      <div className="runtime-instance-head"><div className="runtime-title"><span className="runtime-component-icon">{item.kind==='percepta'?<Radio size={24}/>:<Cpu size={24}/>}</span><div><h3>{item.name}</h3><p>{item.kind==='percepta'?'Site data collection':'Site energy controller'}</p></div></div>{!(item.kind==='percepta'&&item.configuration_mode==='generated'&&item.mode==='docker'&&item.site_ids[0])&&<span className={'runtime-state state-'+item.observed_state}>{serviceState(item)}</span>}</div>
       {!(item.kind==='percepta'&&item.configuration_mode==='generated'&&item.mode==='docker')&&<RuntimeServiceStatus item={item}/>}
       {item.configuration_error&&<p className="notice" role="alert">{item.configuration_error}</p>}
-      {item.kind==='percepta'&&item.configuration_mode==='generated'&&item.mode==='docker'&&item.site_ids[0]&&<PerceptaTelemetryStatus siteId={item.site_ids[0]} item={item} refreshKey={healthRefresh} onCheck={refreshAll} checking={busy} actions={instanceActions(item)}/>}
+      {item.kind==='percepta'&&item.configuration_mode==='generated'&&item.mode==='docker'&&item.site_ids[0]&&<PerceptaTelemetryStatus siteId={item.site_ids[0]} item={item} refreshKey={healthRefresh} onCheck={refreshAll} checking={busy} actions={instanceActions(item)} monitoringError={monitoringError}/>}
       {item.kind==='percepta'&&!(item.configuration_mode==='generated'&&item.mode==='docker')&&<div className="percepta-service-toolbar">{instanceActions(item)}</div>}
       <details className="runtime-technical"><summary>Server & version</summary><dl className="runtime-facts"><div><dt>Destination</dt><dd>{hosts.find(h=>h.id===item.host_id)?.name||item.host_id}</dd></div><div><dt>Prepared version</dt><dd>{item.desired_config_version||'Not prepared'}</dd></div><div><dt>Applied version</dt><dd>{item.applied_config_version||'Not confirmed'}</dd></div><div><dt>Container image</dt><dd>{item.image}</dd></div><div><dt>Last checked</dt><dd>{time(item.last_checked_at)}</dd></div><div><dt>Container self-check</dt><dd>{item.health==='not_reported'?'Not provided by this image':label(item.health)}</dd></div><div><dt>Management</dt><dd>{item.managed?'Managed here':'Existing deployment · observation only'}</dd></div></dl></details>
       {item.mode==='simulation'?<p className="runtime-note">Simulation only. No container is started, no equipment is controlled and no measurements are produced.</p>:item.configuration_mode!=='generated'?<p className="runtime-note">Fresh readings have not been verified for this existing deployment.</p>:null}
