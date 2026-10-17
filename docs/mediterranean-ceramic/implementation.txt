@@ -200,3 +200,43 @@ native date/time inputs. Browser validation opens and cancels requests only.
   menu. Browser review covered account/profile images, menus, notifications,
   loaded logs and deployment at desktop, plus account/notifications at 390px and
   dark mode. Preview stays on port 5185. No live backend records changed.
+
+2026-10-17 — Login landscapes and shared community funding footer
+- Generated three new Mediterranean architectural landscapes with built-in
+  image_gen: olive retreat, coastal village, and limestone courtyard with EV,
+  solar and battery. Optimized WebP copies are in public/assets/mediterranean;
+  prompts, originals and final paths are recorded in login-backgrounds.json.
+  Login now rotates six fullscreen backgrounds with the existing crossfade.
+- CommunityWorkspace now includes the same InstitutionalDock as login/common
+  pages, covering REC Manager and Prosumer routes. A flex layout reserves the
+  footer's actual height, keeps workspace scrolling separate, and resets its
+  scroll position on route changes. Mobile logos wrap without horizontal overflow.
+- Added the official MATISSE wordmark from https://matisse-kdt.eu/images/logo.svg
+  (retrieved 2026-10-17) and funding acknowledgement, using the existing
+  monochrome logo treatment. Source: https://matisse-kdt.eu/.
+- Verification: 26 targeted Vitest tests passed, including single shared-footer
+  checks for both community roles; production build passed. Browser checks
+  covered live REC dashboard, Prosumer equipment, expanded funding text, login
+  rotation and loaded logos. Checked community/login at 390px, including access
+  to the full sign-in form; viewport restored. Preview: localhost:5185.
+
+2026-10-17 — Account menu and funding copy correction
+- Removed the inherited fixed height from the shared Logout action; it now has
+  balanced padding and a 42px minimum height so the label/icon are not cramped.
+- Replaced the compact funding sentence with the user's exact wording, including
+  OPEVA. Consolidated the disclaimer into successive acknowledgements for
+  DEMFLEX/FCT (2024.00855.BD), OPEVA (101097267) and MATISSE (101140216), followed
+  by one complete views/responsibility statement covering EU, both JUs and FCT.
+- Project grant IDs verified against official CORDIS records:
+  https://cordis.europa.eu/project/id/101097267
+  https://cordis.europa.eu/project/id/101140216
+- Production build passed. Browser review confirmed the AI account menu's
+  complete logout label and the exact compact/expanded funding text.
+
+2026-10-17 — Consolidate presentation work on main
+- Integrated the AI Manager ceramic design, common account/navigation refinements,
+  login backgrounds, shared funding footer and logout correction directly into
+  the main checkout. Preserved the four existing staged community/chart edits;
+  both sets of changes share the same starting commit and applied without conflict.
+- Full validation on main: 216 Vitest tests, 65 console tests, TypeScript lint and
+  production build passed. Existing large-bundle advisory remains.

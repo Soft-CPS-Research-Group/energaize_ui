@@ -10,6 +10,13 @@ type DockLogo = {
 
 const DOCK_LOGOS: DockLogo[] = [
   {
+    id: "matisse",
+    href: "https://matisse-kdt.eu/",
+    label: "MATISSE",
+    src: "/assets/logos/matisse.svg",
+    className: "dock-logo-matisse"
+  },
+  {
     id: "softcps",
     href: "https://www2.isep.ipp.pt/softcps/",
     label: "softCPS",
@@ -61,7 +68,7 @@ export function InstitutionalDock(): JSX.Element {
       <div className="institutional-inner">
         <div className="institutional-note-wrap">
           <p className="institutional-note institutional-note-compact">
-            Funded by DEMFLEX, supported by FCT - Fundacao para a Ciencia e a Tecnologia under
+            Funded by DEMFLEX, OPEVA, MATISSE and FCT - Fundacao para a Ciencia e a Tecnologia under
             grant 2024.00855.BD.
           </p>
           <details className="institutional-note-more">
@@ -69,8 +76,14 @@ export function InstitutionalDock(): JSX.Element {
             <p className="institutional-note">
               This work is supported by DEMFLEX, financed by National Funds through the Portuguese
               funding agency, FCT - Fundacao para a Ciencia e a Tecnologia, under grant
-              2024.00855.BD. Views and opinions expressed are those of the authors only and do not
-              necessarily reflect FCT.
+              2024.00855.BD; OPEVA, funded by the European Union's Horizon Europe programme,
+              the Key Digital Technologies Joint Undertaking and national authorities under grant
+              agreement 101097267; and MATISSE, co-funded by the European Union, the Chips Joint
+              Undertaking and national funding agencies under grant agreement 101140216.
+              Views and opinions expressed are those of the authors only and do not necessarily
+              reflect those of the European Union, the Key Digital Technologies Joint Undertaking,
+              the Chips Joint Undertaking or the national funding agencies, including FCT.
+              Neither the European Union nor the granting authorities can be held responsible for them.
             </p>
           </details>
         </div>

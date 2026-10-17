@@ -636,6 +636,8 @@ describe("App integration", () => {
     localStorage.setItem('energaize_profile_photo:rec@energaize.io','data:image/jpeg;base64,community-photo');
     const user=userEvent.setup();renderApp('/communities');const view=await communityScreen();
     expect(await view.findByRole('heading',{name:'Choose a community'})).toBeInTheDocument();
+    expect(screen.getAllByRole('contentinfo',{name:'Institutional partners'})).toHaveLength(1);
+    expect(screen.getByRole('link',{name:'MATISSE'})).toHaveAttribute('href','https://matisse-kdt.eu/');
     expect(await view.findByRole('img',{name:'REC Manager'})).toHaveAttribute('src','data:image/jpeg;base64,community-photo');
     await user.click(view.getByRole('button',{name:'View'}));
     expect(await view.findByRole('heading',{name:'Connected community'})).toBeInTheDocument();
@@ -666,6 +668,8 @@ describe("App integration", () => {
   it("opens only the resident's owned site through the common session", async () => {
     useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/communities');const view=await communityScreen();
     expect(await view.findByRole('heading',{name:'My connected home'})).toBeInTheDocument();
+    expect(screen.getAllByRole('contentinfo',{name:'Institutional partners'})).toHaveLength(1);
+    expect(screen.getByRole('link',{name:'MATISSE'})).toBeInTheDocument();
     expect(view.queryByText('Another member’s home')).not.toBeInTheDocument();
     expect(view.queryByRole('heading',{name:'Choose a community'})).not.toBeInTheDocument();
   });

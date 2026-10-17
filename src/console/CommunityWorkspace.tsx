@@ -8,6 +8,8 @@ import { useUI } from '../contexts/UIContext';
 import { ProfileAvatar } from '../components/ui/ProfileAvatar';
 import profileCss from '../styles/profile.css?inline';
 import { UserMenu } from '../components/layout/UserMenu';
+import { InstitutionalDock } from '../components/layout/InstitutionalDock';
+import './community-shell.css';
 import { EVChargingLoader } from '../components/ui/EVChargingLoader';
 import { AUTH_SCENE_STORAGE_KEY } from '../constants';
 import { MeasurementChart, type MeasurementChartProps } from './MeasurementChart';
@@ -87,10 +89,12 @@ export function CommunityWorkspace(): JSX.Element {
     return ()=>{environment.dispose();observer.disconnect();runtime.current=undefined;const retired=[...roots.values()];queueMicrotask(()=>retired.forEach(root=>root.unmount()));};
   },[session?.email,session?.role,logout,workspaceReady]);
   useEffect(()=>{if(pathname!==activePath.current){activePath.current=pathname;runtime.current?.setPath(pathname);}},[pathname]);
-  return <>
+  useEffect(()=>{if(host.current)host.current.scrollTop=0;},[pathname]);
+  return <div className="community-workspace-shell" data-theme={theme}>
     <div ref={host} data-community-workspace data-theme={theme} />
+    <InstitutionalDock />
     {avatarSlot&&createPortal(<ProfileAvatar session={session}/>,avatarSlot)}
     {accountSlot&&createPortal(<UserMenu open onClose={()=>runtime.current?.closeAccount()}/>,accountSlot)}
     {loaderSlot&&createPortal(<EVChargingLoader label="Loading your community, equipment and permissions…"/>,loaderSlot)}
-  </>;
+  </div>;
 }

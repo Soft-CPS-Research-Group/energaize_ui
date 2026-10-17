@@ -1,0 +1,45 @@
+/* Keep the shared funding strip visible without covering workspace content. */
+html:has(.community-workspace-shell),
+body:has(.community-workspace-shell) { overflow: hidden; }
+
+.community-workspace-shell {
+  --bg: #f4f1eb;
+  --bg-elev: #faf9f5;
+  --text: #2c3c34;
+  --text-soft: #687166;
+  --line: #deddd4;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+}
+.community-workspace-shell[data-theme="dark"] {
+  --bg: #202a25;
+  --bg-elev: #27332c;
+  --text: #f1eee5;
+  --text-soft: #bdc5b9;
+  --line: #475347;
+}
+.community-workspace-shell > [data-community-workspace] {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.community-workspace-shell > .institutional-dock {
+  position: static;
+  z-index: auto;
+  flex-shrink: 0;
+  padding: 10px 26px;
+  background: var(--bg-elev);
+  color: var(--text-soft);
+}
+.community-workspace-shell .institutional-dock img { filter: grayscale(1); opacity: .6; }
+.community-workspace-shell .institutional-dock a:hover img { opacity: .95; }
+@media(max-width:700px) {
+  .community-workspace-shell > .institutional-dock { padding: 8px 14px; }
+  .community-workspace-shell .institutional-inner { grid-template-columns: minmax(0,1fr); }
+  .community-workspace-shell .institutional-logos { justify-content: flex-start; margin-left: 0; }
+}
