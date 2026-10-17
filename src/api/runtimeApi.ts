@@ -12,6 +12,8 @@ export async function runtimeRequest<T>(path: string, init?: RequestInit): Promi
 export interface RuntimeHost { id: string; name: string; mode: 'simulation' | 'docker'; allowed_images?: string[]; network?: string }
 export interface RuntimeInstance {
   id: string; name: string; kind: 'percepta' | 'controller'; site_ids: string[]; host_id: string;
+  configuration_error?: string|null;
+  configuration_mode?: "prepared"|"generated";
   mode: 'simulation' | 'docker'; managed: boolean; image: string; container_name: string;
   observed_state: string; desired_state: string; health: string; error?: string | null;
   active_operation: string | null; last_checked_at: string | null; desired_config_version: string | null;
