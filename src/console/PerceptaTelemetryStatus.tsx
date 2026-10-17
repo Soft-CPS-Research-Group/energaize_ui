@@ -1,10 +1,12 @@
-import {useEffect,useState,type ReactNode} from 'react';
+import {useEffect,useState,useId,type ReactNode} from 'react';
 import {Activity, RefreshCw, CircleCheck, TriangleAlert, CircleAlert} from 'lucide-react';
 import {runtimeRequest, type RuntimeInstance} from '../api/runtimeApi';
 import {configurationState, serviceState} from './RuntimeServiceStatus';
 
 type ReadingStatus={state:'waiting'|'stale'|'receiving';last_received_at:string|null;generated_entities:string[]|null};
-export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checking=false,actions,monitoringError=''}:{siteId:string;item:RuntimeInstance;refreshKey?:number;onCheck:()=>void;checking?:boolean;actions?:ReactNode;monitoringError?:string}){
+export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checking=false,actions,monitoringError='',heading}:{siteId:string;item:RuntimeInstance;refreshKey?:number;onCheck:()=>void;checking?:boolean;actions?:ReactNode;monitoringError?:string;heading?:ReactNode}){
+ const [detailsOpen,setDetailsOpen]=useState(false);
+ const tooltipId=useId();
  const [status,setStatus]=useState<ReadingStatus|null>(null),[error,setError]=useState('');
  const [lastCheck,setLastCheck]=useState<string|null>(null);
  useEffect(()=>{
@@ -36,11 +38,17 @@ export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checki
  const headline=healthy?'Working normally':failed?'Collection needs attention':issues.length?'Check required':item.active_operation?'Updating service…':'Checking collection…';
  const Icon=healthy?CircleCheck:failed?CircleAlert:issues.length?TriangleAlert:Activity;
  const readings=error?'Unable to check':!status?'Checking…':status.state==='receiving'?(fallback?'Fallback readings present':'Receiving data'):status.state==='stale'?'Readings are stale':'No readings yet';
- return <section className="percepta-health" aria-label="Percepta health check">
+ const description=healthy?'Service running, configuration applied and recent readings received.':issues.length?issues.join(' '):item.active_operation?'Waiting for the operation to finish before confirming the state.':'Verifying the service, configuration and incoming readings.';
+ return <>
+  <div className="runtime-instance-head runtime-monitored-head">{heading}<div className="percepta-status-anchor" onMouseEnter={()=>setDetailsOpen(true)} onMouseLeave={()=>setDetailsOpen(false)}>
+   <button type="button" className={'percepta-status-icon health-icon-'+tone} aria-label={headline} aria-describedby={detailsOpen?tooltipId:undefined} onFocus={()=>setDetailsOpen(true)} onBlur={()=>setDetailsOpen(false)} onClick={()=>setDetailsOpen(true)} onKeyDown={event=>{if(event.key==='Escape'){setDetailsOpen(false);event.stopPropagation();}}}><Icon size={22} aria-hidden="true"/></button>
+   {detailsOpen&&<div id={tooltipId} role="tooltip" className="percepta-status-tooltip"><strong>{headline}</strong><p>{description}</p><small>{lastCheck?'Last check '+new Date(lastCheck).toLocaleTimeString('en-GB'):'Checking…'} · Updates automatically</small></div>}
+  </div></div>
+  <span className="percepta-status-announcement" role={issues.length?'alert':'status'} aria-atomic="true">{headline}. {description}</span>
+  <section className="percepta-health" aria-label="Percepta health check">
   <header><div><Activity size={17}/><h4>Health check</h4></div>{actions||<button className="btn" disabled={checking||!!item.active_operation} onClick={onCheck}><RefreshCw size={14}/>Check now</button>}</header>
-  <div className={'percepta-health-summary health-summary-'+tone} role={issues.length?'alert':'status'} aria-atomic="true"><Icon size={22} aria-hidden="true"/><div><strong>{headline}</strong>{healthy?<p>Service running, configuration applied and recent readings received.</p>:issues.length?<ul>{issues.map(issue=><li key={issue}>{issue}</li>)}</ul>:<p>{item.active_operation?'Waiting for the operation to finish before confirming the state.':'Verifying the service, configuration and incoming readings.'}</p>}</div></div>
   <dl><div><dt>Service</dt><dd>{serviceState(item)}</dd><small>{item.last_checked_at?'Checked '+new Date(item.last_checked_at).toLocaleTimeString('en-GB'):'Not checked yet'}</small></div><div><dt>Configuration</dt><dd>{configurationState(item)}</dd><small>{confirmedConfiguration?'Applied version confirmed':'Generate and apply the latest configuration'}</small></div><div><dt>Readings</dt><dd>{readings}</dd><small>{status?.last_received_at?'Last reading '+new Date(status.last_received_at).toLocaleString('en-GB'):'Waiting for collection'}</small></div></dl>
   {error&&<p role="alert">{error}</p>}
   <small className="percepta-health-time">Readings checked every 15 seconds while this panel is open. This status updates automatically{lastCheck?' · Last check '+new Date(lastCheck).toLocaleTimeString('en-GB'):''}</small>
- </section>;
+ </section></>;
 }

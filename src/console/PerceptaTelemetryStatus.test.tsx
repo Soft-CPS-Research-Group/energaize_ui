@@ -8,14 +8,14 @@ it('requires recent readings and an applied configuration for a healthy check',a
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({state:'receiving',last_received_at:'2026-10-17T12:00:00Z',generated_entities:[]}))));
  const check=vi.fn();
  render(<PerceptaTelemetryStatus siteId="site" item={item} onCheck={check}/>);
- expect(await screen.findByText('Working normally')).toBeInTheDocument();
+ expect(await screen.findByRole('button',{name:'Working normally'})).toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Check now'}));expect(check).toHaveBeenCalledOnce();
 });
 it('does not call fallback data healthy even when the service is running',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({state:'receiving',last_received_at:'2026-10-17T12:00:00Z',generated_entities:['meter']}))));
  render(<PerceptaTelemetryStatus siteId="site" item={item} onCheck={vi.fn()}/>);
  expect(await screen.findByText('Fallback readings present')).toBeInTheDocument();
- expect(screen.queryByText('Working normally')).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Working normally'})).not.toBeInTheDocument();
 });
 
 it('automatically alerts when readings become stale and clears the warning when they recover',async()=>{
@@ -26,26 +26,42 @@ it('automatically alerts when readings become stale and clears the warning when 
  vi.stubGlobal('fetch',fetcher);
  render(<PerceptaTelemetryStatus siteId="site" item={item} onCheck={vi.fn()}/>);
  await act(async()=>{await vi.advanceTimersByTimeAsync(0);});
- expect(screen.getByText('Working normally')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Working normally'})).toBeInTheDocument();
  await act(async()=>{await vi.advanceTimersByTimeAsync(15000);});
  expect(screen.getByRole('alert')).toHaveTextContent('Readings have stopped arriving');
- expect(screen.queryByText('Working normally')).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Working normally'})).not.toBeInTheDocument();
  await act(async()=>{await vi.advanceTimersByTimeAsync(15000);});
- expect(screen.getByText('Working normally')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Working normally'})).toBeInTheDocument();
  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 it('does not keep a healthy indication when service monitoring fails',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({state:'receiving',generated_entities:[]}))));
  const {rerender}=render(<PerceptaTelemetryStatus siteId="site" item={item} onCheck={vi.fn()}/>);
- expect(await screen.findByText('Working normally')).toBeInTheDocument();
+ expect(await screen.findByRole('button',{name:'Working normally'})).toBeInTheDocument();
  rerender(<PerceptaTelemetryStatus siteId="site" item={item} onCheck={vi.fn()} monitoringError="Offline"/>);
  expect(screen.getByRole('alert')).toHaveTextContent('The service status could not be refreshed.');
- expect(screen.queryByText('Working normally')).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Working normally'})).not.toBeInTheDocument();
 });
 it('explains an unapplied configuration even with recent readings',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({state:'receiving',generated_entities:[]}))));
  render(<PerceptaTelemetryStatus siteId="site" item={{...item,desired_config_version:'new'}} onCheck={vi.fn()}/>);
  expect(await screen.findByText('Receiving data')).toBeInTheDocument();
  expect(screen.getByRole('alert')).toHaveTextContent('The latest configuration has not been confirmed as applied.');
- expect(screen.queryByText('Working normally')).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Working normally'})).not.toBeInTheDocument();
+});
+
+it('keeps the details behind hover or keyboard focus and dismisses them with Escape',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({state:'receiving',generated_entities:[]}))));
+ render(<PerceptaTelemetryStatus siteId="site" item={item} onCheck={vi.fn()}/>);
+ const icon=await screen.findByRole('button',{name:'Working normally'});
+ expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+ fireEvent.mouseEnter(icon);
+ expect(screen.getByRole('tooltip')).toHaveTextContent('Service running, configuration applied and recent readings received.');
+ fireEvent.mouseLeave(icon);
+ expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+ fireEvent.focus(icon);
+ expect(screen.getByRole('tooltip')).toBeInTheDocument();
+ expect(icon).toHaveAttribute('aria-describedby',screen.getByRole('tooltip').id);
+ fireEvent.keyDown(icon,{key:'Escape'});
+ expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
 });
