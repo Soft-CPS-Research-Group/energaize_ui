@@ -15,7 +15,11 @@ ENV COMMUNITY_API_URL=http://193.136.62.78:8017 \
     ACCESS_API_URL=http://193.136.62.78:8018 \
     TELEMETRY_API_URL=http://193.136.62.78:8019 \
     FLEXIBILITY_API_URL=http://193.136.62.78:8020 \
-    RUNTIME_API_URL=http://193.136.62.78:8021
+    RUNTIME_API_URL=http://193.136.62.78:8021 \
+    JOBS_API_URL=http://193.136.62.78:8011 \
+    TRAINING_API_URL=http://193.136.62.78:8000 \
+    PREDICTOR_API_URL=http://193.136.62.78:8006 \
+    KPI_API_URL=http://193.136.62.78:8007
 COPY docker/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
 

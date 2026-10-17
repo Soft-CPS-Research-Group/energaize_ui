@@ -11,7 +11,7 @@ export class ApiError extends Error {
 }
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "http://193.136.62.78:8000";
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "/training-api";
 
 function normalizeBaseUrl(value: string | undefined | null): string | null {
   const trimmed = value?.trim().replace(/\/$/, "");
@@ -34,7 +34,7 @@ function deriveBaseUrlWithPort(baseUrl: string, port: string): string | null {
 export const JOB_ORCHESTRATOR_API_URL =
   normalizeBaseUrl(import.meta.env.VITE_JOB_ORCHESTRATOR_API_URL) ||
   deriveBaseUrlWithPort(API_BASE_URL, "8011") ||
-  "http://193.136.62.78:8011";
+  "/jobs-api";
 
 function buildUrl(path: string, baseUrl = API_BASE_URL): string {
   if (path.startsWith("http")) return path;

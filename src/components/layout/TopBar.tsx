@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { AI_AVATAR_URL, APP_NAME } from "../../constants";
+import { APP_NAME } from "../../constants";
 import { useAuth } from "../../contexts/AuthContext";
 import { useUI } from "../../contexts/UIContext";
 import { isCommunityUserRole, isKpiManagerRole, isPredictorRole, isTrainingManagerRole } from "../../utils/roles";
@@ -187,8 +187,8 @@ export function TopBar(): JSX.Element {
           }}
         >
           <span className="avatar-media">
-            {isTrainingManager ? (
-              <img src={AI_AVATAR_URL} alt={session?.name ?? "User"} />
+            {session?.avatar_url ? (
+              <img src={session.avatar_url} alt={session?.name ?? "User"} />
             ) : (
               avatarFallback
             )}

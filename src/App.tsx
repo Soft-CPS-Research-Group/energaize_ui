@@ -5,6 +5,8 @@ import { CommunityConsoleEntry } from "./routes/CommunityConsoleEntry";
 import { usesCommunityConsole } from "./routes/communityConsole";
 import { AppShell } from "./components/layout/AppShell";
 import { useAuth } from "./contexts/AuthContext";
+import { AccountAccessPage } from "./pages/AccountAccessPage";
+import { PeoplePage } from "./pages/PeoplePage";
 import { AccountPage } from "./pages/AccountPage";
 import { CommunitiesPage } from "./pages/CommunitiesPage";
 import { Dashboard } from "./pages/kpi-manager/Dashboard";
@@ -64,6 +66,8 @@ function AppRoutes(): JSX.Element {
         <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<AccountAccessPage recovery />} />
+            <Route path="/account-access" element={<AccountAccessPage />} />
 
             <Route element={<AuthGuard />}>
                 <Route path="/communities" element={<CommunitiesPage />} />
@@ -86,6 +90,7 @@ function AppRoutes(): JSX.Element {
                     <Route path="workspace" element={<RoleWorkspacePage />} />
 
                     <Route element={<RoleGuard allowed={["rec_manager", "prosumer"]} />}>
+                        <Route path="people" element={<PeoplePage />} />
                         <Route path="community">
                             <Route index element={<Navigate to="dashboard" replace />} />
                             <Route path="dashboard" element={<></>} />

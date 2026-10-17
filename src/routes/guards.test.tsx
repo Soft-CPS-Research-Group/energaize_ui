@@ -1,3 +1,4 @@
+import { seedMockSession } from "../test/handlers";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -27,15 +28,12 @@ describe("AuthGuard", () => {
   });
 
   it("allows authenticated users", async () => {
-    localStorage.setItem(
-      "energaize_session",
-      JSON.stringify({
+    seedMockSession({
         email: "tiago.fonseca@energaize.io",
         name: "Tiago Fonseca",
-        role: "ai_manager",
+        role: "training_manager",
         remember: true
-      })
-    );
+      });
 
     renderGuarded("/private");
 

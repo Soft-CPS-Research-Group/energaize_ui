@@ -9,7 +9,14 @@ export default defineConfig(({ mode }) => {
   plugins: [react(), communityRuntime(), {
     name: "console-entry",
     configureServer(server) {
-      server.middlewares.use((req, res, next) => {
+      server.middlewares.use(async (req, res, next) => {
+        const gateway = /^\/(jobs|training|predictor|kpi)-api\//.exec(req.url || '');
+        if (gateway) {
+          try {
+            const check = await fetch((env.COMMUNITY_PROXY_TARGET || 'http://127.0.0.1:8017') + '/api/identity/gateway-check?service=' + gateway[1], {headers:{Cookie:req.headers.cookie || ''}});
+            if (!check.ok) {res.writeHead(check.status);res.end('Workspace access denied');return;}
+          } catch {res.writeHead(503);res.end('Account service unavailable');return;}
+        }
         const path = (req.url || "/").split("?", 1)[0];
         if (["/console", "/console/", "/console/index.html"].includes(path)) {
           res.writeHead(302, { Location: '/communities', "Cache-Control": "no-store" });
@@ -22,6 +29,9 @@ export default defineConfig(({ mode }) => {
   server: {
 
     proxy: {
+      ...Object.fromEntries(Object.entries({jobs:8011,training:8000,predictor:8006,kpi:8007}).map(([name,port])=>[
+        `/${name}-api`, {target:`http://193.136.62.78:${port}`,changeOrigin:true,rewrite:(path:string)=>path.replace(new RegExp(`^/${name}-api`),'')}
+      ])),
       "/runtime-api": { target: env.RUNTIME_PROXY_TARGET || "http://127.0.0.1:8021", changeOrigin: true, rewrite: path => path.replace(/^\/runtime-api/, "") },
       "/measurement-api": { target: env.MEASUREMENT_PROXY_TARGET || "http://193.136.62.78:8000", changeOrigin: true, ws: true, rewrite: (path) => path.replace(/^\/measurement-api/, "") },
       "/community-api": {

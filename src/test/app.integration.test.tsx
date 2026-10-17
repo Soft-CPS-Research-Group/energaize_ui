@@ -1,3 +1,4 @@
+import { seedMockSession } from "./handlers";
 import { useCommunityBackendFixture } from './communityBackendFixture';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -58,28 +59,22 @@ function createDragDataTransfer(): DataTransfer {
 
 describe("App integration", () => {
   function seedAiSession(): void {
-    localStorage.setItem(
-      "energaize_session",
-      JSON.stringify({
+    seedMockSession({
         email: "tiago.fonseca@energaize.io",
         name: "Tiago Fonseca",
-        role: "ai_manager",
+        role: "training_manager",
         remember: true
-      })
-    );
+      });
     localStorage.setItem("energaize_active_community", JSON.stringify("solar-community"));
   }
 
   function seedCommunitySession(role: "rec_manager" | "prosumer"): void {
-    localStorage.setItem(
-      "energaize_session",
-      JSON.stringify({
+    seedMockSession({
         email: role === "prosumer" ? "prosumer@energaize.io" : "rec@energaize.io",
         name: role === "prosumer" ? "Prosumer" : "REC Manager",
         role,
         remember: true
-      })
-    );
+      });
     localStorage.setItem("energaize_active_community", JSON.stringify("solar-community"));
   }
 

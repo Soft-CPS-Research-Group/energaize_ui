@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { Eye, EyeOff, Info, Lock, Mail } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { InstitutionalDock } from "../components/layout/InstitutionalDock";
 import { Modal } from "../components/ui/Modal";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
@@ -281,9 +281,7 @@ export function LoginPage(): JSX.Element {
               />
               <span>Remember me</span>
             </label>
-            <button type="button" className="link-btn">
-              Forgot password?
-            </button>
+            <Link to="/forgot-password" className="link-btn">Forgot password?</Link>
           </div>
 
           {error ? <p className="error-text">{error}</p> : null}

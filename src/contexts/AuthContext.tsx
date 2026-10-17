@@ -1,116 +1,28 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode
-} from "react";
-import { authenticateWorkspace, updateCommunityIdentity } from '../api/workspaceIdentity';
-import type { Session } from "../types";
-import { STORAGE_KEYS } from "../utils/storage";
-
-interface LoginPayload {
-  email: string;
-  password: string;
-  remember: boolean;
-}
-
+import {createContext,useCallback,useContext,useEffect,useMemo,useState,type ReactNode} from 'react';
+import {authenticateWorkspace} from '../api/workspaceIdentity';
+import {currentAccount,identity} from '../api/identityApi';
+import type {Session,UserRole} from '../types';
+import {STORAGE_KEYS} from '../utils/storage';
 interface AuthContextValue {
-  session: Session | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (payload: LoginPayload) => Promise<Session>;
-  logout: () => void;
-  updateProfile: (patch: Partial<Pick<Session, "name" | "email">>) => Promise<void>;
+  session:Session|null;isAuthenticated:boolean;isLoading:boolean;
+  login:(payload:{email:string;password:string;remember:boolean})=>Promise<Session>;
+  logout:()=>Promise<void>;
+  updateProfile:(patch:{name:string;timezone:string;language:string})=>Promise<void>;
+  refreshProfile:()=>Promise<void>;switchRole:(role:UserRole)=>Promise<void>;
 }
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-function readPersistedSession(): Session | null {
-  const fromLocal = localStorage.getItem(STORAGE_KEYS.session);
-  const fromSession = sessionStorage.getItem(STORAGE_KEYS.session);
-  const raw = fromLocal || fromSession;
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as Session;
-  } catch {
-    return null;
-  }
-}
-
-function writePersistedSession(session: Session): void {
-  if (session.remember) {
-    localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-    sessionStorage.removeItem(STORAGE_KEYS.session);
-    return;
-  }
-
-  sessionStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
-  localStorage.removeItem(STORAGE_KEYS.session);
-}
-
-function clearPersistedSession(): void {
-  localStorage.removeItem(STORAGE_KEYS.session);
-  sessionStorage.removeItem(STORAGE_KEYS.session);
-  sessionStorage.removeItem('console-session-email');
-}
-
-export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    sessionStorage.removeItem('console-session-email');
-    setSession(readPersistedSession());
-    setIsLoading(false);
-  }, []);
-
-  const login = useCallback(async ({ email, password, remember }: LoginPayload) => {
-    const next = await authenticateWorkspace(email,password,remember);
-
-    setSession(next);
-    writePersistedSession(next);
-    return next;
-  }, []);
-
-  const logout = useCallback(() => {
-    setSession(null);
-    clearPersistedSession();
-  }, []);
-
-  const updateProfile = useCallback(async (patch: Partial<Pick<Session, "name" | "email">>) => {
-    if(!session)return;
-    const normalized={...patch,...(patch.email?{email:patch.email.trim().toLowerCase()}:{})};
-    if(['rec_manager','prosumer'].includes(session.role))await updateCommunityIdentity(session.email,normalized);
-    setSession((previous) => {
-      if (!previous || previous.email!==session.email) return previous;
-      const next = { ...previous, ...normalized };
-      writePersistedSession(next);
-      return next;
-    });
-  }, [session]);
-
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      session,
-      isAuthenticated: Boolean(session),
-      isLoading,
-      login,
-      logout,
-      updateProfile
-    }),
-    [isLoading, login, logout, session, updateProfile]
-  );
-
+const AuthContext=createContext<AuthContextValue|undefined>(undefined);
+export function AuthProvider({children}:{children:ReactNode}):JSX.Element{
+  const [session,setSession]=useState<Session|null>(null);const [isLoading,setLoading]=useState(true);
+  useEffect(()=>{let active=true;
+    localStorage.removeItem(STORAGE_KEYS.session);sessionStorage.removeItem(STORAGE_KEYS.session);sessionStorage.removeItem('console-session-email');
+    currentAccount().then(value=>{if(active)setSession(value);}).catch(()=>{if(active)setSession(null);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};
+  },[]);
+  const login=useCallback(async(payload:{email:string;password:string;remember:boolean})=>{const value=await authenticateWorkspace(payload.email,payload.password,payload.remember);setSession(value);return value;},[]);
+  const logout=useCallback(async()=>{await identity('/logout','POST');setSession(null);sessionStorage.removeItem('console-session-email');},[]);
+  const refreshProfile=useCallback(async()=>{setSession(await currentAccount());},[]);
+  const updateProfile=useCallback(async(patch:{name:string;timezone:string;language:string})=>{setSession(await identity<Session>('/me','PATCH',patch));},[]);
+  const switchRole=useCallback(async(role:UserRole)=>{setSession(await identity<Session>('/role','POST',{role}));},[]);
+  const value=useMemo(()=>({session,isAuthenticated:!!session,isLoading,login,logout,updateProfile,refreshProfile,switchRole}),[session,isLoading,login,logout,updateProfile,refreshProfile,switchRole]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
-export function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
-  return context;
-}
+export function useAuth():AuthContextValue{const value=useContext(AuthContext);if(!value)throw new Error('useAuth must be used inside AuthProvider');return value;}

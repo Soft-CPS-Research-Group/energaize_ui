@@ -26,8 +26,8 @@ async function loadBackend(){
  state.loggedIn=!!current;state.personId=current?.id||null;
  connection.permissions.clear();
  if(current&&current.role!=='manager'){
-  const resources=[...peopleCatalog().sites.filter(s=>P.sitePermission(current,s.id)).map(s=>['site',s.id]),...peopleCatalog().assets.filter(a=>P.assetPermission(current,a)).map(a=>['asset',a.id])];
-  const checks=resources.flatMap(([kind,id])=>['read','manage','control'].map(action=>({kind,id,action})));for(let i=0;i<checks.length;i+=6)await Promise.all(checks.slice(i,i+6).map(async({kind,id,action})=>{const answer=await B.request('access','/api/access/check?'+new URLSearchParams({user_id:current.id,scope_type:kind,scope_id:id,action,resource_type:kind}));connection.permissions.set(permissionKey(kind,id,action),answer.allowed);}));
+  const effective=await B.request('community','/api/identity/permissions');
+  for(const kind of ['site','asset'])for(const action of ['read','manage','control'])for(const id of effective[action+'_'+kind]||[])connection.permissions.set(permissionKey(kind,id,action),true);
  }
  connection.loading=false;connection.error=null;document.body.classList.remove('connecting');render();
 }
@@ -76,15 +76,10 @@ render=function(){
  }
 };
 async function saveRemote(operation,after){const submit=overlay.querySelector('[type="submit"]');if(submit)submit.disabled=true;try{await operation();await loadBackend();closeDrawer();after?.();toast('Saved to backend.');}catch(e){toast(e.message);const msg=overlay.querySelector('[role="alert"]')||document.createElement('p');msg.setAttribute('role','alert');msg.textContent=e.message;overlay.querySelector('form')?.append(msg);}finally{if(submit)submit.disabled=false;}}
-editProfile=function(id){const u=people.find(p=>p.id===id);drawer(u?'Edit user':'Add user',field('Name','name',u?.name||'')+field('Email','email',u?.email||'','email')+field('Timezone','timezone',u?.timezone||'Europe/Lisbon'),save(),d=>saveRemote(()=>B.request('community','/api/users/'+(id||''),id?'PUT':'POST',{name:String(d.get('name')).trim(),email:String(d.get('email')).trim(),timezone:String(d.get('timezone')),...(!id?{password:'Console-demo-2026'}:{})})));};
-editRelation=function(kind,index=null){const u=people.find(p=>p.id===state.editPerson),cat=peopleCatalog();const [key,idField,endpoint,options]={membership:['rec_memberships','rec_id','rec-memberships',communities.map(c=>[c.recId,c.name])],site:['site_accesses','site_id','site-accesses',cat.sites.map(s=>[s.id,s.name])],asset:['asset_ownerships','energy_asset_id','asset-ownerships',cat.assets.map(a=>[a.id,a.name])]}[kind];const current=index===null?null:u[key][index];const select=(label,name,items,value)=>`<label class="formlabel">${label}<select name="${name}" required>${items.map(([v,l])=>`<option value="${esc(v)}" ${v===value?'selected':''}>${esc(l)}</option>`).join('')}</select></label>`;
- const choices=current?options.filter(([id])=>id===current[idField]):options.filter(([id])=>!u[key].some(r=>r[idField]===id));let body=select('Resource','resource',choices,current?.[idField]);
- if(kind==='site')body+=select('Relationship','relation',[['owner','Owner'],['manager','Site manager'],['visitor','Visitor']],current?.relation)+field('Valid from','start',current?.validity_start||P.today(),'date')+field('Valid until','end',current?.validity_end||'2030-12-31','date');
- if(kind==='asset')body+=select('Ownership','ownership',[['owned','Owned'],['leased','Leased'],['shared','Shared']],current?.ownership_type);
- if(kind==='membership')body+=select('Member type','type',[['individual','Individual'],['organization','Organization']],current?.member_type)+select('Status','status',[['active','Active'],['pending','Pending'],['inactive','Inactive']],current?.membership_status);
- drawer(current?'Edit association':'Add association',body,save(),d=>saveRemote(async()=>{const data=kind==='site'?{relation:d.get('relation'),validity_start:d.get('start'),validity_end:d.get('end')}:kind==='asset'?{ownership_type:d.get('ownership')}:{member_type:d.get('type'),membership_status:d.get('status')};if(!current)data[idField]=d.get('resource');await B.request('community',`/api/users/${u.id}/${endpoint}${current?'/'+current[idField]:''}`,current?'PUT':'POST',data);await B.request('access','/api/access/reconcile','POST');},()=>userDetail(u.id)));
-};
-async function removeRelation(kind,index){const u=people.find(p=>p.id===state.editPerson);const [key,idField,endpoint]={membership:['rec_memberships','rec_id','rec-memberships'],site:['site_accesses','site_id','site-accesses'],asset:['asset_ownerships','energy_asset_id','asset-ownerships']}[kind];await saveRemote(async()=>{await B.request('community',`/api/users/${u.id}/${endpoint}/${u[key][index][idField]}`,'DELETE');await B.request('access','/api/access/reconcile','POST');},()=>userDetail(u.id));}
+editProfile=function(id){window.AppBridge?.navigate(id===person().id?'/app/account':'/app/people');};
+editRelation=function(){window.AppBridge?.navigate('/app/people');};
+async function removeRelation(){window.AppBridge?.navigate('/app/people');}
+
 inspectAsset=function(id,focus=null){const a=currentAssets().find(a=>a.id===id);if(!a)return;state.channelFocus=a.channels.some(c=>c.name===focus)?focus:null;drawer(a.name+' settings',`<p class="subtitle">Each sensor is a measurement channel of this equipment. Configure its external tag, source, unit and expected interval here. Commands are separate channels.</p>${a.channels.map(channelForm).join('')}`,save(),d=>saveRemote(async()=>{
  await checkPermission('asset',a.backendId);
  // Validate every edited channel before sending any writes; report partial failures explicitly.

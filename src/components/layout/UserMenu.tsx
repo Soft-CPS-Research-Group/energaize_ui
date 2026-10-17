@@ -26,13 +26,15 @@ export function UserMenu({ open, onClose }: Props): JSX.Element | null {
         <span>Profile</span>
       </Link>
 
+      {(session.role === "rec_manager" || session.role === "prosumer") && <Link className="menu-link" to="/app/people" onClick={onClose}>Homes and people</Link>}
+
       <Button
         variant="danger"
         size="sm"
         iconLeft={<LogOut size={14} />}
-        onClick={() => {
+        onClick={async () => {
           sessionStorage.setItem(AUTH_SCENE_STORAGE_KEY, "logout");
-          logout();
+          await logout();
           onClose();
         }}
       >
