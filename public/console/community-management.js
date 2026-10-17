@@ -97,7 +97,7 @@ render=function(){managementRender();if(connection.loading||connection.error||!s
  const administration=document.querySelector('.surface.settings');
  if(administration&&!administration.querySelector('[data-config-work]'))administration.insertAdjacentHTML('beforeend',`<div class="settingsrow"><div><h3>Configuration reviews</h3><p>${configurationWork.error||`${pending.length} changes awaiting confirmation. Review the algorithm, Percepta and other integrations.`}</p></div><button class="btn" data-config-work>Review changes</button></div>`);
  const runtime=document.querySelector('[data-runtime-site]');
- if(runtime&&pending.length)runtime.insertAdjacentHTML('beforebegin',`<div class="configuration-work-banner"><strong>Inventory review pending</strong><span>${pending.length} changes await review across the connected services.</span><button class="btn" data-config-work>Review changes</button></div>`);
+ if(runtime&&runtime.dataset.runtimeKind!=='percepta'&&pending.length)runtime.insertAdjacentHTML('beforebegin',`<div class="configuration-work-banner"><strong>Inventory review pending</strong><span>${pending.length} changes await review across the connected services.</span><button class="btn" data-config-work>Review changes</button></div>`);
 };
 async function showConfigurationWork(){
  await refreshConfigurationWork();const rows=currentConfigurationWork();
