@@ -22,14 +22,17 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 .percepta-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:12px 0}
 .percepta-section-heading h3,.percepta-section-heading h4{margin:0;display:flex;align-items:center;gap:8px}
 .percepta-section-heading p,.percepta-device-heading p{margin:5px 0 0;color:var(--muted);font-size:12px}
-.percepta-source-grid,.percepta-equipment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 24px}
+.percepta-source-grid,.percepta-equipment-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:12px;margin:18px 0 24px}
 .percepta-source-card,.percepta-equipment-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:left;transition:border-color .16s}
 .percepta-source-card:focus-within,.percepta-equipment-card:hover{border-color:var(--brand-strong,#386346)}
-.percepta-source-card{padding:16px}
+.percepta-source-card{position:relative;padding:16px}
+.percepta-source-identity{padding-right:24px}
+.percepta-source-edit{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;color:var(--muted)}
+.percepta-source-edit:hover{background:var(--soft);color:var(--text)}
 .percepta-source-identity{display:flex;flex-direction:column;gap:6px;min-width:0}
 .percepta-source-identity strong,.percepta-equipment-copy strong{font-size:14px;line-height:1.4;overflow-wrap:anywhere}
 .percepta-source-identity>span,.percepta-equipment-copy small{font-size:11px;color:var(--muted)}
-.percepta-source-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:16px;flex-wrap:wrap}
+.percepta-source-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:14px;flex-wrap:wrap}
 .percepta-source-actions .btn{font-size:11px;padding:8px 10px;min-height:34px}
 .percepta-unassigned{margin:0 0 20px;font-size:12px}
 .percepta-equipment-card{padding:12px;display:flex;gap:12px;align-items:center;min-height:98px}
