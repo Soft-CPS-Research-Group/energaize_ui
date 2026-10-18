@@ -79,6 +79,11 @@ export function CommunityWorkspace(): JSX.Element {
         const root=createRoot(node);roots.set(node,root);
         root.render(<PerceptaSetup communityId={node.dataset.communityCollection} onChange={()=>{}}/>);
       });
+      shadow.querySelectorAll<HTMLElement>('[data-equipment-collection]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);let changed=false;
+        root.render(<PerceptaSetup siteId={node.dataset.collectionSite} equipmentId={node.dataset.equipmentCollection} onChange={()=>{changed=true;}} onOpenChange={open=>{if(!open&&changed){changed=false;node.dispatchEvent(new CustomEvent('collection-settings-saved',{bubbles:true,composed:true}));}}}/>);
+      });
       setAccountSlot(shadow.querySelector<HTMLElement>('[data-shared-user-menu]'));
       setLoaderSlot(shadow.querySelector<HTMLElement>('[data-console-loader]'));
     };
