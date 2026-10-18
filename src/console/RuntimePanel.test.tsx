@@ -17,8 +17,9 @@ it('keeps configuration behind an explicit button and bounds history to three ev
  expect(await screen.findByRole('button',{name:'Edit configuration'})).toBeInTheDocument();
  expect(screen.queryByRole('dialog',{name:'Configure Percepta'})).not.toBeInTheDocument();
  expect(screen.getAllByText('Refresh · Succeeded')).toHaveLength(3);
- fireEvent.click(screen.getByRole('button',{name:'Older'}));
- await waitFor(()=>expect(fetcher.mock.calls.some(([url])=>String(url).includes('offset=3'))).toBe(true));
+ expect(screen.queryByRole('button',{name:'Older'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('navigation',{name:'Activity pages'})).not.toBeInTheDocument();
+ expect(fetcher.mock.calls.some(([url])=>String(url).includes('limit=3'))).toBe(true);
 });
 
 function deletionFixture(stopStatus='succeeded'){
