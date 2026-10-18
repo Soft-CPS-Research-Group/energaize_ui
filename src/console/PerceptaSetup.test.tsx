@@ -10,7 +10,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1']}];
   else if(url.endsWith('/equipment-sources'))data=[];
   else if(url.endsWith('/equipment/asset/source'))data={asset_id:'asset',...JSON.parse(String(init?.body))};
-  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}}];
+  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}}];
   else if(url.endsWith('/launch'))data={instance_id:'instance',operation:{id:'operation',status:failLaunch?'failed':'succeeded',error:failLaunch?'Source unavailable':undefined}};
   else if(url.includes('/sites/site/signals'))data={capabilities:[]};
   else if(url.includes('/recs/rec/signals'))data={capabilities:[total]};
@@ -26,7 +26,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
  render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured initialSetup={initialSetup} onChange={vi.fn()}/>);
  return fetcher;
 }
-async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');fireEvent.click(screen.getByRole('button',{name:/Meter connection SoftCPS/}));}
+async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');fireEvent.click(screen.getByRole('button',{name:'View equipment for Meter connection'}));}
 it('groups equipment by its source and saves a device assignment once for all its measurements',async()=>{
  const fetcher=setup();await openEquipment();
  expect(screen.queryByRole('combobox',{name:'Equipment or scope'})).not.toBeInTheDocument();
@@ -35,7 +35,7 @@ it('groups equipment by its source and saves a device assignment once for all it
  expect(screen.getByRole('combobox',{name:'Data source'})).toHaveValue('connection');
  fireEvent.change(screen.getByRole('textbox',{name:'Device identifier'}),{target:{value:'new-meter'}});
  expect(screen.getByRole('button',{name:'Next: review'})).toBeDisabled();
- fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
+ fireEvent.click(screen.getByRole('button',{name:'Save connection'}));
  await screen.findByText('Source saved for this equipment and its measurements.');
  const save=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/equipment/asset/source')&&init?.method==='PUT');
  expect(JSON.parse(String(save?.[1]?.body))).toEqual({connection_id:'connection',device_id:'new-meter'});
@@ -44,14 +44,25 @@ it('groups equipment by its source and saves a device assignment once for all it
  expect(screen.queryByRole('combobox',{name:'Connection'})).not.toBeInTheDocument();
  expect(screen.getByText('Source: Meter connection · new-meter')).toBeInTheDocument();
 });
-it('shows shared data separately and only edits it in the community form',async()=>{
- setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');
- expect(screen.getByText('1 shared measurements · included automatically')).toBeInTheDocument();
- expect(screen.queryByRole('button',{name:/Community import/})).not.toBeInTheDocument();
- fireEvent.click(screen.getByRole('button',{name:'Community data'}));
+it('inherits community definitions read-only and offers no community or price source editor in a house',async()=>{
+ const fetcher=setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');
+ fireEvent.click(screen.getByText('From your community'));
+ expect(screen.getByText('Community import')).toBeInTheDocument();
+ expect(screen.getByText('Edit these in community Inventory → Community data.',{exact:false})).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Community data'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:/Community import|Market prices/})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Add source'}));
+ expect(screen.queryByRole('option',{name:'REN prices'})).not.toBeInTheDocument();
+ expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/recs/')&&(init?.method||'GET')!=='GET')).toBe(false);
+});
+it('edits shared measurements from the community entry point',async()=>{
+ const fetcher=setup(false,false,true);fireEvent.click(screen.getByRole('button',{name:'Community data'}));
  const dialog=await screen.findByRole('dialog',{name:'Community data'});
  fireEvent.click(await within(dialog).findByRole('button',{name:'Next: shared data'}));
- expect(within(dialog).getByRole('button',{name:/Community import/})).toBeInTheDocument();
+ fireEvent.click(within(dialog).getByRole('button',{name:/Community import/}));
+ fireEvent.click(within(dialog).getByRole('button',{name:'Save measurement'}));
+ await screen.findByText('Shared measurement saved. Houses use this definition when their configuration is applied.');
+ expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/recs/rec/signals/total')&&init?.method==='PUT')).toBe(true);
  expect(within(dialog).queryByRole('button',{name:'Generate configuration'})).not.toBeInTheDocument();
 });
 it('fills known connection defaults and asks for credentials only for the selected connector',async()=>{
@@ -94,18 +105,18 @@ it('opens the same source and measurements directly from an equipment page',asyn
 
 it('opens equipment within its source and preselects a new origin only after choosing equipment',async()=>{
  const fetcher=setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));
- fireEvent.click(await screen.findByRole('button',{name:/Second source SoftCPS/}));
+ fireEvent.click(await screen.findByRole('button',{name:'View equipment for Second source'}));
  expect(screen.queryByRole('button',{name:/Grid meter 1 measurements/})).not.toBeInTheDocument();
- fireEvent.click(screen.getByRole('button',{name:'Connect equipment'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add equipment to this source'}));
  fireEvent.click(screen.getByRole('button',{name:/Grid meter 1 measurements/}));
  expect(screen.getByRole('combobox',{name:'Data source'})).toHaveValue('second');
  expect(screen.getByRole('textbox',{name:'Device identifier'})).toHaveValue('');
  expect(screen.getByRole('button',{name:'Next: review'})).toBeDisabled();
  expect(fetcher.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
 });
-it('routes a price source to shared community data rather than equipment',async()=>{
+it('exposes connection editing separately from equipment navigation',async()=>{
  setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));
- fireEvent.click(await screen.findByRole('button',{name:/Market prices ren Community prices/}));
- const dialog=await screen.findByRole('dialog',{name:'Community data'});
- expect(within(dialog).queryByRole('button',{name:'Connect equipment'})).not.toBeInTheDocument();
+ fireEvent.click(await screen.findByRole('button',{name:'Edit connection Meter connection'}));
+ expect(screen.getByLabelText('Name')).toHaveValue('Meter connection');
+ expect(screen.queryByRole('button',{name:/Grid meter 1 measurements/})).not.toBeInTheDocument();
 });

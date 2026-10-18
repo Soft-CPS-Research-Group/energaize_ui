@@ -1,6 +1,6 @@
-/** The same Mediterranean illustration sheets used by inventory and topology. */
+/** Transparent vector versions of Inventory's original product illustrations.
+ * The SVG assets are rendered from public/console/product-art.js, without a paper tile. */
 export function EquipmentArt({type}:{type?:string}){
- const tiles:Record<string,[string,number]>={home:['ceramic',0],pv_system:['ceramic',1],pv_panel:['ceramic',1],solar_pv:['ceramic',1],solar_panel:['ceramic',1],battery:['ceramic',2],ev_charger:['ceramic',3],electric_vehicle:['ceramic',3],ev:['ceramic',3],community:['ceramic',4],grid_meter:['ceramic-extra',0],appliance:['ceramic-extra',1],heat_pump:['ceramic-extra',2],heater:['ceramic-extra',2],thermal_storage:['ceramic-extra',2]};
- const [sheet,index]=tiles[type||'']||['ceramic',5];
- return <span className="percepta-equipment-art" aria-hidden="true" style={{backgroundImage:`url('/assets/mediterranean/${sheet}.webp')`,backgroundPosition:`${(index%3)*50}% ${index<3?0:100}%`}}/>;
+ const kinds:Record<string,string>={home:'home',pv_system:'sun',pv_panel:'sun',solar_pv:'sun',solar_panel:'sun',battery:'battery',ev_charger:'charger',electric_vehicle:'car',ev:'car',community:'community',grid_meter:'bolt',appliance:'appliance',heat_pump:'heat',heater:'heat',thermal_storage:'heat',water_pump:'pump',micro_wind_turbine:'wind'};
+ return <img className="percepta-equipment-art" src={`/assets/equipment-icons/${kinds[type||'']||'device'}.svg`} alt="" aria-hidden="true"/>;
 }
