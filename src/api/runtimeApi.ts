@@ -16,6 +16,7 @@ export interface RuntimeInstance {
   configuration_mode?: "prepared"|"generated";
   mode: 'simulation' | 'docker'; managed: boolean; image: string; container_name: string;
   observed_state: string; desired_state: string; health: string; error?: string | null;
+  started_at?: string | null;
   active_operation: string | null; last_checked_at: string | null; desired_config_version: string | null;
   applied_config_version: string | null; legacy_target_id?: string; base_url?: string | null;
 }

@@ -7,11 +7,13 @@ beforeAll(()=>{
  HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
 });
 afterEach(()=>vi.unstubAllGlobals());
-function setup(){
+function setup(initialSetup=false,failLaunch=false){
  const channel={capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,_init?:RequestInit)=>{
   const url=String(input);let data:unknown={};
-  if(url.includes('/sites/site/signals')||url.includes('/recs/rec/signals'))data={capabilities:[]};
+  if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1']}];
+  else if(url.endsWith('/launch'))data={instance_id:'instance',operation:{id:'operation',status:failLaunch?'failed':'succeeded',error:failLaunch?'Source unavailable':undefined}};
+  else if(url.includes('/sites/site/signals')||url.includes('/recs/rec/signals'))data={capabilities:[]};
   else if(url.includes('/assets/asset/signals'))data={profile_id:'profile',asset_type:'grid_meter',capabilities:[channel]};
   else if(url.includes('/community-api/api/sites/site'))data={id:'site',name:'My house',assigned_rec_id:'rec'};
   else if(url.includes('/community-api/api/assets/'))data=[{id:'asset',data:{site_id:'site',name:'Grid meter'}}];
@@ -21,7 +23,7 @@ function setup(){
   return new Response(JSON.stringify(data),{status:200});
  });
  vi.stubGlobal('fetch',fetcher);
- render(<PerceptaSetup siteId="site" configured onChange={vi.fn()}/>);
+ render(<PerceptaSetup siteId="site" configured initialSetup={initialSetup} onChange={vi.fn()}/>);
  return fetcher;
 }
 it('guides connections, channel mapping and generation without deploying an instance',async()=>{
@@ -60,4 +62,29 @@ it('identifies community channels as shared and closes without generating',async
  fireEvent.click(screen.getByRole('button',{name:'Close configuration'}));
  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
  expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/preview'))).toBe(false);
+});
+
+async function reviewInitial(){
+ fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));
+ await screen.findByText('Meter connection');
+ fireEvent.click(screen.getByRole('button',{name:'Next: channels'}));
+ fireEvent.click(screen.getByRole('button',{name:'Next: review'}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Generate configuration'})).toBeEnabled());
+ fireEvent.click(screen.getByRole('button',{name:'Generate configuration'}));
+ await screen.findByText('Configuration ready');
+}
+it('starts only after Create & start and closes on confirmation',async()=>{
+ const fetcher=setup(true);await reviewInitial();
+ expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/launch'))).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:'Create & start'}));
+ await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+ const launch=fetcher.mock.calls.find(([url])=>String(url).endsWith('/launch'));
+ expect(JSON.parse(String(launch?.[1]?.body))).toMatchObject({version:'123abc',host_id:'local',image:'energaize/percepta:1'});
+});
+it('keeps setup open when starting fails',async()=>{
+ setup(true,true);await reviewInitial();
+ fireEvent.click(screen.getByRole('button',{name:'Create & start'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Source unavailable');
+ expect(screen.getByRole('dialog')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Create & start'})).toBeEnabled();
 });
