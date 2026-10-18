@@ -17,3 +17,44 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 .percepta-dialog .percepta-wizard-content{padding:0;margin:0;border:0;min-width:0}
 
 .percepta-equipment-group{margin:24px 0}.percepta-equipment-group h4{font-size:12px;color:var(--muted);font-weight:500;margin:0 0 8px}.percepta-equipment-row{display:flex;width:100%;align-items:center;justify-content:space-between;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;color:inherit;padding:15px 0;cursor:pointer}.percepta-equipment-row:hover{color:var(--accent,#386b44)}.percepta-equipment-row small,.percepta-connection-list small,.percepta-shared-data small{display:block;color:var(--muted);margin-top:5px;font-size:12px}.percepta-equipment-source{margin:18px 0 24px}.percepta-equipment-source small,.percepta-helper{font-size:12px;color:var(--muted);line-height:1.6}.percepta-editor-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}.percepta-shared-data{border-top:1px solid var(--line);padding-top:20px;margin-top:24px}.percepta-shared-data p{font-size:12px;color:var(--muted)}.percepta-shared-data ul{list-style:none;padding:0}.percepta-shared-data li{padding:8px 0;font-size:13px}.percepta-other-measurements,.percepta-technical-settings{margin-top:24px}.percepta-wizard-content>details{margin:18px 0}.community-collection-entry{display:inline-flex}.percepta-equipment-row strong{font-size:14px;font-weight:500}
+
+/* Collection is navigated source → equipment → measurement. */
+.percepta-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0}
+.percepta-section-heading h3,.percepta-section-heading h4{margin:0;display:flex;align-items:center;gap:8px}
+.percepta-section-heading p,.percepta-device-heading p{margin:5px 0 0;color:var(--muted,#65746e);font-size:13px}
+.percepta-source-grid,.percepta-equipment-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:16px;margin:20px 0}
+.percepta-source-card,.percepta-equipment-card{position:relative;border:1px solid var(--line,#dce4df);border-radius:16px;background:var(--surface,#fff);text-align:left;overflow:hidden;transition:border-color .16s,box-shadow .16s}
+.percepta-source-card:focus-within,.percepta-source-card:hover,.percepta-equipment-card:hover{border-color:var(--accent,#277d66);box-shadow:0 4px 16px #264c3610}
+.percepta-source-open{display:flex;flex-direction:column;align-items:flex-start;gap:9px;width:100%;height:100%;padding:24px;text-align:left}
+.percepta-source-open>svg{color:var(--accent,#277d66);margin-bottom:10px}
+.percepta-source-card strong,.percepta-equipment-card strong{font-size:15px;line-height:1.4;overflow-wrap:anywhere}
+.percepta-source-open span,.percepta-source-card small,.percepta-equipment-card>span:not(.percepta-equipment-art){font-size:12px;color:var(--muted,#65746e)}
+.percepta-source-open small{display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:12px}
+.percepta-source-edit{position:absolute;right:10px;top:10px;border-radius:8px;padding:8px;color:var(--muted,#65746e)}
+.percepta-source-edit:hover{background:var(--soft,#edf3ef)}
+.percepta-unassigned{display:flex;flex-direction:column;gap:12px;padding:24px;border-style:dashed}
+.percepta-equipment-card{padding:20px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-height:210px}
+.percepta-equipment-art{display:block;flex-shrink:0;width:96px;height:96px;background-size:300% 200%;background-repeat:no-repeat}
+.percepta-card-arrow{position:absolute;right:16px;top:24px;color:var(--muted,#65746e)}
+.percepta-device-heading{display:flex;align-items:center;gap:20px;margin:12px 0 20px}
+.percepta-device-heading h3{margin:0!important;font-size:22px}
+.percepta-device-heading .percepta-equipment-art{width:100px;height:100px}
+.percepta-measurement-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:12px 0 22px}
+.percepta-measurement-card{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:16px;border:1px solid var(--line,#dce4df);border-radius:12px;background:var(--surface,#fff);text-align:left;overflow-wrap:anywhere;transition:border-color .16s}
+.percepta-measurement-card:hover{border-color:var(--accent,#277d66)}
+.percepta-measurement-card>svg{color:var(--accent,#277d66)}
+.percepta-measurement-card strong{font-size:14px}
+.percepta-measurement-card span{font-size:12px;color:var(--muted,#65746e);display:flex;justify-content:space-between;width:100%}
+.percepta-actuators{border-top:1px solid var(--line,#dce4df);margin-top:28px;padding-top:8px}
+.percepta-empty{font-size:13px;color:var(--muted,#65746e);padding:12px 0}
+.percepta-shared-summary{display:flex;align-items:center;gap:14px;border-top:1px solid var(--line,#dce4df);margin-top:24px;padding-top:22px}
+.percepta-shared-summary>div{flex:1;display:flex;flex-direction:column;gap:4px}
+.percepta-shared-summary span{font-size:12px;color:var(--muted,#65746e)}
+.percepta-house-totals{margin-top:8px}
+.percepta-equipment-source{background:var(--soft,#f3f6f3);border-radius:12px;padding:16px!important}
+@media(max-width:560px){.percepta-source-grid,.percepta-equipment-grid{grid-template-columns:1fr 1fr;gap:10px}.percepta-section-heading,.percepta-shared-summary{flex-wrap:wrap}.percepta-equipment-card{padding:12px}.percepta-source-open{padding:18px}.percepta-source-card strong{font-size:14px}}
+@media(prefers-reduced-motion:reduce){.percepta-source-card,.percepta-equipment-card,.percepta-measurement-card{transition:none}}
+.percepta-device-heading .percepta-equipment-art{width:72px;height:72px}
+.percepta-source-summary{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:10px;background:var(--soft,#f3f6f3);margin-bottom:22px}
+.percepta-source-summary>span{flex:1;font-size:13px;font-weight:600}
+.percepta-source-summary small{display:block;color:var(--muted,#65746e);font-size:12px;font-weight:400;margin-top:3px}
