@@ -15,6 +15,7 @@ import { mountWorkspace } from 'virtual:community-runtime';
 import baseCss from 'virtual:community-styles';
 import calendarCss from 'react-day-picker/style.css?inline';
 import telemetryCss from './telemetry.css?inline';
+import { PerceptaSetup } from './PerceptaSetup';
 import { RuntimePanel } from './RuntimePanel';
 import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
@@ -72,6 +73,11 @@ export function CommunityWorkspace(): JSX.Element {
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);
         root.render(<RuntimePanel siteId={node.dataset.runtimeSite} siteName={node.dataset.runtimeName} kind={node.dataset.runtimeKind as 'percepta'|'controller'|undefined} navigate={path=>navigation.current(path)}/>);
+      });
+      shadow.querySelectorAll<HTMLElement>('[data-community-collection]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);
+        root.render(<PerceptaSetup communityId={node.dataset.communityCollection} onChange={()=>{}}/>);
       });
       setAccountSlot(shadow.querySelector<HTMLElement>('[data-shared-user-menu]'));
       setLoaderSlot(shadow.querySelector<HTMLElement>('[data-console-loader]'));

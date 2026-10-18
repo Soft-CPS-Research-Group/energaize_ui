@@ -11,3 +11,11 @@ siteDetailOriginal=function(){
 };
 const beforeRuntimeAdmin=admin;
 admin=function(){return beforeRuntimeAdmin()+`<div data-runtime-admin></div>`;};
+
+const beforeCollectionInventory=siteList;
+siteList=function(){
+ const html=beforeCollectionInventory();
+ if(!comm().recId)return html;
+ const importButton=button('Import Excel','import','upload');
+ return html.replace(importButton,`<span class="community-collection-entry" data-community-collection="${esc(comm().recId)}"></span>`+importButton);
+};
