@@ -25,7 +25,9 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 .percepta-source-grid,.percepta-equipment-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:12px;margin:18px 0 24px}
 .percepta-source-card,.percepta-equipment-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:left;transition:border-color .16s}
 .percepta-source-card:focus-within,.percepta-equipment-card:hover{border-color:var(--brand-strong,#386346)}
-.percepta-source-card{position:relative;padding:16px}
+.percepta-source-card{position:relative;padding:18px;background:var(--tint,#e7eddf);border-color:color-mix(in srgb,var(--brand-strong,#405d43) 35%,var(--line));box-shadow:0 2px 5px #18251f08}
+.percepta-source-card:hover{border-color:var(--brand-strong,#405d43)}
+.percepta-source-actions .btn{background:var(--surface);border-color:color-mix(in srgb,var(--brand-strong,#405d43) 25%,var(--line))}
 .percepta-source-identity{padding-right:24px}
 .percepta-source-edit{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:30px;height:30px;border-radius:8px;color:var(--muted)}
 .percepta-source-edit:hover{background:var(--soft);color:var(--text)}
@@ -49,10 +51,11 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 .percepta-measurement-card span{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;width:100%}
 .percepta-actuators{border-top:1px solid var(--line);margin-top:24px;padding-top:8px}
 .percepta-empty{font-size:12px;color:var(--muted);padding:12px 0}
-.percepta-shared-summary,.percepta-calculations{border-top:1px solid var(--line);padding:16px 0 0;font-size:12px}
-.percepta-shared-summary summary{display:flex;align-items:center;gap:9px;flex-wrap:wrap;cursor:pointer}
-.percepta-shared-summary summary::after{content:'⌄';margin-left:auto}
-.percepta-shared-summary summary>span,.percepta-shared-summary p,.percepta-calculations p{color:var(--muted);font-size:12px;line-height:1.6}
+.percepta-shared-summary{border-top:1px solid var(--line);padding:22px 0 0;margin-top:24px;font-size:12px}
+.percepta-shared-summary .percepta-section-heading{margin:0 0 8px}
+.percepta-shared-summary h3{font-size:16px}
+.percepta-readonly{color:var(--muted);font-size:11px}
+.percepta-shared-summary p{color:var(--muted);font-size:12px;line-height:1.6}
 .percepta-shared-summary ul{padding:0;list-style:none;margin:12px 0}
 .percepta-shared-summary li{display:flex;justify-content:space-between;gap:12px;padding:8px 0}
 .percepta-shared-summary li>span{color:var(--muted)}
