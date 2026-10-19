@@ -34,7 +34,7 @@ it('groups equipment by its source and saves a device assignment once for all it
  fireEvent.click(screen.getByRole('button',{name:'Change source'}));
  expect(screen.getByRole('combobox',{name:'Data source'})).toHaveValue('connection');
  fireEvent.change(screen.getByRole('textbox',{name:'Device identifier'}),{target:{value:'new-meter'}});
- expect(screen.getByRole('button',{name:'Next: review'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Next: general measurements'})).toBeDisabled();
  fireEvent.click(screen.getByRole('button',{name:'Save connection'}));
  await screen.findByText('Source saved for this equipment and its measurements.');
  const save=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/equipment/asset/source')&&init?.method==='PUT');
@@ -46,11 +46,15 @@ it('groups equipment by its source and saves a device assignment once for all it
 });
 it('inherits community definitions read-only and offers no community or price source editor in a house',async()=>{
  const fetcher=setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');
- fireEvent.click(screen.getByText('From your community'));
+ expect(screen.queryByText('From your community')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Next: general measurements'}));
+ expect(screen.queryByRole('button',{name:'Add source'})).not.toBeInTheDocument();
+ expect(screen.getByRole('heading',{name:'This house'})).toBeInTheDocument();
  expect(screen.getByText('Community import')).toBeInTheDocument();
  expect(screen.getByText('Edit these in community Inventory → Community data.',{exact:false})).toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Community data'})).not.toBeInTheDocument();
  expect(screen.queryByRole('button',{name:/Community import|Market prices/})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Back'}));
  fireEvent.click(screen.getByRole('button',{name:'Add source'}));
  expect(screen.queryByRole('option',{name:'REN prices'})).not.toBeInTheDocument();
  expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/recs/')&&(init?.method||'GET')!=='GET')).toBe(false);
@@ -75,7 +79,7 @@ it('fills known connection defaults and asks for credentials only for the select
  expect(screen.getByLabelText('Username')).toBeRequired();expect(screen.getByLabelText('Password')).toBeRequired();
  expect(screen.getByLabelText('Data endpoint')).toHaveValue('/data/request/Instant?instantType=avg&tags=');
 });
-async function reviewInitial(){await openEquipment();fireEvent.click(screen.getByRole('button',{name:'Next: review'}));fireEvent.click(screen.getByRole('button',{name:'Generate configuration'}));await screen.findByText('Configuration ready');}
+async function reviewInitial(){await openEquipment();fireEvent.click(screen.getByRole('button',{name:'Next: general measurements'}));fireEvent.click(screen.getByRole('button',{name:'Next: review'}));fireEvent.click(screen.getByRole('button',{name:'Generate configuration'}));await screen.findByText('Configuration ready');}
 it('starts only after Create & start and closes after confirmation',async()=>{
  const fetcher=setup(true);await reviewInitial();
  expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/launch'))).toBe(false);
@@ -111,7 +115,7 @@ it('opens equipment within its source and preselects a new origin only after cho
  fireEvent.click(screen.getByRole('button',{name:/Grid meter 1 measurements/}));
  expect(screen.getByRole('combobox',{name:'Data source'})).toHaveValue('second');
  expect(screen.getByRole('textbox',{name:'Device identifier'})).toHaveValue('');
- expect(screen.getByRole('button',{name:'Next: review'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Next: general measurements'})).toBeDisabled();
  expect(fetcher.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
 });
 it('exposes connection editing separately from equipment navigation',async()=>{
@@ -119,4 +123,20 @@ it('exposes connection editing separately from equipment navigation',async()=>{
  fireEvent.click(await screen.findByRole('button',{name:'Edit connection Meter connection'}));
  expect(screen.getByLabelText('Name')).toHaveValue('Meter connection');
  expect(screen.queryByRole('button',{name:/Grid meter 1 measurements/})).not.toBeInTheDocument();
+});
+
+it('keeps house measurements in the general step and restores the owner when navigating back',async()=>{
+ const fetcher=setup();await openEquipment();
+ fireEvent.click(screen.getByRole('button',{name:'Next: general measurements'}));
+ fireEvent.click(screen.getByRole('button',{name:'Next: review'}));
+ fireEvent.click(screen.getByRole('button',{name:'Back'}));
+ expect(screen.getByRole('heading',{name:'This house'})).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
+ expect(screen.getByRole('button',{name:'Next: review'})).toBeDisabled();
+ expect(screen.queryByRole('region',{name:'From your community'})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText('Measurement saved.');
+ expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/sites/site/signals')&&init?.method==='POST')).toBe(true);
+ expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/recs/')&&(init?.method||'GET')!=='GET')).toBe(false);
+ expect(screen.getByRole('region',{name:'From your community'})).toBeInTheDocument();
 });
