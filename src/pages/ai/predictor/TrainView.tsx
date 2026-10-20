@@ -51,11 +51,18 @@ function makeLayer(type: LSTMLayerType): LSTMLayer {
   return { id, type };
 }
 
-function serializeLayer(l: LSTMLayer): Record<string, unknown> {
-  if (l.type === "linear")  return { type: "linear",  out: Number(l.out ?? 64) };
-  if (l.type === "lstm")    return { type: "lstm",    hidden: Number(l.hidden ?? 256), num_layers: Number(l.num_layers ?? 2) };
-  if (l.type === "gru")     return { type: "gru",     hidden: Number(l.hidden ?? 128), num_layers: Number(l.num_layers ?? 1) };
-  if (l.type === "dropout") return { type: "dropout", p: Number(l.p ?? 0.3) };
+/** A layer field as a number; a cleared or invalid field falls back to the layer default. */
+function numOr(raw: string | undefined, fallback: number): number {
+  if (raw == null || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+export function serializeLayer(l: LSTMLayer): Record<string, unknown> {
+  if (l.type === "linear")  return { type: "linear",  out: numOr(l.out, 64) };
+  if (l.type === "lstm")    return { type: "lstm",    hidden: numOr(l.hidden, 256), num_layers: numOr(l.num_layers, 2) };
+  if (l.type === "gru")     return { type: "gru",     hidden: numOr(l.hidden, 128), num_layers: numOr(l.num_layers, 1) };
+  if (l.type === "dropout") return { type: "dropout", p: numOr(l.p, 0.3) };
   if (l.type === "attention") return { type: "attention" };
   return { type: l.type };
 }
@@ -98,14 +105,21 @@ function LayerInfoTip({ type }: { type: LSTMLayerType }) {
 
 // ─── Default hyperparams ──────────────────────────────────────────────────────
 
-const XGB_DEFAULTS = { n_estimators: "500", max_depth: "7", learning_rate: "0.1", subsample: "0.8", colsample_bytree: "0.8", min_child_weight: "1" } as const;
+// Server-side defaults, shown as placeholders. Fields start empty and only what
+// the user types is sent, so the server keeps its own (lane-specific) defaults.
+const XGB_DEFAULTS = { n_estimators: "500", max_depth: "7 / 5", learning_rate: "0.1", subsample: "0.8", colsample_bytree: "0.8", min_child_weight: "1" } as const;
 type XGBKey = keyof typeof XGB_DEFAULTS;
 
-const LGBM_DEFAULTS = { objective: "tweedie", n_estimators: "1000", max_depth: "-1", learning_rate: "0.03", num_leaves: "127", subsample: "0.8", colsample_bytree: "0.7", min_child_samples: "10", reg_alpha: "0.1", reg_lambda: "1.0" } as const;
-type LGBMKey = keyof typeof LGBM_DEFAULTS;
+const LGBM_DEFAULTS = { n_estimators: "1000", max_depth: "-1", learning_rate: "0.03", num_leaves: "127", subsample: "0.8", colsample_bytree: "0.7", min_child_samples: "10", reg_alpha: "0.1", reg_lambda: "1.0" } as const;
+type LGBMKey = keyof typeof LGBM_DEFAULTS | "objective";
 
-const LSTM_DEFAULTS = { lookback: "672", epochs: "100", batch_size: "64", lr: "0.001", patience: "20" } as const;
+// The predictor always builds 672-step sequences, so lookback is not offered.
+const LSTM_DEFAULTS = { epochs: "100", batch_size: "64", lr: "0.001", patience: "20" } as const;
 type LSTMKey = keyof typeof LSTM_DEFAULTS;
+
+function emptyFields<K extends string>(defaults: Record<K, string>): { [P in K]: string } {
+  return Object.fromEntries(Object.keys(defaults).map((k) => [k, ""])) as { [P in K]: string };
+}
 
 type LSTMPreset = { name: string; tip: string; layers: Omit<LSTMLayer, "id">[] };
 const LSTM_PRESETS: LSTMPreset[] = [
@@ -174,16 +188,30 @@ const LSTM_PRESETS: LSTMPreset[] = [
   },
 ];
 
+/**
+ * Keep only fields holding a finite number. A cleared field is left out so the
+ * server default applies, instead of being sent as Number("") === 0.
+ */
+export function numericParams(params: Record<string, string>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(params)) {
+    if (raw.trim() === "") continue;
+    const value = Number(raw);
+    if (Number.isFinite(value)) out[key] = value;
+  }
+  return out;
+}
+
 // ─── Small number input ───────────────────────────────────────────────────────
 
-function HpNumInput({ label, value, onChange, step, min, max }: {
+function HpNumInput({ label, value, onChange, step, min, max, placeholder }: {
   label: string; value: string; onChange: (v: string) => void;
-  step?: string; min?: string | number; max?: string | number;
+  step?: string; min?: string | number; max?: string | number; placeholder?: string;
 }) {
   return (
     <label className="hp-field">
       <span className="hp-field-label">{label}</span>
-      <input type="number" className="analysis-text-input hp-input" value={value}
+      <input type="number" className="analysis-text-input hp-input" value={value} placeholder={placeholder}
         step={step} min={min} max={max} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
@@ -209,12 +237,12 @@ function XGBForm({ schema, onSchemaChange, params, onChange }: {
       <div>
         <div className="train-modal-section-title">Hyperparameters</div>
         <div className="hp-grid" style={{ marginTop: 8 }}>
-          <HpNumInput label="n_estimators" value={params.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
-          <HpNumInput label="max_depth" value={params.max_depth} min={1} max={20} onChange={(v) => onChange("max_depth", v)} />
-          <HpNumInput label="learning_rate" value={params.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
-          <HpNumInput label="subsample" value={params.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
-          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
-          <HpNumInput label="min_child_weight" value={params.min_child_weight} min={0} onChange={(v) => onChange("min_child_weight", v)} />
+          <HpNumInput label="n_estimators" value={params.n_estimators} placeholder={XGB_DEFAULTS.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
+          <HpNumInput label="max_depth" value={params.max_depth} placeholder={XGB_DEFAULTS.max_depth} min={1} max={20} onChange={(v) => onChange("max_depth", v)} />
+          <HpNumInput label="learning_rate" value={params.learning_rate} placeholder={XGB_DEFAULTS.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
+          <HpNumInput label="subsample" value={params.subsample} placeholder={XGB_DEFAULTS.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
+          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} placeholder={XGB_DEFAULTS.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
+          <HpNumInput label="min_child_weight" value={params.min_child_weight} placeholder={XGB_DEFAULTS.min_child_weight} min={0} onChange={(v) => onChange("min_child_weight", v)} />
         </div>
       </div>
     </div>
@@ -238,15 +266,15 @@ function LGBMForm({ params, onChange }: {
           </select>
         </label>
         <div className="hp-grid">
-          <HpNumInput label="n_estimators" value={params.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
-          <HpNumInput label="max_depth" value={params.max_depth} min={-1} onChange={(v) => onChange("max_depth", v)} />
-          <HpNumInput label="learning_rate" value={params.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
-          <HpNumInput label="num_leaves" value={params.num_leaves} min={2} onChange={(v) => onChange("num_leaves", v)} />
-          <HpNumInput label="subsample" value={params.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
-          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
-          <HpNumInput label="min_child_samples" value={params.min_child_samples} min={1} onChange={(v) => onChange("min_child_samples", v)} />
-          <HpNumInput label="reg_alpha" value={params.reg_alpha} step="0.01" min={0} onChange={(v) => onChange("reg_alpha", v)} />
-          <HpNumInput label="reg_lambda" value={params.reg_lambda} step="0.1" min={0} onChange={(v) => onChange("reg_lambda", v)} />
+          <HpNumInput label="n_estimators" value={params.n_estimators} placeholder={LGBM_DEFAULTS.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
+          <HpNumInput label="max_depth" value={params.max_depth} placeholder={LGBM_DEFAULTS.max_depth} min={-1} onChange={(v) => onChange("max_depth", v)} />
+          <HpNumInput label="learning_rate" value={params.learning_rate} placeholder={LGBM_DEFAULTS.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
+          <HpNumInput label="num_leaves" value={params.num_leaves} placeholder={LGBM_DEFAULTS.num_leaves} min={2} onChange={(v) => onChange("num_leaves", v)} />
+          <HpNumInput label="subsample" value={params.subsample} placeholder={LGBM_DEFAULTS.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
+          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} placeholder={LGBM_DEFAULTS.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
+          <HpNumInput label="min_child_samples" value={params.min_child_samples} placeholder={LGBM_DEFAULTS.min_child_samples} min={1} onChange={(v) => onChange("min_child_samples", v)} />
+          <HpNumInput label="reg_alpha" value={params.reg_alpha} placeholder={LGBM_DEFAULTS.reg_alpha} step="0.01" min={0} onChange={(v) => onChange("reg_alpha", v)} />
+          <HpNumInput label="reg_lambda" value={params.reg_lambda} placeholder={LGBM_DEFAULTS.reg_lambda} step="0.1" min={0} onChange={(v) => onChange("reg_lambda", v)} />
         </div>
       </div>
     </div>
@@ -500,11 +528,10 @@ function LSTMForm({ params, onChange, layers, onLayersChange }: {
       <div>
         <div className="train-modal-section-title">Training Hyperparameters</div>
         <div className="hp-grid" style={{ marginTop: 8 }}>
-          <HpNumInput label="lookback" value={params.lookback} min={1} onChange={(v) => onChange("lookback", v)} />
-          <HpNumInput label="epochs" value={params.epochs} min={1} onChange={(v) => onChange("epochs", v)} />
-          <HpNumInput label="batch_size" value={params.batch_size} min={1} onChange={(v) => onChange("batch_size", v)} />
-          <HpNumInput label="lr" value={params.lr} step="0.0001" min={0} onChange={(v) => onChange("lr", v)} />
-          <HpNumInput label="patience" value={params.patience} min={1} onChange={(v) => onChange("patience", v)} />
+          <HpNumInput label="epochs" value={params.epochs} placeholder={LSTM_DEFAULTS.epochs} min={1} onChange={(v) => onChange("epochs", v)} />
+          <HpNumInput label="batch_size" value={params.batch_size} placeholder={LSTM_DEFAULTS.batch_size} min={1} onChange={(v) => onChange("batch_size", v)} />
+          <HpNumInput label="lr" value={params.lr} placeholder={LSTM_DEFAULTS.lr} step="0.0001" min={0} onChange={(v) => onChange("lr", v)} />
+          <HpNumInput label="patience" value={params.patience} placeholder={LSTM_DEFAULTS.patience} min={1} onChange={(v) => onChange("patience", v)} />
         </div>
       </div>
 
@@ -840,44 +867,18 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
   const [trainLane, setTrainLane] = useState<"consumption" | "production" | "both">("both");
 
   // Hyperparams state
-  const [xgbParams, setXgbParams] = useState<{ [K in XGBKey]: string }>({ ...XGB_DEFAULTS });
-  const [lgbmParams, setLgbmParams] = useState<{ [K in LGBMKey]: string }>({ ...LGBM_DEFAULTS });
-  const [lstmParams, setLstmParams] = useState<{ [K in LSTMKey]: string }>({ ...LSTM_DEFAULTS });
+  const [xgbParams, setXgbParams] = useState<{ [K in XGBKey]: string }>(() => emptyFields(XGB_DEFAULTS));
+  const [lgbmParams, setLgbmParams] = useState<{ [K in LGBMKey]: string }>(() => ({ objective: "tweedie", ...emptyFields(LGBM_DEFAULTS) }));
+  const [lstmParams, setLstmParams] = useState<{ [K in LSTMKey]: string }>(() => emptyFields(LSTM_DEFAULTS));
   const [lstmLayers, setLstmLayers] = useState<LSTMLayer[]>([]);
 
   function buildHyperparams(): Record<string, unknown> {
-    if (trainModelType === "xgboost") {
-      return {
-        n_estimators: Number(xgbParams.n_estimators),
-        max_depth: Number(xgbParams.max_depth),
-        learning_rate: Number(xgbParams.learning_rate),
-        subsample: Number(xgbParams.subsample),
-        colsample_bytree: Number(xgbParams.colsample_bytree),
-        min_child_weight: Number(xgbParams.min_child_weight),
-      };
-    }
+    if (trainModelType === "xgboost") return numericParams(xgbParams);
     if (trainModelType === "lgbm") {
-      return {
-        objective: lgbmParams.objective,
-        n_estimators: Number(lgbmParams.n_estimators),
-        max_depth: Number(lgbmParams.max_depth),
-        learning_rate: Number(lgbmParams.learning_rate),
-        num_leaves: Number(lgbmParams.num_leaves),
-        subsample: Number(lgbmParams.subsample),
-        colsample_bytree: Number(lgbmParams.colsample_bytree),
-        min_child_samples: Number(lgbmParams.min_child_samples),
-        reg_alpha: Number(lgbmParams.reg_alpha),
-        reg_lambda: Number(lgbmParams.reg_lambda),
-      };
+      const { objective, ...numeric } = lgbmParams;
+      return { objective, ...numericParams(numeric) };
     }
-    // lstm
-    const hp: Record<string, unknown> = {
-      lookback: Number(lstmParams.lookback),
-      epochs: Number(lstmParams.epochs),
-      batch_size: Number(lstmParams.batch_size),
-      lr: Number(lstmParams.lr),
-      patience: Number(lstmParams.patience),
-    };
+    const hp: Record<string, unknown> = numericParams(lstmParams);
     if (lstmLayers.length > 0) hp.layers = lstmLayers.map(serializeLayer);
     return hp;
   }
@@ -1102,7 +1103,7 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
           </div>
 
           <p style={{ margin: 0, fontSize: "0.83rem", color: "var(--text-soft)" }}>
-            All fields are optional — omitting any falls back to the server-side production defaults.
+            All fields are optional. Empty fields use the server default shown in grey; max_depth defaults to 7 for consumption and 5 for production.
           </p>
 
           {/* Per-model hyperparams */}
