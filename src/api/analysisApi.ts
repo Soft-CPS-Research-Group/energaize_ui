@@ -1,4 +1,5 @@
 import { predictorFileUrl, predictorHttp } from "./client";
+import { setActiveModel, type SetActiveModelResponse } from "./predictorApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -207,6 +208,30 @@ export async function getJob(jobId: string): Promise<AnalysisJob> {
 
 export async function cancelJob(jobId: string): Promise<void> {
   await predictorHttp<void>(`/api/analysis/jobs/${jobId}`, { method: "DELETE" });
+}
+
+/** Restore an archived (old/) model file to the production slot; the current one is archived. */
+export async function promoteModel(modelKey: string): Promise<{ status: string; model: ModelMeta }> {
+  return predictorHttp<{ status: string; model: ModelMeta }>(
+    `/api/analysis/models/${encodeURIComponent(modelKey)}/promote`,
+    { method: "POST" }
+  );
+}
+
+/** Archived models live under old/ and are not in the production slot. */
+export function isArchivedModel(m: Pick<ModelMeta, "model_key">): boolean {
+  return m.model_key.startsWith("old/");
+}
+
+/**
+ * Make a warm model the one used for forecasting its house and lane. An archived
+ * file is restored to the production slot first; active-model on its own only
+ * chooses which backend's production file is used.
+ */
+export async function activateModel(m: ModelMeta): Promise<SetActiveModelResponse> {
+  if (!m.house_id) throw new Error("Only house models can be set as active");
+  if (isArchivedModel(m)) await promoteModel(m.model_key);
+  return setActiveModel(m.house_id, { lane: m.lane, model_type: m.model_backend ?? "xgboost" });
 }
 
 export function getExportUrl(jobId: string): string {

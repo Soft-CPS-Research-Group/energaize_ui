@@ -48,3 +48,39 @@ describe('Predictor API gateway paths', () => {
     expect(analysis.getExportUrl('job-1')).toBe('/predictor-api/api/analysis/jobs/job-1/export?format=csv');
   });
 });
+
+describe('Setting a model as active', () => {
+  const base = {
+    house_id: 'R-H-01', lane: 'production' as const, model_type: 'warm' as const, active: null,
+    file_path: '', file_size_kb: 1, stored_mae: 0.1, n_features: 10, n_outputs: 96,
+  };
+
+  it('restores an archived model before selecting its backend', async () => {
+    const { analysis } = await loadApis();
+    const fetch = stubFetch({});
+    await analysis.activateModel({ ...base, model_key: 'old/lgbm_direct_model_1_year_R-H-01_production_20261001_120000', model_backend: 'lgbm' });
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      '/predictor-api/api/analysis/models/old%2Flgbm_direct_model_1_year_R-H-01_production_20261001_120000/promote',
+      '/predictor-api/api/houses/R-H-01/active-model',
+    ]);
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ lane: 'production', model_type: 'lgbm' });
+  });
+
+  it('only selects the backend for a model already in production', async () => {
+    const { analysis } = await loadApis();
+    const fetch = stubFetch({});
+    await analysis.activateModel({ ...base, model_key: 'direct_model_1_year_R-H-01_production', active: false });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch.mock.calls[0][0]).toBe('/predictor-api/api/houses/R-H-01/active-model');
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ lane: 'production', model_type: 'xgboost' });
+  });
+
+  it('leaves the active backend alone when the restore fails', async () => {
+    const { analysis } = await loadApis();
+    const fetch = vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ detail: 'Archived model not found' }) });
+    vi.stubGlobal('fetch', fetch);
+    await expect(analysis.activateModel({ ...base, model_key: 'old/direct_model_1_year_R-H-01_production_20261001_120000' }))
+      .rejects.toThrow('Archived model not found');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
