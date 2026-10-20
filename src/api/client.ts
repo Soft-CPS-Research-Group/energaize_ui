@@ -37,6 +37,10 @@ export const JOB_ORCHESTRATOR_API_URL =
   deriveBaseUrlWithPort(API_BASE_URL, "8011") ||
   "/jobs-api";
 
+// The predictor has its own gateway path; it must not be nested under API_BASE_URL.
+export const PREDICTOR_API_URL =
+  normalizeBaseUrl(import.meta.env.VITE_PREDICTOR_API_URL) || "/predictor-api";
+
 function buildUrl(path: string, baseUrl = API_BASE_URL): string {
   if (path.startsWith("http")) return path;
   return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
@@ -104,6 +108,18 @@ export async function jobOrchestratorHttp<T>(
     return request<T>(TRAINING_API, trainingScopeUrl("/bridge" + path), {...init, headers}, options);
   }
   return request<T>(JOB_ORCHESTRATOR_API_URL, path, init, options);
+}
+
+export async function predictorHttp<T>(
+  path: string,
+  init?: RequestInit,
+  options?: { responseType?: "json" | "text" | "blob" }
+): Promise<T> {
+  return request<T>(PREDICTOR_API_URL, path, init, options);
+}
+
+export function predictorFileUrl(path: string): string {
+  return buildUrl(path, PREDICTOR_API_URL);
 }
 
 export function apiFileUrl(path: string): string {

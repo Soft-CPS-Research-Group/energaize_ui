@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
     proxy: {
       "/ai-training-api": { target: env.AI_TRAINING_PROXY_TARGET || "http://127.0.0.1:8022", changeOrigin: true, rewrite: path => path.replace(/^\/ai-training-api/, "") },
       ...Object.fromEntries(Object.entries({jobs:8011,training:8000,predictor:8006,kpi:8007}).map(([name,port])=>[
-        `/${name}-api`, {target:`http://193.136.62.78:${port}`,changeOrigin:true,rewrite:(path:string)=>path.replace(new RegExp(`^/${name}-api`),'')}
+        `/${name}-api`, {target:`http://193.136.62.78:${port}`,changeOrigin:true,ws:name==='predictor',rewrite:(path:string)=>path.replace(new RegExp(`^/${name}-api`),'')}
       ])),
       "/runtime-api": { target: env.RUNTIME_PROXY_TARGET || "http://127.0.0.1:8021", changeOrigin: true, rewrite: path => path.replace(/^\/runtime-api/, "") },
       "/measurement-api": { target: env.MEASUREMENT_PROXY_TARGET || "http://193.136.62.78:8000", changeOrigin: true, ws: true, rewrite: (path) => path.replace(/^\/measurement-api/, "") },

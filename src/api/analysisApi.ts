@@ -1,11 +1,4 @@
-import { http } from "./client";
-
-export const ANALYSIS_API_URL =
-  (import.meta.env.VITE_PREDICTOR_API_URL?.replace(/\/$/, "") || "/predictor-api");
-
-function url(path: string): string {
-  return `${ANALYSIS_API_URL}${path.startsWith("/") ? path : `/${path}`}`;
-}
+import { predictorFileUrl, predictorHttp } from "./client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -178,44 +171,44 @@ export type SubmitPayload = ComparePayload | MissingDataPayload | SegmentPayload
 // ─── API functions ─────────────────────────────────────────────────────────────
 
 export async function listModels(): Promise<ModelMeta[]> {
-  const res = await http<{ models: ModelMeta[] }>(url("/api/analysis/models"));
+  const res = await predictorHttp<{ models: ModelMeta[] }>("/api/analysis/models");
   return res.models;
 }
 
 export async function getModel(modelKey: string): Promise<ModelMeta> {
-  return http<ModelMeta>(url(`/api/analysis/models/${encodeURIComponent(modelKey)}`));
+  return predictorHttp<ModelMeta>(`/api/analysis/models/${encodeURIComponent(modelKey)}`);
 }
 
 export async function getFeatureImportance(
   modelKey: string,
   importanceType: ImportanceType = "gain",
 ): Promise<FeatureImportanceResult> {
-  return http<FeatureImportanceResult>(url("/api/analysis/feature-importance"), {
+  return predictorHttp<FeatureImportanceResult>("/api/analysis/feature-importance", {
     method: "POST",
     body: JSON.stringify({ model_key: modelKey, importance_type: importanceType }),
   });
 }
 
 export async function submitJob(payload: SubmitPayload): Promise<{ job_id: string; status: JobStatus }> {
-  return http<{ job_id: string; status: JobStatus }>(url("/api/analysis/jobs"), {
+  return predictorHttp<{ job_id: string; status: JobStatus }>("/api/analysis/jobs", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export async function listJobs(): Promise<AnalysisJob[]> {
-  const res = await http<{ jobs: AnalysisJob[] }>(url("/api/analysis/jobs"));
+  const res = await predictorHttp<{ jobs: AnalysisJob[] }>("/api/analysis/jobs");
   return res.jobs;
 }
 
 export async function getJob(jobId: string): Promise<AnalysisJob> {
-  return http<AnalysisJob>(url(`/api/analysis/jobs/${jobId}`));
+  return predictorHttp<AnalysisJob>(`/api/analysis/jobs/${jobId}`);
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
-  await http<void>(url(`/api/analysis/jobs/${jobId}`), { method: "DELETE" });
+  await predictorHttp<void>(`/api/analysis/jobs/${jobId}`, { method: "DELETE" });
 }
 
 export function getExportUrl(jobId: string): string {
-  return url(`/api/analysis/jobs/${jobId}/export?format=csv`);
+  return predictorFileUrl(`/api/analysis/jobs/${jobId}/export?format=csv`);
 }
