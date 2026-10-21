@@ -145,8 +145,9 @@ export async function getStats(): Promise<PredictorStats> {
 }
 
 export async function getHouses(): Promise<string[]> {
-  const res = await predictorHttp<any>("/api/houses");
-  return Array.isArray(res) ? res : (res?.houses || []);
+  // Older predictor builds return a bare list, newer ones { houses: [...] }.
+  const res = await predictorHttp<string[] | { houses?: string[] }>("/api/houses");
+  return Array.isArray(res) ? res : (res?.houses ?? []);
 }
 
 export async function getHistory(houseId: string, days: number = 3): Promise<PredictorHistoryResponse> {

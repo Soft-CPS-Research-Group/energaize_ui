@@ -161,7 +161,10 @@ export function TrainWizard({ open, houseId, lstmBusy, onClose }: {
         {step === 1 && (
           <div className="predictor-wizard-step">
             <div className="predictor-wizard-note">
-              <p>All fields are optional. Empty fields use the server default shown in grey; max_depth defaults to 7 for consumption and 5 for production.</p>
+              <p>
+                All fields are optional. Empty fields use the server default shown in grey
+                {model === "xgboost" ? "; max_depth defaults to 7 for consumption and 5 for production." : "."}
+              </p>
               <Button variant="secondary" size="sm" onClick={resetDefaults}>Reset to server defaults</Button>
             </div>
             <div className="train-modal-hp-area">

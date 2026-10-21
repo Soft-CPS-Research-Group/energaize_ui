@@ -1,22 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { LogEntry, getLogs, PREDICTOR_API_URL } from "../api/predictorApi";
-
-function parseLogString(line: string): LogEntry {
-  const parts = line.split(" | ");
-  if (parts.length >= 5) {
-    return {
-      raw: line,
-      time: parts[0].replace(",", "."),
-      level: parts[1].trim(),
-      logger: parts[3].trim(),
-      message: parts.slice(4).join(" | ").trim(),
-    };
-  }
-  return { raw: line, time: new Date().toISOString(), level: "INFO", logger: "Sys", message: line };
-}
+import { lineMatches, parseLogLine } from "../pages/ai/predictor/logLines";
 
 const RECONNECT_MIN_MS = 3000;
 const RECONNECT_MAX_MS = 30000;
+
+export type LogStreamStatus = "connecting" | "live" | "reconnecting";
 
 /** Resolve a predictor path to a ws(s):// URL; the base may be relative (/predictor-api). */
 export function predictorWebSocketUrl(path: string, base: string = PREDICTOR_API_URL): string {
@@ -25,110 +14,67 @@ export function predictorWebSocketUrl(path: string, base: string = PREDICTOR_API
   return url.toString();
 }
 
+/**
+ * Recent lines matching `filter` from the log file, followed by matching live lines.
+ * Changing the filter re-reads the file but keeps the live connection open; callers
+ * should debounce it, since the server scans the whole file on every request.
+ */
 export function usePredictorLogs(filter: string = "", limit: number = 300) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-  const reconnectDelayRef = useRef(RECONNECT_MIN_MS);
+  const [status, setStatus] = useState<LogStreamStatus>("connecting");
+  const [loadFailed, setLoadFailed] = useState(false);
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+
+  useEffect(() => {
+    let cancelled = false;
+    getLogs(filter, limit)
+      .then((res) => {
+        if (cancelled) return;
+        setLoadFailed(false);
+        setLogs((res.lines || []).map((line) => parseLogLine(line)));
+      })
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      });
+    return () => { cancelled = true; };
+  }, [filter, limit]);
 
   useEffect(() => {
     let mounted = true;
-
-    // Load initial logs
-    async function loadInitialLogs() {
-      try {
-        const res = await getLogs(filter, limit);
-        if (mounted) {
-          const lines = res.lines || [];
-          const parsedLogs = lines.map(parseLogString);
-          setLogs(parsedLogs);
-        }
-      } catch (err) {
-        console.error("Failed to load initial predictor logs:", err);
-      }
-    }
-
-    loadInitialLogs();
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let delay = RECONNECT_MIN_MS;
 
     function connect() {
       if (!mounted) return;
-
-      const ws = new WebSocket(predictorWebSocketUrl("/ws/logs"));
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        if (!mounted) return ws.close();
-        reconnectDelayRef.current = RECONNECT_MIN_MS;
-        setIsConnected(true);
+      socket = new WebSocket(predictorWebSocketUrl("/ws/logs"));
+      socket.onopen = () => {
+        delay = RECONNECT_MIN_MS;
+        setStatus("live");
       };
-
-      ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
+        const lines: string[] = typeof event.data === "string" ? event.data.split("\n").filter(Boolean) : [];
+        const entries = lines.map((line) => parseLogLine(line)).filter((entry) => lineMatches(entry, filterRef.current));
+        if (entries.length === 0) return;
+        setLogs((prev) => [...prev, ...entries].slice(-limit));
+      };
+      socket.onclose = () => {
         if (!mounted) return;
-        try {
-          // If WS sends the same JSON object
-          let entryObj: any;
-          try {
-            entryObj = JSON.parse(event.data);
-            if (entryObj.lines) {
-              // Sometimes it might send lines array
-              const parsed = entryObj.lines.map(parseLogString);
-              setLogs((prev) => {
-                 let newLogs = [...prev, ...parsed];
-                 if (newLogs.length > limit) newLogs = newLogs.slice(newLogs.length - limit);
-                 return newLogs;
-              });
-              return;
-            }
-          } catch(e) {
-             entryObj = parseLogString(event.data); // raw string
-          }
-          
-          const entry = entryObj as LogEntry;
-          if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase()) && 
-              entry.level.toLowerCase() !== filter.toLowerCase()) {
-            return;
-          }
-
-          setLogs((prev) => {
-            const prevArray = Array.isArray(prev) ? prev : [];
-            const newLogs = [...prevArray, entry];
-            if (newLogs.length > limit) {
-              return newLogs.slice(newLogs.length - limit);
-            }
-            return newLogs;
-          });
-        } catch (e) {
-          console.error("Failed to parse predictor log message:", e);
-        }
+        setStatus("reconnecting");
+        reconnectTimer = window.setTimeout(connect, delay);
+        delay = Math.min(delay * 2, RECONNECT_MAX_MS);
       };
-
-      ws.onclose = () => {
-        if (!mounted) return;
-        setIsConnected(false);
-        wsRef.current = null;
-        reconnectTimeoutRef.current = window.setTimeout(connect, reconnectDelayRef.current);
-        reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, RECONNECT_MAX_MS);
-      };
-
-      ws.onerror = (err) => {
-        console.error("Predictor WebSocket error:", err);
-        ws.close();
-      };
+      socket.onerror = () => socket?.close();
     }
 
     connect();
-
     return () => {
       mounted = false;
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (reconnectTimeoutRef.current) {
-        window.clearTimeout(reconnectTimeoutRef.current);
-      }
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      socket?.close();
     };
-  }, [filter, limit]);
+  }, [limit]);
 
-  return { logs, isConnected };
+  return { logs, status, isConnected: status === "live", loadFailed };
 }
