@@ -1,759 +1,140 @@
-import { usePredictorTrainingProgress, usePredictorCommand, useCancelTrainingJob } from "../../../hooks/usePredictor";
+import { useEffect, useState } from "react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis } from "recharts";
+import { PlusCircle, RotateCcw } from "lucide-react";
+import {
+  usePredictorTrainingProgress,
+  usePredictorCommand,
+  useCancelTrainingJob,
+  usePredictorJob,
+} from "../../../hooks/usePredictor";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { Modal } from "../../../components/ui/Modal";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { useState, useRef, Fragment, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
-import { PlusCircle, RotateCcw, Trash2, GripVertical } from "lucide-react";
-import type { ModelBackend, TrainingJob, SystemInfo } from "../../../api/predictorApi";
-
-// ─── LSTM layer types ─────────────────────────────────────────────────────────
-
-type LSTMLayerType = "linear" | "relu" | "lstm" | "dropout" | "gru" | "attention";
-
-interface LSTMLayer {
-  id: string;
-  type: LSTMLayerType;
-  out?: string;
-  hidden?: string;
-  num_layers?: string;
-  p?: string;
-}
-
-const LAYER_COLORS: Record<LSTMLayerType, string> = {
-  linear:    "#3b82f6",
-  relu:      "#22c55e",
-  lstm:      "#8b5cf6",
-  dropout:   "#f97316",
-  gru:       "#ec4899",
-  attention: "#f59e0b",
-};
-
-const LAYER_LABELS: Record<LSTMLayerType, string> = {
-  linear:    "Linear",
-  relu:      "ReLU",
-  lstm:      "LSTM",
-  dropout:   "Dropout",
-  gru:       "GRU",
-  attention: "Attention",
-};
-
-function makeLayer(type: LSTMLayerType): LSTMLayer {
-  const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  if (type === "linear")  return { id, type, out: "64" };
-  if (type === "lstm")    return { id, type, hidden: "256", num_layers: "2" };
-  if (type === "gru")     return { id, type, hidden: "128", num_layers: "1" };
-  if (type === "dropout") return { id, type, p: "0.3" };
-  return { id, type };
-}
-
-/** A layer field as a number; a cleared or invalid field falls back to the layer default. */
-function numOr(raw: string | undefined, fallback: number): number {
-  if (raw == null || raw.trim() === "") return fallback;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-export function serializeLayer(l: LSTMLayer): Record<string, unknown> {
-  if (l.type === "linear")  return { type: "linear",  out: numOr(l.out, 64) };
-  if (l.type === "lstm")    return { type: "lstm",    hidden: numOr(l.hidden, 256), num_layers: numOr(l.num_layers, 2) };
-  if (l.type === "gru")     return { type: "gru",     hidden: numOr(l.hidden, 128), num_layers: numOr(l.num_layers, 1) };
-  if (l.type === "dropout") return { type: "dropout", p: numOr(l.p, 0.3) };
-  if (l.type === "attention") return { type: "attention" };
-  return { type: l.type };
-}
-
-const LAYER_TIPS: Record<LSTMLayerType, string> = {
-  linear:    "Fully-connected layer — multiplies the input by a learned weight matrix and adds a bias. Use it to project, mix, or reduce feature dimensions.",
-  relu:      "Rectified Linear Unit — activation function that sets all negative values to zero. Adds non-linearity without any learnable parameters.",
-  lstm:      "Long Short-Term Memory — recurrent layer that captures long-range temporal patterns through gated memory cells. 'hidden' sets the cell size; 'num_layers' stacks multiple LSTM layers on top of each other.",
-  dropout:   "Randomly zeroes a fraction p of activations during each training step. Reduces overfitting by preventing neurons from co-adapting.",
-  gru:       "Gated Recurrent Unit — a lighter recurrent layer than LSTM with fewer parameters. Trains faster and often matches LSTM performance on shorter sequences.",
-  attention: "Self-attention mechanism — lets the model weight every timestep in the sequence against every other, capturing global dependencies that recurrent layers can miss. No learnable size; output shape matches input.",
-};
-
-function LayerInfoTip({ type }: { type: LSTMLayerType }) {
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
-  const ref = useRef<HTMLSpanElement>(null);
-  const W = 230;
-  const GAP = 8;
-  const show = () => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    let left = rect.left + rect.width / 2 - W / 2;
-    left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
-    setPos({ left, bottom: window.innerHeight - rect.top + GAP });
-  };
-  const hide = () => setPos(null);
-  return (
-    <>
-      <span ref={ref} className="analysis-infotip" onMouseEnter={show} onMouseLeave={hide}>?</span>
-      {pos && createPortal(
-        <div
-          className="analysis-infotip-popup"
-          style={{ position: "fixed", left: pos.left, bottom: pos.bottom, width: W, pointerEvents: "none" }}
-        >{LAYER_TIPS[type]}</div>,
-        document.body,
-      )}
-    </>
-  );
-}
-
-// ─── Default hyperparams ──────────────────────────────────────────────────────
-
-// Server-side defaults, shown as placeholders. Fields start empty and only what
-// the user types is sent, so the server keeps its own (lane-specific) defaults.
-const XGB_DEFAULTS = { n_estimators: "500", max_depth: "7 / 5", learning_rate: "0.1", subsample: "0.8", colsample_bytree: "0.8", min_child_weight: "1" } as const;
-type XGBKey = keyof typeof XGB_DEFAULTS;
-
-const LGBM_DEFAULTS = { n_estimators: "1000", max_depth: "-1", learning_rate: "0.03", num_leaves: "127", subsample: "0.8", colsample_bytree: "0.7", min_child_samples: "10", reg_alpha: "0.1", reg_lambda: "1.0" } as const;
-type LGBMKey = keyof typeof LGBM_DEFAULTS | "objective";
-
-// The predictor always builds 672-step sequences, so lookback is not offered.
-const LSTM_DEFAULTS = { epochs: "100", batch_size: "64", lr: "0.001", patience: "20" } as const;
-type LSTMKey = keyof typeof LSTM_DEFAULTS;
-
-function emptyFields<K extends string>(defaults: Record<K, string>): { [P in K]: string } {
-  return Object.fromEntries(Object.keys(defaults).map((k) => [k, ""])) as { [P in K]: string };
-}
-
-type LSTMPreset = { name: string; tip: string; layers: Omit<LSTMLayer, "id">[] };
-const LSTM_PRESETS: LSTMPreset[] = [
-  {
-    name: "LSTM Core",
-    tip: "The canonical LSTM baseline — two stacked recurrent layers with dropout regularisation and a final linear projection. The safest starting point for any energy forecasting task.",
-    layers: [
-      { type: "lstm", hidden: "128", num_layers: "2" },
-      { type: "dropout", p: "0.2" },
-      { type: "linear", out: "64" },
-    ],
-  },
-  {
-    name: "GRU Lite",
-    tip: "A single-layer GRU has fewer parameters than LSTM, trains roughly 30% faster, and often matches LSTM accuracy on short-to-medium lookbacks. Good first choice when compute is limited.",
-    layers: [
-      { type: "gru", hidden: "128", num_layers: "1" },
-      { type: "dropout", p: "0.2" },
-      { type: "linear", out: "64" },
-    ],
-  },
-  {
-    name: "Encode → LSTM",
-    tip: "Expands the 12 raw features into a richer 64-d space before the recurrent layer. The encoder reduces input noise and speeds up LSTM convergence, especially with long lookbacks.",
-    layers: [
-      { type: "linear", out: "64" },
-      { type: "relu" },
-      { type: "lstm", hidden: "128", num_layers: "2" },
-      { type: "dropout", p: "0.2" },
-      { type: "linear", out: "64" },
-    ],
-  },
-  {
-    name: "LSTM + Attention",
-    tip: "LSTM captures local sequential patterns; self-attention then lets every timestep compare directly against every other, catching long-range dependencies (e.g. same hour yesterday vs. same hour last week) that recurrent layers can miss.",
-    layers: [
-      { type: "lstm", hidden: "128", num_layers: "2" },
-      { type: "attention" },
-      { type: "dropout", p: "0.2" },
-      { type: "linear", out: "64" },
-    ],
-  },
-  {
-    name: "Deep Hybrid",
-    tip: "Full encoder-decoder stack: a linear projection enriches the feature space, deep GRU captures multi-scale temporal patterns, self-attention provides a global view of the sequence, then two compression layers decode to the output space. Best for weekly lookbacks (672 steps).",
-    layers: [
-      { type: "linear", out: "64" },
-      { type: "relu" },
-      { type: "gru", hidden: "256", num_layers: "2" },
-      { type: "attention" },
-      { type: "dropout", p: "0.25" },
-      { type: "linear", out: "128" },
-      { type: "linear", out: "64" },
-    ],
-  },
-  {
-    name: "Temporal Bottleneck",
-    tip: "The LSTM compresses the sequence into a rich temporal representation, then a narrow 32-unit linear layer forces the model to distil only the most essential patterns — preventing lazy pass-through and acting as a strong regulariser. The decoder then expands back out for the final 96-step forecast.",
-    layers: [
-      { type: "lstm", hidden: "256", num_layers: "2" },
-      { type: "linear", out: "32" },
-      { type: "relu" },
-      { type: "dropout", p: "0.2" },
-      { type: "linear", out: "128" },
-    ],
-  },
-];
-
-/**
- * Keep only fields holding a finite number. A cleared field is left out so the
- * server default applies, instead of being sent as Number("") === 0.
- */
-export function numericParams(params: Record<string, string>): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [key, raw] of Object.entries(params)) {
-    if (raw.trim() === "") continue;
-    const value = Number(raw);
-    if (Number.isFinite(value)) out[key] = value;
-  }
-  return out;
-}
-
-// ─── Small number input ───────────────────────────────────────────────────────
-
-function HpNumInput({ label, value, onChange, step, min, max, placeholder }: {
-  label: string; value: string; onChange: (v: string) => void;
-  step?: string; min?: string | number; max?: string | number; placeholder?: string;
-}) {
-  return (
-    <label className="hp-field">
-      <span className="hp-field-label">{label}</span>
-      <input type="number" className="analysis-text-input hp-input" value={value} placeholder={placeholder}
-        step={step} min={min} max={max} onChange={(e) => onChange(e.target.value)} />
-    </label>
-  );
-}
-
-// ─── Per-model hyperparams forms ──────────────────────────────────────────────
-
-function XGBForm({ schema, onSchemaChange, params, onChange }: {
-  schema: "dense" | "sparse";
-  onSchemaChange: (v: "dense" | "sparse") => void;
-  params: { [K in XGBKey]: string };
-  onChange: (k: XGBKey, v: string) => void;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <label className="train-modal-config-field">
-        <span>Feature schema</span>
-        <select className="predictor-house-select" value={schema} onChange={(e) => onSchemaChange(e.target.value as "dense" | "sparse")}>
-          <option value="dense">Dense</option>
-          <option value="sparse">Sparse</option>
-        </select>
-      </label>
-      <div>
-        <div className="train-modal-section-title">Hyperparameters</div>
-        <div className="hp-grid" style={{ marginTop: 8 }}>
-          <HpNumInput label="n_estimators" value={params.n_estimators} placeholder={XGB_DEFAULTS.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
-          <HpNumInput label="max_depth" value={params.max_depth} placeholder={XGB_DEFAULTS.max_depth} min={1} max={20} onChange={(v) => onChange("max_depth", v)} />
-          <HpNumInput label="learning_rate" value={params.learning_rate} placeholder={XGB_DEFAULTS.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
-          <HpNumInput label="subsample" value={params.subsample} placeholder={XGB_DEFAULTS.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
-          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} placeholder={XGB_DEFAULTS.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
-          <HpNumInput label="min_child_weight" value={params.min_child_weight} placeholder={XGB_DEFAULTS.min_child_weight} min={0} onChange={(v) => onChange("min_child_weight", v)} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LGBMForm({ params, onChange }: {
-  params: { [K in LGBMKey]: string };
-  onChange: (k: LGBMKey, v: string) => void;
-}) {
-  return (
-    <div>
-      <div className="train-modal-section-title">Hyperparameters</div>
-      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
-        <label className="hp-field">
-          <span className="hp-field-label">objective</span>
-          <select className="predictor-house-select" value={params.objective} onChange={(e) => onChange("objective", e.target.value)}>
-            <option value="tweedie">tweedie</option>
-            <option value="regression">regression</option>
-            <option value="huber">huber</option>
-          </select>
-        </label>
-        <div className="hp-grid">
-          <HpNumInput label="n_estimators" value={params.n_estimators} placeholder={LGBM_DEFAULTS.n_estimators} min={10} onChange={(v) => onChange("n_estimators", v)} />
-          <HpNumInput label="max_depth" value={params.max_depth} placeholder={LGBM_DEFAULTS.max_depth} min={-1} onChange={(v) => onChange("max_depth", v)} />
-          <HpNumInput label="learning_rate" value={params.learning_rate} placeholder={LGBM_DEFAULTS.learning_rate} step="0.001" min={0} onChange={(v) => onChange("learning_rate", v)} />
-          <HpNumInput label="num_leaves" value={params.num_leaves} placeholder={LGBM_DEFAULTS.num_leaves} min={2} onChange={(v) => onChange("num_leaves", v)} />
-          <HpNumInput label="subsample" value={params.subsample} placeholder={LGBM_DEFAULTS.subsample} step="0.05" min={0} max={1} onChange={(v) => onChange("subsample", v)} />
-          <HpNumInput label="colsample_bytree" value={params.colsample_bytree} placeholder={LGBM_DEFAULTS.colsample_bytree} step="0.05" min={0} max={1} onChange={(v) => onChange("colsample_bytree", v)} />
-          <HpNumInput label="min_child_samples" value={params.min_child_samples} placeholder={LGBM_DEFAULTS.min_child_samples} min={1} onChange={(v) => onChange("min_child_samples", v)} />
-          <HpNumInput label="reg_alpha" value={params.reg_alpha} placeholder={LGBM_DEFAULTS.reg_alpha} step="0.01" min={0} onChange={(v) => onChange("reg_alpha", v)} />
-          <HpNumInput label="reg_lambda" value={params.reg_lambda} placeholder={LGBM_DEFAULTS.reg_lambda} step="0.1" min={0} onChange={(v) => onChange("reg_lambda", v)} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Insert zone (hover to add | drag-over to drop) ──────────────────────────────────
-
-function InsertZone({ insertIndex, isDragActive, isDropTarget, onInsert, onDragEnter, onDrop }: {
-  insertIndex: number;
-  isDragActive: boolean;
-  isDropTarget: boolean;
-  onInsert: (type: LSTMLayerType, at: number) => void;
-  onDragEnter: (at: number) => void;
-  onDrop: (at: number) => void;
-}) {
-  const [hovered, setHovered] = useState(false);
-  const plusRef = useRef<HTMLSpanElement>(null);
-  const showPicker = hovered && !isDragActive;
-
-  // Position the portal picker centered above the + button
-  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
-  const updatePos = () => {
-    if (!plusRef.current) return;
-    const r = plusRef.current.getBoundingClientRect();
-    setPickerPos({ top: r.top - 8, left: r.left + r.width / 2 });
-  };
-
-  return (
-    <div
-      className={`lstm-insert-zone${isDropTarget ? " is-drop-target" : ""}${showPicker ? " is-open" : ""}`}
-      onMouseEnter={() => { setHovered(true); updatePos(); }}
-      onMouseLeave={() => setHovered(false)}
-      onDragEnter={(e) => { e.preventDefault(); onDragEnter(insertIndex); }}
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
-      onDrop={(e) => { e.preventDefault(); onDrop(insertIndex); }}
-    >
-      <span ref={plusRef} className="lstm-insert-plus">+</span>
-      {showPicker && pickerPos && createPortal(
-        <div
-          className="lstm-insert-picker"
-          style={{
-            position: "fixed",
-            top: pickerPos.top,
-            left: pickerPos.left,
-            transform: "translate(-50%, -100%)",
-            zIndex: 99999,
-          }}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-        >
-          {(["linear", "relu", "lstm", "dropout", "gru", "attention"] as LSTMLayerType[]).map((t) => (
-            <button
-              key={t}
-              className="lstm-insert-type-btn"
-              style={{ color: LAYER_COLORS[t] }}
-              onMouseDown={(e) => { e.preventDefault(); onInsert(t, insertIndex); setHovered(false); }}
-            >
-              <span className="lstm-insert-dot" style={{ background: LAYER_COLORS[t] }} />
-              {LAYER_LABELS[t]}
-              <LayerInfoTip type={t} />
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
-    </div>
-  );
-}
-
-// ─── Layer card (draggable) ──────────────────────────────────────────────────────
-
-function LSTMLayerCard({ layer, index, onChange, onDelete, onDragStart, onDragEnd, onDragEnterCard, isDragging }: {
-  layer: LSTMLayer;
-  index: number;
-  onChange: (l: LSTMLayer) => void;
-  onDelete: () => void;
-  onDragStart: (i: number) => void;
-  onDragEnd: () => void;
-  onDragEnterCard: () => void;
-  isDragging: boolean;
-}) {
-  const color = LAYER_COLORS[layer.type];
-  return (
-    <div
-      className={`lstm-layer-card${isDragging ? " is-dragging" : ""}`}
-      draggable
-      onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; onDragStart(index); }}
-      onDragEnd={onDragEnd}
-      onDragEnter={onDragEnterCard}
-      onDragOver={(e) => e.preventDefault()}
-    >
-      <div className="lstm-layer-accent" style={{ background: color }} />
-      <GripVertical size={14} className="lstm-drag-handle" />
-      <span className="lstm-layer-type-badge" style={{ background: `color-mix(in srgb, ${color} 15%, var(--bg-elev))`, color }}>
-        {LAYER_LABELS[layer.type]}
-      </span>
-      <LayerInfoTip type={layer.type} />
-      <div className="lstm-layer-params">
-        {layer.type === "linear" && (
-          <div className="lstm-layer-param">
-            <span className="lstm-layer-param-label">out</span>
-            <input type="number" className="lstm-layer-param-input" value={layer.out ?? "64"} min={1}
-              onDragStart={(e) => e.stopPropagation()}
-              onChange={(e) => onChange({ ...layer, out: e.target.value })} />
-          </div>
-        )}
-        {layer.type === "lstm" && (
-          <>
-            <div className="lstm-layer-param">
-              <span className="lstm-layer-param-label">hidden</span>
-              <input type="number" className="lstm-layer-param-input" value={layer.hidden ?? "256"} min={1}
-                onDragStart={(e) => e.stopPropagation()}
-                onChange={(e) => onChange({ ...layer, hidden: e.target.value })} />
-            </div>
-            <div className="lstm-layer-param">
-              <span className="lstm-layer-param-label">num_layers</span>
-              <input type="number" className="lstm-layer-param-input" value={layer.num_layers ?? "2"} min={1} max={8}
-                onDragStart={(e) => e.stopPropagation()}
-                onChange={(e) => onChange({ ...layer, num_layers: e.target.value })} />
-            </div>
-          </>
-        )}
-        {layer.type === "dropout" && (
-          <div className="lstm-layer-param">
-            <span className="lstm-layer-param-label">p</span>
-            <input type="number" className="lstm-layer-param-input" value={layer.p ?? "0.3"} min={0} max={1} step="0.05"
-              onDragStart={(e) => e.stopPropagation()}
-              onChange={(e) => onChange({ ...layer, p: e.target.value })} />
-          </div>
-        )}
-        {layer.type === "gru" && (
-          <>
-            <div className="lstm-layer-param">
-              <span className="lstm-layer-param-label">hidden</span>
-              <input type="number" className="lstm-layer-param-input" value={layer.hidden ?? "128"} min={1}
-                onDragStart={(e) => e.stopPropagation()}
-                onChange={(e) => onChange({ ...layer, hidden: e.target.value })} />
-            </div>
-            <div className="lstm-layer-param">
-              <span className="lstm-layer-param-label">num_layers</span>
-              <input type="number" className="lstm-layer-param-input" value={layer.num_layers ?? "1"} min={1} max={8}
-                onDragStart={(e) => e.stopPropagation()}
-                onChange={(e) => onChange({ ...layer, num_layers: e.target.value })} />
-            </div>
-          </>
-        )}
-        {(layer.type === "relu" || layer.type === "attention") && (
-          <span className="lstm-layer-noparam">{layer.type === "attention" ? "no params" : "activation only"}</span>
-        )}
-      </div>
-      <button className="lstm-layer-delete" onClick={onDelete} title="Remove layer">
-        <Trash2 size={13} />
-      </button>
-    </div>
-  );
-}
-
-// ─── Neural-network shape visualiser ──────────────────────────────────────────
-
-function NNViz({ layers }: { layers: LSTMLayer[] }) {
-  const INPUT_DIM  = 12;  // fixed: 12 features per timestep
-  const OUTPUT_DIM = 96;  // fixed: 96 × 15-min slots = 24 h
-
-  const resolvedDims: number[] = [];
-  let lastDim = INPUT_DIM;
-  for (const l of layers) {
-    if (l.type === "linear")  { lastDim = Number(l.out ?? 64);  resolvedDims.push(lastDim); }
-    else if (l.type === "lstm") { lastDim = Number(l.hidden ?? 128); resolvedDims.push(lastDim); }
-    else if (l.type === "gru")  { lastDim = Number(l.hidden ?? 128); resolvedDims.push(lastDim); }
-    else resolvedDims.push(lastDim); // relu / dropout / attention: pass-through
-  }
-
-  type Entry = { label: string; dimLabel: string; color: string; passThrough: boolean };
-
-  const entries: Entry[] = [
-    { label: "Input",  dimLabel: String(INPUT_DIM),  color: "#94a3b8", passThrough: false },
-    ...layers.map((l) => ({
-      label:       LAYER_LABELS[l.type],
-      dimLabel:    l.type === "linear"  ? String(l.out ?? 64)
-                 : l.type === "lstm"    ? `h=${l.hidden ?? 128}`
-                 : l.type === "dropout" ? `p=${l.p ?? 0.3}`
-                 : "",
-      color:       LAYER_COLORS[l.type],
-      passThrough: l.type === "relu" || l.type === "dropout",
-    })),
-    { label: "Output", dimLabel: String(OUTPUT_DIM), color: "#22c55e", passThrough: false },
-  ];
-
-  return (
-    <div className="nn-viz">
-      <div className="nn-viz-header">
-        <span className="nn-viz-title">Architecture</span>
-        <span className="nn-viz-subtitle">{layers.length + 2} layers</span>
-      </div>
-      <div className="nn-viz-nodes">
-        {entries.map((e, i) => (
-          <div
-            key={i}
-            className={`nn-viz-node${e.passThrough ? " is-pass-through" : ""}`}
-            style={{ "--layer-color": e.color } as CSSProperties}
-          >
-            {/* Left gutter: dot + connecting line */}
-            <div className="nn-viz-gutter">
-              <div className="nn-viz-dot" />
-              {i < entries.length - 1 && <div className="nn-viz-line" />}
-            </div>
-            {/* Content: name + dimension */}
-            <div className="nn-viz-content">
-              <span className="nn-viz-name">{e.label}</span>
-              {e.dimLabel && <span className="nn-viz-dim">{e.dimLabel}</span>}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── LSTM form ─────────────────────────────────────────────────────────────────
-
-function LSTMForm({ params, onChange, layers, onLayersChange }: {
-  params: { [K in LSTMKey]: string };
-  onChange: (k: LSTMKey, v: string) => void;
-  layers: LSTMLayer[];
-  onLayersChange: (l: LSTMLayer[]) => void;
-}) {
-  const [dragSrcIdx, setDragSrcIdx] = useState<number | null>(null);
-  const [dropTargetIdx, setDropTargetIdx] = useState<number | null>(null);
-  const isDragActive = dragSrcIdx !== null;
-
-  const insertAt = (type: LSTMLayerType, at: number) => {
-    const next = [...layers];
-    next.splice(at, 0, makeLayer(type));
-    onLayersChange(next);
-  };
-
-  const handleDragEnd = () => { setDragSrcIdx(null); setDropTargetIdx(null); };
-
-  const handleDrop = (at: number) => {
-    if (dragSrcIdx === null) return;
-    const next = [...layers];
-    const [removed] = next.splice(dragSrcIdx, 1);
-    next.splice(at > dragSrcIdx ? at - 1 : at, 0, removed);
-    onLayersChange(next);
-    handleDragEnd();
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div>
-        <div className="train-modal-section-title">Training Hyperparameters</div>
-        <div className="hp-grid" style={{ marginTop: 8 }}>
-          <HpNumInput label="epochs" value={params.epochs} placeholder={LSTM_DEFAULTS.epochs} min={1} onChange={(v) => onChange("epochs", v)} />
-          <HpNumInput label="batch_size" value={params.batch_size} placeholder={LSTM_DEFAULTS.batch_size} min={1} onChange={(v) => onChange("batch_size", v)} />
-          <HpNumInput label="lr" value={params.lr} placeholder={LSTM_DEFAULTS.lr} step="0.0001" min={0} onChange={(v) => onChange("lr", v)} />
-          <HpNumInput label="patience" value={params.patience} placeholder={LSTM_DEFAULTS.patience} min={1} onChange={(v) => onChange("patience", v)} />
-        </div>
-      </div>
-
-      <div>
-        <div className="train-modal-section-title" style={{ marginBottom: 10 }}>
-          Architecture
-          <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-soft)", marginLeft: 6 }}>
-            (optional — omit to use default)
-          </span>
-        </div>
-        <div className="lstm-arch-row">
-          <div className="lstm-arch-main">
-            <div className="lstm-presets">
-              {LSTM_PRESETS.map((preset) => (
-                <button
-                  key={preset.name}
-                  className="lstm-preset-btn"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onLayersChange(preset.layers.map((l) => ({ ...makeLayer(l.type), ...l })));
-                  }}
-                >
-                  {preset.name}
-                </button>
-              ))}
-            </div>
-            <div className="lstm-builder">
-              <div className="lstm-io-node">▶ Input</div>
-              <InsertZone
-                insertIndex={0}
-                isDragActive={isDragActive}
-                isDropTarget={dropTargetIdx === 0}
-                onInsert={insertAt}
-                onDragEnter={(at) => setDropTargetIdx(at)}
-                onDrop={handleDrop}
-              />
-              {layers.length === 0 && (
-                <p className="lstm-empty-hint">Hover the <strong>+</strong> between nodes to insert a layer — drag cards to reorder</p>
-              )}
-              {layers.map((layer, idx) => (
-                <Fragment key={layer.id}>
-                  <LSTMLayerCard
-                    layer={layer}
-                    index={idx}
-                    onChange={(updated) => onLayersChange(layers.map((l) => (l.id === layer.id ? updated : l)))}
-                    onDelete={() => onLayersChange(layers.filter((l) => l.id !== layer.id))}
-                    onDragStart={(i) => setDragSrcIdx(i)}
-                    onDragEnd={handleDragEnd}
-                    onDragEnterCard={() => setDropTargetIdx(null)}
-                    isDragging={dragSrcIdx === idx}
-                  />
-                  <InsertZone
-                    insertIndex={idx + 1}
-                    isDragActive={isDragActive}
-                    isDropTarget={dropTargetIdx === idx + 1}
-                    onInsert={insertAt}
-                    onDragEnter={(at) => setDropTargetIdx(at)}
-                    onDrop={handleDrop}
-                  />
-                </Fragment>
-              ))}
-              <div className="lstm-io-node lstm-io-node--out">◀ Output</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { normalizeTs } from "../../../utils/predictorTransforms";
+import type { TrainingJob, SystemInfo } from "../../../api/predictorApi";
+import { TrainWizard } from "./TrainWizard";
 
 interface TrainViewProps {
   selectedHouseId: string | null;
-}
-
-function fmtElapsed(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
-  if (m < 60) return `${m}m ${s}s`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-function fmtTs(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
-}
-
-function getStatusTone(status: string): "neutral" | "success" | "warning" | "danger" | "info" {
-  if (status === "RUNNING" || status === "FETCHING") return "info";
-  if (status === "ACCEPTED") return "success";
-  if (status === "REJECTED") return "warning";
-  if (status === "FAILED") return "danger";
-  return "neutral";
+  timezone: string;
 }
 
 const ACTIVE_STATUSES = ["PENDING", "FETCHING", "RUNNING"];
+const HISTORY_PAGE_SIZE = 10;
 
-function JobDetailModal({ job, onClose, onCancel, cancelling }: {
-  job: TrainingJob;
+type Tone = "neutral" | "success" | "warning" | "danger" | "info";
+
+/** One-word registry statuses. Rejected is the normal "new model was not better" outcome, so it is neutral, not red. */
+const STATUS_LABELS: Record<string, { label: string; tone: Tone }> = {
+  PENDING: { label: "Queued", tone: "neutral" },
+  FETCHING: { label: "Loading", tone: "info" },
+  RUNNING: { label: "Training", tone: "info" },
+  ACCEPTED: { label: "Accepted", tone: "success" },
+  REJECTED: { label: "Rejected", tone: "neutral" },
+  CANCELED: { label: "Stopped", tone: "neutral" },
+  FAILED: { label: "Failed", tone: "danger" },
+};
+
+const MODEL_LABELS: Record<string, string> = { xgboost: "XGBoost", lgbm: "LightGBM", lstm: "LSTM" };
+
+function JobStatus({ status }: { status: string }) {
+  const s = STATUS_LABELS[status] ?? { label: status, tone: "neutral" as Tone };
+  return <Badge tone={s.tone}>{s.label}</Badge>;
+}
+
+function jobPercent(job: TrainingJob): number {
+  return job.percent ?? (job.progress_total > 0 ? (job.progress_current / job.progress_total) * 100 : 0);
+}
+
+function fmtElapsed(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  if (m < 60) return `${m} min ${s} s`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/** Job times come without a zone and are UTC (the predictor container clock). */
+export function formatJobTime(iso: string | null, timezone: string): string {
+  if (!iso) return "—";
+  const date = new Date(normalizeTs(iso));
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-GB", { timeZone: timezone, dateStyle: "short", timeStyle: "short" });
+}
+
+function fmtMae(value: number | null): string {
+  return value == null ? "—" : value.toFixed(4);
+}
+
+function JobDetailModal({ initial, timezone, onClose }: {
+  initial: TrainingJob;
+  timezone: string;
   onClose: () => void;
-  onCancel: () => void;
-  cancelling: boolean;
 }) {
+  const { notifySuccess, notifyError } = useApiFeedback();
+  const cancelMutation = useCancelTrainingJob();
+  // Live data: progress keeps moving and Stop disappears once the job ends.
+  const { data } = usePredictorJob(initial.job_id, initial);
+  const job = data ?? initial;
   const isActive = ACTIVE_STATUSES.includes(job.status);
-  const pct = job.percent ?? (job.progress_total > 0 ? (job.progress_current / job.progress_total) * 100 : 0);
+  const pct = jobPercent(job);
   const improved = job.new_mae != null && job.prev_mae != null && job.new_mae < job.prev_mae;
 
+  const stop = () =>
+    cancelMutation.mutate(job.job_id, {
+      onSuccess: () => notifySuccess("Stopping job", "The job will stop shortly."),
+      onError: (err) => notifyError("Could not stop the job", err),
+    });
+
   return (
-    <Modal title="Job Details" open onClose={onClose} width="sm">
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <Modal title="Job details" open onClose={onClose} width="sm">
+      <div className="train-detail">
         <div className="train-detail-section">
-          <div className="train-detail-row">
-            <span className="train-detail-label">Job ID</span>
-            <span style={{ fontFamily: "monospace", fontSize: "0.8rem", wordBreak: "break-all" }}>{job.job_id}</span>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">House</span>
-            <span>{job.house_id}</span>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">Lane</span>
-            <span style={{ textTransform: "capitalize" }}>{job.lane}</span>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">Type</span>
-            <Badge tone="neutral">{job.model_type ?? "—"}</Badge>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">Status</span>
-            <Badge tone={getStatusTone(job.status)}>{job.status}</Badge>
-          </div>
+          <div className="train-detail-row"><span className="train-detail-label">House</span><span>{job.house_id}</span></div>
+          <div className="train-detail-row"><span className="train-detail-label">Lane</span><span className="is-capitalized">{job.lane}</span></div>
+          <div className="train-detail-row"><span className="train-detail-label">Model</span><span>{MODEL_LABELS[job.model_type ?? ""] ?? job.model_type ?? "—"}</span></div>
+          <div className="train-detail-row"><span className="train-detail-label">Status</span><JobStatus status={job.status} /></div>
+          <div className="train-detail-row"><span className="train-detail-label">Job ID</span><code className="train-detail-id">{job.job_id}</code></div>
         </div>
 
         <div className="train-detail-section">
           <div className="train-detail-row">
             <span className="train-detail-label">Progress</span>
-            <span>{job.progress_current} / {job.progress_total} ({pct.toFixed(1)}%)</span>
+            <span>{job.progress_current} / {job.progress_total} ({pct.toFixed(1)} %)</span>
           </div>
-          <div style={{ margin: "2px 0 4px" }}>
-            <div className="predictor-progress-bar" style={{ height: 6 }}>
-              <div className="predictor-progress-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
-            </div>
+          <div className="predictor-progress-bar" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+            <div className="predictor-progress-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
           </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">ETA</span>
-            <span>{job.eta ?? "—"}</span>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">Elapsed</span>
-            <span>{fmtElapsed(job.elapsed_seconds ?? 0)}</span>
-          </div>
+          {isActive && <div className="train-detail-row"><span className="train-detail-label">Time left</span><span>{job.eta ?? "—"}</span></div>}
+          <div className="train-detail-row"><span className="train-detail-label">Elapsed</span><span>{fmtElapsed(job.elapsed_seconds ?? 0)}</span></div>
         </div>
 
         <div className="train-detail-section">
-          <div className="train-detail-row">
-            <span className="train-detail-label">Submitted</span>
-            <span className="is-muted" style={{ fontSize: "0.82rem" }}>{fmtTs(job.submitted_at)}</span>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">Started</span>
-            <span className="is-muted" style={{ fontSize: "0.82rem" }}>{fmtTs(job.started_at)}</span>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">Finished</span>
-            <span className="is-muted" style={{ fontSize: "0.82rem" }}>{fmtTs(job.finished_at)}</span>
-          </div>
+          <div className="train-detail-row"><span className="train-detail-label">Submitted</span><span className="is-muted">{formatJobTime(job.submitted_at, timezone)}</span></div>
+          <div className="train-detail-row"><span className="train-detail-label">Started</span><span className="is-muted">{formatJobTime(job.started_at, timezone)}</span></div>
+          <div className="train-detail-row"><span className="train-detail-label">Finished</span><span className="is-muted">{formatJobTime(job.finished_at, timezone)}</span></div>
         </div>
 
         <div className="train-detail-section">
           {job.result_message && (
-            <div className="train-detail-row">
-              <span className="train-detail-label">Result</span>
-              <span>{job.result_message}</span>
-            </div>
+            <div className="train-detail-row"><span className="train-detail-label">Result</span><span>{job.result_message}</span></div>
           )}
           <div className="train-detail-row">
-            <span className="train-detail-label">Prev MAE</span>
-            <span className="is-muted">{job.prev_mae?.toFixed(4) ?? "—"}</span>
-          </div>
-          <div className="train-detail-row">
-            <span className="train-detail-label">New MAE</span>
-            <span style={{ fontWeight: 600, color: improved ? "var(--ok)" : "inherit" }}>
-              {job.new_mae?.toFixed(4) ?? "—"}
-              {improved && <span style={{ marginLeft: 6, fontSize: "0.78rem", color: "var(--ok)" }}>▼ improved</span>}
+            <span className="train-detail-label">Error (MAE)</span>
+            <span>
+              {fmtMae(job.prev_mae)} → <strong className={improved ? "is-improved" : undefined}>{fmtMae(job.new_mae)}</strong>
             </span>
           </div>
+          <small className="is-muted">Current model → new model. Lower is better; the new model is used only if it is lower.</small>
         </div>
 
-        {job.hyperparams && Object.keys(job.hyperparams).length > 0 && (
-          <div className="train-detail-section">
-            <div className="train-modal-section-title" style={{ marginBottom: 8 }}>Hyperparameters</div>
-            <div className="analysis-hyperparams-grid">
-              {Object.entries(job.hyperparams).filter(([k]) => k !== "layers").map(([k, v]) => (
-                <div key={k} className="analysis-hp-chip">
-                  <span className="analysis-hp-chip-key">{k}</span>
-                  <span className="analysis-hp-chip-val">{String(v)}</span>
-                </div>
-              ))}
-            </div>
-            {Array.isArray((job.hyperparams as Record<string, unknown>).layers) && (
-              <div style={{ marginTop: 10 }}>
-                <div className="hp-field-label" style={{ marginBottom: 6 }}>Architecture</div>
-                <div className="analysis-layers-list">
-                  {((job.hyperparams as Record<string, unknown[]>).layers as Record<string, unknown>[]).map((l, i) => (
-                    <div key={i} className="analysis-layer-item">
-                      <div className="analysis-layer-dot" style={{ background: LAYER_COLORS[(l.type as LSTMLayerType)] ?? "#888" }} />
-                      <span className="analysis-layer-type">{String(l.type)}</span>
-                      <span className="analysis-layer-params">
-                        {l.type === "linear" ? `out=${l.out}` : l.type === "lstm" ? `hidden=${l.hidden}, layers=${l.num_layers}` : l.type === "dropout" ? `p=${l.p}` : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {isActive && (
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <Button variant="danger" size="sm" onClick={onCancel} disabled={cancelling}>
-              {cancelling ? "Cancelling…" : "Cancel Job"}
+          <div className="train-detail-actions">
+            <Button variant="danger" size="sm" onClick={stop} disabled={cancelMutation.isPending}>
+              {cancelMutation.isPending ? "Stopping…" : "Stop job"}
             </Button>
           </div>
         )}
@@ -767,84 +148,76 @@ function JobDetailModal({ job, onClose, onCancel, cancelling }: {
 const METER_HISTORY_MAX = 40;
 
 type MeterEntry = { cpu: number; ram_gb: number };
-const meterHistory: MeterEntry[] = [];
 
-function MeterCard({ label, value, sub, color, data, dataKey, domain, unit }: {
+function MeterCard({ label, value, sub, tone, data, dataKey, domain, unit }: {
   label: string;
   value: string;
   sub: string;
-  color: string;
+  tone: "normal" | "warning" | "danger";
   data: MeterEntry[];
   dataKey: keyof MeterEntry;
   domain: [number, number];
   unit: string;
 }) {
+  const color = tone === "danger" ? "var(--danger)" : tone === "warning" ? "var(--warn)" : "var(--brand)";
   return (
-    <div className="sys-meter">
+    <div className={`sys-meter is-${tone}`}>
       <div className="sys-meter-chart">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+                <stop offset="0%" stopColor={color} stopOpacity={0.3} />
                 <stop offset="100%" stopColor={color} stopOpacity={0.02} />
               </linearGradient>
             </defs>
             <YAxis domain={domain} hide />
             <Tooltip
-              contentStyle={{ background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 6, fontSize: "0.7rem" }}
+              contentStyle={{ background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 8, fontSize: "0.7rem" }}
               formatter={(v) => [`${(+(v ?? 0)).toFixed(1)}${unit}`, label]}
               labelFormatter={() => ""}
             />
-            <Area
-              type="monotone"
-              dataKey={dataKey}
-              stroke={color}
-              strokeWidth={1.5}
-              fill={`url(#grad-${dataKey})`}
-              dot={false}
-              isAnimationActive={false}
-            />
+            <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.5} fill={`url(#grad-${dataKey})`} dot={false} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
       <div className="sys-meter-content">
         <div className="sys-meter-label">{label}</div>
-        <div className="sys-meter-value" style={{ color }}>{value}</div>
+        <div className="sys-meter-value">{value}</div>
         <div className="sys-meter-sub">{sub}</div>
       </div>
     </div>
   );
 }
 
-function SystemMeters({ system }: { system: SystemInfo }) {
+function SystemMeters({ system, updatedAt }: { system: SystemInfo; updatedAt: number }) {
   const cpuPct = Math.min(system.cpu_percent / system.cpu_count, 100);
   const ramPct = system.ram_percent;
-
-  meterHistory.push({ cpu: cpuPct, ram_gb: system.ram_used_gb });
-  if (meterHistory.length > METER_HISTORY_MAX) meterHistory.splice(0, meterHistory.length - METER_HISTORY_MAX);
-
-  const cpuColor = cpuPct > 80 ? "var(--err)" : cpuPct > 60 ? "var(--warn)" : "var(--brand)";
-  const ramColor = ramPct > 85 ? "var(--err)" : ramPct > 65 ? "var(--warn)" : "#8b5cf6";
+  // One point per poll, kept per mount; re-renders (opening a modal) add nothing.
+  const [history, setHistory] = useState<MeterEntry[]>([]);
+  useEffect(() => {
+    setHistory((h) => [...h, { cpu: cpuPct, ram_gb: system.ram_used_gb }].slice(-METER_HISTORY_MAX));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updatedAt]);
 
   return (
-    <div className="sys-meters-row">
+    <div className="sys-meters-row" aria-label="Predictor host">
       <MeterCard
         label="CPU"
-        value={`${cpuPct.toFixed(1)}%`}
-        sub={`${system.cpu_count} cores · ${system.cpu_percent.toFixed(0)}% aggregate`}
-        color={cpuColor}
-        data={[...meterHistory]}
+        value={`${cpuPct.toFixed(1)} %`}
+        sub={`${system.cpu_count} cores · ${system.cpu_percent.toFixed(0)} % aggregate`}
+        tone={cpuPct > 80 ? "danger" : cpuPct > 60 ? "warning" : "normal"}
+        data={history}
         dataKey="cpu"
         domain={[0, 100]}
-        unit="%"
+        unit=" %"
       />
       <MeterCard
         label="RAM"
-        value={`${ramPct.toFixed(1)}%`}
+        value={`${ramPct.toFixed(1)} %`}
         sub={`${system.ram_used_gb.toFixed(1)} / ${system.ram_total_gb.toFixed(0)} GB`}
-        color={ramColor}
-        data={[...meterHistory]}
+        tone={ramPct > 85 ? "danger" : ramPct > 65 ? "warning" : "normal"}
+        data={history}
         dataKey="ram_gb"
         domain={[0, system.ram_total_gb]}
         unit=" GB"
@@ -853,75 +226,38 @@ function SystemMeters({ system }: { system: SystemInfo }) {
   );
 }
 
-export function TrainView({ selectedHouseId }: TrainViewProps) {
+export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
   const { notifySuccess, notifyError } = useApiFeedback();
-  const { data: jobsData } = usePredictorTrainingProgress();
+  const { data: jobsData, dataUpdatedAt } = usePredictorTrainingProgress();
   const commandMutation = usePredictorCommand();
-  const cancelMutation = useCancelTrainingJob();
 
   const [showTrainDialog, setShowTrainDialog] = useState(false);
   const [showColdTrainDialog, setShowColdTrainDialog] = useState(false);
   const [detailJob, setDetailJob] = useState<TrainingJob | null>(null);
-  const [trainModelType, setTrainModelType] = useState<ModelBackend>("xgboost");
-  const [trainSchema, setTrainSchema] = useState<"dense" | "sparse">("dense");
-  const [trainLane, setTrainLane] = useState<"consumption" | "production" | "both">("both");
-
-  // Hyperparams state
-  const [xgbParams, setXgbParams] = useState<{ [K in XGBKey]: string }>(() => emptyFields(XGB_DEFAULTS));
-  const [lgbmParams, setLgbmParams] = useState<{ [K in LGBMKey]: string }>(() => ({ objective: "tweedie", ...emptyFields(LGBM_DEFAULTS) }));
-  const [lstmParams, setLstmParams] = useState<{ [K in LSTMKey]: string }>(() => emptyFields(LSTM_DEFAULTS));
-  const [lstmLayers, setLstmLayers] = useState<LSTMLayer[]>([]);
-
-  function buildHyperparams(): Record<string, unknown> {
-    if (trainModelType === "xgboost") return numericParams(xgbParams);
-    if (trainModelType === "lgbm") {
-      const { objective, ...numeric } = lgbmParams;
-      return { objective, ...numericParams(numeric) };
-    }
-    const hp: Record<string, unknown> = numericParams(lstmParams);
-    if (lstmLayers.length > 0) hp.layers = lstmLayers.map(serializeLayer);
-    return hp;
-  }
+  const [historyScope, setHistoryScope] = useState<"all" | "house">("all");
+  const [historyPage, setHistoryPage] = useState(0);
 
   const jobs = jobsData?.jobs;
   const systemInfo = jobsData?.system ?? null;
   const activeJobs = jobs?.filter((j) => ACTIVE_STATUSES.includes(j.status)) ?? [];
   const completedJobs = jobs?.filter((j) => !ACTIVE_STATUSES.includes(j.status)) ?? [];
+  const lstmBusy = activeJobs.some((j) => j.model_type === "lstm");
 
-  const handleTrain = () => {
-    if (!selectedHouseId) return;
-    commandMutation.mutate(
-      {
-        command: "train",
-        house_id: selectedHouseId,
-        lane: trainLane,
-        model_type: trainModelType,
-        ...(trainModelType === "xgboost" ? { model_schema: trainSchema } : {}),
-        hyperparams: buildHyperparams(),
-      },
-      {
-        onSuccess: (res) => { notifySuccess("Training Queued", res.message); setShowTrainDialog(false); },
-        onError: (err) => notifyError("Training Error", err),
-      }
-    );
-  };
+  const scopedHistory = historyScope === "house" && selectedHouseId
+    ? completedJobs.filter((j) => j.house_id === selectedHouseId)
+    : completedJobs;
+  const pageCount = Math.max(1, Math.ceil(scopedHistory.length / HISTORY_PAGE_SIZE));
+  const page = Math.min(historyPage, pageCount - 1);
+  const pageJobs = scopedHistory.slice(page * HISTORY_PAGE_SIZE, (page + 1) * HISTORY_PAGE_SIZE);
 
   const handleColdTrain = () => {
     commandMutation.mutate(
       { command: "train-cold", lane: "both" },
       {
-        onSuccess: (res) => { notifySuccess("Cold Training", res.message); setShowColdTrainDialog(false); },
-        onError: (err) => notifyError("Training Error", err),
+        onSuccess: (res) => { notifySuccess("Cold-start training queued", res.message); setShowColdTrainDialog(false); },
+        onError: (err) => notifyError("Training not started", err),
       }
     );
-  };
-
-  const handleCancelJob = () => {
-    if (!detailJob) return;
-    cancelMutation.mutate(detailJob.job_id, {
-      onSuccess: () => { notifySuccess("Job Cancelled", "Job cancelled successfully."); setDetailJob(null); },
-      onError: (err) => notifyError("Cancel Error", err),
-    });
   };
 
   return (
@@ -943,52 +279,51 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
         >
           Retrain Cold-Start Models
         </Button>
+        <small className="predictor-train-note">Cold-start runs are not listed below yet; follow them in Logs.</small>
       </div>
 
-      {systemInfo && <SystemMeters system={systemInfo} />}
+      {systemInfo && <SystemMeters system={systemInfo} updatedAt={dataUpdatedAt} />}
 
       <div className="predictor-train-grid">
-        {/* Active jobs */}
-        <div className="panel" style={{ padding: 0 }}>
+        <section className="panel predictor-jobs-panel">
           <div className="predictor-panel-header">
             <h2>Active Training Jobs</h2>
-            {activeJobs.length > 0 && (
-              <Badge tone="info">{activeJobs.length} running</Badge>
-            )}
+            {activeJobs.length > 0 && <Badge tone="info">{activeJobs.length} active</Badge>}
           </div>
           <div className="predictor-panel-body">
             {activeJobs.length === 0 ? (
-              <EmptyState title="No active jobs" message="Submit a training job above to get started." />
+              <EmptyState title="No active jobs" message="Start a training job above to see its progress here." />
             ) : (
-              <table className="table">
+              <table className="table predictor-jobs-table">
                 <thead>
                   <tr>
                     <th>House</th>
                     <th>Lane</th>
-                    <th>Type</th>
+                    <th>Model</th>
                     <th>Status</th>
-                    <th style={{ minWidth: 140 }}>Progress</th>
-                    <th>ETA</th>
+                    <th className="predictor-progress-col">Progress</th>
+                    <th>Time left</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activeJobs.map((job, idx) => {
-                    const pct = job.percent ?? (job.progress_total > 0 ? (job.progress_current / job.progress_total) * 100 : 0);
+                  {activeJobs.map((job) => {
+                    const pct = jobPercent(job);
                     return (
-                      <tr key={`${job.job_id}-${idx}`} className="is-clickable" onClick={() => setDetailJob(job)}>
+                      <tr key={job.job_id} className="is-clickable" tabIndex={0} onClick={() => setDetailJob(job)}
+                        onKeyDown={(e) => { if (e.key === "Enter") setDetailJob(job); }}>
                         <td>{job.house_id}</td>
-                        <td style={{ textTransform: "capitalize" }}>{job.lane}</td>
-                        <td><Badge tone="neutral">{job.model_type ?? "—"}</Badge></td>
-                        <td><Badge tone={getStatusTone(job.status)}>{job.status}</Badge></td>
+                        <td className="is-capitalized">{job.lane}</td>
+                        <td>{MODEL_LABELS[job.model_type ?? ""] ?? job.model_type ?? "—"}</td>
+                        <td><JobStatus status={job.status} /></td>
                         <td>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <div className="predictor-progress-bar" style={{ flex: 1 }}>
+                          <div className="predictor-progress-cell">
+                            <div className="predictor-progress-bar">
                               <div className="predictor-progress-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
                             </div>
-                            <span className="is-muted" style={{ fontSize: "0.72rem", whiteSpace: "nowrap" }}>{pct.toFixed(0)}%</span>
+                            <span className="is-muted">{pct.toFixed(0)} %</span>
                           </div>
                         </td>
-                        <td className="is-muted" style={{ fontSize: "0.8rem" }}>{job.eta ?? "—"}</td>
+                        <td className="is-muted">{job.eta ?? "—"}</td>
                       </tr>
                     );
                   })}
@@ -996,41 +331,52 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
               </table>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* Completed history */}
-        <div className="panel" style={{ padding: 0 }}>
+        <section className="panel predictor-jobs-panel">
           <div className="predictor-panel-header">
             <h2>Completed History</h2>
+            <div className="predictor-lane-toggle" role="group" aria-label="Show jobs for">
+              <button type="button" className={`predictor-lane-btn${historyScope === "all" ? " is-active" : ""}`}
+                aria-pressed={historyScope === "all"} onClick={() => { setHistoryScope("all"); setHistoryPage(0); }}>
+                All houses
+              </button>
+              <button type="button" className={`predictor-lane-btn${historyScope === "house" ? " is-active" : ""}`}
+                aria-pressed={historyScope === "house"} disabled={!selectedHouseId}
+                onClick={() => { setHistoryScope("house"); setHistoryPage(0); }}>
+                {selectedHouseId ?? "This house"}
+              </button>
+            </div>
           </div>
-          <div className="predictor-panel-body" style={{ maxHeight: 500, overflowY: "auto" }}>
-            {completedJobs.length === 0 ? (
+          <div className="predictor-panel-body">
+            {scopedHistory.length === 0 ? (
               <EmptyState title="No completed jobs" message="Finished training runs will appear here." />
             ) : (
-              <table className="table">
+              <table className="table predictor-jobs-table">
                 <thead>
                   <tr>
                     <th>House</th>
                     <th>Lane</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Prev MAE</th>
-                    <th>New MAE</th>
+                    <th>Model</th>
+                    <th>Result</th>
+                    <th>Error (MAE)</th>
+                    <th>Finished</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {completedJobs.slice(0, 50).map((job, idx) => {
+                  {pageJobs.map((job) => {
                     const improved = job.new_mae != null && job.prev_mae != null && job.new_mae < job.prev_mae;
                     return (
-                      <tr key={`${job.job_id}-${idx}`} className="is-clickable" onClick={() => setDetailJob(job)}>
+                      <tr key={job.job_id} className="is-clickable" tabIndex={0} onClick={() => setDetailJob(job)}
+                        onKeyDown={(e) => { if (e.key === "Enter") setDetailJob(job); }}>
                         <td>{job.house_id}</td>
-                        <td style={{ textTransform: "capitalize" }}>{job.lane}</td>
-                        <td><Badge tone="neutral">{job.model_type ?? "—"}</Badge></td>
-                        <td><Badge tone={getStatusTone(job.status)}>{job.status}</Badge></td>
-                        <td className="is-muted">{job.prev_mae?.toFixed(4) ?? "—"}</td>
-                        <td style={{ fontWeight: 600, color: improved ? "var(--ok)" : "inherit" }}>
-                          {job.new_mae?.toFixed(4) ?? "—"}
+                        <td className="is-capitalized">{job.lane}</td>
+                        <td>{MODEL_LABELS[job.model_type ?? ""] ?? job.model_type ?? "—"}</td>
+                        <td><JobStatus status={job.status} /></td>
+                        <td className="predictor-mae-cell">
+                          <span className="is-muted">{fmtMae(job.prev_mae)}</span> → <strong className={improved ? "is-improved" : undefined}>{fmtMae(job.new_mae)}</strong>
                         </td>
+                        <td className="is-muted">{formatJobTime(job.finished_at, timezone)}</td>
                       </tr>
                     );
                   })}
@@ -1038,108 +384,37 @@ export function TrainView({ selectedHouseId }: TrainViewProps) {
               </table>
             )}
           </div>
-        </div>
+          {scopedHistory.length > HISTORY_PAGE_SIZE && (
+            <div className="predictor-pager">
+              <span className="is-muted">
+                {page * HISTORY_PAGE_SIZE + 1}–{Math.min((page + 1) * HISTORY_PAGE_SIZE, scopedHistory.length)} of {scopedHistory.length}
+              </span>
+              <Button variant="secondary" size="sm" disabled={page === 0} onClick={() => setHistoryPage(page - 1)}>Previous</Button>
+              <Button variant="secondary" size="sm" disabled={page >= pageCount - 1} onClick={() => setHistoryPage(page + 1)}>Next</Button>
+            </div>
+          )}
+        </section>
       </div>
 
-      {detailJob && (
-        <JobDetailModal
-          job={detailJob}
-          onClose={() => setDetailJob(null)}
-          onCancel={handleCancelJob}
-          cancelling={cancelMutation.isPending}
-        />
-      )}
+      {detailJob && <JobDetailModal initial={detailJob} timezone={timezone} onClose={() => setDetailJob(null)} />}
 
       <ConfirmDialog
         open={showColdTrainDialog}
-        title="Retrain Cold-Start Model"
-        message="This will submit a distributed cold-start training job across all houses in the cluster."
-        confirmLabel="Start Cold Training"
+        title="Retrain cold-start models"
+        message="Retrains the shared cold-start models from every house's data, for both lanes. They are used when a house has no recent data or no model of its own. These runs do not appear in the job lists yet; follow them in Logs."
+        confirmLabel="Start cold-start training"
         confirmVariant="primary"
         pending={commandMutation.isPending}
         onConfirm={handleColdTrain}
         onCancel={() => setShowColdTrainDialog(false)}
       />
 
-      {/* ── Train config modal ── */}
-      <Modal
-        title={`Train — ${selectedHouseId ?? ""}`}
+      <TrainWizard
         open={showTrainDialog}
+        houseId={selectedHouseId}
+        lstmBusy={lstmBusy}
         onClose={() => setShowTrainDialog(false)}
-        width="lg"
-        adjacentPanel={
-          trainModelType === "lstm" && lstmLayers.length > 0
-            ? <NNViz layers={lstmLayers} />
-            : undefined
-        }
-      >
-        <div className="train-modal-body">
-          {/* Top config row */}
-          <div className="train-modal-config-row">
-            <label className="train-modal-config-field">
-              <span>Model type</span>
-              <select
-                className="predictor-house-select"
-                value={trainModelType}
-                onChange={(e) => setTrainModelType(e.target.value as ModelBackend)}
-              >
-                <option value="xgboost">XGBoost</option>
-                <option value="lgbm">LightGBM</option>
-                <option value="lstm">LSTM</option>
-              </select>
-            </label>
-            <label className="train-modal-config-field">
-              <span>Lane</span>
-              <select
-                className="predictor-house-select"
-                value={trainLane}
-                onChange={(e) => setTrainLane(e.target.value as "consumption" | "production" | "both")}
-              >
-                <option value="both">Both</option>
-                <option value="consumption">Consumption</option>
-                <option value="production">Production</option>
-              </select>
-            </label>
-          </div>
-
-          <p style={{ margin: 0, fontSize: "0.83rem", color: "var(--text-soft)" }}>
-            All fields are optional. Empty fields use the server default shown in grey; max_depth defaults to 7 for consumption and 5 for production.
-          </p>
-
-          {/* Per-model hyperparams */}
-          <div className="train-modal-hp-area">
-            {trainModelType === "xgboost" && (
-              <XGBForm
-                schema={trainSchema}
-                onSchemaChange={setTrainSchema}
-                params={xgbParams}
-                onChange={(k, v) => setXgbParams((p) => ({ ...p, [k]: v }))}
-              />
-            )}
-            {trainModelType === "lgbm" && (
-              <LGBMForm
-                params={lgbmParams}
-                onChange={(k, v) => setLgbmParams((p) => ({ ...p, [k]: v }))}
-              />
-            )}
-            {trainModelType === "lstm" && (
-              <LSTMForm
-                params={lstmParams}
-                onChange={(k, v) => setLstmParams((p) => ({ ...p, [k]: v }))}
-                layers={lstmLayers}
-                onLayersChange={setLstmLayers}
-              />
-            )}
-          </div>
-
-          <div className="train-modal-footer">
-            <Button variant="secondary" onClick={() => setShowTrainDialog(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleTrain} disabled={commandMutation.isPending}>
-              {commandMutation.isPending ? "Submitting…" : "Start Training"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      />
     </div>
   );
 }

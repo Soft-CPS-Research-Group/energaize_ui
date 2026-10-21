@@ -116,7 +116,7 @@ export function PredictorWorkspacePage(): JSX.Element {
       <div className="predictor-content">
         <Routes>
           <Route path="/" element={<PredictView selectedHouseId={selectedHouse} timezone={timezone} />} />
-          <Route path="/train" element={<TrainView selectedHouseId={selectedHouse} />} />
+          <Route path="/train" element={<TrainView selectedHouseId={selectedHouse} timezone={timezone} />} />
           <Route path="/logs" element={<LogsView />} />
           <Route path="/analysis" element={<AnalysisView />} />
           <Route path="*" element={<Navigate to="/app/predictor" replace />} />
@@ -136,7 +136,7 @@ export function PredictorWorkspacePage(): JSX.Element {
               <option value="UTC">UTC</option>
             </select>
             <span style={{ fontSize: "0.8rem", color: "var(--text-soft)" }}>
-              Used for times on the forecast chart and in the service status. Saved in this browser.
+              Used for times on the forecast chart, training jobs and the service status. Saved in this browser.
             </span>
           </label>
         </div>
