@@ -28,7 +28,8 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
-  type TooltipProps,
+  type TooltipContentProps,
+  type TooltipValueType,
 } from "recharts";
 import { Zap, TrendingUp, Layers, Info, TriangleAlert } from "lucide-react";
 
@@ -67,7 +68,7 @@ function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPerce
 
 export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   // Tooltip renderer as a closure to capture `timezone`
-  const TooltipContent = ({ active, payload, label }: TooltipProps<number, string>) => {
+  const TooltipContent = ({ active, payload, label }: TooltipContentProps<TooltipValueType, string | number>) => {
     if (!active || !payload || payload.length === 0) return null;
     const BAND_KEYS = new Set(["cBandLo","cBandHi","cBandQ1Lo","cBandQ1Hi","pBandLo","pBandHi","pBandQ1Lo","pBandQ1Hi"]);
     const relevant = payload.filter(
