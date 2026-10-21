@@ -259,6 +259,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
       );
       setSelected(null);
       queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
+      queryClient.invalidateQueries({ queryKey: ["predictor", "active-model"] });
     },
     onError: (err) => notifyError("Promote Failed", err),
   });
