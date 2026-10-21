@@ -1,0 +1,44 @@
+/* Predictor workspace on the Mediterranean Ceramic shell. Base predictor rules stay in
+   index.css; these only adapt them to the ceramic scope set by AppShell. */
+.predictor-ceramic-art { background-position: 0 0; }
+
+body[data-workspace="ai"] .predictor-workspace { gap: 24px; }
+body[data-workspace="ai"] .predictor-content { padding-top: 0; }
+body[data-workspace="ai"] .predictor-heading { align-items: center; }
+body[data-workspace="ai"] .predictor-heading-actions { gap: 10px; }
+body[data-workspace="ai"] .predictor-house-select { min-width: 150px; min-height: 34px; padding: 7px 28px 7px 11px; font-size: 12px; background-color: var(--bg-elev); }
+
+/* Service status: one icon in the header, details on hover or focus. */
+.predictor-health { position: relative; display: inline-flex; }
+.predictor-health-icon {
+  display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--text-soft); cursor: help;
+  transition: background .18s, color .18s;
+}
+.predictor-health-icon:hover,.predictor-health-icon[aria-describedby] { background: var(--ai-tint, var(--bg-elev-2)); }
+.predictor-health-icon.is-good { color: var(--ok); }
+.predictor-health-icon.is-warning { color: var(--warn); }
+.predictor-health-icon.is-error { color: var(--danger); }
+.predictor-health-icon.is-checking svg { animation: predictor-health-pulse 1.6s ease-in-out infinite; }
+@keyframes predictor-health-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .predictor-health-icon.is-checking svg { animation: none; } }
+
+.predictor-health-tooltip {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: min(300px, calc(100vw - 32px));
+  display: grid; gap: 6px; padding: 12px 14px; text-align: left;
+  background: var(--bg-elev); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow, 0 12px 36px #0000001a);
+}
+.predictor-health-tooltip strong { font-size: 13px; font-weight: 600; }
+.predictor-health-tooltip p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-soft); }
+.predictor-health-tooltip ul { margin: 2px 0 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 12px; }
+.predictor-health-tooltip small { font-size: 10px; color: var(--text-soft); }
+
+@media (max-width: 720px) {
+  body[data-workspace="ai"] .predictor-heading-actions { width: 100%; }
+  body[data-workspace="ai"] .predictor-house-select { flex: 1; }
+  /* Anchor the tooltip to the whole actions row so it stays on screen. */
+  body[data-workspace="ai"] .predictor-heading-actions { position: relative; }
+  .predictor-health { position: static; }
+  .predictor-health-tooltip { left: 0; right: 0; width: auto; }
+}

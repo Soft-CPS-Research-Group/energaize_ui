@@ -49,6 +49,22 @@ describe('Predictor API gateway paths', () => {
   });
 });
 
+describe('Predictor health', () => {
+  it('reads the status body from a 503 instead of failing', async () => {
+    const { predictor } = await loadApis();
+    const fetch = vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({ healthy: false, paused: false }) });
+    vi.stubGlobal('fetch', fetch);
+    await expect(predictor.getHealth()).resolves.toMatchObject({ healthy: false });
+    expect(fetch.mock.calls[0][0]).toBe('/predictor-api/api/health');
+  });
+
+  it('fails when the gateway cannot reach the service', async () => {
+    const { predictor } = await loadApis();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 502, json: async () => ({}) }));
+    await expect(predictor.getHealth()).rejects.toThrow('502');
+  });
+});
+
 describe('Setting a model as active', () => {
   const base = {
     house_id: 'R-H-01', lane: 'production' as const, model_type: 'warm' as const, active: null,

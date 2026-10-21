@@ -130,6 +130,7 @@ export function TopBar(): JSX.Element {
         {isTrainingManager ? (
           TRAINING_ENABLED ? <TrainingWorkspaceSelector /> : <div className="ai-workspace-context"><small>Workspace</small><strong>AI Manager</strong></div>
         ) : null}
+        {isPredictor ? <div className="ai-workspace-context"><small>Workspace</small><strong>Predictor</strong></div> : null}
         {isCommunityUser ? <Link className="community-context-main" to={isProsumer?'/app/community/dashboard':'/communities'}><span className="community-context-copy"><small>Workspace</small><strong>{isProsumer?'My energy':'Communities'}</strong></span><ChevronDown size={15}/></Link> : null}
       </div>
 
