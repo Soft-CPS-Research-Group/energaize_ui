@@ -117,7 +117,7 @@ export function PredictorWorkspacePage(): JSX.Element {
         <Routes>
           <Route path="/" element={<PredictView selectedHouseId={selectedHouse} timezone={timezone} />} />
           <Route path="/train" element={<TrainView selectedHouseId={selectedHouse} timezone={timezone} />} />
-          <Route path="/logs" element={<LogsView />} />
+          <Route path="/logs" element={<LogsView timezone={timezone} />} />
           <Route path="/analysis" element={<AnalysisView />} />
           <Route path="*" element={<Navigate to="/app/predictor" replace />} />
         </Routes>
