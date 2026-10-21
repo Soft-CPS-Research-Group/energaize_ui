@@ -4,7 +4,7 @@ import {
   PredictorPredictionsResponse,
   PredictionHistoryEntry,
 } from "../api/predictorApi";
-import { format, parseISO } from "date-fns";
+import dayjs from "dayjs";
 
 // No hard cap — use all available history runs so the band covers the full historical range.
 // The computation is O(N×M) but runs in a single synchronous pass so it stays fast in practice.
@@ -20,7 +20,7 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /** Normalize any ISO timestamp to a UTC ISO key, treating bare ISO (no tz) as UTC. */
-function normalizeTs(ts: string): string {
+export function normalizeTs(ts: string): string {
   // If there's no timezone indicator, treat as UTC (append Z) to avoid local-time misinterpretation
   const utc = /Z$|[+-]\d{2}:?\d{2}$/.test(ts) ? ts : ts + "Z";
   return new Date(utc).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -31,7 +31,7 @@ function normalizeTs(ts: string): string {
  * target_time from the API is the wall-clock time the model ran, e.g. 21:23:32.
  * Predictions are aligned to 15-min slots, so step 0 = 21:15:00, step 1 = 21:30:00, etc.
  */
-function snap15(date: Date): Date {
+export function snap15(date: Date): Date {
   return new Date(Math.floor(date.getTime() / (15 * 60_000)) * (15 * 60_000));
 }
 
@@ -96,7 +96,7 @@ export interface ChartBuildResult {
 function makePoint(timeIso: string): ChartDataPoint {
   return {
     time: timeIso,
-    label: format(parseISO(timeIso), "HH:mm dd/MM"),
+    label: dayjs(timeIso).format("HH:mm DD/MM"),
     actualConsumption: null,
     actualProduction: null,
     predictedConsumption: null,

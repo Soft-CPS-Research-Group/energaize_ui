@@ -6,6 +6,7 @@ import {
   usePredictorPredictions,
   usePredictorCommand,
   usePredictorPredictionHistory,
+  usePredictorActiveModel,
 } from "../../../hooks/usePredictor";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -13,7 +14,9 @@ import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { buildPredictorTimeline } from "../../../utils/predictorTransforms";
-import { useCountUp } from "../../../hooks/useCountUp";
+import type { ModelBackend } from "../../../api/predictorApi";
+import type { ForecastErrors } from "../../../utils/predictorTransforms";
+import { currentSlotKey, formatAge, forecastNotices, hasForecast, minutesSince, nowLineSlot } from "./forecastStatus";
 import {
   ComposedChart,
   Area,
@@ -26,7 +29,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { Zap, TrendingUp, Layers, Eye, EyeOff } from "lucide-react";
+import { Zap, TrendingUp, Layers, Info, TriangleAlert } from "lucide-react";
 
 function InfoTip({ tip }: { tip: string }) {
   const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
@@ -43,7 +46,17 @@ function InfoTip({ tip }: { tip: string }) {
   const hide = () => setPos(null);
   return (
     <>
-      <span ref={ref} className="analysis-infotip" onMouseEnter={show} onMouseLeave={hide}>?</span>
+      <span
+        ref={ref}
+        className="analysis-infotip"
+        tabIndex={0}
+        role="img"
+        aria-label={tip}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+      >?</span>
       {pos && createPortal(
         <div
           className="analysis-infotip-popup"
@@ -63,10 +76,14 @@ interface PredictViewProps {
 type Lane = "consumption" | "production" | "both";
 type ScaleMode = "auto" | "actual" | "prediction";
 
-const LANE_COLORS: Record<"consumption" | "production", { actual: string; predicted: string; spectrum: string }> = {
-  consumption: { actual: "#ea5a5a", predicted: "#3b82f6", spectrum: "#3b82f6" },
-  production:  { actual: "#22c55e", predicted: "#a78bfa", spectrum: "#a78bfa" },
+// Colours come from tokens in predictor-ceramic.css. Lanes differ by hue and
+// actual vs forecast by hue and dash, so no pair relies on colour alone.
+const LANE_COLORS: Record<"consumption" | "production", { actual: string; predicted: string }> = {
+  consumption: { actual: "var(--pred-consumption-actual)", predicted: "var(--pred-consumption-forecast)" },
+  production:  { actual: "var(--pred-production-actual)", predicted: "var(--pred-production-forecast)" },
 };
+
+const MODEL_LABELS: Record<ModelBackend, string> = { xgboost: "XGBoost", lgbm: "LightGBM", lstm: "LSTM" };
 
 // Error metric trend chip — lower error = improved (green)
 function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPercent?: boolean }) {
@@ -75,9 +92,29 @@ function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPerce
   const abs = Math.abs(delta);
   const label = isPercent ? abs.toFixed(1) + "%" : abs.toFixed(3) + " kWh";
   return (
-    <span className={`predictor-delta ${improved ? "improved" : "worsened"}`}>
+    <span
+      className={`predictor-delta ${improved ? "improved" : "worsened"}`}
+      title={`${improved ? "Lower" : "Higher"} than the previous 24 h`}
+    >
       {improved ? "\u2193" : "\u2191"} {label}
     </span>
+  );
+}
+
+function AccuracyLane({ lane, errors }: { lane: "consumption" | "production"; errors: ForecastErrors }) {
+  const kwh = (v: number | null) => (v == null ? "—" : `${v.toFixed(3)} kWh`);
+  return (
+    <div className="predictor-accuracy-lane">
+      <span className="predictor-accuracy-name">
+        <i style={{ background: LANE_COLORS[lane].predicted }} aria-hidden="true" />
+        {lane === "consumption" ? "Consumption" : "Production"}
+      </span>
+      <dl>
+        <div><dt>MAE</dt><dd>{kwh(errors.mae)} <DeltaChip delta={errors.maeDelta} /></dd></div>
+        <div><dt>RMSE</dt><dd>{kwh(errors.rmse)} <DeltaChip delta={errors.rmseDelta} /></dd></div>
+        <div><dt>sMAPE</dt><dd>{errors.mape == null ? "—" : `${errors.mape.toFixed(1)} %`} <DeltaChip delta={errors.mapeDelta} isPercent /></dd></div>
+      </dl>
+    </div>
   );
 }
 
@@ -92,17 +129,18 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
       (p: any) => !BAND_KEYS.has(String(p.dataKey)) && !String(p.dataKey).startsWith("spec_") && p.value != null
     );
     if (relevant.length === 0) return null;
-    const dateStr = new Date(label as string).toLocaleString([], {
+    const dateStr = new Date(label as string).toLocaleString("en-GB", {
       timeZone: timezone,
       dateStyle: "short",
       timeStyle: "short",
     });
     return (
-      <div style={{ background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 12px", fontSize: "0.8rem" }}>
-        <p style={{ margin: "0 0 6px", color: "var(--text-soft)", fontWeight: 500 }}>{dateStr}</p>
+      <div className="predictor-chart-tooltip">
+        <p>{dateStr}</p>
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {relevant.map((p: any) => (
-          <p key={String(p.dataKey)} style={{ margin: "2px 0", color: p.color }}>
+          <p key={String(p.dataKey)}>
+            <i style={{ background: p.color }} aria-hidden="true" />
             {p.name}: <strong>{Number(p.value).toFixed(3)} kWh</strong>
           </p>
         ))}
@@ -118,6 +156,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   const [showFlexDialog, setShowFlexDialog] = useState(false);
 
   const { data: stats } = usePredictorStats();
+  const { data: activeModel } = usePredictorActiveModel(selectedHouseId);
   const { data: history, isLoading: historyLoading, isFetching: historyFetching } = usePredictorHistory(selectedHouseId);
   const { data: predictions, isLoading: predictionsLoading, isFetching: predFetching } = usePredictorPredictions(selectedHouseId);
   const { consumption: histC, production: histP } = usePredictorPredictionHistory(selectedHouseId);
@@ -132,17 +171,6 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   };
 
   const { data: chartData, errors } = buildPredictorTimeline(history, predictions, predHistory);
-
-  // Animated count-up values — must be called before any conditional returns
-  const { ref: cMaeRef,  dir: cMaeDir  } = useCountUp(errors.consumption.mae,  v => `${v.toFixed(3)} kWh`);
-  const { ref: cRmseRef, dir: cRmseDir } = useCountUp(errors.consumption.rmse, v => `${v.toFixed(3)} kWh`);
-  const { ref: cMapeRef, dir: cMapeDir } = useCountUp(errors.consumption.mape, v => `${v.toFixed(1)} %`);
-  const { ref: pMaeRef,  dir: pMaeDir  } = useCountUp(errors.production.mae,   v => `${v.toFixed(3)} kWh`);
-  const { ref: pRmseRef, dir: pRmseDir } = useCountUp(errors.production.rmse,  v => `${v.toFixed(3)} kWh`);
-  const { ref: pMapeRef, dir: pMapeDir } = useCountUp(errors.production.mape,  v => `${v.toFixed(1)} %`);
-  const { ref: statHousesRef    } = useCountUp(stats?.total_houses          ?? null, v => String(Math.round(v)), 900);
-  const { ref: statPredAvailRef } = useCountUp(stats?.predictions_available ?? null, v => String(Math.round(v)), 900);
-  const { ref: statCyclesRef    } = useCountUp(stats?.total_cycles          ?? null, v => String(Math.round(v)), 900);
 
   const isConsumption = activeLane === "consumption" || activeLane === "both";
   const isProduction  = activeLane === "production"  || activeLane === "both";
@@ -188,11 +216,25 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
 
 
 
-  const futureStart = chartData.find((pt) => {
-    if (isConsumption && pt.actualConsumption === null && pt.predictedConsumption !== null) return true;
-    if (isProduction  && pt.actualProduction  === null && pt.predictedProduction  !== null) return true;
-    return false;
-  });
+  const now = Date.now();
+  const formatTime = (iso: string) =>
+    new Date(iso).toLocaleString("en-GB", { timeZone: timezone, dateStyle: "short", timeStyle: "short" });
+  const nowSlot = nowLineSlot(chartData.map((pt) => pt.time), currentSlotKey(now));
+  const notices = selectedHouseId
+    ? forecastNotices({
+        houseId: selectedHouseId,
+        predictions,
+        history,
+        paused: !!stats?.scheduler_paused,
+        now,
+        formatTime,
+      })
+    : [];
+  const forecastAge = hasForecast(predictions) ? minutesSince(predictions?.target_time, now) : null;
+  const modelSummary = activeModel
+    ? `Consumption ${MODEL_LABELS[activeModel.consumption] ?? activeModel.consumption} · Production ${MODEL_LABELS[activeModel.production] ?? activeModel.production}`
+    : null;
+  const hasRunHistory = predHistory.consumption.length > 0 || predHistory.production.length > 0;
 
   const handleForecast = () => {
     if (!selectedHouseId) return;
@@ -219,8 +261,8 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   if (!selectedHouseId) {
     return (
       <EmptyState
-        title="No House Selected"
-        message="Select a house from the dropdown above to view its forecast data."
+        title="No house selected"
+        message="Choose a house in the header to see its forecast."
       />
     );
   }
@@ -230,169 +272,135 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   }
 
   const formatXAxis = (t: string) =>
-    new Date(t).toLocaleTimeString([], { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
+    new Date(t).toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="predictor-predict-view">
-      {/* KPI strip — row 1: global stats */}
-      <div className="kpi-grid predictor-kpi-grid">
-        <div className="kpi">
-          <span>Total Houses</span>
-          <strong><span ref={statHousesRef}>—</span></strong>
+      <section className="predictor-status-strip" aria-label="Forecast status">
+        <div className="predictor-status-item">
+          <span>Houses with a forecast</span>
+          <strong>{stats ? `${stats.predictions_available} of ${stats.total_houses}` : "—"}</strong>
         </div>
-        <div className="kpi">
-          <span>Houses w/ Predictions</span>
-          <strong><span ref={statPredAvailRef}>—</span></strong>
-        </div>
-        <div className="kpi">
-          <span>Next Compute Cycle</span>
+        <div className="predictor-status-item">
+          <span>Next cycle</span>
           <strong>
-            {stats?.next_cycle_at
-              ? new Date(stats.next_cycle_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-              : "—"}
+            {stats?.scheduler_paused
+              ? "Paused"
+              : stats?.next_cycle_at
+                ? new Date(stats.next_cycle_at).toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit" })
+                : "—"}
           </strong>
+          {stats ? <small>{stats.total_cycles} forecasts published since the service started</small> : null}
         </div>
-        <div className="kpi">
-          <span>Cycles Completed</span>
-          <strong><span ref={statCyclesRef}>—</span></strong>
+        <div className="predictor-status-item is-wide">
+          <span>Forecast for {selectedHouseId}</span>
+          <strong>{forecastAge != null ? `Updated ${formatAge(forecastAge)}` : predictions ? "None yet" : "—"}</strong>
+          {modelSummary ? <small>{modelSummary}</small> : null}
         </div>
-      </div>
+      </section>
 
-      {/* KPI strip — row 2: forecast accuracy (last 24 h, inverse-recency-weighted) */}
-      <div className="kpi-grid predictor-kpi-grid predictor-kpi-grid--accuracy">
-        <div className={`kpi${cMaeDir !== "idle" ? ` kpi--animating-${cMaeDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. MAE · 24 h ↓<InfoTip tip="Mean Absolute Error for consumption predictions — average magnitude of errors in kWh, inverse-recency-weighted across the last 24 h of forecast runs. Lower is better." /></span>
-          <strong style={{ color: "#60a5fa" }}>
-            <span ref={cMaeRef}>—</span>
-            <DeltaChip delta={errors.consumption.maeDelta} />
-          </strong>
+      {notices.length > 0 && (
+        <div className="predictor-notices">
+          {notices.map((notice) => (
+            <div key={notice.title} className={`predictor-notice is-${notice.tone}`} role={notice.tone === "warning" ? "alert" : "status"}>
+              {notice.tone === "warning" ? <TriangleAlert size={16} aria-hidden="true" /> : <Info size={16} aria-hidden="true" />}
+              <div>
+                <strong>{notice.title}</strong>
+                <p>{notice.message}</p>
+              </div>
+            </div>
+          ))}
         </div>
-        <div className={`kpi${cRmseDir !== "idle" ? ` kpi--animating-${cRmseDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. RMSE · 24 h ↓<InfoTip tip="Root Mean Squared Error for consumption — like MAE but penalises large individual errors more heavily. Lower is better." /></span>
-          <strong style={{ color: "#60a5fa" }}>
-            <span ref={cRmseRef}>—</span>
-            <DeltaChip delta={errors.consumption.rmseDelta} />
-          </strong>
-        </div>
-        <div className={`kpi${cMapeDir !== "idle" ? ` kpi--animating-${cMapeDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Cons. sMAPE · 24 h ↓<InfoTip tip="Symmetric MAPE for consumption — 2×|actual−pred| / (|actual|+|pred|), bounded 0–200%. Unlike standard MAPE it doesn’t blow up when actual is near zero, making it reliable across night-time low-consumption slots. Lower is better." /></span>
-          <strong style={{ color: "#60a5fa" }}>
-            <span ref={cMapeRef}>—</span>
-            <DeltaChip delta={errors.consumption.mapeDelta} isPercent />
-          </strong>
-        </div>
-        <div className={`kpi${pMaeDir !== "idle" ? ` kpi--animating-${pMaeDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. MAE · 24 h ↓<InfoTip tip="Mean Absolute Error for production predictions — average magnitude of errors in kWh, inverse-recency-weighted across the last 24 h of forecast runs. Lower is better." /></span>
-          <strong style={{ color: "#a78bfa" }}>
-            <span ref={pMaeRef}>—</span>
-            <DeltaChip delta={errors.production.maeDelta} />
-          </strong>
-        </div>
-        <div className={`kpi${pRmseDir !== "idle" ? ` kpi--animating-${pRmseDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. RMSE · 24 h ↓<InfoTip tip="Root Mean Squared Error for production — like MAE but penalises large individual errors more heavily. Lower is better." /></span>
-          <strong style={{ color: "#a78bfa" }}>
-            <span ref={pRmseRef}>—</span>
-            <DeltaChip delta={errors.production.rmseDelta} />
-          </strong>
-        </div>
-        <div className={`kpi${pMapeDir !== "idle" ? ` kpi--animating-${pMapeDir}` : ""}`}>
-          <span style={{ display: "flex", alignItems: "center", gap: 3 }}>Prod. sMAPE · 24 h ↓<InfoTip tip="Symmetric MAPE for production — 2×|actual−pred| / (|actual|+|pred|), bounded 0–200%. Unlike standard MAPE it doesn’t blow up when actual is near zero, making it reliable across night-time zero-production slots. Lower is better." /></span>
-          <strong style={{ color: "#a78bfa" }}>
-            <span ref={pMapeRef}>—</span>
-            <DeltaChip delta={errors.production.mapeDelta} isPercent />
-          </strong>
-        </div>
-      </div>
+      )}
 
       {/* Forecast chart */}
-      <div className={`panel predictor-chart-panel${isRefetching ? " is-refetching" : ""}`}>
+      <section className={`panel predictor-chart-panel${isRefetching ? " is-refetching" : ""}`}>
         <div className="predictor-chart-header">
           <div className="predictor-chart-title">
-            <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="predictor-live-dot" title="Auto-refreshing" />
-              Energy Forecast — {selectedHouseId}
+            <h3>
+              <span className="predictor-live-dot" title="Refreshes every minute" />
+              Energy forecast
             </h3>
           </div>
-
-          <div className="predictor-chart-controls">
-            <div className="predictor-lane-toggle">
-              <button
-                className={`predictor-lane-btn${activeLane === "consumption" ? " is-active" : ""}`}
-                onClick={() => setActiveLane("consumption")}
-              >
-                <Zap size={12} /> Consumption
-              </button>
-              <button
-                className={`predictor-lane-btn${activeLane === "production" ? " is-active" : ""}`}
-                onClick={() => setActiveLane("production")}
-              >
-                <TrendingUp size={12} /> Production
-              </button>
-              <button
-                className={`predictor-lane-btn${activeLane === "both" ? " is-active" : ""}`}
-                onClick={() => setActiveLane("both")}
-              >
-                <Layers size={12} /> Both
-              </button>
-            </div>
-
-            <div className="predictor-lane-toggle">
-              <button
-                className={`predictor-lane-btn${scaleMode === "auto" ? " is-active" : ""}`}
-                onClick={() => setScaleMode("auto")}
-                title="Scale to the largest of actual or predicted data"
-              >
-                Auto
-              </button>
-              <button
-                className={`predictor-lane-btn${scaleMode === "actual" ? " is-active" : ""}`}
-                onClick={() => setScaleMode("actual")}
-                title="Scale to actual (measured) data"
-              >
-                Actual
-              </button>
-              <button
-                className={`predictor-lane-btn${scaleMode === "prediction" ? " is-active" : ""}`}
-                onClick={() => setScaleMode("prediction")}
-                title="Scale to forecast data"
-              >
-                Forecast
-              </button>
-            </div>
-
-            {(predHistory.consumption.length > 0 || predHistory.production.length > 0) && (
-              <button
-                className={`predictor-lane-btn${bandsOnly ? " is-active" : ""}`}
-                onClick={() => setBandsOnly((v) => !v)}
-                title={bandsOnly ? "Show all data" : "Hide actual data, show predictions only"}
-                style={{ display: "flex", alignItems: "center", gap: 4 }}
-              >
-                {bandsOnly ? <Eye size={12} /> : <EyeOff size={12} />}
-                Predictions only
-              </button>
-            )}
-
-            {(predHistory.consumption.length > 0 || predHistory.production.length > 0) && (
-              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <button
-                  className={`predictor-lane-btn${showBands ? " is-active" : ""}`}
-                  onClick={() => setShowBands((v) => !v)}
-                >
-                  Bands
-                </button>
-                <InfoTip tip="Shaded areas show the spread of values forecasted across all historical prediction runs for each 15-min slot. Outer band: full min–max range. Inner (darker) band: interquartile range (p25–p75)." />
-              </div>
-            )}
-
-            <Button size="sm" variant="primary" onClick={() => setShowForecastDialog(true)} disabled={commandMutation.isPending}>
-              Run Forecast
+          <div className="predictor-chart-actions">
+            <Button size="sm" variant="secondary" onClick={() => setShowForecastDialog(true)} disabled={commandMutation.isPending}>
+              Forecast now
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setShowFlexDialog(true)} disabled={commandMutation.isPending}>
-              Run Flex Job
+              Flexibility job
             </Button>
           </div>
         </div>
 
+        <div className="predictor-chart-controls">
+          <div className="predictor-lane-toggle" role="group" aria-label="Lane">
+            {([
+              ["consumption", <Zap size={12} key="i" />, "Consumption"],
+              ["production", <TrendingUp size={12} key="i" />, "Production"],
+              ["both", <Layers size={12} key="i" />, "Both"],
+            ] as const).map(([lane, icon, label]) => (
+              <button
+                key={lane}
+                type="button"
+                className={`predictor-lane-btn${activeLane === lane ? " is-active" : ""}`}
+                aria-pressed={activeLane === lane}
+                onClick={() => setActiveLane(lane)}
+              >
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="predictor-lane-toggle" role="group" aria-label="Scale">
+            {([
+              ["auto", "Auto", "Scale to the larger of measured and forecast values"],
+              ["actual", "Measured", "Scale to measured values"],
+              ["prediction", "Forecast", "Scale to forecast values"],
+            ] as const).map(([mode, label, title]) => (
+              <button
+                key={mode}
+                type="button"
+                className={`predictor-lane-btn${scaleMode === mode ? " is-active" : ""}`}
+                aria-pressed={scaleMode === mode}
+                onClick={() => setScaleMode(mode)}
+                title={title}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {hasRunHistory && (
+            <div className="predictor-lane-toggle" role="group" aria-label="Layers">
+              <button
+                type="button"
+                className={`predictor-lane-btn${showBands ? " is-active" : ""}`}
+                aria-pressed={showBands}
+                onClick={() => setShowBands((v) => !v)}
+              >
+                Spread
+              </button>
+              <button
+                type="button"
+                className={`predictor-lane-btn${bandsOnly ? " is-active" : ""}`}
+                aria-pressed={bandsOnly}
+                onClick={() => setBandsOnly((v) => !v)}
+              >
+                Forecasts only
+              </button>
+            </div>
+          )}
+          {hasRunHistory && (
+            <InfoTip tip="Spread shades the range of values forecast for each 15-minute slot across past forecast runs: the light band is the full range, the darker band the middle half (25th to 75th percentile). Forecasts only hides the measured lines." />
+          )}
+        </div>
+
+        {chartData.length === 0 ? (
+          <div className="predictor-chart-empty">
+            <strong>Nothing to plot</strong>
+            <p>There are no measurements or forecasts for this house in the last 3 days.</p>
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height={380}>
           <ComposedChart data={chartData} margin={{ top: 6, right: 20, left: 8, bottom: 6 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.15} vertical={false} />
@@ -407,8 +415,9 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
             />
             <YAxis
               yAxisId="left"
-              tickFormatter={(v: number) => `${parseFloat(v.toPrecision(4))} kWh`}
-              width={70}
+              tickFormatter={(v: number) => String(parseFloat(v.toPrecision(3)))}
+              width={52}
+              label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "var(--text-soft)", fontSize: 11 }}
               tick={{ fontSize: 11, fill: "var(--text-soft)" }}
               tickLine={false}
               axisLine={false}
@@ -420,11 +429,12 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               verticalAlign="top"
               height={32}
               wrapperStyle={{ fontSize: "0.78rem" }}
+              formatter={(value: string) => <span className="predictor-legend-label">{value}</span>}
             />
 
-            {futureStart && (
+            {nowSlot && (
               <ReferenceLine
-                x={futureStart.time}
+                x={nowSlot}
                 yAxisId="left"
                 stroke="var(--line-strong)"
                 strokeDasharray="4 4"
@@ -482,7 +492,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 dataKey="actualConsumption"
                 stroke={LANE_COLORS.consumption.actual}
                 strokeWidth={2}
-                name="Actual Consumption"
+                name="Measured consumption"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -496,7 +506,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 stroke={LANE_COLORS.consumption.predicted}
                 strokeWidth={2}
                 strokeDasharray="5 5"
-                name="Predicted Consumption"
+                name="Forecast consumption"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -510,7 +520,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
 
                 stroke={LANE_COLORS.production.actual}
                 strokeWidth={2}
-                name="Actual Production"
+                name="Measured production"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -524,7 +534,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 stroke={LANE_COLORS.production.predicted}
                 strokeWidth={2}
                 strokeDasharray="5 5"
-                name="Predicted Production"
+                name="Forecast production"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -540,7 +550,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 stroke={LANE_COLORS.consumption.predicted}
                 strokeWidth={1.5}
                 strokeOpacity={0.8}
-                name="Last Pred. Consumption"
+                name="Earlier forecast, consumption"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -555,7 +565,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
                 stroke={LANE_COLORS.production.predicted}
                 strokeWidth={1.5}
                 strokeOpacity={0.8}
-                name="Last Pred. Production"
+                name="Earlier forecast, production"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -563,14 +573,24 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
               />
             )}
           </ComposedChart>
-          </ResponsiveContainer>
-      </div>
+        </ResponsiveContainer>
+        )}
+
+        <div className="predictor-accuracy" aria-label="Forecast accuracy">
+          <div className="predictor-accuracy-heading">
+            <h4>Accuracy, last 24 h</h4>
+            <InfoTip tip="Forecast runs from the last 24 h compared with what the meter measured, older runs weighted more. MAE is the average error in kWh, RMSE weighs large misses more, and sMAPE is the error relative to the size of the values (0 to 200 %, safe near zero). Lower is better; arrows compare with the 24 h before." />
+          </div>
+          {isConsumption && <AccuracyLane lane="consumption" errors={errors.consumption} />}
+          {isProduction && <AccuracyLane lane="production" errors={errors.production} />}
+        </div>
+      </section>
 
       <ConfirmDialog
         open={showForecastDialog}
-        title="Run Energy Forecast"
-        message={`Run the prediction pipeline for ${selectedHouseId} now? Both consumption and production lanes will be queued.`}
-        confirmLabel="Run Both Lanes"
+        title="Forecast now"
+        message={`Run a forecast for ${selectedHouseId} now, for both consumption and production? If it succeeds it is published like a scheduled one.`}
+        confirmLabel="Run forecast"
         confirmVariant="primary"
         pending={commandMutation.isPending}
         onConfirm={handleForecast}
@@ -579,9 +599,9 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
 
       <ConfirmDialog
         open={showFlexDialog}
-        title="Run Flexibility Pipeline"
-        message={`This will compute EV flexibility charging models for ${selectedHouseId}.`}
-        confirmLabel="Run Flex"
+        title="Run flexibility job"
+        message={`Compute EV charging flexibility for ${selectedHouseId} from its recent charging sessions.`}
+        confirmLabel="Run job"
         confirmVariant="primary"
         pending={commandMutation.isPending}
         onConfirm={handleFlex}

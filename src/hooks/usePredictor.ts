@@ -6,6 +6,7 @@ import {
   getHistory,
   getPredictions,
   getPredictionHistory,
+  getActiveModel,
   getJobs,
   getJob,
   executeCommand,
@@ -71,6 +72,15 @@ export function usePredictorPredictionHistory(houseId: string | null) {
     refetchInterval: 60000,
   });
   return { consumption, production };
+}
+
+export function usePredictorActiveModel(houseId: string | null) {
+  return useQuery({
+    queryKey: ["predictor", "active-model", houseId],
+    queryFn: () => getActiveModel(houseId!),
+    enabled: !!houseId,
+    refetchInterval: 60000,
+  });
 }
 
 export function usePredictorTrainingProgress() {
