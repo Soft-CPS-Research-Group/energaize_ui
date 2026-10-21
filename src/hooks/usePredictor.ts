@@ -12,6 +12,7 @@ import {
   executeCommand,
   cancelJob,
   PredictorCommandPayload,
+  TrainingJob,
 } from "../api/predictorApi";
 
 export function usePredictorStats() {
@@ -91,12 +92,16 @@ export function usePredictorTrainingProgress() {
   });
 }
 
-export function usePredictorJob(jobId: string | null) {
+const TERMINAL_JOB_STATUSES = ["ACCEPTED", "REJECTED", "CANCELED", "FAILED"];
+
+/** One training job, polled until it reaches a terminal state. */
+export function usePredictorJob(jobId: string | null, initial?: TrainingJob) {
   return useQuery({
     queryKey: ["predictor", "jobs", jobId],
     queryFn: () => getJob(jobId!),
     enabled: !!jobId,
-    refetchInterval: 5000,
+    placeholderData: initial,
+    refetchInterval: (query) => (TERMINAL_JOB_STATUSES.includes(query.state.data?.status ?? "") ? false : 2000),
   });
 }
 
