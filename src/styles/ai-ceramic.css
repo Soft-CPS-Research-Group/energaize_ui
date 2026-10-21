@@ -1,5 +1,5 @@
-/* Mediterranean Ceramic for the training workspace. The body scope includes
-   portal dialogs without changing the community, predictor or KPI workspaces. */
+/* Mediterranean Ceramic for the training and predictor workspaces. The body scope
+   includes portal dialogs without changing the community or KPI workspaces. */
 body[data-workspace="ai"] {
   --bg: #f4f1eb;
   --bg-elev: #fcfaf6;

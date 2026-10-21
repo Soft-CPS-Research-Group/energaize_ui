@@ -1,4 +1,4 @@
-import { predictorHttp, PREDICTOR_API_URL } from "./client";
+import { ApiError, predictorFileUrl, predictorHttp, PREDICTOR_API_URL } from "./client";
 
 export { PREDICTOR_API_URL };
 
@@ -111,6 +111,31 @@ export interface PredictorCommandPayload {
   model_schema?: string;
   model_type?: ModelBackend;
   hyperparams?: Record<string, unknown>;
+}
+
+/** GET /api/health: 200 while compute cycles keep completing, 503 (same body) when stalled. */
+export interface PredictorHealth {
+  healthy: boolean;
+  paused?: boolean;
+  seconds_since_progress?: number;
+  max_cycle_age_seconds?: number;
+  last_cycle_started_at?: string | null;
+  last_cycle_completed_at?: string | null;
+  last_cycle_duration_s?: number | null;
+  /** Houses that published nothing in the last cycle. */
+  last_cycle_houses_failed?: number;
+  last_publish_at?: string | null;
+  publisher_connected?: boolean;
+  results_queue_size?: number;
+}
+
+export async function getHealth(): Promise<PredictorHealth> {
+  // A stalled service answers 503 with the same body, which is what the UI needs to show.
+  const response = await fetch(predictorFileUrl("/api/health"));
+  if (response.ok || response.status === 503) {
+    return (await response.json()) as PredictorHealth;
+  }
+  throw new ApiError(`Request failed (${response.status})`, response.status);
 }
 
 export async function getStats(): Promise<PredictorStats> {

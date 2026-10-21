@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getStats,
+  getHealth,
   getHouses,
   getHistory,
   getPredictions,
@@ -20,11 +21,21 @@ export function usePredictorStats() {
   });
 }
 
+export function usePredictorHealth() {
+  return useQuery({
+    queryKey: ["predictor", "health"],
+    queryFn: getHealth,
+    refetchInterval: 30000,
+  });
+}
+
 export function usePredictorHouses() {
   return useQuery({
     queryKey: ["predictor", "houses_v2"],
     queryFn: getHouses,
     staleTime: 60000,
+    // Houses are added and removed by editing the predictor's config files.
+    refetchInterval: 300000,
   });
 }
 
