@@ -7,6 +7,7 @@ export interface PredictorStats {
   predictions_available: number;
   total_cycles: number;
   next_cycle_at: string; // ISO timestamp of the next 15-min boundary
+  scheduler_paused?: boolean;
 }
 
 export interface PredictorHistoryDataPoint {
@@ -19,10 +20,11 @@ export interface PredictorHistoryResponse {
   production: PredictorHistoryDataPoint[];
 }
 
+/** The latest published forecast; every field is null until the house gets its first one. */
 export interface PredictorPredictionsResponse {
-  target_time: string;
-  consumption: number[];
-  production: number[];
+  target_time: string | null;
+  consumption: number[] | null;
+  production: number[] | null;
 }
 
 export type LSTMLayerSpec =
