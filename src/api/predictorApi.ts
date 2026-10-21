@@ -1,10 +1,6 @@
-import { http } from "./client";
+import { predictorHttp, PREDICTOR_API_URL } from "./client";
 
-export const PREDICTOR_API_URL = import.meta.env.VITE_PREDICTOR_API_URL?.replace(/\/$/, "") || "/predictor-api";
-
-function buildPredictorUrl(path: string): string {
-  return `${PREDICTOR_API_URL}${path.startsWith("/") ? path : `/${path}`}`;
-}
+export { PREDICTOR_API_URL };
 
 export interface PredictorStats {
   total_houses: number;
@@ -118,18 +114,18 @@ export interface PredictorCommandPayload {
 }
 
 export async function getStats(): Promise<PredictorStats> {
-  return http<PredictorStats>(buildPredictorUrl("/api/stats"));
+  return predictorHttp<PredictorStats>("/api/stats");
 }
 
 export async function getHouses(): Promise<string[]> {
-  const res = await http<any>(buildPredictorUrl("/api/houses"));
+  const res = await predictorHttp<any>("/api/houses");
   return Array.isArray(res) ? res : (res?.houses || []);
 }
 
 export async function getHistory(houseId: string, days: number = 3): Promise<PredictorHistoryResponse> {
   const [consumption, production] = await Promise.all([
-    http<{data: PredictorHistoryDataPoint[]}>(buildPredictorUrl(`/api/houses/${houseId}/history?days=${days}&lane=consumption`)),
-    http<{data: PredictorHistoryDataPoint[]}>(buildPredictorUrl(`/api/houses/${houseId}/history?days=${days}&lane=production`))
+    predictorHttp<{data: PredictorHistoryDataPoint[]}>(`/api/houses/${houseId}/history?days=${days}&lane=consumption`),
+    predictorHttp<{data: PredictorHistoryDataPoint[]}>(`/api/houses/${houseId}/history?days=${days}&lane=production`)
   ]);
   
   return {
@@ -139,7 +135,7 @@ export async function getHistory(houseId: string, days: number = 3): Promise<Pre
 }
 
 export async function getPredictions(houseId: string): Promise<PredictorPredictionsResponse> {
-  return http<PredictorPredictionsResponse>(buildPredictorUrl(`/api/houses/${houseId}/predictions`));
+  return predictorHttp<PredictorPredictionsResponse>(`/api/houses/${houseId}/predictions`);
 }
 
 export interface PredictionHistoryEntry {
@@ -158,8 +154,8 @@ export async function getPredictionHistory(
   houseId: string,
   lane: "consumption" | "production" = "consumption"
 ): Promise<PredictionHistoryPayload> {
-  return http<PredictionHistoryPayload>(
-    buildPredictorUrl(`/api/houses/${houseId}/prediction-history?lane=${lane}`)
+  return predictorHttp<PredictionHistoryPayload>(
+    `/api/houses/${houseId}/prediction-history?lane=${lane}`
   );
 }
 
@@ -177,7 +173,7 @@ export interface JobsResponse {
 }
 
 export async function getJobs(): Promise<JobsResponse> {
-  const res = await http<any>(buildPredictorUrl("/api/jobs"));
+  const res = await predictorHttp<any>("/api/jobs");
   if (Array.isArray(res)) {
     return { jobs: res, system: null };
   }
@@ -185,29 +181,29 @@ export async function getJobs(): Promise<JobsResponse> {
 }
 
 export async function getJob(jobId: string): Promise<TrainingJob> {
-  return http<TrainingJob>(buildPredictorUrl(`/api/jobs/${encodeURIComponent(jobId)}`));
+  return predictorHttp<TrainingJob>(`/api/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export async function getActiveModel(houseId: string): Promise<ActiveModelResponse> {
-  return http<ActiveModelResponse>(buildPredictorUrl(`/api/houses/${encodeURIComponent(houseId)}/active-model`));
+  return predictorHttp<ActiveModelResponse>(`/api/houses/${encodeURIComponent(houseId)}/active-model`);
 }
 
 export async function setActiveModel(houseId: string, payload: SetActiveModelPayload): Promise<SetActiveModelResponse> {
-  return http<SetActiveModelResponse>(buildPredictorUrl(`/api/houses/${encodeURIComponent(houseId)}/active-model`), {
+  return predictorHttp<SetActiveModelResponse>(`/api/houses/${encodeURIComponent(houseId)}/active-model`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export async function executeCommand(payload: PredictorCommandPayload): Promise<{ message: string, job_id?: string }> {
-  return http<{ message: string, job_id?: string }>(buildPredictorUrl("/api/command"), {
+  return predictorHttp<{ message: string, job_id?: string }>("/api/command", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
 export async function cancelJob(jobId: string): Promise<{ message: string }> {
-  return http<{ message: string }>(buildPredictorUrl(`/api/jobs/${jobId}/cancel`), {
+  return predictorHttp<{ message: string }>(`/api/jobs/${jobId}/cancel`, {
     method: "POST"
   });
 }
@@ -222,11 +218,15 @@ export interface LogEntry {
   job_id?: string | null;
 }
 
-export async function getLogs(filter?: string, limit: number = 300): Promise<LogEntry[]> {
-  const url = new URL(buildPredictorUrl("/api/logs"));
-  url.searchParams.append("limit", limit.toString());
+export interface LogsResponse {
+  lines: string[];
+}
+
+export async function getLogs(filter?: string, limit: number = 300): Promise<LogsResponse> {
+  // The base URL is usually relative (/predictor-api), so build only the query string.
+  const params = new URLSearchParams({ limit: limit.toString() });
   if (filter) {
-    url.searchParams.append("filter", filter);
+    params.append("filter", filter);
   }
-  return http<LogEntry[]>(url.toString());
+  return predictorHttp<LogsResponse>(`/api/logs?${params.toString()}`);
 }

@@ -1,11 +1,5 @@
-import { http } from "./client";
-
-export const ANALYSIS_API_URL =
-  (import.meta.env.VITE_PREDICTOR_API_URL?.replace(/\/$/, "") || "/predictor-api");
-
-function url(path: string): string {
-  return `${ANALYSIS_API_URL}${path.startsWith("/") ? path : `/${path}`}`;
-}
+import { predictorFileUrl, predictorHttp } from "./client";
+import { setActiveModel, type SetActiveModelResponse } from "./predictorApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -178,44 +172,68 @@ export type SubmitPayload = ComparePayload | MissingDataPayload | SegmentPayload
 // ─── API functions ─────────────────────────────────────────────────────────────
 
 export async function listModels(): Promise<ModelMeta[]> {
-  const res = await http<{ models: ModelMeta[] }>(url("/api/analysis/models"));
+  const res = await predictorHttp<{ models: ModelMeta[] }>("/api/analysis/models");
   return res.models;
 }
 
 export async function getModel(modelKey: string): Promise<ModelMeta> {
-  return http<ModelMeta>(url(`/api/analysis/models/${encodeURIComponent(modelKey)}`));
+  return predictorHttp<ModelMeta>(`/api/analysis/models/${encodeURIComponent(modelKey)}`);
 }
 
 export async function getFeatureImportance(
   modelKey: string,
   importanceType: ImportanceType = "gain",
 ): Promise<FeatureImportanceResult> {
-  return http<FeatureImportanceResult>(url("/api/analysis/feature-importance"), {
+  return predictorHttp<FeatureImportanceResult>("/api/analysis/feature-importance", {
     method: "POST",
     body: JSON.stringify({ model_key: modelKey, importance_type: importanceType }),
   });
 }
 
 export async function submitJob(payload: SubmitPayload): Promise<{ job_id: string; status: JobStatus }> {
-  return http<{ job_id: string; status: JobStatus }>(url("/api/analysis/jobs"), {
+  return predictorHttp<{ job_id: string; status: JobStatus }>("/api/analysis/jobs", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export async function listJobs(): Promise<AnalysisJob[]> {
-  const res = await http<{ jobs: AnalysisJob[] }>(url("/api/analysis/jobs"));
+  const res = await predictorHttp<{ jobs: AnalysisJob[] }>("/api/analysis/jobs");
   return res.jobs;
 }
 
 export async function getJob(jobId: string): Promise<AnalysisJob> {
-  return http<AnalysisJob>(url(`/api/analysis/jobs/${jobId}`));
+  return predictorHttp<AnalysisJob>(`/api/analysis/jobs/${jobId}`);
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
-  await http<void>(url(`/api/analysis/jobs/${jobId}`), { method: "DELETE" });
+  await predictorHttp<void>(`/api/analysis/jobs/${jobId}`, { method: "DELETE" });
+}
+
+/** Restore an archived (old/) model file to the production slot; the current one is archived. */
+export async function promoteModel(modelKey: string): Promise<{ status: string; model: ModelMeta }> {
+  return predictorHttp<{ status: string; model: ModelMeta }>(
+    `/api/analysis/models/${encodeURIComponent(modelKey)}/promote`,
+    { method: "POST" }
+  );
+}
+
+/** Archived models live under old/ and are not in the production slot. */
+export function isArchivedModel(m: Pick<ModelMeta, "model_key">): boolean {
+  return m.model_key.startsWith("old/");
+}
+
+/**
+ * Make a warm model the one used for forecasting its house and lane. An archived
+ * file is restored to the production slot first; active-model on its own only
+ * chooses which backend's production file is used.
+ */
+export async function activateModel(m: ModelMeta): Promise<SetActiveModelResponse> {
+  if (!m.house_id) throw new Error("Only house models can be set as active");
+  if (isArchivedModel(m)) await promoteModel(m.model_key);
+  return setActiveModel(m.house_id, { lane: m.lane, model_type: m.model_backend ?? "xgboost" });
 }
 
 export function getExportUrl(jobId: string): string {
-  return url(`/api/analysis/jobs/${jobId}/export?format=csv`);
+  return predictorFileUrl(`/api/analysis/jobs/${jobId}/export?format=csv`);
 }

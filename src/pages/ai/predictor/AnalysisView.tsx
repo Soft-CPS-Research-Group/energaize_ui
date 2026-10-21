@@ -10,9 +10,9 @@ import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { getHouses, setActiveModel } from "../../../api/predictorApi";
+import { getHouses } from "../../../api/predictorApi";
 import {
-  listModels, getFeatureImportance, submitJob, listJobs, getJob, cancelJob, getExportUrl,
+  listModels, getFeatureImportance, activateModel, isArchivedModel as isArchived, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
   type CompareResult, type MissingDataResult, type SegmentAnalysisResult, type HpTuneResult,
   type ImportanceType, type Lane, type ParamSpec, type SubmitPayload,
@@ -249,10 +249,14 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
   const [selected, setSelected] = useState<ModelMeta | null>(null);
 
   const promoteMutation = useMutation({
-    mutationFn: (m: ModelMeta) =>
-      setActiveModel(m.house_id!, { lane: m.lane, model_type: m.model_backend ?? "xgboost" }),
+    mutationFn: activateModel,
     onSuccess: (_res, m) => {
-      notifySuccess("Model Promoted", `${m.model_backend ?? "xgboost"} is now active for ${m.house_id} / ${m.lane}.`);
+      notifySuccess(
+        isArchived(m) ? "Model Restored" : "Model Promoted",
+        isArchived(m)
+          ? `${m.model_key} was restored and ${m.model_backend ?? "xgboost"} is now active for ${m.house_id} / ${m.lane}.`
+          : `${m.model_backend ?? "xgboost"} is now active for ${m.house_id} / ${m.lane}.`
+      );
       setSelected(null);
       queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
     },
@@ -458,7 +462,9 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                   onClick={() => promoteMutation.mutate(selected)}
                   disabled={promoteMutation.isPending}
                 >
-                  {promoteMutation.isPending ? "Promoting…" : "Set as Active"}
+                  {promoteMutation.isPending
+                    ? (isArchived(selected) ? "Restoring…" : "Promoting…")
+                    : (isArchived(selected) ? "Restore and Set as Active" : "Set as Active")}
                 </Button>
               )}
               <Button variant={selected.house_id != null && selected.active !== true ? "secondary" : "primary"} onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>

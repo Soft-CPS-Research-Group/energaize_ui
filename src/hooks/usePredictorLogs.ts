@@ -15,11 +15,22 @@ function parseLogString(line: string): LogEntry {
   return { raw: line, time: new Date().toISOString(), level: "INFO", logger: "Sys", message: line };
 }
 
+const RECONNECT_MIN_MS = 3000;
+const RECONNECT_MAX_MS = 30000;
+
+/** Resolve a predictor path to a ws(s):// URL; the base may be relative (/predictor-api). */
+export function predictorWebSocketUrl(path: string, base: string = PREDICTOR_API_URL): string {
+  const url = new URL(`${base}${path}`, window.location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
 export function usePredictorLogs(filter: string = "", limit: number = 300) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectDelayRef = useRef(RECONNECT_MIN_MS);
 
   useEffect(() => {
     let mounted = true;
@@ -27,7 +38,7 @@ export function usePredictorLogs(filter: string = "", limit: number = 300) {
     // Load initial logs
     async function loadInitialLogs() {
       try {
-        const res: any = await getLogs(filter, limit);
+        const res = await getLogs(filter, limit);
         if (mounted) {
           const lines = res.lines || [];
           const parsedLogs = lines.map(parseLogString);
@@ -43,19 +54,12 @@ export function usePredictorLogs(filter: string = "", limit: number = 300) {
     function connect() {
       if (!mounted) return;
 
-      let wsUrl = PREDICTOR_API_URL;
-      if (wsUrl.startsWith("http://")) {
-        wsUrl = wsUrl.replace("http://", "ws://");
-      } else if (wsUrl.startsWith("https://")) {
-        wsUrl = wsUrl.replace("https://", "wss://");
-      }
-      wsUrl = `${wsUrl}/ws/logs`;
-
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(predictorWebSocketUrl("/ws/logs"));
       wsRef.current = ws;
 
       ws.onopen = () => {
         if (!mounted) return ws.close();
+        reconnectDelayRef.current = RECONNECT_MIN_MS;
         setIsConnected(true);
       };
 
@@ -103,7 +107,8 @@ export function usePredictorLogs(filter: string = "", limit: number = 300) {
         if (!mounted) return;
         setIsConnected(false);
         wsRef.current = null;
-        reconnectTimeoutRef.current = window.setTimeout(connect, 3000);
+        reconnectTimeoutRef.current = window.setTimeout(connect, reconnectDelayRef.current);
+        reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, RECONNECT_MAX_MS);
       };
 
       ws.onerror = (err) => {
