@@ -1,5 +1,4 @@
-import { useState, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import {
   usePredictorStats,
   usePredictorHistory,
@@ -10,6 +9,7 @@ import {
 } from "../../../hooks/usePredictor";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../../components/ui/EmptyState";
+import { InfoTip } from "../../../components/ui/InfoTip";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
@@ -28,45 +28,9 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  type TooltipProps,
 } from "recharts";
 import { Zap, TrendingUp, Layers, Info, TriangleAlert } from "lucide-react";
-
-function InfoTip({ tip }: { tip: string }) {
-  const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
-  const ref = useRef<HTMLSpanElement>(null);
-  const W = 260;
-  const GAP = 8;
-  const show = () => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    let left = rect.left + rect.width / 2 - W / 2;
-    left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
-    setPos({ left, bottom: window.innerHeight - rect.top + GAP });
-  };
-  const hide = () => setPos(null);
-  return (
-    <>
-      <span
-        ref={ref}
-        className="analysis-infotip"
-        tabIndex={0}
-        role="img"
-        aria-label={tip}
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        onFocus={show}
-        onBlur={hide}
-      >?</span>
-      {pos && createPortal(
-        <div
-          className="analysis-infotip-popup"
-          style={{ position: "fixed", left: pos.left, bottom: pos.bottom, width: W, pointerEvents: "none" }}
-        >{tip}</div>,
-        document.body,
-      )}
-    </>
-  );
-}
 
 interface PredictViewProps {
   selectedHouseId: string | null;
@@ -103,13 +67,11 @@ function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPerce
 
 export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   // Tooltip renderer as a closure to capture `timezone`
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const TooltipContent = ({ active, payload, label }: any) => {
+  const TooltipContent = ({ active, payload, label }: TooltipProps<number, string>) => {
     if (!active || !payload || payload.length === 0) return null;
     const BAND_KEYS = new Set(["cBandLo","cBandHi","cBandQ1Lo","cBandQ1Hi","pBandLo","pBandHi","pBandQ1Lo","pBandQ1Hi"]);
     const relevant = payload.filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (p: any) => !BAND_KEYS.has(String(p.dataKey)) && !String(p.dataKey).startsWith("spec_") && p.value != null
+      (p) => !BAND_KEYS.has(String(p.dataKey)) && !String(p.dataKey).startsWith("spec_") && p.value != null
     );
     if (relevant.length === 0) return null;
     const dateStr = new Date(label as string).toLocaleString("en-GB", {
@@ -120,8 +82,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
     return (
       <div className="predictor-chart-tooltip">
         <p>{dateStr}</p>
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {relevant.map((p: any) => (
+        {relevant.map((p) => (
           <p key={String(p.dataKey)}>
             <i style={{ background: p.color }} aria-hidden="true" />
             {p.name}: <strong>{Number(p.value).toFixed(3)} kWh</strong>

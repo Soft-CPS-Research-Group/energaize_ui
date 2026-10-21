@@ -45,7 +45,7 @@ export function PredictorWorkspacePage(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { data: housesData, isLoading: housesLoading, error, refetch, isFetching } = usePredictorHouses();
-  const houses = Array.isArray(housesData) ? housesData : (housesData as any)?.houses || [];
+  const houses = housesData ?? [];
 
   useEffect(() => {
     if (!houses || houses.length === 0) return;
@@ -118,7 +118,7 @@ export function PredictorWorkspacePage(): JSX.Element {
           <Route path="/" element={<PredictView selectedHouseId={selectedHouse} timezone={timezone} />} />
           <Route path="/train" element={<TrainView selectedHouseId={selectedHouse} timezone={timezone} />} />
           <Route path="/logs" element={<LogsView timezone={timezone} />} />
-          <Route path="/analysis" element={<AnalysisView />} />
+          <Route path="/analysis" element={<AnalysisView timezone={timezone} />} />
           <Route path="*" element={<Navigate to="/app/predictor" replace />} />
         </Routes>
       </div>
