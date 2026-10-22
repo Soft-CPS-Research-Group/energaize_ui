@@ -122,6 +122,15 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-chart-card-head { display: flex; flex-direction: column; gap: 4px; }
 .kpi-chart-card-head h3 { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; font-weight: 500; }
 .kpi-chart-card-head p { margin: 0; font-size: 12px; color: var(--text-soft); }
+.kpi-chart-wide { grid-column: 1 / -1; }
+.kpi-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.kpi-chart-body { height: 350px; width: 100%; }
+.kpi-series-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.kpi-series-chip { --series: var(--brand); display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--bg-elev-2); color: var(--text-soft); font: inherit; font-size: 12px; cursor: pointer; }
+.kpi-series-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+.kpi-series-chip[aria-pressed="true"] { border-color: var(--series); background: var(--bg-elev); color: var(--text); }
+.kpi-series-chip[aria-pressed="true"]::before { background: var(--series); }
+.kpi-series-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 
 /* Two side-by-side groups of fields (e.g. the periods being compared). */
 .kpi-field-groups { flex-basis: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
@@ -400,6 +409,7 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 
 
 @media(max-width:700px) {
+  .kpi-chart-body { height: 260px; }
   .kpi-explorer { grid-template-columns: 1fr; }
   .kpi-explorer-tree { position: static; max-height: 320px; }
   .kpi-library-grid { grid-template-columns: 1fr; }
