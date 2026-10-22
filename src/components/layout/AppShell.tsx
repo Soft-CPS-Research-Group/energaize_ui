@@ -39,7 +39,7 @@ export function AppShell({
   const unionAuthNoticeRef = useRef<string | null>(null);
   const isTiago = session?.email.trim().toLowerCase() === "tiago.fonseca@energaize.io";
   const isRecManager = session?.role === "rec_manager";
-  const usesCeramicShell = isTrainingManagerRole(session?.role) || isPredictorRole(session?.role) || ["/app/account", "/app/notifications", "/app/logs"].includes(location.pathname);
+  const usesCeramicShell = isTrainingManagerRole(session?.role) || isPredictorRole(session?.role) || isKpiManagerRole(session?.role) || ["/app/account", "/app/notifications", "/app/logs"].includes(location.pathname);
   // The body scope also reaches shared dialogs rendered through portals.
   useLayoutEffect(() => {
     if (!usesCeramicShell) return;

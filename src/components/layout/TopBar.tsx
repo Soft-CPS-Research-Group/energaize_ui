@@ -17,6 +17,7 @@ import { ThemeToggle } from "../ui/ThemeToggle";
 import { NotificationPanel } from "./NotificationPanel";
 import { ProfileAvatar } from "../ui/ProfileAvatar";
 import { UserMenu } from "./UserMenu";
+import { KPI_SECTIONS } from "../../pages/kpi-manager/kpiSections";
 
 const AI_TABS = [
   { to: "/app/ai/jobs", label: "Jobs" },
@@ -33,17 +34,10 @@ const PREDICTOR_TABS = [
   { to: "/app/predictor/analysis", label: "Analysis" },
 ];
 
-const KPI_TABS = [
-  { to: "/app/kpi-manager/dashboard", label: "Dashboard" },
-  { to: "/app/kpi-manager/compare", label: "Compare" },
-  { to: "/app/kpi-manager/correlations", label: "Correlations" },
-  { to: "/app/kpi-manager/scheduler", label: "Scheduler" },
-  { to: "/app/kpi-manager/thresholds", label: "Thresholds" },
-  { to: "/app/kpi-manager/reports", label: "Reports" },
-  { to: "/app/kpi-manager/data-health", label: "Data Health" },
-  { to: "/app/kpi-manager/explorer", label: "Explorer" },
-  { to: "/app/kpi-manager/library", label: "Library" },
-];
+const KPI_TABS = KPI_SECTIONS.filter((section) => !section.hidden).map((section) => ({
+  to: section.path,
+  label: section.label,
+}));
 
 const COMMUNITY_TABS = [
   { to: '/app/community/dashboard', label: 'Overview' },
@@ -131,6 +125,7 @@ export function TopBar(): JSX.Element {
           TRAINING_ENABLED ? <TrainingWorkspaceSelector /> : <div className="ai-workspace-context"><small>Workspace</small><strong>AI Manager</strong></div>
         ) : null}
         {isPredictor ? <div className="ai-workspace-context"><small>Workspace</small><strong>Predictor</strong></div> : null}
+        {isKpiManager ? <div className="ai-workspace-context"><small>Workspace</small><strong>KPI Manager</strong></div> : null}
         {isCommunityUser ? <Link className="community-context-main" to={isProsumer?'/app/community/dashboard':'/communities'}><span className="community-context-copy"><small>Workspace</small><strong>{isProsumer?'My energy':'Communities'}</strong></span><ChevronDown size={15}/></Link> : null}
       </div>
 
@@ -140,7 +135,7 @@ export function TopBar(): JSX.Element {
             <NavLink
               key={tab.to}
               to={tab.to}
-              end={tab.to === "/app/predictor" || tab.to === "/app/kpi-manager/dashboard"}
+              end={tab.to === "/app/predictor"}
               className={({ isActive }) => `top-tab${isActive ? " is-active" : ""}`}
             >
               {tab.label}

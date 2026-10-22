@@ -23,6 +23,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { LogsPage } from "./pages/LogsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { PredictorWorkspacePage } from "./pages/PredictorWorkspacePage";
+import { KpiManagerWorkspacePage } from "./pages/KpiManagerWorkspacePage";
+import { KPI_LEGACY_REDIRECTS } from "./pages/kpi-manager/kpiSections";
 import { RoleWorkspacePage } from "./pages/RoleWorkspacePage";
 import { CommunityLogsPage } from "./pages/community/CommunityLogsPage";
 import { ProsumerFlexibilityPage } from "./pages/community/ProsumerFlexibilityPage";
@@ -123,17 +125,29 @@ function AppRoutes(): JSX.Element {
                     </Route>
 
                     <Route element={<RoleGuard allowed={["kpi_manager"]} />}>
-                        <Route path="kpi-manager">
-                            <Route index element={<Navigate to="dashboard" replace />} />
-                            <Route path="dashboard" element={<Dashboard />} />
-                            <Route path="explorer" element={<KpiExplorer />} />
-                            <Route path="compare" element={<ComparePage />} />
-                            <Route path="scheduler" element={<SchedulerPage />} />
-                            <Route path="library" element={<KpiLibraryPage />} />
-                            <Route path="data-health" element={<DataProfilingPage />} />
-                            <Route path="reports" element={<AggregateReportPage />} />
-                            <Route path="correlations" element={<CorrelationPage />} />
-                            <Route path="thresholds" element={<ThresholdPage />} />
+                        <Route path="kpi-manager" element={<KpiManagerWorkspacePage />}>
+                            <Route index element={<Navigate to="overview" replace />} />
+                            <Route path="overview" element={<Dashboard />} />
+                            <Route path="analysis">
+                                <Route index element={<Navigate to="compare" replace />} />
+                                <Route path="compare" element={<ComparePage />} />
+                                <Route path="correlations" element={<CorrelationPage />} />
+                                <Route path="reports" element={<AggregateReportPage />} />
+                            </Route>
+                            <Route path="data-quality" element={<DataProfilingPage />} />
+                            <Route path="automation">
+                                <Route index element={<Navigate to="scheduler" replace />} />
+                                <Route path="scheduler" element={<SchedulerPage />} />
+                                <Route path="alerts" element={<ThresholdPage />} />
+                            </Route>
+                            <Route path="catalogue">
+                                <Route index element={<Navigate to="library" replace />} />
+                                <Route path="library" element={<KpiLibraryPage />} />
+                                <Route path="explorer" element={<KpiExplorer />} />
+                            </Route>
+                            {Object.entries(KPI_LEGACY_REDIRECTS).map(([legacy, target]) => (
+                                <Route key={legacy} path={legacy} element={<Navigate to={target} replace />} />
+                            ))}
                         </Route>
                     </Route>
                 </Route>

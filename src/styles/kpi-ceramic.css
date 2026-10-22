@@ -1,0 +1,48 @@
+/* KPI Manager workspace on the Mediterranean Ceramic shell. AppShell sets the ceramic
+   scope (body[data-workspace="ai"]) for the kpi_manager role; colours come only from its
+   theme tokens so light and dark modes both apply. */
+
+/* Section art: cells of the shared ceramic sheets (3 columns × 2 rows). */
+.kpi-art-community { background-position: 50% 100%; }
+.kpi-art-solar { background-position: 50% 0; }
+.kpi-art-servers { background-position: 100% 100%; }
+.kpi-art-charger { background-position: 0 100%; }
+.kpi-art-meter { background-image: url('/assets/mediterranean/ceramic-extra.webp'); background-position: 0 0; }
+.kpi-art-shop { background-image: url('/assets/mediterranean/ceramic-extra.webp'); background-position: 100% 100%; }
+
+.kpi-workspace { height: 100%; display: flex; flex-direction: column; }
+.kpi-workspace-content { flex: 1; overflow: auto; position: relative; }
+
+body[data-workspace="ai"] .kpi-heading { align-items: center; }
+body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
+
+/* Section sub-tabs: same pill language as the top navigation. */
+.kpi-subnav {
+  display: inline-flex; align-self: flex-start; gap: 2px; padding: 4px;
+  background: var(--bg-elev-2); border-radius: 22px; max-width: 100%; overflow-x: auto;
+}
+.kpi-subnav-tab {
+  padding: 8px 14px; border-radius: 18px; font-size: 12px; white-space: nowrap;
+  color: var(--text-soft); text-decoration: none; transition: background .18s, color .18s;
+}
+.kpi-subnav-tab:hover { background: var(--ai-tint); color: var(--text); }
+.kpi-subnav-tab.is-active { background: var(--bg-elev); color: var(--text); box-shadow: 0 1px 2px #364b2e14; }
+
+/* In-page view switcher (KpiSegmented). */
+.kpi-segmented { display: inline-flex; gap: 2px; padding: 4px; background: var(--bg-elev-2); border-radius: 14px; }
+.kpi-segmented-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--text-soft); font: inherit; font-size: 12px; cursor: pointer;
+  transition: background .18s, color .18s;
+}
+.kpi-segmented-tab:hover { background: var(--ai-tint); color: var(--text); }
+.kpi-segmented-tab.is-active { background: var(--bg-elev); color: var(--text); box-shadow: 0 1px 2px #364b2e14; }
+
+@media(max-width:700px) {
+  body[data-workspace="ai"] .kpi-heading { align-items: flex-start; flex-wrap: wrap; }
+  body[data-workspace="ai"] .kpi-heading-actions { width: 100%; }
+  .kpi-subnav { align-self: stretch; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .kpi-subnav-tab, .kpi-segmented-tab { transition: none; }
+}
