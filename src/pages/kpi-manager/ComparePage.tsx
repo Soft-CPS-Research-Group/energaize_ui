@@ -1,61 +1,28 @@
 import { useState, useMemo } from "react";
 import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { fetchKpiComparison } from "../../api/kpiApi";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { useCommunities } from "../../hooks/useCommunities";
-import { useKpiMetadata } from "../../hooks/useKpiMetadata";
-import { MultiSelect } from "../../components/ui/MultiSelect";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/KpiCard";
+import { kpiDisplayName, kpiSelectOptions, useKpiMetadata } from "../../hooks/useKpiMetadata";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import {
-  Search, Loader2, AlertCircle, TrendingUp,
-  TrendingDown, Minus, Calendar, MapPin, Building2, Activity, Info
-} from "lucide-react";
+import { Search, Loader2, Calendar } from "lucide-react";
 import type { CompareResponse } from "../../api/kpiApi";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
-
-// KPIs that make conceptual sense for baseline vs real comparison —
-// derived from live metadata after filtering streaming-only KPIs
-
-const getLocalDateString = (d: Date) =>
-  new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0];
+import { KpiSegmented } from "../../components/kpi/KpiSegmented";
+import { KpiInfo } from "../../components/kpi/KpiInfo";
+import { KpiDelta } from "../../components/kpi/KpiDelta";
+import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
+import {
+  BuildingsField, CommunityField, DateRangeField, KpiFilterBar, KpiSelectField, toLocalDateString,
+} from "../../components/kpi/KpiFilters";
 
 const defaultEnd  = new Date();
 const defaultStart = new Date();
 defaultStart.setDate(defaultStart.getDate() - 4);
-
-// Delta indicator component
-function DeltaChip({ absolute, relative_pct, lowerIsBetter = false }: {
-  absolute: number | null;
-  relative_pct: number | null;
-  lowerIsBetter?: boolean;
-}) {
-  if (absolute === null || absolute === undefined) {
-    return <span style={{ color: "var(--text-soft)", fontSize: "14px" }}>—</span>;
-  }
-
-  const isPositive = absolute > 0;
-  const isGood = lowerIsBetter ? !isPositive : isPositive;
-  const colorHex = absolute === 0
-    ? "#6b7280"
-    : isGood ? "#16a34a" : "var(--error-text, #ef4444)";
-  const Icon = absolute === 0 ? Minus : isGood ? TrendingUp : TrendingDown;
-
-  return (
-    <span style={{ display: "flex", alignItems: "center", gap: "4px", fontWeight: 500, fontSize: "14px", color: colorHex }}>
-      <Icon size={14} />
-      {absolute > 0 ? "+" : ""}{absolute.toFixed(3)}
-      {relative_pct !== null && (
-        <span style={{ opacity: 0.7 }}>
-          ({relative_pct > 0 ? "+" : ""}{relative_pct.toFixed(1)}%)
-        </span>
-      )}
-    </span>
-  );
-}
 
 // KPIs where a lower value = better outcome.
 // Names must match the class names registered in kpi_factory.py._SCHEDULED_KPI_REGISTRY.
@@ -68,8 +35,10 @@ const LOWER_IS_BETTER = new Set([
   "BenefitConcentrationCR20KPI", // ~0.2 = proportional distribution
 ]);
 
+type ViewMode = "table" | "chart";
+
 function getSummaryValue(summary: Record<string, number>): number | null {
-  for (const key of ["total_value", "mean_value", "value"]) {
+  for (const key of ["value", "total_value", "mean_value"]) {
     if (key in summary && typeof summary[key] === "number") return summary[key];
   }
   const first = Object.values(summary).find(v => typeof v === "number");
@@ -96,23 +65,17 @@ export function ComparePage() {
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
   const [community, setCommunity] = useState(defaultCommunity);
   const [buildings, setBuildings] = useState<string[]>([]);
+  const [selectedKpis, setSelectedKpis] = useState<string[]>([]);
 
-  // KPIs appropriate for baseline vs real comparison (exclude per-building meter KPIs)
-  const comparableKpis = kpiMeta
-    .filter((k: any) => k.status === "available" && k.registered)
-    .map((k: any) => k.name);
-
-  const [selectedKpis, setSelectedKpis] = useState<string[]>([]); 
-
-  const [baselineStart, setBaselineStart] = useState(getLocalDateString(defaultStart));
-  const [baselineEnd,   setBaselineEnd]   = useState(getLocalDateString(defaultEnd));
-  const [realStart,     setRealStart]     = useState(getLocalDateString(defaultStart));
-  const [realEnd,       setRealEnd]       = useState(getLocalDateString(defaultEnd));
+  const [baselineStart, setBaselineStart] = useState(toLocalDateString(defaultStart));
+  const [baselineEnd,   setBaselineEnd]   = useState(toLocalDateString(defaultEnd));
+  const [realStart,     setRealStart]     = useState(toLocalDateString(defaultStart));
+  const [realEnd,       setRealEnd]       = useState(toLocalDateString(defaultEnd));
 
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState<string | null>(null);
   const [response,  setResponse]  = useState<CompareResponse | null>(null);
-  const [viewMode,  setViewMode]  = useState<"table" | "chart">("table");
+  const [viewMode,  setViewMode]  = useState<ViewMode>("table");
 
   const currentBuildings =
     communities[community] ?? COMMUNITY_FALLBACK[community] ?? [];
@@ -168,345 +131,186 @@ export function ComparePage() {
     const kpis = response.data[scope] ?? {};
     for (const [kpiName, entry] of Object.entries(kpis as Record<string, any>)) {
       const bSeries = normaliseTimeseries(entry.baseline.timeseries, "Baseline");
-      const rSeries = normaliseTimeseries(entry.real.timeseries, "Real");
+      const rSeries = normaliseTimeseries(entry.real.timeseries, "Comparison");
       // Merge by hour offset
       const map: Record<number, any> = {};
       for (const pt of bSeries) map[pt.hour] = { ...map[pt.hour], hour: pt.hour, Baseline: pt.Baseline };
-      for (const pt of rSeries) map[pt.hour] = { ...map[pt.hour], hour: pt.hour, Real: pt.Real };
+      for (const pt of rSeries) map[pt.hour] = { ...map[pt.hour], hour: pt.hour, Comparison: pt.Comparison };
       out[kpiName] = Object.values(map).sort((a, b) => a.hour - b.hour);
     }
     return out;
   }, [response]);
 
   return (
-    <div className="page" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Header */}
+    <div className="page">
       <KpiPageHeader
         title="Compare periods"
         description="Compare KPI results between two measurement periods, e.g. AI off versus AI on"
       />
 
-      <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
-        {/* Filters panel */}
-        <div style={{ backgroundColor: "var(--bg-elev)", padding: "20px", borderRadius: "12px", border: "1px solid var(--line)", boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: "16px" }}>
-
-          {/* Community + Buildings + KPIs */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-start" }}>
-            <div style={{ flex: "1 1 0%", minWidth: "200px" }}>
-              <label style={{ fontSize: "16px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <MapPin size={16} /> Community
-              </label>
-              <select
-                style={{ width: "100%", padding: "8px 12px", border: "1px solid var(--line)", borderRadius: "8px", fontSize: "14px", outline: "none", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                value={community}
-                onChange={e => { setCommunity(e.target.value); setBuildings([]); }}
-              >
-                {Object.keys(communities).map(c => (
-                  <option key={c} value={c}>{c.replace(/_/g, " ").toUpperCase()}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: "2 1 0%", minWidth: "280px" }}>
-              <label style={{ fontSize: "16px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Building2 size={16} /> Buildings
-              </label>
-              <MultiSelect
-                options={currentBuildings.map((b: any) => ({ label: b, value: b }))}
-                selected={buildings}
-                onChange={setBuildings}
-                placeholder="Select buildings..."
-              />
-            </div>
-            <div style={{ flex: "2 1 0%", minWidth: "280px" }}>
-              <label style={{ fontSize: "16px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Activity size={16} /> KPIs
-              </label>
-              <MultiSelect
-                options={comparableKpis.map((k: any) => ({ label: k, value: k }))}
-                selected={selectedKpis}
-                onChange={setSelectedKpis}
-                placeholder="All scheduled KPIs..."
-              />
-            </div>
-          </div>
-
-          {/* Period selectors */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "16px", borderTop: "1px solid var(--line)", paddingTop: "16px" }}>
-            {/* Baseline */}
-            <div style={{ backgroundColor: "var(--bg)", borderRadius: "8px", padding: "16px", border: "1px solid var(--line)" }}>
-              <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-soft)", textTransform: "uppercase", letterSpacing: "0.025em", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Calendar size={14} /> Baseline Period
-                <span style={{ marginLeft: "4px", fontWeight: 400, textTransform: "none", color: "var(--text-soft)" }}>(AI off)</span>
-              </p>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: "14px", color: "var(--text-soft)", display: "block", marginBottom: "4px" }}>Start</label>
-                  <input
-                    type="date"
-                    value={baselineStart}
-                    onChange={e => setBaselineStart(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid var(--line)", borderRadius: "8px", fontSize: "14px", outline: "none", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: "14px", color: "var(--text-soft)", display: "block", marginBottom: "4px" }}>End</label>
-                  <input
-                    type="date"
-                    value={baselineEnd}
-                    onChange={e => setBaselineEnd(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid var(--line)", borderRadius: "8px", fontSize: "14px", outline: "none", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Real */}
-            <div style={{ backgroundColor: "var(--brand-muted, rgba(37, 99, 235, 0.1))", borderRadius: "8px", padding: "16px", border: "1px solid var(--brand-soft)" }}>
-              <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--brand)", textTransform: "uppercase", letterSpacing: "0.025em", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Calendar size={14} /> Real Period
-                <span style={{ marginLeft: "4px", fontWeight: 400, textTransform: "none", color: "var(--brand-soft)" }}>(AI on)</span>
-              </p>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: "14px", color: "var(--brand)", display: "block", marginBottom: "4px" }}>Start</label>
-                  <input
-                    type="date"
-                    value={realStart}
-                    onChange={e => setRealStart(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid var(--line)", borderRadius: "8px", fontSize: "14px", outline: "none", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: "14px", color: "var(--brand)", display: "block", marginBottom: "4px" }}>End</label>
-                  <input
-                    type="date"
-                    value={realEnd}
-                    onChange={e => setRealEnd(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid var(--line)", borderRadius: "8px", fontSize: "14px", outline: "none", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", borderTop: "1px solid var(--line)", paddingTop: "16px" }}>
+      <KpiFilterBar
+        ariaLabel="Comparison options"
+        footer={
+          <div className="kpi-filterbar-actions">
             <Button
               onClick={handleCompare}
               disabled={loading}
               variant="primary"
+              iconLeft={loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
             >
-              {loading
-                ? <span style={{ display: "flex", alignItems: "center", gap: "8px" }}><Loader2 size={16} className="animate-spin" /> Computing...</span>
-                : <span style={{ display: "flex", alignItems: "center", gap: "8px" }}><Search size={16} /> Compare</span>}
+              {loading ? "Computing…" : "Compare"}
             </Button>
           </div>
-        </div>
+        }
+      >
+        <CommunityField
+          communities={Object.keys(communities)}
+          value={community}
+          onChange={(c) => { setCommunity(c); setBuildings([]); }}
+        />
+        <BuildingsField buildings={currentBuildings} selected={buildings} onChange={setBuildings} />
+        <KpiSelectField options={kpiSelectOptions(kpiMeta)} selected={selectedKpis} onChange={setSelectedKpis} />
 
-        {/* Error */}
-        {error && (
-          <div style={{ backgroundColor: "var(--error-bg, rgba(220, 38, 38, 0.1))", color: "var(--error-text, #ef4444)", padding: "16px", borderRadius: "8px", border: "1px solid var(--error-border, rgba(220, 38, 38, 0.2))", display: "flex", alignItems: "center", gap: "8px" }}>
-            <AlertCircle size={20} style={{ flexShrink: 0 }} />
-            <p style={{ margin: 0 }}>{error}</p>
+        <div className="kpi-field-groups">
+          <div className="kpi-field-group" role="group" aria-label="Baseline period">
+            <p className="kpi-field-group-title"><Calendar size={14} /> Baseline period <small>e.g. AI off</small></p>
+            <DateRangeField
+              label="Baseline"
+              start={baselineStart}
+              end={baselineEnd}
+              presets={[]}
+              onChange={(start, end) => { setBaselineStart(start); setBaselineEnd(end); }}
+            />
           </div>
-        )}
+          <div className="kpi-field-group is-accent" role="group" aria-label="Comparison period">
+            <p className="kpi-field-group-title"><Calendar size={14} /> Comparison period <small>e.g. AI on</small></p>
+            <DateRangeField
+              label="Comparison"
+              start={realStart}
+              end={realEnd}
+              presets={[]}
+              onChange={(start, end) => { setRealStart(start); setRealEnd(end); }}
+            />
+          </div>
+        </div>
+      </KpiFilterBar>
 
-        {/* Results */}
-        {response && !loading && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {/* View mode toggle */}
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {(["table", "chart"] as const).map(mode => (
-                <Button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  variant={viewMode === mode ? "primary" : "secondary"}
-                  size="sm"
-                >
-                  {mode === "table" ? "Delta Table" : "Timeline Chart"}
-                </Button>
-              ))}
-              <span style={{ fontSize: "14px", color: "var(--text-soft)", marginLeft: "8px" }}>
-                {tableRows.length} KPI × scope result{tableRows.length !== 1 ? "s" : ""}
-              </span>
-            </div>
+      {error ? <KpiError message={error} onRetry={buildings.length ? handleCompare : undefined} /> : null}
 
-            {/* Delta Table */}
-            {viewMode === "table" && (
-              <div style={{ backgroundColor: "var(--bg-elev)", borderRadius: "12px", border: "1px solid var(--line)", boxShadow: "var(--shadow)", overflow: "auto" }}>
-                <table style={{ width: "100%", fontSize: "16px", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--line)", backgroundColor: "var(--bg)", fontSize: "14px", fontWeight: 600, color: "var(--text-soft)", textTransform: "uppercase", letterSpacing: "0.025em" }}>
-                      <th style={{ textAlign: "left", padding: "12px 16px", fontWeight: 600 }}>KPI</th>
-                      <th style={{ textAlign: "left", padding: "12px 16px", fontWeight: 600 }}>Scope</th>
-                      <th style={{ textAlign: "right", padding: "12px 16px", fontWeight: 600 }}>
-                        <span style={{ color: "var(--text-soft)" }}>Baseline</span>
-                      </th>
-                      <th style={{ textAlign: "right", padding: "12px 16px", fontWeight: 600 }}>
-                        <span style={{ color: "var(--brand)" }}>Real</span>
-                      </th>
-                      <th style={{ textAlign: "left", padding: "12px 16px", fontWeight: 600 }}>Δ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tableRows.map(({ scope, kpiName, baselineVal, realVal, delta }, i) => {
-                      const meta = kpiMeta.find((m: any) => m.name === kpiName);
-                      return (
-                      <tr
-                        key={`${scope}_${kpiName}`}
-                        style={{ borderBottom: "1px solid var(--bg-elev-2)", backgroundColor: i % 2 === 0 ? "transparent" : "var(--bg)" }}
-                      >
-                        <td style={{ padding: "12px 16px", color: "var(--text)" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span>{meta?.display_name || meta?.canonical_name || meta?.name || kpiName}</span>
-                            {meta && (
-                              <div style={{ position: "relative", display: "flex", alignItems: "center", cursor: "help" }} onMouseEnter={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'block'; }} onMouseLeave={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'none'; }}>
-                                <Info size={14} style={{ opacity: 0.5 }} />
-                                <div className="tooltip-panel panel" style={{ display: "none", position: "absolute", left: "24px", top: "-10px", zIndex: 50, width: "300px", padding: "1rem" }}>
-                                  <p style={{ fontWeight: "bold", margin: "0 0 0.5rem 0" }}>{meta.display_name || meta.canonical_name || meta.name}</p>
-                                  {meta.description && (
-                                    <p style={{ fontSize: "0.85rem", margin: "0 0 1rem 0", opacity: 0.8 }}>{meta.description}</p>
-                                  )}
-                                  <div style={{ background: "var(--bg-elev-2)", padding: "0.5rem", borderRadius: "8px", marginBottom: "1rem" }}>
-                                    <p style={{ fontSize: "0.7rem", textTransform: "uppercase", margin: "0 0 0.25rem 0", opacity: 0.6 }}>Formula</p>
-                                    <code style={{ fontSize: "0.75rem" }}>{meta.formula || "—"}</code>
-                                  </div>
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", fontSize: "0.75rem", opacity: 0.8 }}>
-                                    <span><strong style={{ fontWeight: "bold" }}>Unit:</strong> {meta.unit || "—"}</span>
-                                    <span><strong style={{ fontWeight: "bold" }}>Window:</strong> {meta.window}</span>
-                                    <span><strong style={{ fontWeight: "bold" }}>Level:</strong> {meta.level}</span>
-                                    <span><strong style={{ fontWeight: "bold" }}>Type:</strong> {meta.type}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 16px", color: "var(--text-soft)", fontSize: "14px" }}>{scope}</td>
-                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 500, color: "var(--text)" }}>
-                          {baselineVal !== null ? `${baselineVal.toFixed(4)} ${meta?.unit || ""}` : "—"}
-                        </td>
-                        <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 500, color: "var(--brand)" }}>
-                          {realVal !== null ? `${realVal.toFixed(4)} ${meta?.unit || ""}` : "—"}
-                        </td>
-                        <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                          <DeltaChip
+      {loading ? <KpiLoading label="Computing both periods…" hint="Each period is recalculated from telemetry." /> : null}
+
+      {response && !loading ? (
+        <section className="kpi-results" aria-label="Comparison results">
+          <div className="kpi-results-toolbar">
+            <KpiSegmented<ViewMode>
+              segments={[{ key: "table", label: "Delta table" }, { key: "chart", label: "Timeline" }]}
+              value={viewMode}
+              onChange={setViewMode}
+              ariaLabel="Result view"
+            />
+            <span>{tableRows.length} KPI × scope result{tableRows.length !== 1 ? "s" : ""}</span>
+          </div>
+
+          {viewMode === "table" ? (
+            <div className="kpi-table-wrap">
+              <table className="kpi-table">
+                <thead>
+                  <tr>
+                    <th>KPI</th>
+                    <th>Scope</th>
+                    <th className="num">Baseline</th>
+                    <th className="num">Comparison</th>
+                    <th className="num">Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableRows.map(({ scope, kpiName, baselineVal, realVal, delta }) => {
+                    const meta = kpiMeta.find((m) => m.name === kpiName);
+                    const unit = meta?.unit ? ` ${meta.unit}` : "";
+                    return (
+                      <tr key={`${scope}_${kpiName}`}>
+                        <td>{kpiDisplayName(meta, kpiName)} {meta ? <KpiInfo meta={meta} /> : null}</td>
+                        <td className="kpi-text-soft">{scope}</td>
+                        <td className="num">{baselineVal !== null ? `${baselineVal.toFixed(4)}${unit}` : "—"}</td>
+                        <td className="num">{realVal !== null ? `${realVal.toFixed(4)}${unit}` : "—"}</td>
+                        <td className="num">
+                          <KpiDelta
                             absolute={delta.absolute}
-                            relative_pct={delta.relative_pct}
+                            relativePct={delta.relative_pct}
                             lowerIsBetter={LOWER_IS_BETTER.has(kpiName)}
                           />
                         </td>
                       </tr>
                     );
                   })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            Object.entries(chartDataByKpi).map(([kpiName, chartData]) => {
+              const meta = kpiMeta.find((m) => m.name === kpiName);
+              return (
+                <section key={kpiName} className="panel kpi-chart-card" aria-label={kpiDisplayName(meta, kpiName)}>
+                  <header className="kpi-chart-card-head">
+                    <h3>{kpiDisplayName(meta, kpiName)} {meta ? <KpiInfo meta={meta} /> : null}</h3>
+                    <p>Hours since the start of each period, so periods with different dates overlay.</p>
+                  </header>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
+                      <XAxis
+                        dataKey="hour"
+                        tickFormatter={h => `+${h}h`}
+                        tick={{ fontSize: 11, fill: "var(--text-soft)" }}
+                      />
+                      <YAxis
+                        width={80}
+                        tick={{ fontSize: 11, fill: "var(--text-soft)" }}
+                        label={{ value: meta?.unit || "", angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "var(--text-soft)" }, offset: -10 }}
+                      />
+                      <Tooltip
+                        formatter={(value: any) => {
+                          if (typeof value === "number") {
+                            return [meta?.unit ? `${value.toFixed(2)} ${meta.unit}` : value.toFixed(2)];
+                          }
+                          return [value];
+                        }}
+                        labelFormatter={h => `Hour +${h}`}
+                        contentStyle={{ borderRadius: 10, fontSize: 12, backgroundColor: "var(--bg-elev)", borderColor: "var(--line)", color: "var(--text)" }}
+                      />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="Baseline"
+                        stroke="var(--text-soft)"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="Comparison"
+                        stroke="var(--brand)"
+                        strokeWidth={2}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </section>
+              );
+            })
+          )}
+        </section>
+      ) : null}
 
-            {/* Timeline charts */}
-            {viewMode === "chart" && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "24px" }}>
-                {Object.entries(chartDataByKpi).map(([kpiName, chartData]) => {
-                  const meta = kpiMeta.find((m: any) => m.name === kpiName);
-                  return (
-                  <Card key={kpiName}>
-                    <CardHeader>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <CardTitle style={{ fontSize: "16px" }}>{meta?.display_name || meta?.canonical_name || meta?.name || kpiName}</CardTitle>
-                        {meta && (
-                          <div style={{ position: "relative", display: "flex", alignItems: "center", cursor: "help" }} onMouseEnter={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'block'; }} onMouseLeave={(e) => { const panel = e.currentTarget.querySelector('.tooltip-panel') as HTMLElement; if(panel) panel.style.display = 'none'; }}>
-                            <Info size={16} style={{ opacity: 0.5 }} />
-                            <div className="tooltip-panel panel" style={{ display: "none", position: "absolute", left: "28px", top: "-10px", zIndex: 50, width: "300px", padding: "1rem" }}>
-                              <p style={{ fontWeight: "bold", margin: "0 0 0.5rem 0" }}>{meta.display_name || meta.canonical_name || meta.name}</p>
-                              {meta.description && (
-                                <p style={{ fontSize: "0.85rem", margin: "0 0 1rem 0", opacity: 0.8, fontWeight: "normal" }}>{meta.description}</p>
-                              )}
-                              <div style={{ background: "var(--bg-elev-2)", padding: "0.5rem", borderRadius: "8px", marginBottom: "1rem" }}>
-                                <p style={{ fontSize: "0.7rem", textTransform: "uppercase", margin: "0 0 0.25rem 0", opacity: 0.6, fontWeight: "normal" }}>Formula</p>
-                                <code style={{ fontSize: "0.75rem", fontWeight: "normal" }}>{meta.formula || "—"}</code>
-                              </div>
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", fontSize: "0.75rem", opacity: 0.8, fontWeight: "normal" }}>
-                                <span><strong style={{ fontWeight: "bold" }}>Unit:</strong> {meta.unit || "—"}</span>
-                                <span><strong style={{ fontWeight: "bold" }}>Window:</strong> {meta.window}</span>
-                                <span><strong style={{ fontWeight: "bold" }}>Level:</strong> {meta.level}</span>
-                                <span><strong style={{ fontWeight: "bold" }}>Type:</strong> {meta.type}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <p style={{ fontSize: "14px", color: "var(--text-soft)", margin: 0 }}>
-                        X-axis: hours elapsed from start of each period
-                        (allows overlay of periods with different absolute dates)
-                      </p>
-                    </CardHeader>
-                    <CardContent>
-                      <div style={{ height: "280px" }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis
-                              dataKey="hour"
-                              tickFormatter={h => `+${h}h`}
-                              style={{ fontSize: "11px" }}
-                            />
-                            <YAxis 
-                              width={80}
-                              style={{ fontSize: "11px", fill: "var(--text)" }} 
-                              label={{ value: meta?.unit || "", angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: 'var(--text)' }, offset: -10 }}
-                            />
-                            <Tooltip
-                              formatter={(value: any) => {
-                                if (typeof value === 'number') {
-                                  return [meta?.unit ? `${value.toFixed(2)} ${meta.unit}` : value.toFixed(2)];
-                                }
-                                return [value];
-                              }}
-                              labelFormatter={h => `Hour +${h}`}
-                              contentStyle={{ borderRadius: "8px", fontSize: "12px", backgroundColor: 'var(--bg-elev)', borderColor: 'var(--line)', color: 'var(--text)' }}
-                            />
-                            <Legend />
-                            <Line
-                              type="monotone"
-                              dataKey="Baseline"
-                              stroke="#9ca3af"
-                              strokeWidth={2}
-                              strokeDasharray="5 5"
-                              dot={false}
-                              isAnimationActive={false}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="Real"
-                              stroke="var(--brand)"
-                              strokeWidth={2}
-                              dot={false}
-                              isAnimationActive={false}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && !response && !error && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--text-soft)", padding: "48px", backgroundColor: "var(--bg-elev)", borderRadius: "12px", border: "1px dashed var(--line)" }}>
-            <Search size={48} style={{ marginBottom: "16px", color: "var(--line)" }} />
-            <p style={{ fontSize: "16px", fontWeight: 500, color: "var(--text-soft)", margin: "0 0 4px 0" }}>Select periods and click Compare</p>
-            <p style={{ fontSize: "14px", margin: 0 }}>
-              Set a baseline (AI off) and real (AI on) period, choose your KPIs, and compare.
-            </p>
-          </div>
-        )}
-      </div>
+      {!loading && !response && !error ? (
+        <EmptyState
+          title="Choose two periods to compare"
+          message="Set a baseline and a comparison period, choose KPIs, then select Compare."
+        />
+      ) : null}
     </div>
   );
 }
