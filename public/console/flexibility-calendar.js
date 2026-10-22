@@ -383,7 +383,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
         const summary = document.createElement('p'); summary.className = 'footnote'; summary.setAttribute('aria-live', 'polite');
         const update = () => {
           const details = requestDetails();
-          summary.textContent = details.duration_minutes ? `${details.duration_minutes} minutes. The cycle settings come from the equipment.` : 'No cycle is selected. Configure the machine’s cycles in Equipment first.';
+          summary.textContent = details.duration_minutes ? `${details.duration_minutes} minutes. The cycle settings come from the equipment.` : (asset.data.power_profiles || []).length ? 'Choose a cycle to see its duration.' : 'Configure the machine’s cycles in Equipment first.';
         };
         cycle?.addEventListener('change', update); editor.node.append(summary); update();
         if (!(asset.data.power_profiles || []).length) {
