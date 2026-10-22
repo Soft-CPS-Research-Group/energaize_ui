@@ -17,6 +17,8 @@ import { TrainWizard } from "./TrainWizard";
 import { BatchPanel, RetrainAllModal } from "./RetrainAll";
 import { GenericModelModal } from "./GenericModel";
 import { houseLabel } from "./batchFormat";
+import { houseInScope } from "./workspaceScope";
+import { usePredictorScope } from "../../../contexts/PredictorWorkspaceContext";
 
 interface TrainViewProps {
   selectedHouseId: string | null;
@@ -229,6 +231,7 @@ function SystemMeters({ system, updatedAt }: { system: SystemInfo; updatedAt: nu
 
 export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
   const { data: jobsData, dataUpdatedAt } = usePredictorTrainingProgress();
+  const { scope } = usePredictorScope();
 
   const [showTrainDialog, setShowTrainDialog] = useState(false);
   const [showGeneric, setShowGeneric] = useState(false);
@@ -237,11 +240,13 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
   const [historyScope, setHistoryScope] = useState<"all" | "house">("all");
   const [historyPage, setHistoryPage] = useState(0);
 
-  const jobs = jobsData?.jobs;
+  // A community workspace lists its houses' jobs and the generic model's, which every house shares.
+  const jobs = jobsData?.jobs?.filter((j) => houseInScope(scope, j.house_id));
   const systemInfo = jobsData?.system ?? null;
   const activeJobs = jobs?.filter((j) => ACTIVE_STATUSES.includes(j.status)) ?? [];
   const completedJobs = jobs?.filter((j) => !ACTIVE_STATUSES.includes(j.status)) ?? [];
-  const lstmBusy = activeJobs.some((j) => j.model_type === "lstm");
+  // LSTM jobs run one at a time across the whole service, not per workspace.
+  const lstmBusy = jobsData?.jobs?.some((j) => ACTIVE_STATUSES.includes(j.status) && j.model_type === "lstm") ?? false;
 
   const scopedHistory = historyScope === "house" && selectedHouseId
     ? completedJobs.filter((j) => j.house_id === selectedHouseId)

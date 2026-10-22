@@ -7,7 +7,9 @@ import {
   usePredictorPredictionHistory,
   usePredictorActiveModel,
   usePredictorDataQuality,
+  usePredictorPredictionsOf,
 } from "../../../hooks/usePredictor";
+import { usePredictorScope } from "../../../contexts/PredictorWorkspaceContext";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { InfoTip } from "../../../components/ui/InfoTip";
@@ -154,6 +156,12 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   const [showFlexDialog, setShowFlexDialog] = useState(false);
 
   const { data: stats } = usePredictorStats();
+  // A community workspace counts its own houses; the service's stats cover every house.
+  const { houses: scopeHouses, scope } = usePredictorScope();
+  const scopeForecasts = usePredictorPredictionsOf(scopeHouses, scope != null);
+  const housesWithForecast = scopeForecasts
+    ? scopeForecasts.some((p) => p === undefined) ? null : `${scopeForecasts.filter((p) => hasForecast(p ?? undefined)).length} of ${scopeHouses.length}`
+    : stats ? `${stats.predictions_available} of ${stats.total_houses}` : null;
   const { data: activeModel } = usePredictorActiveModel(selectedHouseId);
   const { data: dataQuality } = usePredictorDataQuality(selectedHouseId);
   const { data: history, isLoading: historyLoading, isFetching: historyFetching } = usePredictorHistory(selectedHouseId);
@@ -284,7 +292,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
       <section className="predictor-status-strip" aria-label="Forecast status">
         <div className="predictor-status-item">
           <span>Houses with a forecast</span>
-          <strong>{stats ? `${stats.predictions_available} of ${stats.total_houses}` : "—"}</strong>
+          <strong>{housesWithForecast ?? "—"}</strong>
         </div>
         <div className="predictor-status-item">
           <span>Next cycle</span>

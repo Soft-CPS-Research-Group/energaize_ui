@@ -3,7 +3,10 @@ import { Search } from "lucide-react";
 import { usePredictorLogs, type LogStreamStatus } from "../../../hooks/usePredictorLogs";
 import { Badge } from "../../../components/ui/Badge";
 import { Button } from "../../../components/ui/Button";
+import { InfoTip } from "../../../components/ui/InfoTip";
 import { lineMatches } from "./logLines";
+import { logLineFilter } from "./workspaceScope";
+import { usePredictorScope } from "../../../contexts/PredictorWorkspaceContext";
 
 const LOG_LIMIT = 500;
 /** The server re-reads the whole log file for every filter, so wait for typing to settle. */
@@ -36,8 +39,11 @@ export function LogsView({ timezone }: { timezone: string }) {
   const [filter, setFilter] = useState("");
   const serverFilter = useDebounced(filter.trim(), FILTER_DEBOUNCE_MS);
   const { logs, status, loadFailed } = usePredictorLogs(serverFilter, LOG_LIMIT);
+  // A community workspace hides lines about other communities' houses; service-wide lines stay.
+  const { allHouses, scope, community } = usePredictorScope();
+  const inScope = useMemo(() => logLineFilter(allHouses, scope), [allHouses, scope]);
   // Narrow what is already loaded right away; the server fetch catches up after the debounce.
-  const visible = useMemo(() => logs.filter((entry) => lineMatches(entry, filter)), [logs, filter]);
+  const visible = useMemo(() => logs.filter((entry) => inScope(entry.raw) && lineMatches(entry, filter)), [logs, filter, inScope]);
   const terminalRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
@@ -83,6 +89,9 @@ export function LogsView({ timezone }: { timezone: string }) {
         <div className="predictor-logs-header-left">
           <h2>Service logs</h2>
           <Badge tone={badge.tone}>{badge.label}</Badge>
+          {community && (
+            <InfoTip tip={`Lines about houses outside ${community.name} are hidden. Lines about the service as a whole stay.`} />
+          )}
         </div>
 
         <div className="predictor-logs-header-right">

@@ -8,6 +8,10 @@ body[data-workspace="ai"] .predictor-heading { align-items: center; }
 body[data-workspace="ai"] .predictor-heading-actions { gap: 10px; }
 body[data-workspace="ai"] .predictor-house-select { min-width: 150px; min-height: 34px; padding: 7px 28px 7px 11px; font-size: 12px; background-color: var(--bg-elev); }
 
+/* Community workspace: which houses the page shows. */
+.predictor-heading .predictor-scope-note { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: var(--text-soft); }
+.predictor-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
 /* Service status: one icon in the header, details on hover or focus. */
 .predictor-health { position: relative; display: inline-flex; }
 .predictor-health-icon {

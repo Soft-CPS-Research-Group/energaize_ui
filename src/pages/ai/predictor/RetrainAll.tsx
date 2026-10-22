@@ -13,6 +13,8 @@ import {
 } from "./batchFormat";
 import { fmtTs } from "./analysisFormat";
 import { ForceOption } from "./GenericModel";
+import { houseInScope } from "./workspaceScope";
+import { usePredictorScope } from "../../../contexts/PredictorWorkspaceContext";
 
 const MODEL_LABELS: Record<string, string> = { xgboost: "XGBoost", lgbm: "LightGBM", lstm: "LSTM" };
 const PREVIEW_ROWS = 50;
@@ -50,11 +52,13 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
   const [parallel, setParallel] = useState("2");
   const [includeGeneric, setIncludeGeneric] = useState(false);
   const [force, setForce] = useState(false);
+  // A community workspace retrains only its own houses.
+  const { houses, scope, community } = usePredictorScope();
 
   const ageDays = Number(maxAge);
   const ageValid = maxAge.trim() !== "" && Number.isFinite(ageDays) && ageDays >= 0;
   const options: BatchOptions = {
-    houses: "all", lanes, only, model_type: model,
+    houses: scope ? houses : "all", lanes, only, model_type: model,
     max_model_age_days: ageValid ? ageDays : 30, max_parallel: Number(parallel),
     include_generic: includeGeneric, force,
   };
@@ -79,7 +83,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
     });
 
   return (
-    <Modal title="Retrain all houses" open={open} onClose={onClose} width="lg">
+    <Modal title={community ? `Retrain all houses of ${community.name}` : "Retrain all houses"} open={open} onClose={onClose} width="lg">
       <div className="predictor-wizard-step">
         <div className="retrain-all-options">
           <fieldset className="predictor-choice-group">
@@ -128,6 +132,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
             </label>
             <small>
               After the houses, so it learns from their latest data.
+              {community ? " It is shared by every community and learns from all their houses." : ""}
               {model === "lstm" ? " It has no LSTM version, so it keeps its own type." : ""}
             </small>
           </div>
@@ -200,6 +205,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
 export function BatchPanel({ timezone }: { timezone: string }) {
   const { notifySuccess, notifyError } = useApiFeedback();
   const { data: batches } = usePredictorBatches();
+  const { scope } = usePredictorScope();
   const summary = currentBatch(batches);
   const [expanded, setExpanded] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -212,7 +218,10 @@ export function BatchPanel({ timezone }: { timezone: string }) {
   const status = BATCH_STATUS_LABELS[batch.status] ?? { label: batch.status, tone: "neutral" as const };
   const pct = batchPercent(batch);
   const counts = batchCountsText(batch.counts);
-  const items = detail && detail.batch_id === summary.batch_id ? detail.items : [];
+  // The batch is the service's; a community workspace lists only its houses' lanes.
+  const items = (detail && detail.batch_id === summary.batch_id ? detail.items : []).filter((i) => houseInScope(scope, i.house_id));
+  const batchHouses = Array.isArray(batch.options?.houses) ? batch.options.houses.length : null;
+  const what = batchHouses == null ? "all houses" : `${batchHouses} ${batchHouses === 1 ? "house" : "houses"}`;
 
   const stop = () =>
     cancelMutation.mutate(batch.batch_id, {
@@ -223,7 +232,7 @@ export function BatchPanel({ timezone }: { timezone: string }) {
   return (
     <section className="panel predictor-jobs-panel" aria-label="Retrain all houses">
       <div className="predictor-panel-header">
-        <h2>{running ? "Retraining all houses" : "Last retrain of all houses"}</h2>
+        <h2>{running ? `Retraining ${what}` : `Last retrain of ${what}`}</h2>
         <Badge tone={status.tone}>{status.label}</Badge>
         <span className="is-muted retrain-all-when">
           {running ? `Started ${fmtTs(batch.created_at, timezone)}` : `Finished ${fmtTs(batch.finished_at, timezone)}`}
@@ -247,7 +256,10 @@ export function BatchPanel({ timezone }: { timezone: string }) {
           iconLeft={expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />} onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide lanes" : "Show lanes"}
         </Button>
-        {expanded && (
+        {expanded && detail && items.length === 0 && (
+          <p className="is-muted">None of this workspace's houses are in this retrain.</p>
+        )}
+        {expanded && items.length > 0 && (
           <div className="retrain-all-table-scroll">
             <table className="table predictor-jobs-table">
               <thead>
