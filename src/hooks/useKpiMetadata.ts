@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api as axios } from "../api/kpiApi";
 
 export interface KpiMeta {
@@ -24,24 +24,34 @@ export interface UseKpiMetadataResult {
   error: string | null;
 }
 
+/** Loads the KPI catalogue once and shares it (cached) across every component that asks. */
 export function useKpiMetadata(): UseKpiMetadataResult {
-  const [kpis, setKpis]       = useState<KpiMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: ["kpi-metadata"],
+    queryFn: async (): Promise<KpiMeta[]> => {
+      const res = await axios.get<{ status: string; data: KpiMeta[] }>("api/v1/kpis/metadata");
+      if (Array.isArray(res?.data?.data)) return res.data.data;
+      console.warn("Unexpected KPI metadata format:", res?.data);
+      return [];
+    },
+    staleTime: 5 * 60_000,
+  });
+  const error = query.error as { message?: string } | null;
+  return {
+    kpis: query.data ?? [],
+    loading: query.isLoading,
+    error: error ? error.message || "Failed to load KPI metadata" : null,
+  };
+}
 
-  useEffect(() => {
-    axios.get<{ status: string; data: KpiMeta[] }>("api/v1/kpis/metadata")
-      .then((res: any) => {
-        if (res?.data?.data && Array.isArray(res.data.data)) {
-          setKpis(res.data.data);
-        } else {
-          console.warn("Unexpected KPI metadata format:", res.data);
-          setKpis([]);
-        }
-      })
-      .catch((err: any) => setError(err?.message || "Failed to load KPI metadata"))
-      .finally(() => setLoading(false));
-  }, []);
+/** Name shown to people: display name, then canonical name, then the class name. */
+export function kpiDisplayName(meta: KpiMeta | undefined, name: string): string {
+  return meta?.display_name || meta?.canonical_name || meta?.name || name;
+}
 
-  return { kpis, loading, error };
+/** Selectable KPIs (available and registered), labelled with their display names. */
+export function kpiSelectOptions(kpis: KpiMeta[]): Array<{ value: string; label: string }> {
+  return kpis
+    .filter((k) => k.status === "available" && k.registered)
+    .map((k) => ({ value: k.name, label: kpiDisplayName(k, k.name) }));
 }
