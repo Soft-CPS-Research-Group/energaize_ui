@@ -190,6 +190,10 @@ export interface KpiAggStats {
   min: number;
   max: number;
   count: number;
+  /** Headline value chosen by the KPI module (sum for kWh/€, mean for %/ratios). */
+  value?: number;
+  aggregation?: "sum" | "mean";
+  unit?: string;
 }
 
 export interface AggregateBucket {

@@ -201,6 +201,20 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-r-verdict { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .kpi-r-pill { align-self: flex-start; padding: 4px 12px; border-radius: 999px; font-weight: 500; border: 1px solid currentColor; }
 
+/* ── Reports (AggregateReportPage.tsx) ────────────────────────────────────── */
+.kpi-summary-strip { display: flex; flex-wrap: wrap; margin: 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.kpi-summary-strip > div { display: flex; flex-direction: column; gap: 2px; padding: 4px 22px; border-right: 1px solid var(--line); }
+.kpi-summary-strip > div:first-child { padding-left: 0; }
+.kpi-summary-strip > div:last-child { border-right: 0; }
+.kpi-summary-strip dt { font-size: 11px; color: var(--text-soft); }
+.kpi-summary-strip dd { margin: 0; font-size: 20px; font-weight: 500; }
+.kpi-cell-truncate { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-cell-kpi { font-weight: 500; white-space: nowrap; }
+.kpi-cell-kpi .btn { margin-left: 4px; vertical-align: middle; }
+.kpi-cell-extreme { font-weight: 600; }
+.kpi-cell-extreme svg { margin-right: 3px; vertical-align: -1px; }
+.kpi-table td.num { white-space: nowrap; }
+
 @media(max-width:700px) {
   body[data-workspace="ai"] .kpi-heading { align-items: flex-start; flex-wrap: wrap; }
   body[data-workspace="ai"] .kpi-heading-actions { width: 100%; }
