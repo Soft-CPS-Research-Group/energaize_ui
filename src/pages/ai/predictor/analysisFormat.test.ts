@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelMeta } from "../../../api/analysisApi";
-import { fmtParam, fmtTs, formatDetail, groupByHouse, inUseLabel, markInUse, modelLabels, modelsInUse, testDaysValid } from "./analysisFormat";
+import { fmtParam, fmtTs, formatDetail, groupByHouse, inUseLabel, markInUse, modelLabels, modelsInUse, testDaysValid, wapePct } from "./analysisFormat";
 
 describe("fmtTs", () => {
   it("shows an analysis job time in the chosen timezone", () => {
@@ -109,5 +109,17 @@ describe("models in use", () => {
     expect(inUseLabel(xgb)).toBe("In use");
     expect(inUseLabel(cold)).toBe("In use · 2 houses");
     expect(inUseLabel(lgbm)).toBeNull();
+  });
+});
+
+describe("wapePct", () => {
+  const base = { mae: 0.1, rmse: 0.2, r2: 0.5, n_samples: 10, daytime_mae: null };
+  it("reads WAPE, or NMAE from results saved before WAPE", () => {
+    expect(wapePct({ ...base, wape_pct: 12.5 })).toBe(12.5);
+    expect(wapePct({ ...base, nmae_pct: 14 })).toBe(14);
+  });
+  it("has no WAPE when the data had no energy", () => {
+    expect(wapePct({ ...base, wape_pct: null })).toBeNull();
+    expect(wapePct(base)).toBeNull();
   });
 });

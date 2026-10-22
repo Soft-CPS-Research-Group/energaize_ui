@@ -23,7 +23,7 @@ import {
 } from "../../../api/analysisApi";
 import {
   BACKEND_LABELS, DETAIL_LABELS, LANE_LABELS, TEST_DAYS_MAX, TEST_DAYS_MIN, VARIANT_LABELS,
-  SEGMENT_LABELS, capitalize, fmt, fmtParam, fmtPct, fmtTs, formatDetail, inUseLabel, markInUse, modelLabels,
+  SEGMENT_LABELS, capitalize, fmt, fmtParam, fmtPct, fmtTs, formatDetail, inUseLabel, markInUse, modelLabels, wapePct,
   groupByHouse, modelsInUse, testDaysValid,
 } from "./analysisFormat";
 import { ArchiveCleanupModal, formatBytes } from "./ArchiveCleanup";
@@ -62,9 +62,8 @@ function statusTone(s: string): "success" | "info" | "neutral" | "danger" | "war
 
 const METRIC_TIPS: Record<string, string> = {
   MAE: "Mean Absolute Error (kWh) — average magnitude of prediction errors. Lower is better.",
-  NMAE: "Normalised MAE as % of mean actual value — lets you compare error across houses with different energy scales.",
+  WAPE: "Weighted Absolute Percentage Error — total error as a share of the energy measured, Σ|actual−predicted| / Σ actual. Compares houses of any size and, unlike MAPE or sMAPE, stays meaningful for slots measured at zero such as production at night.",
   RMSE: "Root Mean Squared Error (kWh) — like MAE but penalises large individual errors more heavily.",
-  sMAPE: "Symmetric Mean Absolute Percentage Error — prediction error expressed as a percentage of the average of actual and predicted values. More stable than standard MAPE near zero.",
   "R²": "R² (coefficient of determination): 1.0 = perfect fit, 0 = predicting the mean, negative = worse than baseline.",
   Samples: "Number of 15-minute time steps in the held-out test set used to compute these metrics.",
 };
@@ -160,9 +159,8 @@ function MetricsRow({ m }: { m: MetricsBundle }) {
     <div className="analysis-metrics-row">
       {[
         ["MAE", fmt(m.mae) + " kWh"],
-        ["NMAE", fmtPct(m.nmae_pct)],
+        ["WAPE", fmtPct(wapePct(m))],
         ["RMSE", fmt(m.rmse) + " kWh"],
-        ["sMAPE", fmtPct(m.smape_pct)],
         ["R²", fmt(m.r2, 4)],
         ["Samples", String(m.n_samples)],
       ].map(([label, val]) => (
@@ -786,9 +784,10 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const labels = modelLabels(modelKeys);
   // Each model keeps its colour in every chart of the result.
   const modelColor = (mk: string) => BAR_PALETTE[Math.max(0, modelKeys.indexOf(mk)) % BAR_PALETTE.length];
-  const metricRows = (metric: keyof MetricsBundle): BarRow[] =>
+  const metricRows = (metric: (m: MetricsBundle) => number | null): BarRow[] =>
     result ? modelKeys.flatMap((mk) => {
-      const value = result.evaluation[mk]?.[metric];
+      const m = result.evaluation[mk];
+      const value = m ? metric(m) : null;
       return typeof value === "number" ? [{ label: labels[mk], full: mk, value, color: modelColor(mk) }] : [];
     }) : [];
 
@@ -852,10 +851,9 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
           <div className="panel">
             <h4>Error by model <span className="analysis-h4-note">lower is better</span></h4>
             <div className="analysis-metric-grid">
-              <MetricBars title="MAE (kWh)" tip={METRIC_TIPS.MAE} rows={metricRows("mae")} format={(v) => v.toFixed(4)} markLowest />
-              <MetricBars title="RMSE (kWh)" tip={METRIC_TIPS.RMSE} rows={metricRows("rmse")} format={(v) => v.toFixed(4)} markLowest />
-              <MetricBars title="NMAE" tip={METRIC_TIPS.NMAE} rows={metricRows("nmae_pct")} format={(v) => `${v.toFixed(1)}%`} markLowest />
-              <MetricBars title="sMAPE" tip={METRIC_TIPS.sMAPE} rows={metricRows("smape_pct")} format={(v) => `${v.toFixed(1)}%`} markLowest />
+              <MetricBars title="MAE (kWh)" tip={METRIC_TIPS.MAE} rows={metricRows((m) => m.mae)} format={(v) => v.toFixed(4)} markLowest />
+              <MetricBars title="RMSE (kWh)" tip={METRIC_TIPS.RMSE} rows={metricRows((m) => m.rmse)} format={(v) => v.toFixed(4)} markLowest />
+              <MetricBars title="WAPE" tip={METRIC_TIPS.WAPE} rows={metricRows(wapePct)} format={(v) => `${v.toFixed(1)}%`} markLowest />
             </div>
           </div>
           <div className="panel">

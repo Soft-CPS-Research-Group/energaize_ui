@@ -116,11 +116,14 @@ body[data-workspace="ai"] .predictor-kpi-grid .kpi strong { font-family: var(--f
 .predictor-kpi-label { display: flex; align-items: center; gap: 3px; }
 body[data-workspace="ai"] .predictor-kpi-value.is-consumption { color: var(--pred-consumption-forecast); }
 body[data-workspace="ai"] .predictor-kpi-value.is-production { color: var(--pred-production-forecast); }
+/* Fixed-width digits so a counting value does not shift the delta chip on every frame. */
+.predictor-kpi-value { font-variant-numeric: tabular-nums; }
 body[data-workspace="ai"] .predictor-delta { animation: none; }
 body[data-workspace="ai"] .predictor-delta.improved { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
 body[data-workspace="ai"] .predictor-delta.worsened { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 @media (prefers-reduced-motion: reduce) {
   .predictor-live-dot,.predictor-chart-panel.is-refetching,.predictor-kpi-grid .kpi { animation: none; }
+  .predictor-kpi-grid .kpi::before { display: none; }
 }
 
 @media (max-width: 900px) {

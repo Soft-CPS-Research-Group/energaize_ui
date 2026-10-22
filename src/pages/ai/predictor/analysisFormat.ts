@@ -1,5 +1,5 @@
 import { normalizeTs } from "../../../utils/predictorTransforms";
-import type { Lane, ModelMeta, ModelUse } from "../../../api/analysisApi";
+import type { Lane, MetricsBundle, ModelMeta, ModelUse } from "../../../api/analysisApi";
 
 export const LANE_LABELS: Record<string, string> = { consumption: "Consumption", production: "Production" };
 export const VARIANT_LABELS: Record<string, string> = { warm: "Warm", cold_start: "Cold start" };
@@ -22,6 +22,11 @@ export function fmtParam(v: number | null | undefined): string {
 export function fmtPct(v: number | null | undefined): string {
   if (v == null) return "—";
   return `${v.toFixed(2)}%`;
+}
+/** WAPE of a result, reading results saved before WAPE from `nmae_pct` (the same quantity). */
+export function wapePct(m: MetricsBundle): number | null {
+  const value = m.wape_pct ?? m.nmae_pct;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 export function fmtTs(iso: string | null, timezone: string): string {
   if (!iso) return "—";
