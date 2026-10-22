@@ -9,6 +9,8 @@ import { api as axios } from "../../api/kpiApi";
 import { useCommunities } from "../../hooks/useCommunities";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
+import { KpiSegmented } from "../../components/kpi/KpiSegmented";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -576,41 +578,29 @@ export function ThresholdPage() {
 
   return (
     <div className="page">
-      <header className="jobs-hero">
-        <div>
-          <h1>Alert Thresholds</h1>
-          <p>{activeTab === "rules" ? "Configure KPI threshold rules that trigger alerts when violated" : "History of triggered alerts saved by the scheduler"}</p>
-        </div>
-        <div style={{ display: "flex", gap: "0.5rem", alignSelf: "flex-end" }}>
-          {/* Tab switcher */}
-          <nav role="tablist" style={{ display: "flex", gap: "0.35rem" }}>
-            {(["rules", "history"] as const).map(t => {
-              const isActive = activeTab === t;
-              return (
-                <button key={t} role="tab" aria-selected={isActive}
-                  onClick={() => setActiveTab(t)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "0.4rem",
-                    padding: "0.4rem 0.9rem", borderRadius: "0.6rem",
-                    border: `1px solid ${isActive ? "var(--brand)" : "var(--line)"}`,
-                    background: isActive ? "var(--brand)" : "var(--bg-elev)",
-                    color: isActive ? "#fff" : "var(--text)",
-                    fontWeight: isActive ? 700 : 500, fontSize: "0.83rem", cursor: "pointer",
-                  }}>
-                  {t === "rules" ? <SlidersHorizontal size={14} /> : <History size={14} />}
-                  {t === "rules" ? "Rules" : "Alert History"}
-                </button>
-              );
-            })}
-          </nav>
-          {activeTab === "rules" && (
-            <>
-              <Button variant="ghost" onClick={load} title="Refresh"><RefreshCw size={15} /></Button>
-              <Button onClick={() => setModal({ open: true, editing: null })}><Plus size={15} /> New Threshold</Button>
-            </>
-          )}
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Alerts"
+        description={activeTab === "rules" ? "Threshold rules that raise an alert when a KPI crosses them" : "Alerts raised by the scheduler"}
+        actions={
+          <>
+            <KpiSegmented
+              segments={[
+                { key: "rules", label: "Rules", icon: <SlidersHorizontal size={14} /> },
+                { key: "history", label: "Alert history", icon: <History size={14} /> },
+              ]}
+              value={activeTab}
+              onChange={setActiveTab}
+              ariaLabel="Alert views"
+            />
+            {activeTab === "rules" && (
+              <>
+                <Button variant="ghost" onClick={load} title="Refresh"><RefreshCw size={15} /></Button>
+                <Button onClick={() => setModal({ open: true, editing: null })}><Plus size={15} /> New threshold</Button>
+              </>
+            )}
+          </>
+        }
+      />
 
       {/* Shared: community selector */}
       <div className="panel" style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "center" }}>

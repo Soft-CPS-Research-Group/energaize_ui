@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { BookOpen, Search, Loader2, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/KpiCard";
 import { api as axios } from "../../api/kpiApi";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 
 interface KpiEntry {
   name: string;
@@ -88,12 +89,10 @@ export function KpiLibraryPage() {
 
   return (
     <div className="page">
-      <header className="jobs-hero">
-        <div>
-          <h1>KPI Library</h1>
-          <p>All available KPIs with formulas and metadata</p>
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Library"
+        description="Every available KPI with its formula, unit and calculation window"
+      />
 
       <div className="page-content" style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1.5rem" }}>
 

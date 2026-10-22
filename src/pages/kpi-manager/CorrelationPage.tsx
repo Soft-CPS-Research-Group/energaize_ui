@@ -14,6 +14,7 @@ import {
   Search, Loader2, AlertCircle, ArrowRightLeft,
   MapPin, Building2, Calendar, Activity, Plus, X, ChevronDown, ChevronUp, Info,
 } from "lucide-react";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -363,12 +364,10 @@ export function CorrelationPage() {
 
   return (
     <div className="page" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <header className="jobs-hero">
-        <div>
-          <h1>KPI Correlations</h1>
-          <p>Analyse how two KPIs move together across 1-hour windows — spot trade-offs and synergies</p>
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Correlations"
+        description="How two KPIs move together across 1-hour windows: spot trade-offs and synergies"
+      />
 
       <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px", flex: 1, backgroundColor: "var(--bg)", paddingBottom: "6rem" }}>
 

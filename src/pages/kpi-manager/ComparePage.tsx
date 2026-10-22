@@ -15,6 +15,7 @@ import {
   TrendingDown, Minus, Calendar, MapPin, Building2, Activity, Info
 } from "lucide-react";
 import type { CompareResponse } from "../../api/kpiApi";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 
 // KPIs that make conceptual sense for baseline vs real comparison —
 // derived from live metadata after filtering streaming-only KPIs
@@ -180,12 +181,10 @@ export function ComparePage() {
   return (
     <div className="page" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Header */}
-      <header className="jobs-hero">
-        <div>
-          <h1>Compare Periods</h1>
-          <p>Compare KPI results between two measurement periods (e.g. AI-off vs AI-on)</p>
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Compare periods"
+        description="Compare KPI results between two measurement periods, e.g. AI off versus AI on"
+      />
 
       <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "24px", flex: 1, backgroundColor: "var(--bg)" }}>
         {/* Filters panel */}

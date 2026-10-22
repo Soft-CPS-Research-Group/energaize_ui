@@ -13,6 +13,7 @@ import {
   BarChart3, MapPin, Calendar,
   Search, Loader2, AlertCircle, TrendingUp, TrendingDown,
 } from "lucide-react";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -282,12 +283,10 @@ export function AggregateReportPage() {
 
   return (
     <div className="page" style={{ overflowX: "hidden", paddingBottom: "2rem" }}>
-      <header className="jobs-hero">
-        <div>
-          <h1>Aggregate Report</h1>
-          <p>Group KPI windows by day, week, or month to spot trends and cumulative totals</p>
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Reports"
+        description="Group KPI windows by day, week or month to spot trends and cumulative totals"
+      />
 
       {/* ── Filters ── */}
       <div style={{ paddingBottom: "0.5rem" }}>

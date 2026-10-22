@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { KPI_BASE } from "./kpiSections";
 import { useState, useMemo } from "react";
 import { Button } from "../../components/ui/Button";
 import { useCommunities } from "../../hooks/useCommunities";
@@ -9,6 +10,7 @@ import {
   Zap, DollarSign, Leaf, Car, Scale, Activity,
   Loader2, AlertCircle, ExternalLink,
 } from "lucide-react";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 
 // ── Category metadata ──────────────────────────────────────────────────────
 
@@ -210,7 +212,7 @@ export function KpiExplorer() {
   );
 
   const handleOpenDashboard = (kpiName: string) => {
-    navigate('/app/kpi-manager/dashboard', { state: { preselectedKpi: kpiName } });
+    navigate(`${KPI_BASE}/overview`, { state: { preselectedKpi: kpiName } });
   };
 
   const isLoading = commLoading || kpiLoading;
@@ -230,12 +232,10 @@ export function KpiExplorer() {
   return (
     <div className="page">
       {/* Header */}
-      <header className="jobs-hero">
-        <div>
-          <h1>KPI Explorer</h1>
-          <p>Browse communities, buildings, and their available KPI families</p>
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Explorer"
+        description="Browse communities, buildings and the KPI families available for each"
+      />
 
       {isLoading && (
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", color: "var(--text-soft)", padding: "2rem", justifyContent: "center" }}>

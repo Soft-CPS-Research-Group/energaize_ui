@@ -9,6 +9,7 @@ import { api as axios } from "../../api/kpiApi";
 import { useCommunities } from "../../hooks/useCommunities";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -451,22 +452,21 @@ export function SchedulerPage() {
         />
       )}
 
-      {/* Header */}
-      <header className="jobs-hero">
-        <div>
-          <h1>Scheduler</h1>
-          <p>Monitor and manage scheduled KPI jobs — YAML jobs are read-only, UI jobs can be edited or deleted</p>
-        </div>
-        <div className="jobs-hero-meta" style={{ display: "flex", gap: "0.75rem" }}>
-          <Button onClick={fetchStatus} disabled={loading} variant="secondary"
-            iconLeft={<RefreshCw className={loading ? "animate-spin" : ""} size={16} />}>
-            Refresh
-          </Button>
-          <Button onClick={openCreate} variant="primary" iconLeft={<Plus size={16} />}>
-            Add Job
-          </Button>
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Scheduler"
+        description="Scheduled KPI jobs. Jobs from the YAML file are read-only; jobs created here can be edited or deleted."
+        actions={
+          <>
+            <Button onClick={fetchStatus} disabled={loading} variant="secondary"
+              iconLeft={<RefreshCw className={loading ? "animate-spin" : ""} size={16} />}>
+              Refresh
+            </Button>
+            <Button onClick={openCreate} variant="primary" iconLeft={<Plus size={16} />}>
+              Add job
+            </Button>
+          </>
+        }
+      />
 
       <div className="page-content page-inner" style={{ display: "flex", flexDirection: "column", gap: "1.5rem", padding: "1.5rem", paddingBottom: "4rem" }}>
         {/* Scheduler status pill */}

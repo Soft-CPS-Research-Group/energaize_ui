@@ -12,6 +12,8 @@ import { MultiSelect } from "../../components/ui/MultiSelect";
 import type { ProcessResponse } from "../../workers/dataProcessor.worker";
 import { LiveDashboard } from "./LiveDashboard";
 import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
+import { KpiSegmented } from "../../components/kpi/KpiSegmented";
 
 
 // ── Chart data types produced by the data-processor worker ─────────────────
@@ -314,46 +316,19 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
 
   return (
     <div className="page">
-      <header className="jobs-hero">
-        <div>
-          <h1>Dashboard</h1>
-          <p>{activeTab === "analytics" ? "Analyze KPI data across communities and buildings" : activeTab === "live" ? "Real-time telemetry and data quality signals" : "KPI threshold alerts and notifications"}</p>
-        </div>
-
-        {/* ── Tab switcher ── */}
-        <nav
-          role="tablist"
-          aria-label="Dashboard sections"
-          style={{ display: "flex", gap: "0.375rem", alignSelf: "flex-end" }}
-        >
-          {(Object.entries(TAB_LABELS) as [DashboardTab, { label: string; icon: React.ReactNode }][]).map(([key, { label, icon }]) => {
-            const isActive = activeTab === key;
-            return (
-              <button
-                key={key}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`tabpanel-${key}`}
-                id={`tab-${key}`}
-                onClick={() => setActiveTab(key)}
-                style={{
-                  display: "flex", alignItems: "center", gap: "0.4rem",
-                  padding: "0.45rem 1rem", borderRadius: "0.6rem",
-                  border: `1px solid ${isActive ? "var(--brand)" : "var(--line)"}`,
-                  background: isActive ? "var(--brand)" : "var(--bg-elev)",
-                  color: isActive ? "#fff" : "var(--text)",
-                  fontWeight: isActive ? 700 : 500,
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                }}
-              >
-                {icon}{label}
-              </button>
-            );
-          })}
-        </nav>
-      </header>
+      <KpiPageHeader
+        title="Overview"
+        description={activeTab === "analytics" ? "Analyse KPI data across communities and buildings" : "Real-time telemetry and data quality signals"}
+        actions={
+          <KpiSegmented
+            segments={(Object.entries(TAB_LABELS) as [DashboardTab, { label: string; icon: React.ReactNode }][]).map(([key, { label, icon }]) => ({ key, label, icon }))}
+            value={activeTab}
+            onChange={setActiveTab}
+            ariaLabel="Overview views"
+            idPrefix="overview"
+          />
+        }
+      />
 
       {/* ── Shared building selector (used by both tabs) ───────────────────── */}
       <div style={{ paddingBottom: "0.5rem" }}>
@@ -393,9 +368,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
 
       {/* ── Analytics tab panel ─────────────────────────────────────────────── */}
       <div
-        id="tabpanel-analytics"
+        id="overview-panel-analytics"
         role="tabpanel"
-        aria-labelledby="tab-analytics"
+        aria-labelledby="overview-tab-analytics"
         hidden={activeTab !== "analytics"}
       >
         {/* Analytics-specific filters */}
@@ -615,9 +590,9 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
 
       {/* ── Live tab panel ──────────────────────────────────────────────────── */}
       <div
-        id="tabpanel-live"
+        id="overview-panel-live"
         role="tabpanel"
-        aria-labelledby="tab-live"
+        aria-labelledby="overview-tab-live"
         hidden={activeTab !== "live"}
       >
         <LiveDashboard key={community} community={community} buildings={buildings} isActive={activeTab === "live"} />

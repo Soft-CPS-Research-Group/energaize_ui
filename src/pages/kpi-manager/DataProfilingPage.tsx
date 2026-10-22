@@ -11,6 +11,7 @@ import {
   AlertCircle, ShieldCheck, ShieldAlert, ShieldX,
   XCircle, Clock, BarChart2, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -439,12 +440,10 @@ export function DataProfilingPage() {
 
   return (
     <div className="page">
-      <header className="jobs-hero">
-        <div>
-          <h1>Data Health</h1>
-          <p>Assess data quality (coverage, authenticity, validity, and gaps) before trusting KPI values</p>
-        </div>
-      </header>
+      <KpiPageHeader
+        title="Data quality"
+        description="Coverage, authenticity, validity and gaps of the telemetry behind each KPI"
+      />
 
       {/* ── Filters ── */}
       <div style={{ paddingBottom: "0.5rem" }}>
