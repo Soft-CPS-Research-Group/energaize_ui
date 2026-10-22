@@ -60,6 +60,8 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 200px; }
 .kpi-field-sm { flex: 0 1 160px; }
 .kpi-field-lg { flex: 2 1 300px; }
+/* The flex-basis above sizes fields in a row; in a column it would become a 200px minimum height. */
+:is(.kpi-form, .kpi-form-section, .kpi-field-group) > .kpi-field { flex: none; }
 .kpi-field-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--text-soft); }
 .kpi-field-label small { font-weight: 400; opacity: .8; }
 .kpi-field :is(select, input:not([type="checkbox"]):not([type="radio"])) { width: 100%; min-height: 36px; padding: 7px 10px; font-size: 13px; }
@@ -90,6 +92,8 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 
 /* ── Results ──────────────────────────────────────────────────────────────── */
 .kpi-results { display: flex; flex-direction: column; gap: 20px; }
+/* Class display rules would otherwise override the hidden attribute (e.g. inactive tab panels). */
+.kpi-workspace [hidden] { display: none !important; }
 .kpi-stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .kpi-stat {
   display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border-radius: 16px;
