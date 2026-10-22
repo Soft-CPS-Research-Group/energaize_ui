@@ -21,7 +21,8 @@ import {
 } from "../../../api/analysisApi";
 import {
   BACKEND_LABELS, DETAIL_LABELS, LANE_LABELS, TEST_DAYS_MAX, TEST_DAYS_MIN, VARIANT_LABELS,
-  SEGMENT_LABELS, capitalize, fmt, fmtParam, fmtPct, fmtTs, formatDetail, modelLabels, testDaysValid,
+  SEGMENT_LABELS, capitalize, fmt, fmtParam, fmtPct, fmtTs, formatDetail, inUseLabel, markInUse, modelLabels,
+  modelsInUse, testDaysValid,
 } from "./analysisFormat";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -251,6 +252,68 @@ function HorizonChart({ title, series }: { title: string; series: { name: string
   );
 }
 
+// ─── Models in use ────────────────────────────────────────────────────────────
+
+/** Which model each house forecasts with, per lane, and which houses fall back to the generic models. */
+function ModelsInUsePanel({ models, onSelect }: { models: ModelMeta[]; onSelect: (m: ModelMeta) => void }) {
+  const { houses, generic } = modelsInUse(models);
+  const lanes: Lane[] = ["consumption", "production"];
+
+  const cell = (house: string, lane: Lane) => {
+    const entry = houses.find((h) => h.house_id === house)?.lanes[lane];
+    if (!entry) return <span className="is-muted">None</span>;
+    const { model, use } = entry;
+    const backend = BACKEND_LABELS[model.model_backend ?? "xgboost"] ?? model.model_backend;
+    return (
+      <button type="button" className="analysis-inuse-model" onClick={() => onSelect(model)} title={model.model_key}>
+        <span className={`analysis-inuse-kind is-${model.house_id ? "house" : "generic"}`}>{model.house_id ? "House" : "Generic"}</span>
+        {backend}
+        {model.model_schema === "sparse" && <span className="is-muted"> sparse</span>}
+        {!use.confirmed && <InfoTip tip="Selected. The next forecast for this house will use it." />}
+      </button>
+    );
+  };
+
+  return (
+    <div className="panel analysis-inuse-panel">
+      <div className="analysis-inuse-header">
+        <h3>In use now</h3>
+        <InfoTip tip="The model each house forecast with in its last cycle. Each house has its own model per lane; a house without enough history yet uses the generic cold-start model for that lane." />
+      </div>
+      {houses.length === 0 ? (
+        <p className="is-muted analysis-inuse-empty">No house has forecast yet.</p>
+      ) : (
+        <div className="analysis-table-scroll">
+          <table className="table analysis-table analysis-inuse-table">
+            <thead>
+              <tr><th>House</th>{lanes.map((l) => <th key={l}><span className={`analysis-lane-dot is-${l}`} />{LANE_LABELS[l]}</th>)}</tr>
+            </thead>
+            <tbody>
+              {houses.map((h) => (
+                <tr key={h.house_id}>
+                  <td>{h.house_id}</td>
+                  {lanes.map((l) => <td key={l}>{cell(h.house_id, l)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {generic.length > 0 && (
+        <div className="analysis-inuse-generic">
+          {generic.map(({ model, houses: users }) => (
+            <button type="button" key={model.model_key} className="analysis-inuse-generic-item" onClick={() => onSelect(model)} title={model.model_key}>
+              <span className={`analysis-lane-dot is-${model.lane}`} />
+              Generic {LANE_LABELS[model.lane]?.toLowerCase()} ({BACKEND_LABELS[model.model_backend ?? "xgboost"]}):{" "}
+              <strong>{users.length === 0 ? "no houses" : `${users.length} ${users.length === 1 ? "house" : "houses"}`}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tab 1: Model Browser ─────────────────────────────────────────────────────
 
 function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance: (key: string) => void }) {
@@ -273,6 +336,8 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
           : `${m.model_backend ?? "xgboost"} is now active for ${m.house_id} / ${m.lane}.`
       );
       setSelected(null);
+      // Show the new model as in use straight away; the refetch below confirms it.
+      if (!isArchived(m)) queryClient.setQueryData<ModelMeta[]>(["analysis", "models"], (old) => old && markInUse(old, m));
       queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
       queryClient.invalidateQueries({ queryKey: ["predictor", "active-model"] });
     },
@@ -284,6 +349,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
   const [filterHouse, setFilterHouse] = useState("all");
   const [filterModelType, setFilterModelType] = useState<"all" | "warm" | "cold_start">("all");
   const [filterBackend, setFilterBackend] = useState<"all" | "xgboost" | "lgbm" | "lstm">("all");
+  const [inUseOnly, setInUseOnly] = useState(false);
   // The API sends no training date, so models sort by error or by house.
   const [sortBy, setSortBy] = useState<"mae-asc" | "mae-desc" | "house">("mae-asc");
 
@@ -300,6 +366,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
       else if (filterHouse !== "all" && m.house_id !== filterHouse) return false;
       if (filterModelType !== "all" && m.model_type !== filterModelType) return false;
       if (filterBackend !== "all" && effectiveBackend(m) !== filterBackend) return false;
+      if (inUseOnly && m.active !== true) return false;
       return true;
     })
     .sort((a, b) => {
@@ -352,9 +419,13 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
             <option value="house">House</option>
           </select>
         </label>
+        <label className="analysis-filter-check">
+          <input type="checkbox" checked={inUseOnly} onChange={(e) => setInUseOnly(e.target.checked)} />
+          <span>In use only</span>
+        </label>
         <div className="analysis-models-toolbar-end">
-          {(filterLane !== "all" || filterHouse !== "all" || filterModelType !== "all" || filterBackend !== "all") && (
-            <button className="analysis-filter-clear" onClick={() => { setFilterLane("all"); setFilterHouse("all"); setFilterModelType("all"); setFilterBackend("all"); }}>
+          {(filterLane !== "all" || filterHouse !== "all" || filterModelType !== "all" || filterBackend !== "all" || inUseOnly) && (
+            <button className="analysis-filter-clear" onClick={() => { setFilterLane("all"); setFilterHouse("all"); setFilterModelType("all"); setFilterBackend("all"); setInUseOnly(false); }}>
               Clear filters
             </button>
           )}
@@ -370,6 +441,8 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
           action={<Button onClick={() => refetch()} disabled={isFetching}>{isFetching ? "Retrying…" : "Try again"}</Button>}
         />
       ) : (
+        <>
+        {models && <ModelsInUsePanel models={models} onSelect={setSelected} />}
         <div className="panel analysis-models-panel">
           <div className={`analysis-table-scroll${isFetching ? " analysis-table--loading" : ""}`}>
             <table className="table analysis-table">
@@ -392,7 +465,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(m); } }}>
                     <td className="analysis-model-key">
                       <code>{m.model_key}</code>
-                      {m.active === true && <span className="analysis-active-pill">In use</span>}
+                      {m.active === true && <span className="analysis-active-pill">{inUseLabel(m) ?? "In use"}</span>}
                       {isArchived(m) && <span className="analysis-archived-pill">Archived</span>}
                     </td>
                     <td>{m.house_id ?? <span className="is-muted">Generic</span>}</td>
@@ -414,6 +487,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
             </table>
           </div>
         </div>
+        </>
       )}
 
       {/* Model detail drawer — portalled to body so it covers the full viewport */}
@@ -1232,7 +1306,10 @@ function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
 // ─── Job History Panel ────────────────────────────────────────────────────────
 
 function JobHistoryPanel({ onLoadJob, timezone }: { onLoadJob: (job: AnalysisJob, tabIndex: number) => void; timezone: string }) {
+  const queryClient = useQueryClient();
+  const { notifyError } = useApiFeedback();
   const [open, setOpen] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const { data: jobs, refetch, isLoading, isFetching, isError } = useQuery({
     queryKey: ["analysis", "jobs"],
     queryFn: listJobs,
@@ -1269,12 +1346,25 @@ function JobHistoryPanel({ onLoadJob, timezone }: { onLoadJob: (job: AnalysisJob
                 )}
                 {(jobs ?? []).map((j) => {
                   const done = j.status === "DONE";
-                  const openJob = () => onLoadJob(j, TAB_INDEX[j.job_type] ?? 0);
+                  // The list leaves results out; fetch this job's in full to open it.
+                  const openJob = async () => {
+                    if (openingId) return;
+                    setOpeningId(j.job_id);
+                    try {
+                      const full = await queryClient.fetchQuery({ queryKey: ["analysis", "job", j.job_id], queryFn: () => getJob(j.job_id), staleTime: Infinity });
+                      onLoadJob(full, TAB_INDEX[j.job_type] ?? 0);
+                    } catch (err) {
+                      notifyError("Job could not be opened", err);
+                    } finally {
+                      setOpeningId(null);
+                    }
+                  };
                   const lane = typeof j.payload?.lane === "string" ? j.payload.lane : null;
                   return (
-                  <tr key={j.job_id} className={done ? "is-clickable" : undefined} tabIndex={done ? 0 : undefined}
+                  <tr key={j.job_id} className={done ? `is-clickable${openingId === j.job_id ? " is-opening" : ""}` : undefined} tabIndex={done ? 0 : undefined}
+                    aria-busy={openingId === j.job_id || undefined}
                     onClick={done ? openJob : undefined}
-                    onKeyDown={done ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openJob(); } } : undefined}>
+                    onKeyDown={done ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void openJob(); } } : undefined}>
                     <td>
                       {JOB_TYPE_LABELS[j.job_type] ?? j.job_type}
                       {j.status === "FAILED" && j.error && <div className="analysis-history-error">{j.error}</div>}
