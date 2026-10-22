@@ -6,7 +6,9 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
 import { useCommunities } from "../../hooks/useCommunities";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { Line, XAxis, YAxis, Tooltip } from "recharts";
+import { TimeseriesPlot } from "../../components/charts/TimeseriesPlot";
+import { KPI_TOOLTIP_STYLE } from "../../components/kpi/chartTheme";
 import { BarChart3, Search, Loader2, TrendingUp, TrendingDown, Download } from "lucide-react";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 import { KpiSegmented } from "../../components/kpi/KpiSegmented";
@@ -301,29 +303,27 @@ export function AggregateReportPage() {
         {chartData.length < 2 ? (
           <p className="kpi-text-soft">Not enough data points to show a trend.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={chartData} margin={{ left: -10, right: 10, top: 10, bottom: 0 }}>
-              <XAxis dataKey="label" fontSize={10} tickMargin={8} stroke="var(--text-soft)" />
-              <YAxis
-                fontSize={10}
-                tickMargin={5}
-                stroke="var(--text-soft)"
-                width={60}
-                tickFormatter={(val) => {
-                  if (Math.abs(val) >= 1000) return (val / 1000).toFixed(1) + "k";
-                  if (Math.abs(val) < 0.01 && val !== 0) return val.toExponential(1);
-                  return val.toString();
-                }}
-              />
-              <Tooltip
-                contentStyle={{ borderRadius: 10, border: "1px solid var(--line)", background: "var(--bg-elev)", fontSize: 12, color: "var(--text)" }}
-                itemStyle={{ color: "var(--brand)", fontWeight: 600 }}
-                labelStyle={{ color: "var(--text-soft)", marginBottom: 4 }}
-                formatter={(value: any) => [`${formatNumber(Number(value))}${chartUnit ? ` ${chartUnit}` : ""}`, activeChart?.kpi.replace("KPI", "")]}
-              />
-              <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <TimeseriesPlot data={chartData} height={220} margin={{ left: -10, right: 10, top: 10, bottom: 0 }}>
+            <XAxis dataKey="label" fontSize={10} tickMargin={8} stroke="var(--text-soft)" />
+            <YAxis
+              fontSize={10}
+              tickMargin={5}
+              stroke="var(--text-soft)"
+              width={60}
+              tickFormatter={(val) => {
+                if (Math.abs(val) >= 1000) return (val / 1000).toFixed(1) + "k";
+                if (Math.abs(val) < 0.01 && val !== 0) return val.toExponential(1);
+                return val.toString();
+              }}
+            />
+            <Tooltip
+              contentStyle={KPI_TOOLTIP_STYLE}
+              itemStyle={{ color: "var(--brand)", fontWeight: 600 }}
+              labelStyle={{ color: "var(--text-soft)", marginBottom: 4 }}
+              formatter={(value: any) => [`${formatNumber(Number(value))}${chartUnit ? ` ${chartUnit}` : ""}`, activeChart?.kpi.replace("KPI", "")]}
+            />
+            <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
+          </TimeseriesPlot>
         )}
       </Modal>
     </div>

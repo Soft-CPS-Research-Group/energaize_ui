@@ -5,10 +5,9 @@ import { fetchKpiComparison } from "../../api/kpiApi";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { useCommunities } from "../../hooks/useCommunities";
 import { kpiDisplayName, kpiSelectOptions, useKpiMetadata } from "../../hooks/useKpiMetadata";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer,
-} from "recharts";
+import { Line, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import { TimeseriesPlot } from "../../components/charts/TimeseriesPlot";
+import { KPI_AXIS_TICK, KPI_TOOLTIP_STYLE } from "../../components/kpi/chartTheme";
 import { Search, Loader2, Calendar } from "lucide-react";
 import type { CompareResponse } from "../../api/kpiApi";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
@@ -255,49 +254,46 @@ export function ComparePage() {
                     <h3>{kpiDisplayName(meta, kpiName)} {meta ? <KpiInfo meta={meta} /> : null}</h3>
                     <p>Hours since the start of each period, so periods with different dates overlay.</p>
                   </header>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
-                      <XAxis
-                        dataKey="hour"
-                        tickFormatter={h => `+${h}h`}
-                        tick={{ fontSize: 11, fill: "var(--text-soft)" }}
-                      />
-                      <YAxis
-                        width={80}
-                        tick={{ fontSize: 11, fill: "var(--text-soft)" }}
-                        label={{ value: meta?.unit || "", angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "var(--text-soft)" }, offset: -10 }}
-                      />
-                      <Tooltip
-                        formatter={(value: any) => {
-                          if (typeof value === "number") {
-                            return [meta?.unit ? `${value.toFixed(2)} ${meta.unit}` : value.toFixed(2)];
-                          }
-                          return [value];
-                        }}
-                        labelFormatter={h => `Hour +${h}`}
-                        contentStyle={{ borderRadius: 10, fontSize: 12, backgroundColor: "var(--bg-elev)", borderColor: "var(--line)", color: "var(--text)" }}
-                      />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="Baseline"
-                        stroke="var(--text-soft)"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="Comparison"
-                        stroke="var(--brand)"
-                        strokeWidth={2}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <TimeseriesPlot data={chartData} height={280} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                    <XAxis
+                      dataKey="hour"
+                      tickFormatter={h => `+${h}h`}
+                      tick={KPI_AXIS_TICK}
+                    />
+                    <YAxis
+                      width={80}
+                      tick={KPI_AXIS_TICK}
+                      label={{ value: meta?.unit || "", angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "var(--text-soft)" }, offset: -10 }}
+                    />
+                    <Tooltip
+                      formatter={(value: any) => {
+                        if (typeof value === "number") {
+                          return [meta?.unit ? `${value.toFixed(2)} ${meta.unit}` : value.toFixed(2)];
+                        }
+                        return [value];
+                      }}
+                      labelFormatter={h => `Hour +${h}`}
+                      contentStyle={KPI_TOOLTIP_STYLE}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="Baseline"
+                      stroke="var(--text-soft)"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="Comparison"
+                      stroke="var(--brand)"
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </TimeseriesPlot>
                 </section>
               );
             })

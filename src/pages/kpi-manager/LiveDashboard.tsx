@@ -21,10 +21,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, ReferenceLine,
-} from "recharts";
+import { Area, Line, XAxis, YAxis, Tooltip, Legend, ReferenceLine } from "recharts";
+import { TimeseriesPlot } from "../../components/charts/TimeseriesPlot";
 import { fetchKpiHistory, KPI_API_BASE_URL } from "../../api/kpiApi";
 import type { LiveSnapshot } from "../../api/kpiApi";
 import {
@@ -211,74 +209,71 @@ function LiveQualityChart({
       </header>
 
       {points.length > 0 ? (
-        <ResponsiveContainer width="100%" height={200}>
-          <ComposedChart data={points} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
-            {/* Use the full ISO timestamp as dataKey so two points at the same
-                minute but different seconds never collapse onto the same position.
-                The tickFormatter converts it back to HH:MM for display. */}
-            <XAxis
-              dataKey="time"
-              tick={{ fontSize: 10, fill: "var(--text-soft)" }}
-              tickLine={false}
-              axisLine={false}
-              interval="preserveStartEnd"
-              height={18}
-              tickFormatter={toHHMM}
-            />
-            <YAxis
-              domain={[0, 1]}
-              tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`}
-              tick={{ fontSize: 10, fill: "var(--text-soft)" }}
-              tickLine={false}
-              axisLine={false}
-              width={42}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend verticalAlign="top" height={26} wrapperStyle={{ fontSize: "0.75rem" }} />
+        <TimeseriesPlot data={points} height={200} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+          {/* Use the full ISO timestamp as dataKey so two points at the same
+              minute but different seconds never collapse onto the same position.
+              The tickFormatter converts it back to HH:MM for display. */}
+          <XAxis
+            dataKey="time"
+            tick={{ fontSize: 10, fill: "var(--text-soft)" }}
+            tickLine={false}
+            axisLine={false}
+            interval="preserveStartEnd"
+            height={18}
+            tickFormatter={toHHMM}
+          />
+          <YAxis
+            domain={[0, 1]}
+            tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`}
+            tick={{ fontSize: 10, fill: "var(--text-soft)" }}
+            tickLine={false}
+            axisLine={false}
+            width={42}
+          />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend verticalAlign="top" height={26} wrapperStyle={{ fontSize: "0.75rem" }} />
 
-            {/* Authenticity: area, 0–1 */}
-            <Area
-              type="monotone"
-              dataKey="authenticity"
-              name="Authenticity"
-              stroke="var(--info)"
-              fill="var(--info)"
-              fillOpacity={0.12}
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-              connectNulls={false}
-            />
+          {/* Authenticity: area, 0–1 */}
+          <Area
+            type="monotone"
+            dataKey="authenticity"
+            name="Authenticity"
+            stroke="var(--info)"
+            fill="var(--info)"
+            fillOpacity={0.12}
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+            connectNulls={false}
+          />
 
-            {/* Validity: step line, binary 0/1 */}
-            <Line
-              type="stepAfter"
-              dataKey="validity"
-              name="Validity"
-              stroke="var(--ok)"
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-              connectNulls={false}
-            />
+          {/* Validity: step line, binary 0/1 */}
+          <Line
+            type="stepAfter"
+            dataKey="validity"
+            name="Validity"
+            stroke="var(--ok)"
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+            connectNulls={false}
+          />
 
-            {/* Dashed "Live" separator — x must match the full ISO timestamp dataKey */}
-            {liveFromKey && (
-              <ReferenceLine
-                x={liveFromKey}
-                stroke="var(--text-soft)"
-                strokeDasharray="4 4"
-                label={{
-                  value: "Live",
-                  fill: "var(--text-soft)",
-                  fontSize: 10,
-                  position: "insideTopRight",
-                }}
-              />
-            )}
-          </ComposedChart>
-        </ResponsiveContainer>
+          {/* Dashed "Live" separator — x must match the full ISO timestamp dataKey */}
+          {liveFromKey && (
+            <ReferenceLine
+              x={liveFromKey}
+              stroke="var(--text-soft)"
+              strokeDasharray="4 4"
+              label={{
+                value: "Live",
+                fill: "var(--text-soft)",
+                fontSize: 10,
+                position: "insideTopRight",
+              }}
+            />
+          )}
+        </TimeseriesPlot>
       ) : (
         <p className="kpi-text-soft">No quality data yet for today</p>
       )}

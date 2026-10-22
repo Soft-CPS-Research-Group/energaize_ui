@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Line, Tooltip, XAxis, YAxis } from "recharts";
+import { TimeseriesPlot } from "../charts/TimeseriesPlot";
+import { KPI_AXIS_TICK, KPI_TOOLTIP_STYLE } from "./chartTheme";
 import { format } from "date-fns";
 import { useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { KpiInfo } from "./KpiInfo";
@@ -63,45 +65,42 @@ export const KpiChart = React.memo(function KpiChart({ title, data, lines, kpiNa
         </div>
       </header>
       <div className="kpi-chart-body">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
-            <XAxis
-              dataKey="timestamp"
-              tickFormatter={(val) => formatTime(val, "MMM dd, HH:mm")}
-              minTickGap={30}
-              tick={{ fontSize: 11, fill: "var(--text-soft)" }}
+        <TimeseriesPlot data={data} height={320} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+          <XAxis
+            dataKey="timestamp"
+            tickFormatter={(val) => formatTime(val, "MMM dd, HH:mm")}
+            minTickGap={30}
+            tick={KPI_AXIS_TICK}
+          />
+          <YAxis
+            width={80}
+            tick={KPI_AXIS_TICK}
+            label={{ value: unit, angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "var(--text-soft)" }, offset: -10 }}
+          />
+          <Tooltip
+            contentStyle={KPI_TOOLTIP_STYLE}
+            itemStyle={{ color: "var(--text)" }}
+            formatter={(value: any, name: any) => [
+              typeof value === "number" ? `${value.toFixed(2)}${unit ? ` ${unit}` : ""}` : value,
+              name,
+            ]}
+            labelFormatter={(val) => formatTime(val, "PPp")}
+          />
+          {lines.map((key, i) => (
+            <Line
+              key={key}
+              type="monotone"
+              dataKey={key}
+              name={seriesLabel(key, kpiName)}
+              stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 5 }}
+              isAnimationActive={false}
+              hide={hidden[key]}
             />
-            <YAxis
-              width={80}
-              tick={{ fontSize: 11, fill: "var(--text-soft)" }}
-              label={{ value: unit, angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "var(--text-soft)" }, offset: -10 }}
-            />
-            <Tooltip
-              contentStyle={{ borderRadius: 10, fontSize: 12, backgroundColor: "var(--bg-elev)", borderColor: "var(--line)", color: "var(--text)" }}
-              itemStyle={{ color: "var(--text)" }}
-              formatter={(value: any, name: any) => [
-                typeof value === "number" ? `${value.toFixed(2)}${unit ? ` ${unit}` : ""}` : value,
-                name,
-              ]}
-              labelFormatter={(val) => formatTime(val, "PPp")}
-            />
-            {lines.map((key, i) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                name={seriesLabel(key, kpiName)}
-                stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 5 }}
-                isAnimationActive={false}
-                hide={hidden[key]}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+          ))}
+        </TimeseriesPlot>
       </div>
     </section>
   );
