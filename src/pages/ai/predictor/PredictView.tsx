@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   usePredictorStats,
   usePredictorHistory,
@@ -17,6 +17,7 @@ import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { buildPredictorTimeline } from "../../../utils/predictorTransforms";
 import type { ModelBackend } from "../../../api/predictorApi";
 import { useCountUp } from "../../../hooks/useCountUp";
+import { forecastAccuracy, type LaneAccuracy } from "./forecastAccuracy";
 import { currentSlotKey, formatAge, forecastNotices, hasForecast, minutesSince, nowLineSlot } from "./forecastStatus";
 import { inputNotices } from "./inputQuality";
 import { InputDataPanel } from "./InputDataPanel";
@@ -53,12 +54,25 @@ const LANE_COLORS: Record<"consumption" | "production", { actual: string; predic
 
 const MODEL_LABELS: Record<ModelBackend, string> = { xgboost: "XGBoost", lgbm: "LightGBM", lstm: "LSTM" };
 
+const SCORED =
+  "Scores every forecast made for the last 24 h of measured 15-minute slots, from the one issued just before each slot to the one issued a day ahead. The chip compares with the 24 h before.";
+const MAE_TIP = (lane: string) =>
+  `Mean Absolute Error for ${lane}: the average size of the forecast error, in kWh per 15-minute slot. ${SCORED} Lower is better.`;
+const RMSE_TIP = (lane: string) =>
+  `Root Mean Squared Error for ${lane}: like MAE, but large misses weigh more. ${SCORED} Lower is better.`;
+const SMAPE_TIP = (lane: string) =>
+  `Symmetric MAPE for ${lane}: 2×|measured−forecast| / (|measured|+|forecast|), from 0 to 200 %. Slots where both are about zero are left out, but a forecast above zero for a slot measured at zero still counts as 200 %. ${SCORED} Lower is better.`;
+
+const SLOT_MS = 15 * 60_000;
+
 // Error metric trend chip — lower error = improved (green)
 function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPercent?: boolean }) {
-  if (delta == null || Math.abs(delta) < (isPercent ? 0.05 : 0.0001)) return null;
+  if (delta == null) return null;
+  // Same precision as the card value; a change that rounds to zero is no change.
+  const amount = Math.abs(delta).toFixed(isPercent ? 1 : 3);
+  if (Number(amount) === 0) return null;
   const improved = delta < 0;
-  const abs = Math.abs(delta);
-  const label = isPercent ? abs.toFixed(1) + "%" : abs.toFixed(3) + " kWh";
+  const label = isPercent ? `${amount} pp` : `${amount} kWh`;
   return (
     <span
       className={`predictor-delta ${improved ? "improved" : "worsened"}`}
@@ -66,6 +80,36 @@ function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPerce
     >
       {improved ? "\u2193" : "\u2191"} {label}
     </span>
+  );
+}
+
+const formatKwh = (v: number) => `${v.toFixed(3)} kWh`;
+const formatPercent = (v: number) => `${v.toFixed(1)} %`;
+
+type AccuracyMetric = "mae" | "rmse" | "mape";
+
+/** One forecast accuracy card; the value counts to each new score of the same house. */
+function AccuracyCard({ label, tip, lane, metric, accuracy, houseId }: {
+  label: string;
+  tip: string;
+  lane: "consumption" | "production";
+  metric: AccuracyMetric;
+  accuracy: LaneAccuracy;
+  houseId: string | null;
+}) {
+  const isPercent = metric === "mape";
+  const { ref, cardRef } = useCountUp(accuracy[metric], isPercent ? formatPercent : formatKwh, { resetKey: houseId });
+  const basis = accuracy.n > 0
+    ? `${accuracy.n.toLocaleString("en-GB")} forecast values for ${accuracy.slots} measured slots of the last 24 h`
+    : "No forecast for a measured slot of the last 24 h yet";
+  return (
+    <div ref={cardRef} className="kpi">
+      <span className="predictor-kpi-label">{label}<InfoTip tip={tip} /></span>
+      <strong className={`predictor-kpi-value is-${lane}`} title={basis}>
+        <span ref={ref}>—</span>
+        <DeltaChip delta={accuracy[`${metric}Delta`]} isPercent={isPercent} />
+      </strong>
+    </div>
   );
 }
 
@@ -120,20 +164,19 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
   const isLoading = historyLoading || predictionsLoading;
   const isRefetching = !isLoading && (historyFetching || predFetching || histC.isFetching || histP.isFetching);
 
-  const predHistory = {
-    consumption: histC.data?.history ?? [],
-    production: histP.data?.history ?? [],
-  };
+  const predHistory = useMemo(
+    () => ({ consumption: histC.data?.history ?? [], production: histP.data?.history ?? [] }),
+    [histC.data, histP.data],
+  );
 
-  const { data: chartData, errors } = buildPredictorTimeline(history, predictions, predHistory);
-
-  // Animated accuracy values — must be called before any conditional returns
-  const { ref: cMaeRef,  dir: cMaeDir  } = useCountUp(errors.consumption.mae,  v => `${v.toFixed(3)} kWh`);
-  const { ref: cRmseRef, dir: cRmseDir } = useCountUp(errors.consumption.rmse, v => `${v.toFixed(3)} kWh`);
-  const { ref: cMapeRef, dir: cMapeDir } = useCountUp(errors.consumption.mape, v => `${v.toFixed(1)} %`);
-  const { ref: pMaeRef,  dir: pMaeDir  } = useCountUp(errors.production.mae,   v => `${v.toFixed(3)} kWh`);
-  const { ref: pRmseRef, dir: pRmseDir } = useCountUp(errors.production.rmse,  v => `${v.toFixed(3)} kWh`);
-  const { ref: pMapeRef, dir: pMapeDir } = useCountUp(errors.production.mape,  v => `${v.toFixed(1)} %`);
+  // Both builds walk every stored forecast run, so they only rerun when their data changes
+  // (and the scores when a new quarter-hour starts), not on every render.
+  const { data: chartData } = useMemo(
+    () => buildPredictorTimeline(history, predictions, predHistory),
+    [history, predictions, predHistory],
+  );
+  const quarterHour = Math.floor(Date.now() / SLOT_MS) * SLOT_MS;
+  const accuracy = useMemo(() => forecastAccuracy(history, predHistory, quarterHour), [history, predHistory, quarterHour]);
   const isConsumption = activeLane === "consumption" || activeLane === "both";
   const isProduction  = activeLane === "production"  || activeLane === "both";
 
@@ -275,50 +318,20 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         </div>
       )}
 
-      {/* Forecast accuracy (last 24 h, inverse-recency-weighted) */}
+      {/* Forecast accuracy over the last 24 h of measured slots */}
       <div className="kpi-grid predictor-kpi-grid predictor-kpi-grid--accuracy">
-        <div className={`kpi${cMaeDir !== "idle" ? ` kpi--animating-${cMaeDir}` : ""}`}>
-          <span className="predictor-kpi-label">Cons. MAE · 24 h ↓<InfoTip tip="Mean Absolute Error for consumption predictions — average magnitude of errors in kWh, inverse-recency-weighted across the last 24 h of forecast runs. Lower is better." /></span>
-          <strong className="predictor-kpi-value is-consumption">
-            <span ref={cMaeRef}>—</span>
-            <DeltaChip delta={errors.consumption.maeDelta} />
-          </strong>
-        </div>
-        <div className={`kpi${cRmseDir !== "idle" ? ` kpi--animating-${cRmseDir}` : ""}`}>
-          <span className="predictor-kpi-label">Cons. RMSE · 24 h ↓<InfoTip tip="Root Mean Squared Error for consumption — like MAE but penalises large individual errors more heavily. Lower is better." /></span>
-          <strong className="predictor-kpi-value is-consumption">
-            <span ref={cRmseRef}>—</span>
-            <DeltaChip delta={errors.consumption.rmseDelta} />
-          </strong>
-        </div>
-        <div className={`kpi${cMapeDir !== "idle" ? ` kpi--animating-${cMapeDir}` : ""}`}>
-          <span className="predictor-kpi-label">Cons. sMAPE · 24 h ↓<InfoTip tip="Symmetric MAPE for consumption — 2×|actual−pred| / (|actual|+|pred|), bounded 0–200%. Unlike standard MAPE it doesn’t blow up when actual is near zero, making it reliable across night-time low-consumption slots. Lower is better." /></span>
-          <strong className="predictor-kpi-value is-consumption">
-            <span ref={cMapeRef}>—</span>
-            <DeltaChip delta={errors.consumption.mapeDelta} isPercent />
-          </strong>
-        </div>
-        <div className={`kpi${pMaeDir !== "idle" ? ` kpi--animating-${pMaeDir}` : ""}`}>
-          <span className="predictor-kpi-label">Prod. MAE · 24 h ↓<InfoTip tip="Mean Absolute Error for production predictions — average magnitude of errors in kWh, inverse-recency-weighted across the last 24 h of forecast runs. Lower is better." /></span>
-          <strong className="predictor-kpi-value is-production">
-            <span ref={pMaeRef}>—</span>
-            <DeltaChip delta={errors.production.maeDelta} />
-          </strong>
-        </div>
-        <div className={`kpi${pRmseDir !== "idle" ? ` kpi--animating-${pRmseDir}` : ""}`}>
-          <span className="predictor-kpi-label">Prod. RMSE · 24 h ↓<InfoTip tip="Root Mean Squared Error for production — like MAE but penalises large individual errors more heavily. Lower is better." /></span>
-          <strong className="predictor-kpi-value is-production">
-            <span ref={pRmseRef}>—</span>
-            <DeltaChip delta={errors.production.rmseDelta} />
-          </strong>
-        </div>
-        <div className={`kpi${pMapeDir !== "idle" ? ` kpi--animating-${pMapeDir}` : ""}`}>
-          <span className="predictor-kpi-label">Prod. sMAPE · 24 h ↓<InfoTip tip="Symmetric MAPE for production — 2×|actual−pred| / (|actual|+|pred|), bounded 0–200%. Unlike standard MAPE it doesn’t blow up when actual is near zero, making it reliable across night-time zero-production slots. Lower is better." /></span>
-          <strong className="predictor-kpi-value is-production">
-            <span ref={pMapeRef}>—</span>
-            <DeltaChip delta={errors.production.mapeDelta} isPercent />
-          </strong>
-        </div>
+        <AccuracyCard houseId={selectedHouseId} lane="consumption" metric="mae" accuracy={accuracy.consumption}
+          label="Cons. MAE · 24 h ↓" tip={MAE_TIP("consumption")} />
+        <AccuracyCard houseId={selectedHouseId} lane="consumption" metric="rmse" accuracy={accuracy.consumption}
+          label="Cons. RMSE · 24 h ↓" tip={RMSE_TIP("consumption")} />
+        <AccuracyCard houseId={selectedHouseId} lane="consumption" metric="mape" accuracy={accuracy.consumption}
+          label="Cons. sMAPE · 24 h ↓" tip={SMAPE_TIP("consumption")} />
+        <AccuracyCard houseId={selectedHouseId} lane="production" metric="mae" accuracy={accuracy.production}
+          label="Prod. MAE · 24 h ↓" tip={MAE_TIP("production")} />
+        <AccuracyCard houseId={selectedHouseId} lane="production" metric="rmse" accuracy={accuracy.production}
+          label="Prod. RMSE · 24 h ↓" tip={RMSE_TIP("production")} />
+        <AccuracyCard houseId={selectedHouseId} lane="production" metric="mape" accuracy={accuracy.production}
+          label="Prod. sMAPE · 24 h ↓" tip={SMAPE_TIP("production")} />
       </div>
 
       {/* Forecast chart */}
