@@ -96,7 +96,13 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
     );
   };
   const { notifySuccess, notifyError } = useApiFeedback();
-  const [activeLane, setActiveLane] = useState<Lane>("consumption");
+  const [activeLane, setActiveLane] = useState<Lane>("both");
+  // Each house opens on both lanes.
+  const [laneHouseId, setLaneHouseId] = useState(selectedHouseId);
+  if (laneHouseId !== selectedHouseId) {
+    setLaneHouseId(selectedHouseId);
+    setActiveLane("both");
+  }
   const [scaleMode, setScaleMode] = useState<ScaleMode>("auto");
   const [bandsOnly, setBandsOnly] = useState(false);
   const [showBands, setShowBands] = useState(true);
