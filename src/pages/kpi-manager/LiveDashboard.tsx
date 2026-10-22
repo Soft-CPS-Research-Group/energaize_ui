@@ -28,10 +28,13 @@ import {
 import { fetchKpiHistory, KPI_API_BASE_URL } from "../../api/kpiApi";
 import type { LiveSnapshot } from "../../api/kpiApi";
 import {
-  Zap, Sun, Battery, Car, DollarSign,
+  Zap, Sun, Battery, Car, Euro,
   TrendingUp, TrendingDown, Minus, RefreshCw, Activity,
   ShieldCheck, ShieldAlert, AlertTriangle, Wifi, WifiOff,
 } from "lucide-react";
+import { Badge } from "../../components/ui/Badge";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { KpiError } from "../../components/kpi/KpiStates";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -96,25 +99,20 @@ const isToday = (isoTs: string): boolean => {
 // ── MetricRow ─────────────────────────────────────────────────────────────────
 
 function MetricRow({
-  icon, label, value, unit, accent,
+  icon, label, value, unit, tone,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   unit: string;
-  accent?: string;
+  tone?: "ok" | "warn";
 }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "0.35rem 0", borderBottom: "1px solid var(--line)",
-    }}>
-      <span style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8rem", color: "var(--text-soft)" }}>
-        {icon}{label}
-      </span>
-      <span style={{ fontWeight: 700, fontSize: "0.88rem", color: accent ?? "var(--text)" }}>
-        {value} <span style={{ fontWeight: 400, fontSize: "0.75rem", opacity: 0.7 }}>{unit}</span>
-      </span>
+    <div className="kpi-live-metric">
+      <dt>{icon}{label}</dt>
+      <dd className={tone ? `kpi-text-${tone}` : undefined}>
+        {value} <small>{unit}</small>
+      </dd>
     </div>
   );
 }
@@ -122,81 +120,49 @@ function MetricRow({
 // ── BuildingCard ──────────────────────────────────────────────────────────────
 
 function BuildingCard({ snap }: { snap: LiveSnapshot }) {
-  const netColor =
-    snap.net_grid_kwh > 0 ? "var(--brand)" :
-      snap.net_grid_kwh < 0 ? "#22c55e" : "var(--text)";
+  // Importing from the grid is the normal state; exporting is highlighted as good
+  const netTone = snap.net_grid_kwh < 0 ? "kpi-text-ok" : "";
   const NetIcon = snap.net_grid_kwh > 0 ? TrendingUp : snap.net_grid_kwh < 0 ? TrendingDown : Minus;
 
   const qualityOk = snap.is_physically_valid && snap.authenticity_ratio >= 0.9;
   const qualityWarn = !snap.is_physically_valid || snap.authenticity_ratio < 0.6;
 
   return (
-    <div style={{
-      background: "var(--bg-elev)", border: "1px solid var(--line)",
-      borderRadius: "0.75rem", padding: "1rem",
-      display: "flex", flexDirection: "column", gap: "0.1rem", minWidth: 0,
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
+    <article className="kpi-live-card">
+      <header className="kpi-live-card-head">
         <div>
-          <div style={{ fontWeight: 700, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px" }}>
-            {snap.building}
-          </div>
-          <div style={{ fontSize: "0.7rem", color: "var(--text-soft)" }}>
-            {fmtTime(snap.timestamp)}
-          </div>
+          <h3 title={snap.building}>{snap.building}</h3>
+          <time dateTime={snap.timestamp}>{fmtTime(snap.timestamp)}</time>
         </div>
-        {/* Quality badge */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: "0.25rem",
-          padding: "0.2rem 0.5rem", borderRadius: "999px", fontSize: "0.7rem", fontWeight: 600,
-          background: qualityWarn ? "rgba(239,68,68,0.12)" : qualityOk ? "rgba(34,197,94,0.12)" : "rgba(234,179,8,0.12)",
-          color: qualityWarn ? "#ef4444" : qualityOk ? "#22c55e" : "#eab308",
-        }}>
+        <Badge tone={qualityWarn ? "danger" : qualityOk ? "success" : "warning"}>
           {qualityWarn ? <ShieldAlert size={11} /> : qualityOk ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />}
-          {qualityWarn ? "Degraded" : qualityOk ? "Good" : "Warning"}
-        </div>
+          {" "}{qualityWarn ? "Degraded" : qualityOk ? "Good" : "Warning"}
+        </Badge>
+      </header>
+
+      <div className={`kpi-live-net ${netTone}`}>
+        <NetIcon size={18} aria-hidden="true" />
+        <strong>{fmt(snap.net_grid_kwh, 2)}</strong>
+        <span>kWh net</span>
       </div>
 
-      {/* Net grid – prominent */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        gap: "0.5rem", padding: "0.6rem 0", marginBottom: "0.35rem",
-        background: "var(--bg)", borderRadius: "0.5rem",
-      }}>
-        <NetIcon size={18} color={netColor} />
-        <span style={{ fontSize: "1.4rem", fontWeight: 800, color: netColor }}>
-          {fmt(snap.net_grid_kwh, 2)}
-        </span>
-        <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>kWh net</span>
-      </div>
-
-      <MetricRow icon={<Zap size={12} />} label="Grid import" value={fmt(snap.grid_import_kwh)} unit="kWh" />
-      <MetricRow icon={<Zap size={12} />} label="Grid export" value={fmt(snap.grid_export_kwh)} unit="kWh" accent="#22c55e" />
-      <MetricRow icon={<Sun size={12} />} label="Solar" value={fmt(snap.solar_kwh)} unit="kWh" accent="#f59e0b" />
-      <MetricRow icon={<Battery size={12} />} label="Battery SoC" value={snap.battery_soc_avg != null ? `${(snap.battery_soc_avg * 100).toFixed(1)}` : "—"} unit="%" />
-      <MetricRow icon={<Car size={12} />} label="EV charging" value={fmt(snap.ev_charging_kw)} unit={`kW · ${snap.active_ev_sessions} sess`} />
-      {snap.energy_price_eur_kwh != null && (
-        <MetricRow icon={<DollarSign size={12} />} label="Price" value={fmt(snap.energy_price_eur_kwh, 4)} unit="€/kWh" />
-      )}
-
-      {/* Quality footer */}
-      <div style={{ marginTop: "0.4rem", display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.68rem", padding: "0.15rem 0.4rem", borderRadius: "999px", background: "var(--bg)", color: "var(--text-soft)" }}>
-          Auth: {(snap.authenticity_ratio * 100).toFixed(0)}%
-        </span>
-        {snap.has_generated_data && (
-          <span style={{ fontSize: "0.68rem", padding: "0.15rem 0.4rem", borderRadius: "999px", background: "rgba(234,179,8,0.15)", color: "#eab308" }}>
-            ⚠ generated data
-          </span>
+      <dl className="kpi-live-metrics">
+        <MetricRow icon={<Zap size={12} />} label="Grid import" value={fmt(snap.grid_import_kwh)} unit="kWh" />
+        <MetricRow icon={<Zap size={12} />} label="Grid export" value={fmt(snap.grid_export_kwh)} unit="kWh" tone="ok" />
+        <MetricRow icon={<Sun size={12} />} label="Solar" value={fmt(snap.solar_kwh)} unit="kWh" tone="warn" />
+        <MetricRow icon={<Battery size={12} />} label="Battery SoC" value={snap.battery_soc_avg != null ? `${(snap.battery_soc_avg * 100).toFixed(1)}` : "—"} unit="%" />
+        <MetricRow icon={<Car size={12} />} label="EV charging" value={fmt(snap.ev_charging_kw)} unit={`kW · ${snap.active_ev_sessions} sess`} />
+        {snap.energy_price_eur_kwh != null && (
+          <MetricRow icon={<Euro size={12} />} label="Price" value={fmt(snap.energy_price_eur_kwh, 4)} unit="€/kWh" />
         )}
-        {!snap.is_physically_valid && (
-          <span style={{ fontSize: "0.68rem", padding: "0.15rem 0.4rem", borderRadius: "999px", background: "rgba(239,68,68,0.12)", color: "#ef4444" }}>
-            ✕ invalid sensor
-          </span>
-        )}
-      </div>
-    </div>
+      </dl>
+
+      <footer className="kpi-live-card-foot">
+        <Badge>Authenticity {(snap.authenticity_ratio * 100).toFixed(0)}%</Badge>
+        {snap.has_generated_data && <Badge tone="warning">Generated data</Badge>}
+        {!snap.is_physically_valid && <Badge tone="danger">Invalid sensor</Badge>}
+      </footer>
+    </article>
   );
 }
 
@@ -214,20 +180,13 @@ function LiveQualityChart({
     // label is the full ISO timestamp (dataKey="time")
     const pt = points.find(p => p.time === label);
     return (
-      <div style={{
-        background: "var(--bg-elev)", border: "1px solid var(--line)",
-        borderRadius: 8, padding: "8px 12px", fontSize: "0.8rem",
-      }}>
-        <p style={{ margin: "0 0 6px", color: "var(--text-soft)", fontWeight: 500 }}>
+      <div className="kpi-chart-tooltip">
+        <p className="kpi-chart-tooltip-title">
           {pt ? toHHMM(pt.time) : label}
-          {pt?.isLive && (
-            <span style={{ marginLeft: 6, color: "#22c55e", fontWeight: 600, fontSize: "0.7rem" }}>
-              ● Live
-            </span>
-          )}
+          {pt?.isLive && <span className="kpi-text-ok"> · Live</span>}
         </p>
         {payload.map((p: any) => (
-          <p key={p.dataKey} style={{ margin: "2px 0", color: p.color }}>
+          <p key={p.dataKey} style={{ color: p.color }}>
             {p.name}:{" "}
             <strong>
               {typeof p.value === "number" ? `${(p.value * 100).toFixed(1)}%` : "—"}
@@ -244,29 +203,17 @@ function LiveQualityChart({
   const liveFromLabel = liveFromTime ? toHHMM(liveFromTime) : null;
 
   return (
-    <div className="panel" style={{ padding: "1rem" }}>
-      {/* Chart header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-        <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{building}</span>
-        {liveFromLabel && (
-          <span style={{
-            fontSize: "0.7rem", padding: "0.15rem 0.45rem", borderRadius: "999px",
-            background: "rgba(34,197,94,0.12)", color: "#22c55e", fontWeight: 600,
-          }}>
-            ● Live since {liveFromLabel}
-          </span>
-        )}
-        {points.length === 0 && (
-          <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-            Awaiting first payload…
-          </span>
-        )}
-      </div>
+    <section className="panel kpi-live-chart" aria-label={`Data quality for ${building}`}>
+      <header className="kpi-live-chart-head">
+        <h3>{building}</h3>
+        {liveFromLabel && <Badge tone="success">Live since {liveFromLabel}</Badge>}
+        {points.length === 0 && <span className="kpi-text-soft">Awaiting first payload…</span>}
+      </header>
 
       {points.length > 0 ? (
         <ResponsiveContainer width="100%" height={200}>
           <ComposedChart data={points} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.12} vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
             {/* Use the full ISO timestamp as dataKey so two points at the same
                 minute but different seconds never collapse onto the same position.
                 The tickFormatter converts it back to HH:MM for display. */}
@@ -290,13 +237,13 @@ function LiveQualityChart({
             <Tooltip content={<CustomTooltip />} />
             <Legend verticalAlign="top" height={26} wrapperStyle={{ fontSize: "0.75rem" }} />
 
-            {/* Authenticity: Area (blue, 0–1) */}
+            {/* Authenticity: area, 0–1 */}
             <Area
               type="monotone"
               dataKey="authenticity"
               name="Authenticity"
-              stroke="#3b82f6"
-              fill="#3b82f6"
+              stroke="var(--info)"
+              fill="var(--info)"
               fillOpacity={0.12}
               strokeWidth={2}
               dot={false}
@@ -304,12 +251,12 @@ function LiveQualityChart({
               connectNulls={false}
             />
 
-            {/* Validity: Step line (green, binary 0/1) */}
+            {/* Validity: step line, binary 0/1 */}
             <Line
               type="stepAfter"
               dataKey="validity"
               name="Validity"
-              stroke="#22c55e"
+              stroke="var(--ok)"
               strokeWidth={2}
               dot={false}
               isAnimationActive={false}
@@ -333,14 +280,9 @@ function LiveQualityChart({
           </ComposedChart>
         </ResponsiveContainer>
       ) : (
-        <div style={{
-          height: 60, display: "flex", alignItems: "center", justifyContent: "center",
-          color: "var(--text-soft)", fontSize: "0.8rem",
-        }}>
-          No quality data yet for today
-        </div>
+        <p className="kpi-text-soft">No quality data yet for today</p>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -531,11 +473,10 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
 
   if (buildings.length === 0) {
     return (
-      <div className="panel empty-state">
-        <Activity size={48} style={{ opacity: 0.5, marginBottom: "1rem" }} />
-        <p style={{ fontSize: "1.2rem", fontWeight: "bold" }}>No buildings selected</p>
-        <p className="mt-1">Select at least one building to view live telemetry.</p>
-      </div>
+      <EmptyState
+        title="No buildings selected"
+        message="Select at least one building to view live telemetry."
+      />
     );
   }
 
@@ -547,95 +488,50 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
   );
   // Only show quality chart section for buildings that actually have data points
   const displayBuildings = buildings.filter(b => (qualityData[b]?.length ?? 0) > 0);
+  const streaming = displaySnapshots.length > 0 && !error;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-
-      {/* ── Header panel ──────────────────────────────────────────────────── */}
-      <div className="panel" style={{ marginBottom: 0 }}>
-        <div style={{
-          display: "flex", justifyContent: "space-between",
-          alignItems: "center", flexWrap: "wrap", gap: "0.5rem",
-          marginBottom: snapshots.length > 0 ? "1rem" : 0,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{
-              display: "inline-block", width: 8, height: 8, borderRadius: "50%",
-              background: error ? "#ef4444" : snapshots.length > 0 ? "#22c55e" : "#6b7280",
-              boxShadow: snapshots.length > 0 && !error
-                ? "0 0 0 3px rgba(34,197,94,0.25)" : "none",
-              animation: snapshots.length > 0 && !error ? "pulse 2s infinite" : "none",
-            }} />
-            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>Live Telemetry</span>
+    <div className="kpi-results">
+      <section className="panel kpi-live" aria-label="Live telemetry">
+        <header className="kpi-live-head">
+          <h2>
+            <span className={`kpi-live-dot${streaming ? " is-streaming" : error ? " is-error" : ""}`} aria-hidden="true" />
+            Live telemetry
+          </h2>
+          <div className="kpi-live-status">
+            {lastUpdated && <span className="kpi-text-soft">Updated {fmtTime(lastUpdated.toISOString())}</span>}
+            <Badge tone={sseStatus === "error" ? "danger" : sseStatus === "connected" ? "success" : "neutral"}>
+              {sseStatus === "connected" ? <Wifi size={12} /> : sseStatus === "error" ? <WifiOff size={12} /> : <RefreshCw size={12} className="animate-spin" />}
+              {" "}{sseStatus === "connected" ? "Connected" : sseStatus === "error" ? "Connection error" : "Connecting…"}
+            </Badge>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            {lastUpdated && (
-              <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-                Updated {fmtTime(lastUpdated.toISOString())}
-              </span>
-            )}
-          <div style={{
-              display: "flex", alignItems: "center", gap: "0.3rem",
-              padding: "0.25rem 0.6rem", borderRadius: "0.4rem", fontSize: "0.75rem",
-              border: `1px solid ${sseStatus === "error" ? "#ef4444" : sseStatus === "connected" ? "rgba(34,197,94,0.4)" : "var(--line)"}`,
-              background: sseStatus === "error" ? "rgba(239,68,68,0.08)" : sseStatus === "connected" ? "rgba(34,197,94,0.08)" : "var(--bg-elev)",
-              color: sseStatus === "error" ? "#ef4444" : sseStatus === "connected" ? "#22c55e" : "var(--text-soft)",
-            }}>
-              {sseStatus === "connected" ? (
-                <Wifi size={12} />
-              ) : sseStatus === "error" ? (
-                <WifiOff size={12} />
-              ) : (
-                <RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }} />
-              )}
-              {sseStatus === "connected" ? "Connected" : sseStatus === "error" ? "Connection Error" : "Connecting…"}
-            </div>
-          </div>
-        </div>
+        </header>
 
-        {error && (
-          <p style={{ color: "#ef4444", fontSize: "0.8rem", margin: 0 }}>{error}</p>
-        )}
+        {error && <KpiError message={error} />}
 
         {!error && displaySnapshots.length === 0 && !loading && (
-          <p style={{ color: "var(--text-soft)", fontSize: "0.82rem", margin: 0 }}>
-            Waiting for first Percepta payload… Live data will appear here once the
-            RabbitMQ consumer receives a message for the selected buildings.
+          <p className="kpi-text-soft">
+            Waiting for the first Percepta payload. Live data appears here once a message
+            arrives for the selected buildings.
           </p>
         )}
 
-        {/* ── Building cards ───────────────────────────────────────────────── */}
         {displaySnapshots.length > 0 && (
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-            gap: "0.75rem",
-          }}>
+          <div className="kpi-live-grid">
             {displaySnapshots.map(snap => (
               <BuildingCard key={snap.building} snap={snap} />
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* ── Quality KPI charts ────────────────────────────────────────────── */}
       {displayBuildings.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {/* Section header */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Activity size={16} />
-            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>
-              Data Quality — Today
-            </span>
-            {historyLoading && (
-              <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-                Loading history…
-              </span>
-            )}
-            <span style={{ fontSize: "0.72rem", color: "var(--text-soft)", marginLeft: "auto" }}>
-              Historical (hourly) + Live (30 s)
-            </span>
-          </div>
+        <section className="kpi-results" aria-label="Data quality today">
+          <header className="kpi-live-section-head">
+            <h2><Activity size={16} aria-hidden="true" /> Data quality today</h2>
+            {historyLoading && <span className="kpi-text-soft">Loading history…</span>}
+            <span className="kpi-text-soft">Hourly history + live payloads</span>
+          </header>
 
           {displayBuildings.map(building => (
             <LiveQualityChart
@@ -645,19 +541,8 @@ export function LiveDashboard({ community, buildings, isActive = true }: LiveDas
               liveFromTime={liveFromTime[building] ?? null}
             />
           ))}
-        </div>
+        </section>
       )}
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,0.25); }
-          50%       { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
