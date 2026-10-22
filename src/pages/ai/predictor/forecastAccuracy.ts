@@ -5,16 +5,14 @@ const SLOT_MS = 15 * 60_000;
 const WINDOW_SLOTS = 96;
 /** Both windows need half a day of measured slots before they are compared. */
 const MIN_SLOTS_FOR_DELTA = 48;
-/** sMAPE skips slots where measured and forecast are both about zero (kWh per slot). */
-const SMAPE_MIN_LEVEL = 0.01;
 
 export interface LaneAccuracy {
   /** Mean absolute error in kWh per 15-min slot. */
   mae: number | null;
   /** Root mean squared error in kWh per 15-min slot. */
   rmse: number | null;
-  /** Symmetric MAPE (0–200 %). */
-  mape: number | null;
+  /** Weighted absolute percentage error: total absolute error over total measured energy, in %. */
+  wape: number | null;
   /** Forecast values scored. */
   n: number;
   /** Measured slots those values were scored against. */
@@ -22,7 +20,7 @@ export interface LaneAccuracy {
   /** Current minus previous 24 h: negative = lower error. Null when either window is too thin. */
   maeDelta: number | null;
   rmseDelta: number | null;
-  mapeDelta: number | null;
+  wapeDelta: number | null;
 }
 
 export interface ForecastAccuracy {
@@ -38,23 +36,23 @@ function parseUtc(ts: string): number {
 interface WindowSums {
   abs: number;
   sq: number;
-  pct: number;
-  nPct: number;
+  measured: number;
   n: number;
   seen: Uint8Array;
 }
 
 function emptySums(): WindowSums {
-  return { abs: 0, sq: 0, pct: 0, nPct: 0, n: 0, seen: new Uint8Array(WINDOW_SLOTS) };
+  return { abs: 0, sq: 0, measured: 0, n: 0, seen: new Uint8Array(WINDOW_SLOTS) };
 }
 
 function scores(sums: WindowSums) {
   const slots = sums.seen.reduce((count, flag) => count + flag, 0);
-  if (sums.n === 0) return { mae: null, rmse: null, mape: null, n: 0, slots };
+  if (sums.n === 0) return { mae: null, rmse: null, wape: null, n: 0, slots };
   return {
     mae: sums.abs / sums.n,
     rmse: Math.sqrt(sums.sq / sums.n),
-    mape: sums.nPct > 0 ? (sums.pct / sums.nPct) * 100 : null,
+    // A lane that measured no energy at all (no panels) has no percentage.
+    wape: sums.measured > 0 ? (sums.abs / sums.measured) * 100 : null,
     n: sums.n,
     slots,
   };
@@ -97,12 +95,8 @@ function laneAccuracy(entries: PredictionHistoryEntry[], actuals: PredictorHisto
       sums.abs += error;
       sums.sq += error * error;
       sums.n++;
+      sums.measured += Math.abs(actual);
       sums.seen[(slot - windowStart + WINDOW_SLOTS) % WINDOW_SLOTS] = 1;
-      const level = (Math.abs(actual) + Math.abs(forecast)) / 2;
-      if (level > SMAPE_MIN_LEVEL) {
-        sums.pct += error / level;
-        sums.nPct++;
-      }
     }
   }
 
@@ -114,7 +108,7 @@ function laneAccuracy(entries: PredictionHistoryEntry[], actuals: PredictorHisto
     ...latest,
     maeDelta: delta(latest.mae, before.mae),
     rmseDelta: delta(latest.rmse, before.rmse),
-    mapeDelta: delta(latest.mape, before.mape),
+    wapeDelta: delta(latest.wape, before.wape),
   };
 }
 

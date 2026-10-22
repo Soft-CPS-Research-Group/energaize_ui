@@ -60,8 +60,8 @@ const MAE_TIP = (lane: string) =>
   `Mean Absolute Error for ${lane}: the average size of the forecast error, in kWh per 15-minute slot. ${SCORED} Lower is better.`;
 const RMSE_TIP = (lane: string) =>
   `Root Mean Squared Error for ${lane}: like MAE, but large misses weigh more. ${SCORED} Lower is better.`;
-const SMAPE_TIP = (lane: string) =>
-  `Symmetric MAPE for ${lane}: 2×|measured−forecast| / (|measured|+|forecast|), from 0 to 200 %. Slots where both are about zero are left out, but a forecast above zero for a slot measured at zero still counts as 200 %. ${SCORED} Lower is better.`;
+const WAPE_TIP = (lane: string) =>
+  `Weighted Absolute Percentage Error for ${lane}: the total forecast error as a share of the energy measured, Σ|measured−forecast| / Σ measured. Unlike MAPE or sMAPE it stays meaningful for slots measured at zero, such as production at night. ${SCORED} Lower is better.`;
 
 const SLOT_MS = 15 * 60_000;
 
@@ -86,7 +86,7 @@ function DeltaChip({ delta, isPercent = false }: { delta: number | null; isPerce
 const formatKwh = (v: number) => `${v.toFixed(3)} kWh`;
 const formatPercent = (v: number) => `${v.toFixed(1)} %`;
 
-type AccuracyMetric = "mae" | "rmse" | "mape";
+type AccuracyMetric = "mae" | "rmse" | "wape";
 
 /** One forecast accuracy card; the value counts to each new score of the same house. */
 function AccuracyCard({ label, tip, lane, metric, accuracy, houseId }: {
@@ -97,7 +97,7 @@ function AccuracyCard({ label, tip, lane, metric, accuracy, houseId }: {
   accuracy: LaneAccuracy;
   houseId: string | null;
 }) {
-  const isPercent = metric === "mape";
+  const isPercent = metric === "wape";
   const { ref, cardRef } = useCountUp(accuracy[metric], isPercent ? formatPercent : formatKwh, { resetKey: houseId });
   const basis = accuracy.n > 0
     ? `${accuracy.n.toLocaleString("en-GB")} forecast values for ${accuracy.slots} measured slots of the last 24 h`
@@ -324,14 +324,14 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
           label="Cons. MAE · 24 h ↓" tip={MAE_TIP("consumption")} />
         <AccuracyCard houseId={selectedHouseId} lane="consumption" metric="rmse" accuracy={accuracy.consumption}
           label="Cons. RMSE · 24 h ↓" tip={RMSE_TIP("consumption")} />
-        <AccuracyCard houseId={selectedHouseId} lane="consumption" metric="mape" accuracy={accuracy.consumption}
-          label="Cons. sMAPE · 24 h ↓" tip={SMAPE_TIP("consumption")} />
+        <AccuracyCard houseId={selectedHouseId} lane="consumption" metric="wape" accuracy={accuracy.consumption}
+          label="Cons. WAPE · 24 h ↓" tip={WAPE_TIP("consumption")} />
         <AccuracyCard houseId={selectedHouseId} lane="production" metric="mae" accuracy={accuracy.production}
           label="Prod. MAE · 24 h ↓" tip={MAE_TIP("production")} />
         <AccuracyCard houseId={selectedHouseId} lane="production" metric="rmse" accuracy={accuracy.production}
           label="Prod. RMSE · 24 h ↓" tip={RMSE_TIP("production")} />
-        <AccuracyCard houseId={selectedHouseId} lane="production" metric="mape" accuracy={accuracy.production}
-          label="Prod. sMAPE · 24 h ↓" tip={SMAPE_TIP("production")} />
+        <AccuracyCard houseId={selectedHouseId} lane="production" metric="wape" accuracy={accuracy.production}
+          label="Prod. WAPE · 24 h ↓" tip={WAPE_TIP("production")} />
       </div>
 
       {/* Forecast chart */}

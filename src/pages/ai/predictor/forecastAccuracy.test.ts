@@ -81,20 +81,27 @@ describe('Forecast accuracy cards', () => {
 
   it('has no scores without measured slots or forecasts', () => {
     expect(forecastAccuracy(undefined, { consumption: [], production: [] }, now).production).toEqual({
-      mae: null, rmse: null, mape: null, n: 0, slots: 0, maeDelta: null, rmseDelta: null, mapeDelta: null,
+      mae: null, rmse: null, wape: null, n: 0, slots: 0, maeDelta: null, rmseDelta: null, wapeDelta: null,
     });
   });
 
-  it('leaves slots where measured and forecast are both about zero out of sMAPE', () => {
+  it('gives WAPE as total error over total measured energy, so zero slots do not blow it up', () => {
     const history = {
-      consumption: [
+      consumption: [],
+      production: [
+        { timestamp: '2026-10-20T11:15:00', value: 0 },
         { timestamp: '2026-10-20T11:30:00', value: 0 },
         { timestamp: '2026-10-20T11:45:00', value: 1 },
       ],
-      production: [],
     };
-    const runs = { consumption: [{ target_time: '2026-10-20T11:30:00Z', prediction: [0.005, 1.5] }], production: [] };
-    // Only the second slot: |1 - 1.5| / 1.25 = 40 %.
-    expect(forecastAccuracy(history, runs, now).consumption.mape).toBeCloseTo(40, 6);
+    // Night slots forecast at 0.03 kWh and a day slot 0.24 kWh short: 0.3 kWh off out of 1 kWh.
+    const runs = { consumption: [], production: [{ target_time: '2026-10-20T11:15:00Z', prediction: [0.03, 0.03, 0.76] }] };
+    expect(forecastAccuracy(history, runs, now).production.wape).toBeCloseTo(30, 6);
+  });
+
+  it('has no WAPE for a lane that measured no energy', () => {
+    const history = { consumption: [], production: [{ timestamp: '2026-10-20T11:45:00', value: 0 }] };
+    const runs = { consumption: [], production: [{ target_time: '2026-10-20T11:45:00Z', prediction: [0.1] }] };
+    expect(forecastAccuracy(history, runs, now).production).toMatchObject({ mae: 0.1, wape: null, n: 1 });
   });
 });
