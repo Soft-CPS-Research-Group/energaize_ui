@@ -18,7 +18,7 @@ import { buildPredictorTimeline } from "../../../utils/predictorTransforms";
 import type { ModelBackend } from "../../../api/predictorApi";
 import { useCountUp } from "../../../hooks/useCountUp";
 import { forecastAccuracy, type LaneAccuracy } from "./forecastAccuracy";
-import { currentSlotKey, formatAge, forecastNotices, hasForecast, minutesSince, nowLineSlot } from "./forecastStatus";
+import { currentSlotKey, forecastTimeTitle, formatAge, forecastNotices, hasForecast, minutesSince, nowLineSlot } from "./forecastStatus";
 import { inputNotices } from "./inputQuality";
 import { InputDataPanel } from "./InputDataPanel";
 import {
@@ -299,7 +299,9 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         </div>
         <div className="predictor-status-item is-wide">
           <span>Forecast for {selectedHouseId}</span>
-          <strong>{forecastAge != null ? `Updated ${formatAge(forecastAge)}` : predictions ? "None yet" : "—"}</strong>
+          <strong title={forecastAge != null ? forecastTimeTitle(predictions!.target_time!, timezone) : undefined}>
+            {forecastAge != null ? `Updated ${formatAge(forecastAge)}` : predictions ? "None yet" : "—"}
+          </strong>
           {modelSummary ? <small>{modelSummary}</small> : null}
         </div>
       </section>
