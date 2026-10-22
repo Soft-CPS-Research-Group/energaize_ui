@@ -14,7 +14,8 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { InfoTip } from "../../../components/ui/InfoTip";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { getHouses } from "../../../api/predictorApi";
+import { usePredictorScope } from "../../../contexts/PredictorWorkspaceContext";
+import { houseInScope, scopeModels } from "./workspaceScope";
 import {
   listModels, getFeatureImportance, activateModel, deleteModel, isArchivedModel as isArchived, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
@@ -27,6 +28,16 @@ import {
   groupByHouse, modelsInUse, testDaysValid,
 } from "./analysisFormat";
 import { ArchiveCleanupModal, formatBytes } from "./ArchiveCleanup";
+
+/**
+ * The stored models of the workspace chosen in the top bar: a community sees its houses'
+ * models and the generic ones. Every tab shares the one cached list.
+ */
+function useWorkspaceModels() {
+  const { scope } = usePredictorScope();
+  const select = useCallback((models: ModelMeta[]) => scopeModels(models, scope), [scope]);
+  return useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000, select });
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -320,11 +331,8 @@ function ModelsInUsePanel({ models, onSelect }: { models: ModelMeta[]; onSelect:
 function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureImportance: (key: string) => void; timezone: string }) {
   const queryClient = useQueryClient();
   const { notifySuccess, notifyError } = useApiFeedback();
-  const { data: models, isLoading, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ["analysis", "models"],
-    queryFn: listModels,
-    staleTime: 60000,
-  });
+  const { data: models, isLoading, isFetching, isError, error, refetch } = useWorkspaceModels();
+  const { scope } = usePredictorScope();
   const [selected, setSelected] = useState<ModelMeta | null>(null);
 
   const promoteMutation = useMutation({
@@ -643,7 +651,7 @@ function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureI
         onCancel={() => setConfirmDelete(null)}
       />
 
-      <ArchiveCleanupModal open={showCleanup} houses={uniqueHouses} timezone={timezone} onClose={() => setShowCleanup(false)} />
+      <ArchiveCleanupModal open={showCleanup} houses={scope ? [...scope].sort() : uniqueHouses} scoped={scope != null} timezone={timezone} onClose={() => setShowCleanup(false)} />
     </div>
   );
 }
@@ -651,7 +659,7 @@ function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureI
 // ─── Tab 2: Feature Importance ────────────────────────────────────────────────
 
 function FeatureImportanceTab({ initialModelKey }: { initialModelKey?: string }) {
-  const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
+  const { data: models } = useWorkspaceModels();
   const [modelKey, setModelKey] = useState(initialModelKey ?? "");
   const [importanceType, setImportanceType] = useState<ImportanceType>("gain");
   const [result, setResult] = useState<FeatureImportanceResult | null>(null);
@@ -737,8 +745,8 @@ function FeatureImportanceTab({ initialModelKey }: { initialModelKey?: string })
 function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const queryClient = useQueryClient();
-  const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
-  const { data: houses } = useQuery({ queryKey: ["predictor", "houses_v2"], queryFn: getHouses, staleTime: 60000 });
+  const { data: models } = useWorkspaceModels();
+  const { houses } = usePredictorScope();
   const [houseId, setHouseId] = useState("");
   const [lane, setLane] = useState<Lane>("consumption");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -911,7 +919,7 @@ const SEGMENT_OPTIONS = ["weekday_weekend", "season", "hour_of_day"] as const;
 function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const queryClient = useQueryClient();
-  const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
+  const { data: models } = useWorkspaceModels();
   const [modelKey, setModelKey] = useState("");
   const [testDays, setTestDays] = useState(90);
   const [segments, setSegments] = useState<string[]>(["weekday_weekend"]);
@@ -1024,7 +1032,7 @@ const GAP_TYPE_OPTIONS = ["random", "consecutive"];
 function MissingDataTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const queryClient = useQueryClient();
-  const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
+  const { data: models } = useWorkspaceModels();
   const warmModels = (models ?? []).filter((m) => m.model_type === "warm" && m.house_id != null);
   const [modelKey, setModelKey] = useState("");
   const [gapRates, setGapRates] = useState<number[]>([0.05, 0.1, 0.2]);
@@ -1191,7 +1199,7 @@ interface ParamRow { id: number; param: HpParam; specType: "choice" | "range"; c
 function HpTuningTab({ initialJob }: { initialJob?: AnalysisJob }) {
   const { notifyError } = useApiFeedback();
   const queryClient = useQueryClient();
-  const { data: models } = useQuery({ queryKey: ["analysis", "models"], queryFn: listModels, staleTime: 60000 });
+  const { data: models } = useWorkspaceModels();
   const [modelKey, setModelKey] = useState("");
   const [strategy, setStrategy] = useState<"random" | "grid">("random");
   const [nTrials, setNTrials] = useState(20);
@@ -1391,6 +1399,9 @@ function JobHistoryPanel({ onLoadJob, timezone }: { onLoadJob: (job: AnalysisJob
     // Keep running jobs moving while the panel is open.
     refetchInterval: (query) => (query.state.data?.some((j) => j.status === "PENDING" || j.status === "RUNNING") ? 5000 : false),
   });
+  // A community workspace lists the jobs run on its houses.
+  const { scope } = usePredictorScope();
+  const shownJobs = (jobs ?? []).filter((j) => houseInScope(scope, typeof j.payload?.house_id === "string" ? j.payload.house_id : null));
 
   const TAB_INDEX: Record<string, number> = { compare: 2, segment: 3, "missing-data": 4, "hyperparameter-tune": 5 };
 
@@ -1414,10 +1425,10 @@ function JobHistoryPanel({ onLoadJob, timezone }: { onLoadJob: (job: AnalysisJob
                 <tr><th>Type</th><th>Status</th><th>House</th><th>Lane</th><th>Submitted</th><th>Progress</th><th>Job</th><th></th></tr>
               </thead>
               <tbody>
-                {(jobs ?? []).length === 0 && (
+                {shownJobs.length === 0 && (
                   <tr><td colSpan={8} className="analysis-table-empty">No analysis jobs yet.</td></tr>
                 )}
-                {(jobs ?? []).map((j) => {
+                {shownJobs.map((j) => {
                   const done = j.status === "DONE";
                   // The list leaves results out; fetch this job's in full to open it.
                   const openJob = async () => {

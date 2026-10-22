@@ -285,6 +285,22 @@ export async function pruneArchive(options: PruneOptions, dryRun: boolean): Prom
   });
 }
 
+/**
+ * Prune the archive of several houses, one request per house, merging the results.
+ * Used by community workspaces, which must not touch other communities' houses.
+ */
+export async function pruneArchiveOf(options: PruneOptions, houses: string[], dryRun: boolean): Promise<PruneResult> {
+  const results: PruneResult[] = [];
+  // One at a time: deletions on the predictor's disk are not worth running in parallel.
+  for (const house_id of houses) results.push(await pruneArchive({ ...options, house_id }, dryRun));
+  return {
+    dry_run: dryRun,
+    count: results.reduce((n, r) => n + r.count, 0),
+    freed_bytes: results.reduce((n, r) => n + r.freed_bytes, 0),
+    models: results.flatMap((r) => r.models),
+  };
+}
+
 /** Archived models live under old/ and are not in the production slot. */
 export function isArchivedModel(m: Pick<ModelMeta, "model_key">): boolean {
   return m.model_key.startsWith("old/");

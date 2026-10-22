@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getStats,
   getHealth,
@@ -64,6 +64,23 @@ export function usePredictorPredictions(houseId: string | null) {
     queryFn: () => getPredictions(houseId!),
     enabled: !!houseId,
     refetchInterval: 60000, // Every minute
+  });
+}
+
+/**
+ * The latest forecast of each house in `houses`, for counting a community's houses.
+ * Shares the cache of usePredictorPredictions; `null` while disabled.
+ */
+export function usePredictorPredictionsOf(houses: string[], enabled: boolean) {
+  return useQueries({
+    queries: houses.map((houseId) => ({
+      queryKey: ["predictor", "predictions_v2", houseId],
+      queryFn: () => getPredictions(houseId),
+      enabled,
+      refetchInterval: 60000,
+    })),
+    // undefined while a house loads, null when its forecast could not be read.
+    combine: (results) => (enabled ? results.map((r) => (r.isError ? null : r.data)) : null),
   });
 }
 

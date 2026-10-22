@@ -1,4 +1,5 @@
 import { TrainingWorkspaceProvider } from './contexts/TrainingWorkspaceContext';
+import { PredictorWorkspaceProvider } from './contexts/PredictorWorkspaceContext';
 import './styles/training-workspaces.css';
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -27,7 +28,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <AuthProvider>
         <UIProvider>
           <BrowserRouter>
-            <TrainingWorkspaceProvider><App /></TrainingWorkspaceProvider>
+            <TrainingWorkspaceProvider><PredictorWorkspaceProvider><App /></PredictorWorkspaceProvider></TrainingWorkspaceProvider>
           </BrowserRouter>
         </UIProvider>
       </AuthProvider>
