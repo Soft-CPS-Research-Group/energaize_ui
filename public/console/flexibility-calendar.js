@@ -122,10 +122,11 @@ document.addEventListener("click", (e) => {
     editSession().catch((e) => toast(e.message));
   }
 });
-editSession = async function (id = null, assetId = null, vehicleId = null) {
-  const event = id
+editSession = async function (id = null, assetId = null, vehicleId = null, occurrence = null) {
+  const sourceEvent = id
     ? connection.raw.events.find((e) => e.event_id === id)
     : null;
+  const event = occurrence && sourceEvent ? { ...sourceEvent, ...occurrence, mode: 'punctual', recurrence: null } : sourceEvent;
   if (event && !sessionVisible(event)) return;
   if (event?.mode === "forecast") {
     toast("Automatic forecasts are supplied by the system.");
@@ -171,7 +172,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null) {
   const end = new Date(start.getTime() + 7200000);
   const steps = ["Equipment", "Your needs", "Review"];
   drawer(
-    event ? "Edit request" : "New request",
+    occurrence ? "Edit this occurrence" : event ? "Edit request" : "New request",
     `<ol class="wizard-steps">${steps.map((s, i) => `<li><button type="button" data-flex-step="${i}" disabled><span>${i + 1}</span>${s}</button></li>`).join("")}</ol><div class="flex-request-body"><section data-flex-panel="0"><h3>What would you like to plan?</h3><p class="subtitle">Choose the equipment you want to make available.</p><div class="flex-type-choices">${Object.entries(
       flexKinds,
     )
@@ -193,6 +194,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null) {
   modal.parentElement.classList.add("wizard-backdrop");
   form.noValidate = true;
   const repeat = modal.querySelector("[data-repeat]");
+  if (occurrence) modal.querySelector('.repeat-plan').hidden = true;
   let recurrenceChanged = false;
   repeat.value = event?.recurrence?.freq || "";
   modal.querySelector("[data-repeat-interval]").value =
@@ -319,9 +321,9 @@ editSession = async function (id = null, assetId = null, vehicleId = null) {
         "starts_at",
         "ends_at",
         ...(kind === "ev_charging"
-          ? ["soc_at_departure", "soc_at_arrival", "vehicle_id"]
+          ? occurrence ? ["soc_at_departure"] : ["soc_at_departure", "soc_at_arrival", "vehicle_id"]
           : kind === "appliance"
-            ? [
+            ? occurrence ? ["duration_minutes", "energy_required_kwh"] : [
                 "duration_minutes",
                 "selected_power_profile",
                 "energy_required_kwh",
@@ -465,7 +467,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null) {
         ["Equipment", asset.data.name],
         [
           "Schedule",
-          repetition().mode === "recurrent"
+          occurrence ? 'This occurrence only' : repetition().mode === "recurrent"
             ? `Recurring · ${repetition().recurrence.freq.toLowerCase()}${repetition().recurrence.count ? " · " + repetition().recurrence.count + " occurrences" : ""}`
             : "One-off request",
         ],
@@ -561,6 +563,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null) {
       if (event) {
         payload = DomainForm.diff(originalInputs, payload);
         if (recurrenceChanged) Object.assign(payload, repetition());
+        if (!occurrence) payload.expected_revision = sourceEvent.revision;
       } else {
         payload = {
           ...payload,
@@ -572,7 +575,13 @@ editSession = async function (id = null, assetId = null, vehicleId = null) {
           ...(kind === "ev_charging" ? { charger_id: asset.id } : {}),
         };
       }
-      await B.request(
+      if (occurrence) {
+        if (!Object.keys(payload).length) { closeDrawer(); return; }
+        await B.request('flexibility', '/api/flexibility/events/' + event.event_id + '/exceptions', 'PUT', {
+          ...payload, occurrence_at: occurrence.occurrence_at, action: 'modify',
+          expected_event_revision: sourceEvent.revision, expected_exception_revision: occurrence.exception_revision || 0,
+        });
+      } else await B.request(
         "flexibility",
         "/api/flexibility-events/" +
           Operations.sessions[kind][0] +
