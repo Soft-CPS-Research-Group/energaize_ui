@@ -62,7 +62,7 @@ test('calendar reads resolved occurrences and never expands a second client-side
   run(`render=()=>{};state.personId='manager';FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-22';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry machine'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var calls=[];window.FlexRecurrence={expand(){throw Error('Client recurrence must not be authoritative');}};B.request=async(s,p,m,b)=>{calls.push({s,p,m,b});return {occurrences:[{event_id:'request',occurrence_id:'request@date',occurrence_at:'2026-10-22T18:00:00Z',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',asset_id:'washer',title:'Laundry',session_type:'appliance',type_specific_data:{duration_minutes:80,energy_required_kwh:.6},status:'active',resolution:'eligible',latest_start:'2026-10-22T21:40:00Z'}],predictions:[]};};sessionsView();`);
   await new Promise(setImmediate);
   const html=run('sessionsView()');
-  assert.match(html,/Laundry machine/);assert.match(html,/80 minute cycle/);assert.match(html,/0.6 kWh required/);assert.match(html,/Cycle can start as late/);
+  assert.match(html,/Laundry machine/);assert.match(html,/80 minute cycle/);assert.doesNotMatch(html,/0.6 kWh required/);assert.match(html,/Cycle can start as late/);
   assert.equal(run('calls.length'),1);assert.equal(run('calls[0].p'),'/api/flexibility/effective');assert.equal(run('calls[0].b.asset_ids[0]'),'washer');
  }finally{dom.window.close();}
 });
@@ -75,28 +75,29 @@ test('failed calendar read is visible and does not reuse another account’s req
  }finally{dom.window.close();}
 });
 
-test('appliance wizard preserves the chosen device, cycle length and energy', async () => {
+test('appliance wizard selects a machine cycle and submits only its ID and availability', async () => {
  const {dom,w,run}=workspace();try{
-  run(`state.personId='manager';var assets=[{id:'washer-a',asset_type:'appliance',data:{name:'Kitchen washer'}},{id:'washer-b',asset_type:'appliance',data:{name:'Utility washer'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'},interruptible:{type:'boolean'}}}});`);
+  run(`state.personId='manager';var assets=[{id:'washer-a',asset_type:'appliance',data:{name:'Kitchen washer',power_profiles:[{id:'other',name:'Other machine cycle',duration_minutes:120}]}},{id:'washer-b',asset_type:'appliance',data:{name:'Utility washer',power_profiles:[{id:'eco',name:'Eco',duration_minutes:80,energy_consumption_kwh:.6}]}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'},interruptible:{type:'boolean'}}}});`);
   await run("editSession(null,'washer-b')");
   const doc=w.document,submit=()=>doc.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   doc.querySelector('[data-field="starts_at"]').value='2026-10-22T22:00';doc.querySelector('[data-field="ends_at"]').value='2026-10-23T07:00';
-  doc.querySelector('[data-field="duration_minutes"]').value='80';doc.querySelector('[data-field="energy_required_kwh"]').value='0.6';
+  const cycle=doc.querySelector('[data-field="selected_power_profile"]');cycle.value='eco';cycle.dispatchEvent(new w.Event('change'));
+  assert.equal(cycle.querySelector('[value=other]'),null);assert.equal(doc.querySelector('[data-field="duration_minutes"]'),null);assert.equal(doc.querySelector('[data-field="energy_required_kwh"]'),null);assert.match(doc.querySelector('[data-flex-fields]').textContent,/80 minutes/);
   submit();assert.equal(run('writes.length'),0);submit();await new Promise(setImmediate);
-  assert.equal(run('writes[0].b.asset_id'),'washer-b');assert.equal(run('writes[0].b.duration_minutes'),80);assert.equal(run('writes[0].b.energy_required_kwh'),.6);
+  assert.equal(run('writes[0].b.asset_id'),'washer-b');assert.equal(run('writes[0].b.selected_power_profile'),'eco');assert.equal(run('writes[0].b.duration_minutes'),undefined);assert.equal(run('writes[0].b.energy_required_kwh'),undefined);assert.equal(run('writes[0].b.interruptible'),undefined);
   assert.equal(run('writes[0].p'),'/api/flexibility-events/appliances');
  }finally{dom.window.close();}
 });
 
 test('editing a single recurring appliance occurrence sends an exception with both revisions', async () => {
  const {dom,w,run}=workspace();try{
-  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer'}}];sessionAssets=()=>assets;sessionVisible=()=>true;var savedEvent={event_id:'event',asset_id:'washer',session_type:'appliance',mode:'recurrent',recurrence:{freq:'DAILY',count:7},title:'Wash',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',revision:4,type_specific_data:{duration_minutes:60,energy_required_kwh:.6}};var occurrence={...savedEvent,occurrence_at:'2026-10-23T18:00:00Z',starts_at:'2026-10-23T18:00:00Z',ends_at:'2026-10-23T23:00:00Z',exception_revision:2};connection.raw={assets,events:[savedEvent]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionUpdate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'}}}});`);
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[{id:'eco',name:'Eco',duration_minutes:60},{id:'intensive',name:'Intensive',duration_minutes:90}]}}];sessionAssets=()=>assets;sessionVisible=()=>true;var savedEvent={event_id:'event',asset_id:'washer',session_type:'appliance',mode:'recurrent',recurrence:{freq:'DAILY',count:7},title:'Wash',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',revision:4,type_specific_data:{selected_power_profile:'eco',cycle_snapshot:{name:'Eco',duration_minutes:60},duration_minutes:60,energy_required_kwh:.6}};var occurrence={...savedEvent,occurrence_at:'2026-10-23T18:00:00Z',starts_at:'2026-10-23T18:00:00Z',ends_at:'2026-10-23T23:00:00Z',exception_revision:2};connection.raw={assets,events:[savedEvent]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionUpdate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'}}}});`);
   await run("editSession('event',null,null,occurrence)");
   const doc=w.document,submit=()=>doc.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   assert.equal(doc.querySelector('.repeat-plan').hidden,true);
-  doc.querySelector('[data-field="duration_minutes"]').value='90';submit();submit();await new Promise(setImmediate);
+  doc.querySelector('[data-field="selected_power_profile"]').value='intensive';submit();submit();await new Promise(setImmediate);
   assert.equal(run('writes.length'),1);assert.equal(run('writes[0].p'),'/api/flexibility/events/event/exceptions');
-  assert.equal(run('writes[0].b.expected_event_revision'),4);assert.equal(run('writes[0].b.expected_exception_revision'),2);assert.equal(run('writes[0].b.occurrence_at'),'2026-10-23T18:00:00Z');assert.equal(run('writes[0].b.duration_minutes'),90);
+  assert.equal(run('writes[0].b.expected_event_revision'),4);assert.equal(run('writes[0].b.expected_exception_revision'),2);assert.equal(run('writes[0].b.occurrence_at'),'2026-10-23T18:00:00Z');assert.equal(run('writes[0].b.selected_power_profile'),'intensive');assert.equal(run('writes[0].b.duration_minutes'),undefined);
  }finally{dom.window.close();}
 });
 test("request wizard writes only after review, converts SoC and preserves fields when going back", async () => {
@@ -414,5 +415,35 @@ test("departure slider is a single visible control and keeps arrival charge and 
  arrival.value='25';vehicle.value='ev-two';slider.value='90';slider.dispatchEvent(new w.Event('input',{bubbles:true}));
  assert.equal(doc.querySelector('[data-field="soc_at_departure"]').value,'90');assert.equal(arrival.value,'25');assert.equal(vehicle.value,'ev-two');assert.equal(vehicle.querySelectorAll('option[value^="ev-"]').length,2);
  assert.equal(doc.querySelector('.charge-exact').hidden,true);assert.equal(slider.getAttribute('aria-label'),'Minimum departure charge');assert.equal(doc.querySelector('[data-charge-label]').textContent,'90%');
+ }finally{dom.window.close();}
+});
+
+test('pump asks for total hours and minutes, rejects oversized windows and never sends flow',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='manager';var assets=[{id:'pump',asset_type:'water_pump',data:{name:'Pool pump'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['water_pump']};writes.push({p,b});return {};};operationSchemas=async()=>({WaterPumpSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},duration_minutes:{type:'integer',minimum:1},setpoint:{type:'number'}}}});`);
+  await run("editSession(null,'pump')");const doc=w.document;
+  doc.querySelector('[data-field=starts_at]').value='2026-10-22T08:00';doc.querySelector('[data-field=ends_at]').value='2026-10-22T12:00';
+  const hours=doc.querySelector('[data-runtime-hours]'),mins=doc.querySelector('[data-runtime-minutes]');
+  hours.value='5';mins.value='15';hours.dispatchEvent(new w.Event('input',{bubbles:true}));formSubmit(w);
+  assert.match(doc.querySelector('[role=alert]').textContent,/running time must fit/);assert.equal(run('writes.length'),0);
+  hours.value='2';hours.dispatchEvent(new w.Event('input',{bubbles:true}));formSubmit(w);
+  assert.match(doc.querySelector('[data-flex-review]').textContent,/2 h 15 min total running time/);assert.equal(doc.querySelector('[data-field=setpoint]'),null);
+  formSubmit(w);await new Promise(setImmediate);assert.equal(run('writes[0].b.duration_minutes'),135);assert.equal(run('writes[0].b.setpoint'),undefined);
+ }finally{dom.window.close();}
+});
+
+test('appliance without configured cycles cannot create a request and links to equipment setup',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[]}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];B.request=async()=>({session_types:['appliance']});operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'}}}});var configured=null;editEquipment=async id=>configured=id;`);
+  await run("editSession(null,'washer')");formSubmit(w);assert.equal(run('writes.length'),0);assert.equal(w.document.querySelector('[data-flex-panel="2"]').hidden,true);
+  const setup=[...w.document.querySelectorAll('button')].find(n=>n.textContent==='Set up equipment cycles');assert.ok(setup);setup.click();assert.equal(run('configured'),'washer');
+ }finally{dom.window.close();}
+});
+
+test('chosen machine cycle must fit the window before reviewing',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[{id:'long',name:'Long wash',duration_minutes:180}]}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};B.request=async()=>({session_types:['appliance']});operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'}}}});`);
+  await run("editSession(null,'washer')");const doc=w.document;doc.querySelector('[data-field=starts_at]').value='2026-10-22T08:00';doc.querySelector('[data-field=ends_at]').value='2026-10-22T10:00';doc.querySelector('[data-field=selected_power_profile]').value='long';formSubmit(w);
+  assert.match(doc.querySelector('[role=alert]').textContent,/selected cycle needs to fit/);assert.equal(doc.querySelector('[data-flex-panel="2"]').hidden,true);
  }finally{dom.window.close();}
 });
