@@ -1,18 +1,25 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId } from "react";
 import { Button } from "../../components/ui/Button";
+import { Badge } from "../../components/ui/Badge";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Modal } from "../../components/ui/Modal";
 import {
-  Plus, Trash2, Edit2, X, Loader2, AlertCircle,
-  ShieldAlert, AlertTriangle, Info, RefreshCw,
+  Plus, Trash2, Edit2, Loader2, ShieldAlert, AlertTriangle, Info, RefreshCw,
   Bell, BellOff, CheckCircle, History, SlidersHorizontal,
 } from "lucide-react";
 import { api as axios } from "../../api/kpiApi";
 import { useCommunities } from "../../hooks/useCommunities";
-import { useKpiMetadata } from "../../hooks/useKpiMetadata";
+import { kpiDisplayName, kpiSelectOptions, useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 import { KpiSegmented } from "../../components/kpi/KpiSegmented";
+import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
+import { CommunityField, KpiField, KpiFilterBar, KpiSwitch, communityLabel } from "../../components/kpi/KpiFilters";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type Severity = "info" | "warning" | "critical";
 
 interface Threshold {
   id?: string;          // MongoDB _id as string — present after first load
@@ -21,12 +28,14 @@ interface Threshold {
   scope: string;
   condition: "gt" | "gte" | "lt" | "lte";
   threshold: number;
-  severity: "info" | "warning" | "critical";
+  severity: Severity;
   message: string;
   enabled: boolean;
 }
 
-const EMPTY_FORM: Omit<Threshold, "community"> = {
+type ThresholdForm = Omit<Threshold, "community">;
+
+const EMPTY_FORM: ThresholdForm = {
   kpi: "",
   scope: "*",
   condition: "gt",
@@ -37,352 +46,201 @@ const EMPTY_FORM: Omit<Threshold, "community"> = {
 };
 
 const CONDITION_LABELS: Record<string, string> = {
-  gt: "> (greater than)",
-  gte: "≥ (greater than or equal)",
-  lt: "< (less than)",
-  lte: "≤ (less than or equal)",
+  gt: "> greater than",
+  gte: "≥ greater than or equal",
+  lt: "< less than",
+  lte: "≤ less than or equal",
 };
+const CONDITION_SYMBOL: Record<string, string> = { gt: ">", gte: "≥", lt: "<", lte: "≤" };
 
-const SEVERITY_CONFIG = {
-  critical: { color: "#ef4444", bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.30)", Icon: ShieldAlert },
-  warning:  { color: "#f59e0b", bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.30)", Icon: AlertTriangle },
-  info:     { color: "#3b82f6", bg: "rgba(59,130,246,0.10)",  border: "rgba(59,130,246,0.30)",  Icon: Info },
+const SEVERITY = {
+  critical: { badge: "danger",  text: "kpi-text-danger", Icon: ShieldAlert },
+  warning:  { badge: "warning", text: "kpi-text-warn",   Icon: AlertTriangle },
+  info:     { badge: "info",    text: "kpi-text-info",   Icon: Info },
 } as const;
 
-// ── Shared styles ─────────────────────────────────────────────────────────────
+/**
+ * Updates one rule. The by-id route only exists in newer KPI module versions; an older
+ * module answers 405 there, and then the legacy KPI-wide route is the only option.
+ */
+async function updateThreshold(community: string, t: Threshold, update: Partial<ThresholdForm>): Promise<void> {
+  if (t.id) {
+    try {
+      await axios.patch(`api/v1/thresholds/${community}/by-id/${t.id}`, update);
+      return;
+    } catch (e: any) {
+      if (e?.response?.status !== 405) throw e;
+    }
+  }
+  await axios.patch(`api/v1/thresholds/${community}/${t.kpi}`, { ...update, scope: t.scope });
+}
 
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "0.5rem 0.75rem", borderRadius: "0.5rem",
-  border: "1px solid var(--line)", background: "var(--bg)", color: "var(--text)",
-  fontSize: "0.875rem", boxSizing: "border-box",
-};
-const labelStyle: React.CSSProperties = {
-  display: "block", fontSize: "0.78rem", fontWeight: 600,
-  color: "var(--text-soft)", marginBottom: "0.35rem",
-};
-const overlayStyle: React.CSSProperties = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
-  zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center",
-};
-const modalStyle: React.CSSProperties = {
-  background: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: "1rem",
-  padding: "1.5rem", width: "min(560px, 95vw)", maxHeight: "90vh",
-  overflowY: "auto", display: "flex", flexDirection: "column", gap: "1.25rem",
-  boxShadow: "0 25px 60px rgba(0,0,0,0.4)",
-};
+// ── Threshold form ────────────────────────────────────────────────────────────
 
-// ── Threshold Form Modal ───────────────────────────────────────────────────────
-
-function ThresholdModal({
-  initial,
-  community: _community,
-  availableKpis,
-  communitiesList,
-  buildingsMap,
-  onClose,
-  onSave,
-  isEdit,
-}: {
-  initial: Omit<Threshold, "community">;
-  community: string;
-  availableKpis: string[];
+function ThresholdModal({ open, initial, kpiOptions, communitiesList, buildingsMap, onClose, onSave, isEdit }: {
+  open: boolean;
+  initial: ThresholdForm;
+  kpiOptions: Array<{ value: string; label: string }>;
   communitiesList: string[];
   buildingsMap: Record<string, string[]>;
   onClose: () => void;
-  onSave: (data: Omit<Threshold, "community">) => Promise<void>;
+  onSave: (data: ThresholdForm) => Promise<void>;
   isEdit: boolean;
 }) {
+  const ids = useId();
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  // Derive community/building from form.scope
   const [scopeCommunity, setScopeCommunity] = useState<string>("*");
-  const [scopeBuilding, setScopeBuilding] = useState<string>(form.scope);
+
+  useEffect(() => {
+    if (open) { setForm(initial); setErr(null); setScopeCommunity("*"); }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const availableBuildings = scopeCommunity === "*"
     ? Object.values(buildingsMap).flat()
     : (buildingsMap[scopeCommunity] ?? []);
 
-  const handleScopeCommunityChange = (c: string) => {
-    setScopeCommunity(c);
-    setScopeBuilding("*");
-    setForm(f => ({ ...f, scope: "*" }));
-  };
-
-  const handleScopeBuildingChange = (b: string) => {
-    setScopeBuilding(b);
-    setForm(f => ({ ...f, scope: b }));
-  };
-
   const handleSave = async () => {
     setErr(null);
-    if (!form.kpi) { setErr("Select a KPI"); return; }
-    if (isNaN(form.threshold)) { setErr("Threshold must be a number"); return; }
+    if (!form.kpi) { setErr("Select a KPI."); return; }
+    if (isNaN(form.threshold)) { setErr("Threshold must be a number."); return; }
     setSaving(true);
     try { await onSave(form); onClose(); }
     catch (e: any) { setErr(e?.response?.data?.detail || e?.message || "Save failed"); }
     finally { setSaving(false); }
   };
 
+  const kpiLabel = kpiOptions.find(o => o.value === form.kpi)?.label;
+  const sev = SEVERITY[form.severity];
+
   return (
-    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={modalStyle}>
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>
-            {isEdit ? "Edit Threshold" : "New Alert Threshold"}
-          </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-soft)" }}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* KPI */}
-        <div>
-          <label style={labelStyle}>KPI *</label>
-          <select
-            style={inputStyle}
-            value={form.kpi}
-            disabled={isEdit}
-            onChange={e => setForm(f => ({ ...f, kpi: e.target.value }))}
-          >
-            <option value="">— select a KPI —</option>
-            {availableKpis.map(k => <option key={k} value={k}>{k}</option>)}
+    <Modal title={isEdit ? "Edit threshold" : "New alert threshold"} open={open} onClose={onClose} width="md">
+      <div className="kpi-form">
+        <KpiField label="KPI" htmlFor={`${ids}-kpi`} hint={isEdit ? "cannot be changed" : undefined}>
+          <select id={`${ids}-kpi`} value={form.kpi} disabled={isEdit} onChange={e => setForm(f => ({ ...f, kpi: e.target.value }))}>
+            <option value="">Select a KPI…</option>
+            {kpiOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          {isEdit && <p style={{ fontSize: "0.72rem", color: "var(--text-soft)", marginTop: "0.25rem" }}>KPI cannot be changed after creation</p>}
-        </div>
+        </KpiField>
 
-        {/* Scope */}
-        <div>
-          <label style={labelStyle}>Scope</label>
-          <div style={{ display: "flex", gap: "0.6rem" }}>
-            <select
-              style={{ ...inputStyle, flex: 1 }}
-              value={scopeCommunity}
-              disabled={isEdit}
-              onChange={e => handleScopeCommunityChange(e.target.value)}
-            >
+        <div className="kpi-filterbar-fields">
+          <KpiField label="Scope: community" htmlFor={`${ids}-scope-c`}>
+            <select id={`${ids}-scope-c`} value={scopeCommunity} disabled={isEdit}
+              onChange={e => { setScopeCommunity(e.target.value); setForm(f => ({ ...f, scope: "*" })); }}>
               <option value="*">All communities</option>
-              {communitiesList.map(c => (
-                <option key={c} value={c}>{c.replace(/_/g, " ").toUpperCase()}</option>
-              ))}
+              {communitiesList.map(c => <option key={c} value={c}>{communityLabel(c)}</option>)}
             </select>
-            <select
-              style={{ ...inputStyle, flex: 1 }}
-              value={scopeBuilding}
-              disabled={isEdit}
-              onChange={e => handleScopeBuildingChange(e.target.value)}
-            >
+          </KpiField>
+          <KpiField label="Scope: building" htmlFor={`${ids}-scope-b`}>
+            <select id={`${ids}-scope-b`} value={form.scope} disabled={isEdit} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))}>
               <option value="*">All buildings</option>
-              {availableBuildings.map(b => (
-                <option key={b} value={b}>{b}</option>
-              ))}
+              {availableBuildings.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
-          </div>
-          <p style={{ fontSize: "0.72rem", color: "var(--text-soft)", marginTop: "0.25rem" }}>
-            Select a community and building, or leave both as "All" to match every scope.
-          </p>
+          </KpiField>
         </div>
 
-        {/* Condition + Threshold row */}
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Condition *</label>
-            <select
-              style={inputStyle}
-              value={form.condition}
-              onChange={e => setForm(f => ({ ...f, condition: e.target.value as any }))}
-            >
-              {Object.entries(CONDITION_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
+        <div className="kpi-filterbar-fields">
+          <KpiField label="Condition" htmlFor={`${ids}-cond`}>
+            <select id={`${ids}-cond`} value={form.condition} onChange={e => setForm(f => ({ ...f, condition: e.target.value as Threshold["condition"] }))}>
+              {Object.entries(CONDITION_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Threshold value *</label>
-            <input
-              type="number" step="any"
-              style={inputStyle}
-              value={form.threshold}
-              onChange={e => setForm(f => ({ ...f, threshold: parseFloat(e.target.value) }))}
-            />
-          </div>
+          </KpiField>
+          <KpiField label="Threshold value" htmlFor={`${ids}-value`}>
+            <input id={`${ids}-value`} type="number" step="any" value={form.threshold}
+              onChange={e => setForm(f => ({ ...f, threshold: parseFloat(e.target.value) }))} />
+          </KpiField>
         </div>
 
-        {/* Severity */}
-        <div>
-          <label style={labelStyle}>Severity *</label>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            {(["info", "warning", "critical"] as const).map(s => {
-              const cfg = SEVERITY_CONFIG[s];
-              const active = form.severity === s;
-              return (
-                <button
-                  key={s}
-                  onClick={() => setForm(f => ({ ...f, severity: s }))}
-                  style={{
-                    flex: 1, padding: "0.45rem", borderRadius: "0.5rem", cursor: "pointer",
-                    border: `1px solid ${active ? cfg.color : "var(--line)"}`,
-                    background: active ? cfg.bg : "transparent",
-                    color: active ? cfg.color : "var(--text-soft)",
-                    fontWeight: active ? 700 : 400, fontSize: "0.82rem",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <cfg.Icon size={13} />{s}
-                </button>
-              );
+        <KpiField label="Severity">
+          <KpiSegmented<Severity>
+            segments={(["info", "warning", "critical"] as const).map(s => {
+              const { Icon } = SEVERITY[s];
+              return { key: s, label: s.charAt(0).toUpperCase() + s.slice(1), icon: <Icon size={13} /> };
             })}
-          </div>
-        </div>
-
-        {/* Message */}
-        <div>
-          <label style={labelStyle}>Alert message (optional)</label>
-          <input
-            style={inputStyle}
-            value={form.message}
-            placeholder="e.g. Energy cost too high — check grid import"
-            onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
+            value={form.severity}
+            onChange={severity => setForm(f => ({ ...f, severity }))}
+            ariaLabel="Severity"
           />
-        </div>
+        </KpiField>
 
-        {/* Enabled toggle */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <button
-            onClick={() => setForm(f => ({ ...f, enabled: !f.enabled }))}
-            style={{
-              padding: "0.3rem 0.9rem", borderRadius: "9999px", cursor: "pointer",
-              border: `1px solid ${form.enabled ? "#22c55e" : "var(--line)"}`,
-              background: form.enabled ? "rgba(34,197,94,0.12)" : "transparent",
-              color: form.enabled ? "#22c55e" : "var(--text-soft)",
-              fontWeight: 600, fontSize: "0.8rem",
-              display: "flex", alignItems: "center", gap: "0.35rem",
-            }}
-          >
-            {form.enabled ? <><Bell size={12} /> Enabled</> : <><BellOff size={12} /> Disabled</>}
-          </button>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
-            Disabled thresholds are saved but not evaluated by the scheduler.
-          </span>
-        </div>
+        <KpiField label="Alert message" hint="optional" htmlFor={`${ids}-msg`}>
+          <input id={`${ids}-msg`} value={form.message} placeholder="e.g. Energy cost too high — check grid import"
+            onChange={e => setForm(f => ({ ...f, message: e.target.value }))} />
+        </KpiField>
 
-        {/* Preview */}
-        <div style={{
-          padding: "0.75rem 1rem", borderRadius: "0.5rem",
-          background: "var(--bg)", border: "1px solid var(--line)",
-          fontSize: "0.8rem", color: "var(--text-soft)",
-        }}>
-          <strong>Preview:</strong> Trigger alert when{" "}
-          <code style={{ background: "var(--bg-elev)", padding: "0 0.3rem", borderRadius: "0.25rem" }}>{form.kpi || "..."}</code>{" "}
-          [{form.scope}] is{" "}
-          <strong>{form.condition}</strong> {form.threshold} →{" "}
-          <span style={{ color: SEVERITY_CONFIG[form.severity]?.color }}>{form.severity}</span>
-        </div>
+        <KpiSwitch
+          checked={form.enabled}
+          onChange={enabled => setForm(f => ({ ...f, enabled }))}
+          label={form.enabled ? "Enabled" : "Disabled: saved but not evaluated by the scheduler"}
+        />
 
-        {err && (
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", color: "#ef4444", fontSize: "0.82rem" }}>
-            <AlertCircle size={14} /> {err}
-          </div>
-        )}
+        <p className="kpi-threshold-preview">
+          Raise a <strong className={sev.text}>{form.severity}</strong> alert when{" "}
+          <strong>{kpiLabel || "…"}</strong> [{form.scope === "*" ? "any scope" : form.scope}] is{" "}
+          <strong>{CONDITION_SYMBOL[form.condition]} {Number.isNaN(form.threshold) ? "…" : form.threshold}</strong>
+        </p>
 
-        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}
-            {" "}{isEdit ? "Save changes" : "Create threshold"}
+        {err && <KpiError message={err} />}
+
+        <div className="kpi-form-actions">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} disabled={saving}
+            iconLeft={saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle size={15} />}>
+            {isEdit ? "Save changes" : "Create threshold"}
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-// ── Threshold Row Card ────────────────────────────────────────────────────────
+// ── Threshold card ────────────────────────────────────────────────────────────
 
-function ThresholdCard({
-  t,
-  onEdit,
-  onDelete,
-  onToggle,
-}: {
+function ThresholdCard({ t, kpiLabel, onEdit, onDelete, onToggle }: {
   t: Threshold;
+  kpiLabel: string;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
 }) {
-  const cfg = SEVERITY_CONFIG[t.severity] ?? SEVERITY_CONFIG.info;
-  const { Icon } = cfg;
-
+  const sev = SEVERITY[t.severity] ?? SEVERITY.info;
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: "1rem",
-      padding: "0.875rem 1.1rem",
-      background: "var(--bg-elev)", border: "1px solid var(--line)",
-      borderLeft: `3px solid ${t.enabled ? cfg.color : "var(--line)"}`,
-      borderRadius: "0.6rem",
-      opacity: t.enabled ? 1 : 0.55,
-      transition: "opacity 0.15s",
-    }}>
-      <Icon size={16} color={t.enabled ? cfg.color : "var(--text-muted)"} style={{ flexShrink: 0 }} />
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>{t.kpi}</span>
-          <span style={{ fontSize: "0.72rem", fontFamily: "monospace", background: "var(--bg)", padding: "0.1rem 0.4rem", borderRadius: "0.25rem" }}>
-            scope: {t.scope}
-          </span>
-          <span style={{
-            fontSize: "0.68rem", fontWeight: 700, padding: "0.1rem 0.45rem",
-            borderRadius: "0.3rem", border: `1px solid ${cfg.border}`,
-            background: cfg.bg, color: cfg.color, textTransform: "uppercase",
-          }}>
-            {t.severity}
-          </span>
-        </div>
-        <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
-          Trigger when value{" "}
-          <strong>{CONDITION_LABELS[t.condition]?.split(" ")[0] ?? t.condition}</strong>{" "}
-          <strong style={{ color: cfg.color }}>{t.threshold}</strong>
+    <article className={`kpi-rule is-${t.severity}${t.enabled ? "" : " is-disabled"}`}>
+      <sev.Icon size={16} className={t.enabled ? sev.text : "kpi-text-soft"} aria-hidden="true" />
+      <div className="kpi-rule-body">
+        <h3>
+          {kpiLabel}
+          <code>scope: {t.scope}</code>
+          <Badge tone={sev.badge}>{t.severity}</Badge>
+          {t.community === "*" && <Badge>all communities</Badge>}
+          {!t.enabled && <Badge>disabled</Badge>}
+        </h3>
+        <p>
+          Trigger when value <strong>{CONDITION_SYMBOL[t.condition] ?? t.condition}</strong>{" "}
+          <strong className={sev.text}>{t.threshold}</strong>
           {t.message && <> — <em>{t.message}</em></>}
-        </div>
+        </p>
       </div>
-
-      {/* Actions */}
-      <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
-        <button
-          title={t.enabled ? "Disable" : "Enable"}
-          onClick={onToggle}
-          style={{
-            background: "none", border: `1px solid var(--line)`, cursor: "pointer",
-            borderRadius: "0.4rem", padding: "0.3rem 0.5rem",
-            color: t.enabled ? "#22c55e" : "var(--text-muted)",
-          }}
-        >
-          {t.enabled ? <Bell size={14} /> : <BellOff size={14} />}
-        </button>
-        <button
-          title="Edit"
-          onClick={onEdit}
-          style={{ background: "none", border: "1px solid var(--line)", cursor: "pointer", borderRadius: "0.4rem", padding: "0.3rem 0.5rem", color: "var(--text-soft)" }}
-        >
-          <Edit2 size={14} />
-        </button>
-        <button
-          title="Delete"
-          onClick={onDelete}
-          style={{ background: "none", border: "1px solid rgba(239,68,68,0.3)", cursor: "pointer", borderRadius: "0.4rem", padding: "0.3rem 0.5rem", color: "#ef4444" }}
-        >
-          <Trash2 size={14} />
-        </button>
+      <div className="kpi-rule-actions">
+        <Button variant="ghost" size="sm" iconOnly onClick={onToggle}
+          iconLeft={t.enabled ? <Bell size={14} /> : <BellOff size={14} />}
+          aria-label={t.enabled ? `Disable ${kpiLabel} rule` : `Enable ${kpiLabel} rule`}
+          aria-pressed={t.enabled}>
+          {t.enabled ? "Disable" : "Enable"}
+        </Button>
+        <Button variant="ghost" size="sm" iconOnly onClick={onEdit} iconLeft={<Edit2 size={14} />} aria-label={`Edit ${kpiLabel} rule`}>
+          Edit
+        </Button>
+        <Button variant="danger" size="sm" iconOnly onClick={onDelete} iconLeft={<Trash2 size={14} />} aria-label={`Delete ${kpiLabel} rule`}>
+          Delete
+        </Button>
       </div>
-    </div>
+    </article>
   );
 }
 
-// ── Alert History Tab ────────────────────────────────────────────────────────
+// ── Alert history ─────────────────────────────────────────────────────────────
 
 interface AlertDoc {
   community: string;
@@ -391,12 +249,13 @@ interface AlertDoc {
   value: number;
   threshold: number;
   condition: string;
-  severity: "info" | "warning" | "critical";
+  severity: Severity;
   message: string;
   triggered_at: string;
 }
 
-function AlertHistoryTab({ community, availableKpis }: { community: string; availableKpis: string[] }) {
+function AlertHistory({ community, kpiOptions }: { community: string; kpiOptions: Array<{ value: string; label: string }> }) {
+  const ids = useId();
   const [alerts, setAlerts] = useState<AlertDoc[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -420,91 +279,71 @@ function AlertHistoryTab({ community, availableKpis }: { community: string; avai
 
   useEffect(() => { load(); }, [load]);
 
-  const COND: Record<string, string> = { gt: ">", gte: "≥", lt: "<", lte: "≤" };
   const fmt = (iso: string) => new Date(iso).toLocaleString(undefined, {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
+  const label = (kpi: string) => kpiOptions.find(o => o.value === kpi)?.label ?? kpi;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      {/* Filters bar */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "flex-end" }}>
-        <div>
-          <label style={labelStyle}>Severity</label>
-          <select style={{ ...inputStyle, width: "auto" }} value={filterSev} onChange={e => setFilterSev(e.target.value)}>
+    <section className="kpi-results" aria-label="Alert history">
+      <div className="kpi-filterbar-fields">
+        <KpiField label="Severity" size="sm" htmlFor={`${ids}-sev`}>
+          <select id={`${ids}-sev`} value={filterSev} onChange={e => setFilterSev(e.target.value)}>
             <option value="all">All</option>
             <option value="critical">Critical</option>
             <option value="warning">Warning</option>
             <option value="info">Info</option>
           </select>
-        </div>
-        <div>
-          <label style={labelStyle}>KPI</label>
-          <select style={{ ...inputStyle, width: "auto" }} value={filterKpi} onChange={e => setFilterKpi(e.target.value)}>
+        </KpiField>
+        <KpiField label="KPI" htmlFor={`${ids}-kpi`}>
+          <select id={`${ids}-kpi`} value={filterKpi} onChange={e => setFilterKpi(e.target.value)}>
             <option value="all">All KPIs</option>
-            {availableKpis.map(k => <option key={k} value={k}>{k}</option>)}
+            {kpiOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-        </div>
-        <div>
-          <label style={labelStyle}>Limit</label>
-          <select style={{ ...inputStyle, width: "auto" }} value={limit} onChange={e => setLimit(Number(e.target.value))}>
+        </KpiField>
+        <KpiField label="Show" size="sm" htmlFor={`${ids}-limit`}>
+          <select id={`${ids}-limit`} value={limit} onChange={e => setLimit(Number(e.target.value))}>
             {[25, 50, 100, 250, 500].map(n => <option key={n} value={n}>{n} records</option>)}
           </select>
-        </div>
-        <Button variant="ghost" onClick={load} title="Refresh"><RefreshCw size={14} /></Button>
+        </KpiField>
+        <Button variant="secondary" onClick={load} iconLeft={<RefreshCw size={14} />}>Refresh</Button>
       </div>
 
-      {loading && <div style={{ display: "flex", justifyContent: "center", padding: "3rem" }}><Loader2 size={28} className="animate-spin" color="var(--brand)" /></div>}
-      {error && <div style={{ display: "flex", gap: "0.5rem", color: "#ef4444" }}><AlertCircle size={16} />{error}</div>}
+      {loading && <KpiLoading label="Loading alerts…" />}
+      {error && <KpiError message={error} onRetry={load} />}
 
-      {!loading && alerts.length === 0 && (
-        <div className="panel" style={{ textAlign: "center", padding: "3rem", color: "var(--text-soft)" }}>
-          <History size={36} style={{ opacity: 0.3, marginBottom: "1rem" }} />
-          <p style={{ margin: 0, fontWeight: 600 }}>No alert history found</p>
-          <p style={{ margin: "0.4rem 0 0", fontSize: "0.85rem" }}>Alerts are saved each time a scheduler job violates a threshold.</p>
-        </div>
+      {!loading && !error && alerts.length === 0 && (
+        <EmptyState title="No alerts found" message="An alert is saved each time a scheduler job crosses a threshold." />
       )}
 
       {!loading && alerts.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          <p style={{ fontSize: "0.78rem", color: "var(--text-soft)", margin: "0 0 0.25rem" }}>{alerts.length} alert{alerts.length !== 1 ? "s" : ""}</p>
+        <>
+          <p className="kpi-text-soft">{alerts.length} alert{alerts.length !== 1 ? "s" : ""}</p>
           {alerts.map((a, i) => {
-            const cfg = SEVERITY_CONFIG[a.severity] ?? SEVERITY_CONFIG.info;
-            const { Icon } = cfg;
+            const sev = SEVERITY[a.severity] ?? SEVERITY.info;
             return (
-              <div key={i} style={{
-                display: "flex", gap: "0.75rem", alignItems: "flex-start",
-                padding: "0.75rem 1rem",
-                background: cfg.bg, border: `1px solid ${cfg.border}`,
-                borderLeft: `3px solid ${cfg.color}`, borderRadius: "0.6rem",
-              }}>
-                <Icon size={15} color={cfg.color} style={{ marginTop: "0.15rem", flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.25rem" }}>
-                    <span style={{ fontWeight: 700, fontSize: "0.83rem" }}>{a.kpi}</span>
-                    <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{fmt(a.triggered_at)}</span>
-                  </div>
-                  <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
-                    <code style={{ background: "var(--bg)", padding: "0 0.3rem", borderRadius: "0.2rem" }}>{a.scope}</code>
-                    {" · "}
-                    value <strong style={{ color: cfg.color }}>{typeof a.value === "number" ? a.value.toFixed(4) : a.value}</strong>
-                    {" "}{COND[a.condition] ?? a.condition}{" "}
-                    threshold <strong>{a.threshold}</strong>
-                  </div>
-                  {a.message && <p style={{ margin: "0.25rem 0 0", fontSize: "0.78rem", color: "var(--text-secondary)" }}>{a.message}</p>}
+              <article key={i} className={`kpi-rule is-${a.severity}`}>
+                <sev.Icon size={15} className={sev.text} aria-hidden="true" />
+                <div className="kpi-rule-body">
+                  <h3>
+                    {label(a.kpi)}
+                    <Badge tone={sev.badge}>{a.severity}</Badge>
+                    <time dateTime={a.triggered_at} className="kpi-text-soft">{fmt(a.triggered_at)}</time>
+                  </h3>
+                  <p>
+                    <code>{a.scope}</code> · value{" "}
+                    <strong className={sev.text}>{typeof a.value === "number" ? a.value.toFixed(4) : a.value}</strong>{" "}
+                    {CONDITION_SYMBOL[a.condition] ?? a.condition} threshold <strong>{a.threshold}</strong>
+                  </p>
+                  {a.message && <p className="kpi-text-soft">{a.message}</p>}
                 </div>
-                <span style={{
-                  fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase",
-                  color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`,
-                  padding: "0.15rem 0.45rem", borderRadius: "0.3rem", flexShrink: 0,
-                }}>{a.severity}</span>
-              </div>
+              </article>
             );
           })}
-        </div>
+        </>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -520,11 +359,13 @@ export function ThresholdPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<{ open: boolean; editing: Threshold | null }>({ open: false, editing: null });
-  const [filterSeverity, setFilterSeverity] = useState<"all" | "info" | "warning" | "critical">("all");
+  const [filterSeverity, setFilterSeverity] = useState<"all" | Severity>("all");
+  const [activeTab, setActiveTab] = useState<"rules" | "history">("rules");
+  const [confirmDelete, setConfirmDelete] = useState<Threshold | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const availableKpis: string[] = (kpiList ?? [])
-    .filter(k => k.status === "available" && k.registered)
-    .map(k => k.name);
+  const kpiOptions = kpiSelectOptions(kpiList);
+  const kpiLabel = (kpi: string) => kpiDisplayName(kpiList.find(k => k.name === kpi), kpi);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -538,43 +379,46 @@ export function ThresholdPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleCreate = async (form: Omit<Threshold, "community">) => {
+  const handleCreate = async (form: ThresholdForm) => {
     await axios.post(`api/v1/thresholds/${community}`, form);
     await load();
   };
 
-  const handleEdit = async (form: Omit<Threshold, "community">) => {
-    const { kpi, scope, ...update } = form;
-    await axios.patch(`api/v1/thresholds/${community}/${kpi}`, { ...update, scope });
+  const handleEdit = async (form: ThresholdForm) => {
+    if (!modal.editing) return;
+    const { kpi: _kpi, scope: _scope, ...update } = form;
+    await updateThreshold(community, modal.editing, update);
     await load();
   };
 
   const handleDelete = async (t: Threshold) => {
-    if (!confirm(`Delete threshold for "${t.kpi}" [${t.scope}]?`)) return;
-    if (t.id) {
-      // Precise delete by MongoDB _id — safe when duplicate kpi/scope rules exist
-      await axios.delete(`api/v1/thresholds/${community}/by-id/${t.id}`);
-    } else {
-      await axios.delete(`api/v1/thresholds/${community}/${t.kpi}?scope=${t.scope}`);
+    setActionError(null);
+    try {
+      if (t.id) {
+        // Precise delete by MongoDB _id — safe when duplicate kpi/scope rules exist
+        await axios.delete(`api/v1/thresholds/${community}/by-id/${t.id}`);
+      } else {
+        await axios.delete(`api/v1/thresholds/${community}/${t.kpi}?scope=${t.scope}`);
+      }
+      setConfirmDelete(null);
+      await load();
+    } catch (e: any) {
+      setActionError(e?.response?.data?.detail || e?.message || "Delete failed");
     }
-    await load();
   };
 
   const handleToggle = async (t: Threshold) => {
-    await axios.patch(`api/v1/thresholds/${community}/${t.kpi}`, { enabled: !t.enabled, scope: t.scope });
-    await load();
+    setActionError(null);
+    try {
+      await updateThreshold(community, t, { enabled: !t.enabled });
+      await load();
+    } catch (e: any) {
+      setActionError(e?.response?.data?.detail || e?.message || "Update failed");
+    }
   };
 
   const filtered = filterSeverity === "all" ? thresholds : thresholds.filter(t => t.severity === filterSeverity);
-
-  const counts = {
-    all: thresholds.length,
-    critical: thresholds.filter(t => t.severity === "critical").length,
-    warning:  thresholds.filter(t => t.severity === "warning").length,
-    info:     thresholds.filter(t => t.severity === "info").length,
-  };
-
-  const [activeTab, setActiveTab] = useState<"rules" | "history">("rules");
+  const count = (s: "all" | Severity) => (s === "all" ? thresholds : thresholds.filter(t => t.severity === s)).length;
 
   return (
     <div className="page">
@@ -594,97 +438,85 @@ export function ThresholdPage() {
             />
             {activeTab === "rules" && (
               <>
-                <Button variant="ghost" onClick={load} title="Refresh"><RefreshCw size={15} /></Button>
-                <Button onClick={() => setModal({ open: true, editing: null })}><Plus size={15} /> New threshold</Button>
+                <Button variant="secondary" onClick={load} iconLeft={<RefreshCw size={15} />}>Refresh</Button>
+                <Button variant="primary" onClick={() => setModal({ open: true, editing: null })} iconLeft={<Plus size={15} />}>New threshold</Button>
               </>
             )}
           </>
         }
       />
 
-      {/* Shared: community selector */}
-      <div className="panel" style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "center" }}>
-        <div style={{ flex: "0 0 220px" }}>
-          <label style={labelStyle}>Community</label>
-          <select style={inputStyle} value={community} onChange={e => setCommunity(e.target.value)}>
-            {communityList.map(c => <option key={c} value={c}>{c.replace(/_/g, " ").toUpperCase()}</option>)}
-          </select>
-        </div>
-
-        {/* Rules tab: severity pills */}
+      <KpiFilterBar ariaLabel="Community">
+        <CommunityField communities={communityList} value={community} onChange={setCommunity} />
         {activeTab === "rules" && (
-          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap", paddingTop: "1.3rem" }}>
-            {(["all", "critical", "warning", "info"] as const).map(s => {
-              const cfg = s === "all" ? null : SEVERITY_CONFIG[s];
-              const active = filterSeverity === s;
-              return (
-                <button key={s} onClick={() => setFilterSeverity(s)} style={{
-                  fontSize: "0.75rem", fontWeight: 600, cursor: "pointer",
-                  padding: "0.25rem 0.75rem", borderRadius: "999px",
-                  border: active ? `1px solid ${cfg?.color ?? "var(--brand)"}` : "1px solid var(--line)",
-                  background: active ? (cfg?.bg ?? "var(--brand-muted)") : "transparent",
-                  color: active ? (cfg?.color ?? "var(--brand)") : "var(--text-soft)",
-                  transition: "all 0.15s", textTransform: "capitalize",
-                }}>
-                  {s} ({counts[s]})
-                </button>
-              );
-            })}
-          </div>
+          <KpiField label="Severity" size="lg">
+            <KpiSegmented<"all" | Severity>
+              segments={(["all", "critical", "warning", "info"] as const).map(s => ({
+                key: s, label: `${s.charAt(0).toUpperCase() + s.slice(1)} (${count(s)})`,
+              }))}
+              value={filterSeverity}
+              onChange={setFilterSeverity}
+              ariaLabel="Filter by severity"
+            />
+          </KpiField>
         )}
-      </div>
+      </KpiFilterBar>
 
-      {/* ── Rules tab ── */}
-      <div hidden={activeTab !== "rules"} style={{ paddingBottom: "2rem" }}>
-        {loading && <div style={{ display: "flex", justifyContent: "center", padding: "3rem" }}><Loader2 size={28} className="animate-spin" color="var(--brand)" /></div>}
-        {error && <div className="panel" style={{ display: "flex", gap: "0.75rem", alignItems: "center", color: "#ef4444" }}><AlertCircle size={18} />{error}</div>}
+      {actionError && <KpiError message={actionError} />}
+
+      <div hidden={activeTab !== "rules"} className="kpi-results">
+        {loading && <KpiLoading label="Loading thresholds…" />}
+        {error && <KpiError message={error} onRetry={load} />}
         {!loading && !error && filtered.length === 0 && (
-          <div className="panel" style={{ textAlign: "center", padding: "3rem", color: "var(--text-soft)" }}>
-            <Bell size={36} style={{ opacity: 0.3, marginBottom: "1rem" }} />
-            <p style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>No thresholds configured</p>
-            <p style={{ margin: "0.5rem 0 1.5rem", fontSize: "0.85rem" }}>{filterSeverity !== "all" ? `No ${filterSeverity} thresholds` : "Create your first threshold rule to receive KPI alerts"}</p>
-            {filterSeverity === "all" && <Button onClick={() => setModal({ open: true, editing: null })}><Plus size={15} /> New Threshold</Button>}
-          </div>
+          <EmptyState
+            title="No thresholds configured"
+            message={filterSeverity !== "all" ? `No ${filterSeverity} thresholds.` : "Create a threshold rule to be alerted when a KPI crosses it."}
+            action={filterSeverity === "all"
+              ? <Button variant="primary" onClick={() => setModal({ open: true, editing: null })} iconLeft={<Plus size={15} />}>New threshold</Button>
+              : undefined}
+          />
         )}
-        {!loading && filtered.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-            {filtered.map((t, i) => (
-              <ThresholdCard key={`${t.kpi}-${t.scope}-${i}`} t={t}
-                onEdit={() => setModal({ open: true, editing: t })}
-                onDelete={() => handleDelete(t)}
-                onToggle={() => handleToggle(t)}
-              />
-            ))}
-          </div>
-        )}
+        {!loading && filtered.map((t, i) => (
+          <ThresholdCard
+            key={t.id ?? `${t.kpi}-${t.scope}-${i}`}
+            t={t}
+            kpiLabel={kpiLabel(t.kpi)}
+            onEdit={() => setModal({ open: true, editing: t })}
+            onDelete={() => setConfirmDelete(t)}
+            onToggle={() => handleToggle(t)}
+          />
+        ))}
       </div>
 
-      {/* ── History tab ── */}
-      <div hidden={activeTab !== "history"} style={{ paddingBottom: "2rem" }}>
-        {activeTab === "history" && <AlertHistoryTab community={community} availableKpis={availableKpis} />}
-      </div>
+      {activeTab === "history" && <AlertHistory community={community} kpiOptions={kpiOptions} />}
 
-      {/* Modal */}
-      {modal.open && (
       <ThresholdModal
-          isEdit={!!modal.editing}
-          community={community}
-          availableKpis={availableKpis}
-          communitiesList={communityList}
-          buildingsMap={communities ?? COMMUNITY_FALLBACK}
-          initial={modal.editing ? {
-            kpi: modal.editing.kpi,
-            scope: modal.editing.scope,
-            condition: modal.editing.condition,
-            threshold: modal.editing.threshold,
-            severity: modal.editing.severity,
-            message: modal.editing.message,
-            enabled: modal.editing.enabled,
-          } : EMPTY_FORM}
-          onClose={() => setModal({ open: false, editing: null })}
-          onSave={modal.editing ? handleEdit : handleCreate}
-        />
-      )}
+        open={modal.open}
+        isEdit={!!modal.editing}
+        kpiOptions={kpiOptions}
+        communitiesList={communityList}
+        buildingsMap={communities ?? COMMUNITY_FALLBACK}
+        initial={modal.editing ? {
+          kpi: modal.editing.kpi,
+          scope: modal.editing.scope,
+          condition: modal.editing.condition,
+          threshold: modal.editing.threshold,
+          severity: modal.editing.severity,
+          message: modal.editing.message,
+          enabled: modal.editing.enabled,
+        } : EMPTY_FORM}
+        onClose={() => setModal({ open: false, editing: null })}
+        onSave={modal.editing ? handleEdit : handleCreate}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        title="Delete threshold"
+        message={confirmDelete ? <>Delete the <strong>{kpiLabel(confirmDelete.kpi)}</strong> rule for <code>{confirmDelete.scope}</code>?</> : ""}
+        confirmLabel="Delete"
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => confirmDelete && handleDelete(confirmDelete)}
+      />
     </div>
   );
 }

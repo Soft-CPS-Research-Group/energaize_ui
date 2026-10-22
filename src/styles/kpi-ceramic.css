@@ -307,6 +307,25 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
   color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--bg-elev));
 }
 
+/* ── Alerts (ThresholdPage.tsx) ───────────────────────────────────────────── */
+.kpi-rule {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: 14px;
+  background: var(--bg-elev); border: 1px solid var(--line); border-left-width: 3px;
+}
+.kpi-rule > svg { flex: 0 0 auto; margin-top: 2px; }
+.kpi-rule.is-critical { border-left-color: var(--danger); }
+.kpi-rule.is-warning { border-left-color: var(--warn); }
+.kpi-rule.is-info { border-left-color: var(--info); }
+.kpi-rule.is-disabled { border-left-color: var(--line); opacity: .6; }
+.kpi-rule-body { flex: 1; min-width: 0; }
+.kpi-rule-body h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 500; }
+.kpi-rule-body h3 code { font-size: 11px; font-weight: 400; padding: 1px 6px; border-radius: 6px; background: var(--bg-elev-2); }
+.kpi-rule-body h3 time { margin-left: auto; font-size: 11px; font-weight: 400; }
+.kpi-rule-body p { margin: 4px 0 0; font-size: 12px; color: var(--text-soft); }
+.kpi-rule-body p code { font-size: 11px; padding: 0 5px; border-radius: 5px; background: var(--bg-elev-2); }
+.kpi-rule-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.kpi-threshold-preview { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--bg-elev-2); font-size: 12px; color: var(--text-soft); }
+
 @media(max-width:700px) {
   body[data-workspace="ai"] .kpi-heading { align-items: flex-start; flex-wrap: wrap; }
   body[data-workspace="ai"] .kpi-heading-actions { width: 100%; }
