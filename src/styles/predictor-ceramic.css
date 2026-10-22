@@ -137,7 +137,6 @@ body[data-workspace="ai"] .predictor-delta.worsened { background: color-mix(in s
 
 /* Train: actions, host meters, job panels, job details and the guided modal. */
 .predictor-train-actions { align-items: center; }
-.predictor-train-note { font-size: 11px; color: var(--text-soft); }
 body[data-workspace="ai"] .sys-meters-row { gap: 12px; margin: 0; }
 body[data-workspace="ai"] .sys-meter { border-radius: 16px; background: var(--bg-elev); }
 body[data-workspace="ai"] .sys-meter-label { font-size: 10px; font-weight: 500; letter-spacing: .1em; }
@@ -376,6 +375,20 @@ body[data-workspace="ai"] .analysis-table td { white-space: nowrap; }
 .retrain-all-bar-fill { height: 100%; border-radius: inherit; background: var(--brand); }
 .retrain-all-bar-fill.is-p0 { background: var(--warn); }
 .retrain-all-bar-fill.is-p4 { background: var(--text-soft); }
+.retrain-all-bar-fill.is-p5 { background: var(--info, var(--brand)); }
+
+/* Generic model dialog. */
+.generic-lanes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.generic-lane { display: grid; gap: 8px; align-content: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.generic-lane small { font-size: 11px; }
+.generic-lane-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.generic-lane-head h4 { margin: 0; font-size: 13px; font-weight: 500; }
+.generic-file { display: grid; gap: 6px; }
+.generic-file-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12px; }
+.generic-file-row strong { font-weight: 500; }
+.generic-excluded { margin: 0; padding: 8px 10px; list-style: none; display: grid; gap: 4px; font-size: 11.5px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 7%, var(--bg-elev)); }
+.generic-excluded strong { font-weight: 500; }
+.generic-force { padding-bottom: 0; color: var(--text); }
 .retrain-all-table-scroll { max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
 .retrain-all-more { padding: 8px 12px; font-size: 11px; }
 .retrain-all-summary { display: grid; gap: 8px; padding: 0 18px 14px; }
@@ -384,6 +397,7 @@ body[data-workspace="ai"] .analysis-table td { white-space: nowrap; }
 .retrain-all-toggle { display: inline-flex; align-items: center; gap: 4px; justify-self: start; }
 @media (max-width: 720px) {
   .retrain-all-options { grid-template-columns: minmax(0, 1fr); }
+  .generic-lanes { grid-template-columns: minmax(0, 1fr); }
   .retrain-all-bar-row { grid-template-columns: 110px minmax(0, 1fr) 32px; }
 }
 

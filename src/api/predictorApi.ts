@@ -22,6 +22,7 @@ export interface PredictorHistoryResponse {
 
 /** The latest published forecast; every field is null until the house gets its first one. */
 export interface PredictorPredictionsResponse {
+  /** When the forecast cycle ran, in UTC ("2026-10-22T09:03:12.5Z"); values[0] is the slot it falls in. */
   target_time: string | null;
   consumption: number[] | null;
   production: number[] | null;
@@ -115,6 +116,8 @@ export interface PredictorCommandPayload {
   model_schema?: string;
   model_type?: ModelBackend;
   hyperparams?: Record<string, unknown>;
+  /** Keep the new model even when its error (MAE) is higher than the current one's. */
+  force?: boolean;
 }
 
 /** GET /api/health: 200 while compute cycles keep completing, 503 (same body) when stalled. */
@@ -232,6 +235,40 @@ export async function executeCommand(payload: PredictorCommandPayload): Promise<
   });
 }
 
+// ─── Generic (cold-start) model ──────────────────────────────────────────────
+
+/** Training jobs and batch lanes of the generic model carry this house id. */
+export const GENERIC_HOUSE_ID = "cold_start";
+
+export type GenericBackend = "xgboost" | "lgbm";
+
+export interface GenericModelFile {
+  trained_at: string | null;
+  /** Houses whose data was pooled; missing for models trained before it was recorded. */
+  houses?: string[] | null;
+  /** Houses left out, e.g. because their meter unit did not match the others. */
+  excluded?: { house_id: string; reason: string }[] | null;
+}
+
+export interface GenericModelLane {
+  /** The chosen backend; null when each house's own backend picks it (XGBoost when that one is missing). */
+  model_type: GenericBackend | null;
+  available: Partial<Record<GenericBackend, GenericModelFile>>;
+}
+
+export type GenericModelResponse = Record<"consumption" | "production", GenericModelLane>;
+
+export async function getGenericModel(): Promise<GenericModelResponse> {
+  return predictorHttp<GenericModelResponse>("/api/generic-model");
+}
+
+export async function setGenericModel(payload: { lane: "consumption" | "production"; model_type: GenericBackend }): Promise<{ status: string }> {
+  return predictorHttp<{ status: string }>("/api/generic-model", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function cancelJob(jobId: string): Promise<{ message: string }> {
   return predictorHttp<{ message: string }>(`/api/jobs/${jobId}/cancel`, {
     method: "POST"
@@ -273,6 +310,10 @@ export interface BatchOptions {
   max_model_age_days?: number;
   model_type?: "active" | ModelBackend;
   max_parallel?: number;
+  /** Also retrain the generic model of each lane, after the houses. */
+  include_generic?: boolean;
+  /** Keep every new model even when its error (MAE) is higher. */
+  force?: boolean;
 }
 
 export interface BatchItem {
@@ -281,7 +322,7 @@ export interface BatchItem {
   model_type: string;
   /** Why the lane is in the batch, e.g. "no model" or "forecast refused (scale-drift)". */
   reason: string;
-  /** 0 refused, 1 no model, 2 trained before unit detection, 3 old, 4 up to date. */
+  /** 0 refused, 1 no model, 2 trained before unit detection, 3 old, 4 up to date, 5 generic model. */
   priority: number;
   /** QUEUED, a training job status, or SKIPPED. */
   status: string;

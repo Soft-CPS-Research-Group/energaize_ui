@@ -3,20 +3,20 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { Layers, PlusCircle, RotateCcw } from "lucide-react";
 import {
   usePredictorTrainingProgress,
-  usePredictorCommand,
   useCancelTrainingJob,
   usePredictorJob,
 } from "../../../hooks/usePredictor";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EmptyState } from "../../../components/ui/EmptyState";
-import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { Modal } from "../../../components/ui/Modal";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { normalizeTs } from "../../../utils/predictorTransforms";
 import type { TrainingJob, SystemInfo } from "../../../api/predictorApi";
 import { TrainWizard } from "./TrainWizard";
 import { BatchPanel, RetrainAllModal } from "./RetrainAll";
+import { GenericModelModal } from "./GenericModel";
+import { houseLabel } from "./batchFormat";
 
 interface TrainViewProps {
   selectedHouseId: string | null;
@@ -94,7 +94,7 @@ function JobDetailModal({ initial, timezone, onClose }: {
     <Modal title="Job details" open onClose={onClose} width="sm">
       <div className="train-detail">
         <div className="train-detail-section">
-          <div className="train-detail-row"><span className="train-detail-label">House</span><span>{job.house_id}</span></div>
+          <div className="train-detail-row"><span className="train-detail-label">House</span><span>{houseLabel(job.house_id)}</span></div>
           <div className="train-detail-row"><span className="train-detail-label">Lane</span><span className="is-capitalized">{job.lane}</span></div>
           <div className="train-detail-row"><span className="train-detail-label">Model</span><span>{MODEL_LABELS[job.model_type ?? ""] ?? job.model_type ?? "—"}</span></div>
           <div className="train-detail-row"><span className="train-detail-label">Status</span><JobStatus status={job.status} /></div>
@@ -129,7 +129,7 @@ function JobDetailModal({ initial, timezone, onClose }: {
               {fmtMae(job.prev_mae)} → <strong className={improved ? "is-improved" : undefined}>{fmtMae(job.new_mae)}</strong>
             </span>
           </div>
-          <small className="is-muted">Current model → new model. Lower is better; the new model is used only if it is lower.</small>
+          <small className="is-muted">Current model → new model. Lower is better; the new model is used only if it is lower, unless the job was started with "keep even if worse".</small>
         </div>
 
         {isActive && (
@@ -228,12 +228,10 @@ function SystemMeters({ system, updatedAt }: { system: SystemInfo; updatedAt: nu
 }
 
 export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
-  const { notifySuccess, notifyError } = useApiFeedback();
   const { data: jobsData, dataUpdatedAt } = usePredictorTrainingProgress();
-  const commandMutation = usePredictorCommand();
 
   const [showTrainDialog, setShowTrainDialog] = useState(false);
-  const [showColdTrainDialog, setShowColdTrainDialog] = useState(false);
+  const [showGeneric, setShowGeneric] = useState(false);
   const [showRetrainAll, setShowRetrainAll] = useState(false);
   const [detailJob, setDetailJob] = useState<TrainingJob | null>(null);
   const [historyScope, setHistoryScope] = useState<"all" | "house">("all");
@@ -252,16 +250,6 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
   const page = Math.min(historyPage, pageCount - 1);
   const pageJobs = scopedHistory.slice(page * HISTORY_PAGE_SIZE, (page + 1) * HISTORY_PAGE_SIZE);
 
-  const handleColdTrain = () => {
-    commandMutation.mutate(
-      { command: "train-cold", lane: "both" },
-      {
-        onSuccess: (res) => { notifySuccess("Cold-start training queued", res.message); setShowColdTrainDialog(false); },
-        onError: (err) => notifyError("Training not started", err),
-      }
-    );
-  };
-
   return (
     <div className="predictor-train-view">
       <div className="predictor-train-actions">
@@ -269,7 +257,7 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
           variant="primary"
           iconLeft={<PlusCircle size={15} />}
           onClick={() => setShowTrainDialog(true)}
-          disabled={!selectedHouseId || commandMutation.isPending}
+          disabled={!selectedHouseId}
         >
           Train Selected House
         </Button>
@@ -283,12 +271,10 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
         <Button
           variant="secondary"
           iconLeft={<RotateCcw size={15} />}
-          onClick={() => setShowColdTrainDialog(true)}
-          disabled={commandMutation.isPending}
+          onClick={() => setShowGeneric(true)}
         >
-          Retrain Cold-Start Models
+          Generic Model
         </Button>
-        <small className="predictor-train-note">Cold-start runs are not listed below yet; follow them in Logs.</small>
       </div>
 
       {systemInfo && <SystemMeters system={systemInfo} updatedAt={dataUpdatedAt} />}
@@ -322,7 +308,7 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
                     return (
                       <tr key={job.job_id} className="is-clickable" tabIndex={0} onClick={() => setDetailJob(job)}
                         onKeyDown={(e) => { if (e.key === "Enter") setDetailJob(job); }}>
-                        <td>{job.house_id}</td>
+                        <td>{houseLabel(job.house_id)}</td>
                         <td className="is-capitalized">{job.lane}</td>
                         <td>{MODEL_LABELS[job.model_type ?? ""] ?? job.model_type ?? "—"}</td>
                         <td><JobStatus status={job.status} /></td>
@@ -380,7 +366,7 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
                     return (
                       <tr key={job.job_id} className="is-clickable" tabIndex={0} onClick={() => setDetailJob(job)}
                         onKeyDown={(e) => { if (e.key === "Enter") setDetailJob(job); }}>
-                        <td>{job.house_id}</td>
+                        <td>{houseLabel(job.house_id)}</td>
                         <td className="is-capitalized">{job.lane}</td>
                         <td>{MODEL_LABELS[job.model_type ?? ""] ?? job.model_type ?? "—"}</td>
                         <td><JobStatus status={job.status} /></td>
@@ -409,16 +395,7 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
 
       {detailJob && <JobDetailModal initial={detailJob} timezone={timezone} onClose={() => setDetailJob(null)} />}
 
-      <ConfirmDialog
-        open={showColdTrainDialog}
-        title="Retrain cold-start models"
-        message="Retrains the shared cold-start models from every house's data, for both lanes. They are used when a house has no recent data or no model of its own. These runs do not appear in the job lists yet; follow them in Logs."
-        confirmLabel="Start cold-start training"
-        confirmVariant="primary"
-        pending={commandMutation.isPending}
-        onConfirm={handleColdTrain}
-        onCancel={() => setShowColdTrainDialog(false)}
-      />
+      <GenericModelModal open={showGeneric} onClose={() => setShowGeneric(false)} timezone={timezone} />
 
       <RetrainAllModal open={showRetrainAll} onClose={() => setShowRetrainAll(false)} />
 
