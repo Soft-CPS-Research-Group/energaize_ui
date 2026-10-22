@@ -363,8 +363,46 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-library-facts dt { font-weight: 500; }
 .kpi-library-facts dd { margin: 0; color: var(--text-soft); }
 .kpi-library-note { margin: 0; padding: 8px 10px; border-radius: 8px; border-left: 2px solid var(--warn); font-size: 12px; font-style: italic; color: var(--warn); background: color-mix(in srgb, var(--warn) 6%, var(--bg-elev)); }
+.kpi-library-title h4 { margin: 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.kpi-explorer { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 18px; align-items: start; }
+.kpi-explorer-tree { position: sticky; top: 0; padding: 12px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg-elev); max-height: calc(100vh - 220px); overflow-y: auto; }
+.kpi-explorer-tree ul { margin: 0; padding: 0; list-style: none; }
+.kpi-explorer-eyebrow { margin: 0 0 6px; padding: 0 8px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-soft); }
+.kpi-explorer-row { display: flex; align-items: center; }
+.kpi-explorer-caret { display: grid; place-items: center; width: 24px; height: 28px; padding: 0; border: 0; background: none; color: var(--text-soft); cursor: pointer; border-radius: 6px; flex-shrink: 0; }
+.kpi-explorer-node { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; border-radius: 10px; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.kpi-explorer-node span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-explorer-node svg { flex-shrink: 0; color: var(--text-soft); }
+.kpi-explorer-node:hover, .kpi-explorer-caret:hover { background: var(--bg-elev-2); }
+.kpi-explorer-node[aria-pressed="true"] { background: var(--ai-tint); color: var(--brand-strong); font-weight: 500; }
+.kpi-explorer-node[aria-pressed="true"] svg { color: var(--brand); }
+.kpi-explorer-node:focus-visible, .kpi-explorer-caret:focus-visible, .kpi-family-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.kpi-explorer-buildings { margin: 2px 0 6px 20px !important; padding-left: 8px !important; border-left: 1px solid var(--line); }
+.kpi-explorer-buildings .kpi-explorer-node { font-size: 12px; color: var(--text-soft); }
+.kpi-explorer-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.kpi-explorer-heading h2 { margin: 0; font-size: 18px; font-weight: 500; }
+.kpi-explorer-heading p { margin: 2px 0 0; font-size: 13px; color: var(--text-soft); }
+.kpi-family { --kpi-cat: var(--text-soft); border-radius: 18px; border: 1px solid var(--line); background: var(--bg-elev); overflow: hidden; }
+.kpi-family[data-category="energy"] { --kpi-cat: var(--kpi-cat-energy); }
+.kpi-family[data-category="economic"] { --kpi-cat: var(--kpi-cat-economic); }
+.kpi-family[data-category="equity"] { --kpi-cat: var(--kpi-cat-equity); }
+.kpi-family[data-category="ev"] { --kpi-cat: var(--kpi-cat-ev); }
+.kpi-family[data-category="carbon"] { --kpi-cat: var(--kpi-cat-carbon); }
+.kpi-family[data-category="quality"] { --kpi-cat: var(--kpi-cat-quality); }
+.kpi-family-toggle { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 16px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.kpi-family-toggle:hover { background: var(--bg-elev-2); }
+.kpi-family-toggle > svg { color: var(--text-soft); }
+.kpi-family-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--kpi-cat); background: color-mix(in srgb, var(--kpi-cat) 12%, var(--bg-elev)); }
+.kpi-family-label { font-size: 14px; font-weight: 500; }
+.kpi-family-count { margin-right: auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--text-soft); background: var(--bg-elev-2); }
+.kpi-family .kpi-library-grid { padding: 4px 14px 14px; }
+.kpi-family .kpi-library-card { background: var(--bg); border-left: 3px solid var(--kpi-cat); }
+
 
 @media(max-width:700px) {
+  .kpi-explorer { grid-template-columns: 1fr; }
+  .kpi-explorer-tree { position: static; max-height: 320px; }
+  .kpi-library-grid { grid-template-columns: 1fr; }
   body[data-workspace="ai"] .kpi-heading { align-items: flex-start; flex-wrap: wrap; }
   body[data-workspace="ai"] .kpi-heading-actions { width: 100%; }
   .kpi-subnav { align-self: stretch; }
