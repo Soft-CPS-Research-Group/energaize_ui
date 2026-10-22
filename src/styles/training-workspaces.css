@@ -32,14 +32,27 @@
 .training-folder-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 20px;padding-bottom:12px;border-bottom:1px solid #8883}.training-folder-toolbar input,.training-folder-toolbar select,.training-folder-assignment select{padding:7px;border:1px solid #8885;border-radius:5px;color:inherit;background:transparent;font:inherit}.training-folder-toolbar button{padding:7px 11px;border:1px solid #8885;border-radius:5px;background:transparent;color:inherit;cursor:pointer}.training-folder-toolbar p{width:100%;margin:0}.training-folder-assignment{display:inline-flex;flex-direction:column;margin-left:10px}.training-notice{padding:32px}.training-operation-list{display:grid;gap:0}.training-operation-row{padding:20px 0;border-bottom:1px solid #8883}.training-operation-row header{display:flex;justify-content:space-between;gap:16px}.training-operation-row dl{display:flex;gap:24px;flex-wrap:wrap}.training-operation-row dt{font-size:12px;opacity:.7}.training-operation-row dd{margin:4px 0}.training-generator{display:grid;gap:14px}.training-generator label{display:grid;gap:6px}.training-generator input,.training-generator select{padding:8px;color:inherit;background:transparent;border:1px solid #8886;border-radius:5px}.training-generator fieldset{border:0;border-top:1px solid #8884;padding:14px 0}.training-generator legend{font-weight:600}.training-generator pre{white-space:pre-wrap;max-height:200px;overflow:auto}
 .training-kpi-results{max-height:400px;overflow:auto}.training-kpi-results table{width:100%;border-collapse:collapse}.training-kpi-results th,.training-kpi-results td{text-align:left;padding:10px;border-bottom:1px solid #8883}.training-operation-list{margin-bottom:28px}.training-folder-toolbar select{max-width:100%;min-width:160px}.training-generator legend label{display:flex;align-items:center;gap:8px}.training-generator fieldset p{font-size:13px;opacity:.75}
 
-.community-dataset-generator details { border-top: 1px solid var(--border-color, #dedbd2); padding: 12px 0; }
+.community-dataset-generator details { border-top: 1px solid var(--line); padding: 12px 0; }
 .community-dataset-generator summary { cursor: pointer; font-weight: 600; }
 .community-dataset-generator fieldset { border: 0; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; }
-.dataset-generation-summary { display: grid; gap: 6px; padding: 16px; background: var(--surface-muted, #f4f2eb); border-radius: 8px; }
+.dataset-generation-summary { display: grid; gap: 6px; padding: 16px; background: var(--bg-elev-2); border-radius: 8px; }
 .dataset-generation-summary span { font-size: .9rem; }
 .dataset-house { display: grid; gap: 6px; padding: 8px 0; }
 .dataset-house > label { display: flex; gap: 10px; align-items: center; }
 .dataset-house > label:not(:first-child) { padding-left: 24px; }
 .dataset-house small { margin-left: auto; opacity: .65; }
-.dataset-build-status { margin-top: 12px; padding: 16px; border: 1px solid var(--border-color, #dedbd2); border-radius: 8px; }
+.dataset-build-status { margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; }
 .community-dataset-generator input[type=checkbox] { width: auto; }
+
+.community-dataset-generator > .training-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 0;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--line);
+}
