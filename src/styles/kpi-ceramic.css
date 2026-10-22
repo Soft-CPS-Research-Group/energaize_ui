@@ -175,10 +175,38 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-chart-tooltip p { margin: 2px 0; }
 .kpi-chart-tooltip-title { color: var(--text-soft); font-weight: 500; margin-bottom: 6px !important; }
 
+/* ── Correlations (CorrelationPage.tsx) ───────────────────────────────────── */
+.kpi-r-strong { color: var(--brand-strong); }
+.kpi-r-moderate { color: var(--info); }
+.kpi-r-legend { flex: 2 1 320px; padding-left: 16px; border-left: 1px solid var(--line); font-size: 12px; line-height: 1.6; color: var(--text-soft); }
+.kpi-r-legend p { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 4px; font-weight: 500; color: var(--text); }
+.kpi-analysis { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--bg-elev); }
+.kpi-analysis-bar { display: flex; align-items: center; gap: 6px; padding: 6px 10px 6px 6px; background: var(--bg-elev-2); }
+.kpi-analysis-toggle {
+  flex: 1; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; border-radius: 12px;
+  background: transparent; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.kpi-analysis-toggle:hover { background: var(--ai-tint); }
+.kpi-analysis-title { flex: 1; font-weight: 500; }
+.kpi-analysis-body { display: flex; flex-direction: column; gap: 16px; padding: 18px 20px 20px; }
+.kpi-analysis-row { padding-top: 14px; border-top: 1px solid var(--line); }
+.kpi-analysis-swap { align-self: center; margin-top: 18px; color: var(--text-soft); }
+.kpi-analysis-summary { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px; border-radius: 14px; background: var(--bg-elev-2); }
+.kpi-analysis-summary h3 { margin: 0; font-size: 14px; font-weight: 500; }
+.kpi-analysis-summary p { margin: 4px 0 0; font-size: 12px; }
+.kpi-r-badge { display: flex; align-items: center; gap: 16px; }
+.kpi-r-value { display: flex; flex-direction: column; align-items: center; }
+.kpi-r-value strong { font-size: 40px; font-weight: 500; line-height: 1; letter-spacing: -.03em; }
+.kpi-r-value span { margin-top: 4px; font-size: 11px; color: var(--text-soft); }
+.kpi-r-verdict { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.kpi-r-pill { align-self: flex-start; padding: 4px 12px; border-radius: 999px; font-weight: 500; border: 1px solid currentColor; }
+
 @media(max-width:700px) {
   body[data-workspace="ai"] .kpi-heading { align-items: flex-start; flex-wrap: wrap; }
   body[data-workspace="ai"] .kpi-heading-actions { width: 100%; }
   .kpi-subnav { align-self: stretch; }
+  .kpi-r-legend { padding-left: 0; border-left: 0; }
+  .kpi-analysis-swap { display: none; }
   .kpi-filterbar-actions { margin-left: 0; width: 100%; }
   .kpi-daterange input[type="date"] { flex: 1 1 130px; }
 }

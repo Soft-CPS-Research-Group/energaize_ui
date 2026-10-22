@@ -1,53 +1,51 @@
-import React, { useState, useCallback } from "react";
+import { useState, useCallback, useId } from "react";
 import { fetchKpiCorrelation } from "../../api/kpiApi";
 import type { CorrelationResponse } from "../../api/kpiApi";
 import { Button } from "../../components/ui/Button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/KpiCard";
 import { useCommunities } from "../../hooks/useCommunities";
-import { useKpiMetadata } from "../../hooks/useKpiMetadata";
+import { kpiDisplayName, kpiSelectOptions, useKpiMetadata, type KpiMeta } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import {
   Scatter, XAxis, YAxis, Line,
   CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart,
 } from "recharts";
-import {
-  Search, Loader2, AlertCircle, ArrowRightLeft,
-  MapPin, Building2, Calendar, Activity, Plus, X, ChevronDown, ChevronUp, Info,
-} from "lucide-react";
+import { Search, Loader2, ArrowRightLeft, Building2, Activity, Plus, X, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
+import { CommunityField, DateRangeField, KpiField, KpiFilterBar, toLocalDateString } from "../../components/kpi/KpiFilters";
+import { KpiError } from "../../components/kpi/KpiStates";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const getLocalDateString = (d: Date) =>
-  new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0];
 
 const defaultEnd = new Date();
 const defaultStart = new Date();
 defaultStart.setDate(defaultStart.getDate() - 30);
 
+/** Colour by strength only: a negative correlation is a trade-off, not a bad result. */
+function strengthTone(r: number | null): string {
+  if (r === null) return "kpi-text-soft";
+  const absR = Math.abs(r);
+  return absR >= 0.7 ? "kpi-r-strong" : absR >= 0.4 ? "kpi-r-moderate" : "kpi-text-soft";
+}
+
+function formatR(r: number | null): string {
+  return r === null ? "N/A" : `${r > 0 ? "+" : ""}${r.toFixed(3)}`;
+}
+
 // ── Pearson r badge ───────────────────────────────────────────────────────────
 
 function RBadge({ r, interpretation }: { r: number | null; interpretation: string }) {
-  if (r === null) return <span style={{ fontSize: "14px", color: "var(--text-soft)" }}>Insufficient data</span>;
-  const isPositive = r >= 0;
+  if (r === null) return <span className="kpi-text-soft">Insufficient data</span>;
   const absR = Math.abs(r);
   const strength = absR >= 0.7 ? "Strong" : absR >= 0.4 ? "Moderate" : "Weak";
-  const color = absR >= 0.7 ? (isPositive ? "#16a34a" : "#dc2626") : absR >= 0.4 ? (isPositive ? "#65a30d" : "#ea580c") : "#6b7280";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: "3rem", fontWeight: 700, color, lineHeight: 1 }}>
-          {r > 0 ? "+" : ""}{r.toFixed(3)}
-        </div>
-        <div style={{ fontSize: "12px", color: "var(--text-soft)", marginTop: "4px" }}>Pearson r</div>
+    <div className={`kpi-r-badge ${strengthTone(r)}`}>
+      <div className="kpi-r-value">
+        <strong>{formatR(r)}</strong>
+        <span>Pearson r</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 12px", borderRadius: "9999px", fontSize: "13px", fontWeight: 600, color, border: `1px solid ${color}40`, background: `${color}12` }}>
-          {strength} {isPositive ? "positive" : "negative"} correlation
-        </span>
-        <span style={{ fontSize: "12px", color: "var(--text-soft)", paddingLeft: "12px" }}>
-          {interpretation.replace(/_/g, " ")}
-        </span>
+      <div className="kpi-r-verdict">
+        <span className="kpi-r-pill">{strength} {r >= 0 ? "positive" : "negative"} correlation</span>
+        <span className="kpi-text-soft">{interpretation.replace(/_/g, " ")}</span>
       </div>
     </div>
   );
@@ -55,14 +53,14 @@ function RBadge({ r, interpretation }: { r: number | null; interpretation: strin
 
 // ── Custom scatter tooltip ────────────────────────────────────────────────────
 
-function ScatterTooltip({ active, payload, kpiA, kpiB }: any) {
+function ScatterTooltip({ active, payload, labelA, labelB }: any) {
   if (!active || !payload?.length) return null;
   const { x, y, period_start } = payload[0]?.payload ?? {};
   return (
-    <div style={{ backgroundColor: "var(--bg-elev)", border: "1px solid var(--line)", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", color: "var(--text)", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}>
-      {period_start && <p style={{ margin: "0 0 4px 0", color: "var(--text-soft)", fontSize: "11px" }}>{period_start}</p>}
-      <p style={{ margin: "0 0 2px 0" }}><span style={{ fontWeight: 600 }}>{kpiA?.replace("KPI", "")}:</span> {typeof x === "number" ? x.toFixed(4) : x}</p>
-      <p style={{ margin: 0 }}><span style={{ fontWeight: 600 }}>{kpiB?.replace("KPI", "")}:</span> {typeof y === "number" ? y.toFixed(4) : y}</p>
+    <div className="kpi-chart-tooltip">
+      {period_start && <p className="kpi-chart-tooltip-title">{period_start}</p>}
+      <p><strong>{labelA}:</strong> {typeof x === "number" ? x.toFixed(4) : x}</p>
+      <p><strong>{labelB}:</strong> {typeof y === "number" ? y.toFixed(4) : y}</p>
     </div>
   );
 }
@@ -104,8 +102,8 @@ let _nextId = 1;
 const newSlot = (): AnalysisSlot => ({
   id: _nextId++,
   kpiA: "", kpiB: "",
-  startDate: getLocalDateString(defaultStart),
-  endDate: getLocalDateString(defaultEnd),
+  startDate: toLocalDateString(defaultStart),
+  endDate: toLocalDateString(defaultEnd),
   scope: "",
   loading: false, error: null, result: null,
   collapsed: false,
@@ -115,186 +113,138 @@ const newSlot = (): AnalysisSlot => ({
 
 interface AnalysisPanelProps {
   slot: AnalysisSlot;
-  community: string;
-  scheduledKpis: string[];
+  kpiOptions: Array<{ value: string; label: string }>;
   scopeOptions: { value: string; label: string }[];
-  kpiMeta: any[];
-  inputStyle: React.CSSProperties;
+  kpiMeta: KpiMeta[];
   onUpdate: (id: number, patch: Partial<AnalysisSlot>) => void;
   onRun: (id: number) => void;
   onRemove: (id: number) => void;
   canRemove: boolean;
 }
 
-function AnalysisPanel({ slot, scheduledKpis, scopeOptions, kpiMeta, inputStyle, onUpdate, onRun, onRemove, canRemove }: AnalysisPanelProps) {
-  const label = (k: string) => {
-    const m = kpiMeta.find((x: any) => x.name === k);
-    return (m?.display_name || k).replace("KPI", "").trim();
-  };
+function AnalysisPanel({ slot, kpiOptions, scopeOptions, kpiMeta, onUpdate, onRun, onRemove, canRemove }: AnalysisPanelProps) {
+  const ids = useId();
+  const label = (k: string) => kpiDisplayName(kpiMeta.find((m) => m.name === k), k);
 
   const summaryTitle = slot.kpiA && slot.kpiB
     ? `${label(slot.kpiA)} ↔ ${label(slot.kpiB)}`
     : "New analysis";
-
   const r = slot.result?.pearson_r ?? null;
-  const absR = r !== null ? Math.abs(r) : null;
-  const rColor = absR === null ? "var(--text-soft)" : absR >= 0.7 ? (r! > 0 ? "#16a34a" : "#dc2626") : absR >= 0.4 ? (r! > 0 ? "#65a30d" : "#ea580c") : "#6b7280";
+  const bodyId = `${ids}-body`;
 
   return (
-    <div style={{ border: "1px solid var(--line)", borderRadius: "12px", overflow: "hidden", backgroundColor: "var(--bg-elev)", boxShadow: "var(--shadow)" }}>
-      {/* ── Panel header / collapse bar ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 16px", borderBottom: slot.collapsed ? "none" : "1px solid var(--line)", backgroundColor: "var(--bg-elev-2)", cursor: "pointer" }}
-        onClick={() => onUpdate(slot.id, { collapsed: !slot.collapsed })}>
-        <span style={{ flex: 1, fontWeight: 600, fontSize: "0.875rem" }}>{summaryTitle}</span>
-        {slot.result && (
-          <span style={{ fontSize: "0.85rem", fontWeight: 700, color: rColor }}>
-            {r === null ? "r = N/A" : `r = ${r > 0 ? "+" : ""}${r.toFixed(3)}`}
-          </span>
-        )}
-        {slot.loading && <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />}
-        {slot.collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+    <section className="kpi-analysis" aria-label={summaryTitle}>
+      <div className="kpi-analysis-bar">
+        <button
+          type="button"
+          className="kpi-analysis-toggle"
+          aria-expanded={!slot.collapsed}
+          aria-controls={bodyId}
+          onClick={() => onUpdate(slot.id, { collapsed: !slot.collapsed })}
+        >
+          <span className="kpi-analysis-title">{summaryTitle}</span>
+          {slot.result && <strong className={strengthTone(r)}>r = {formatR(r)}</strong>}
+          {slot.loading && <Loader2 size={14} className="animate-spin" aria-label="Analysing" />}
+          {slot.collapsed ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronUp size={16} aria-hidden="true" />}
+        </button>
         {canRemove && (
-          <button
-            onClick={e => { e.stopPropagation(); onRemove(slot.id); }}
-            title="Remove"
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-soft)", padding: "2px", borderRadius: "4px", display: "flex", alignItems: "center" }}
-          >
-            <X size={14} />
-          </button>
+          <Button variant="ghost" size="sm" iconOnly iconLeft={<X size={14} />} onClick={() => onRemove(slot.id)} aria-label={`Remove ${summaryTitle}`}>
+            Remove
+          </Button>
         )}
       </div>
 
-      {/* ── Expanded form + result ── */}
       {!slot.collapsed && (
-        <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* KPI A ↔ KPI B */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end" }}>
-            <div style={{ flex: "2 1 0%", minWidth: "200px" }}>
-              <label style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Activity size={15} /> KPI A <span style={{ fontWeight: 400, color: "var(--text-soft)" }}>(x-axis)</span>
-              </label>
-              <select style={inputStyle} value={slot.kpiA} onChange={e => onUpdate(slot.id, { kpiA: e.target.value })}>
+        <div className="kpi-analysis-body" id={bodyId}>
+          <div className="kpi-filterbar-fields">
+            <KpiField label="KPI A" hint="x-axis" icon={<Activity size={14} />} htmlFor={`${ids}-a`}>
+              <select id={`${ids}-a`} value={slot.kpiA} onChange={e => onUpdate(slot.id, { kpiA: e.target.value })}>
                 <option value="">Select KPI A…</option>
-                {scheduledKpis.map(k => <option key={k} value={k}>{k.replace("KPI", "")}</option>)}
+                {kpiOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", paddingBottom: "8px" }}>
-              <ArrowRightLeft size={18} style={{ color: "var(--text-soft)" }} />
-            </div>
-
-            <div style={{ flex: "2 1 0%", minWidth: "200px" }}>
-              <label style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Activity size={15} /> KPI B <span style={{ fontWeight: 400, color: "var(--text-soft)" }}>(y-axis)</span>
-              </label>
-              <select style={inputStyle} value={slot.kpiB} onChange={e => onUpdate(slot.id, { kpiB: e.target.value })}>
+            </KpiField>
+            <ArrowRightLeft size={18} className="kpi-analysis-swap" aria-hidden="true" />
+            <KpiField label="KPI B" hint="y-axis" icon={<Activity size={14} />} htmlFor={`${ids}-b`}>
+              <select id={`${ids}-b`} value={slot.kpiB} onChange={e => onUpdate(slot.id, { kpiB: e.target.value })}>
                 <option value="">Select KPI B…</option>
-                {scheduledKpis.map(k => <option key={k} value={k}>{k.replace("KPI", "")}</option>)}
+                {kpiOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-            </div>
+            </KpiField>
           </div>
 
-          {/* Scope + dates + run */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end", borderTop: "1px solid var(--line)", paddingTop: "16px" }}>
-            <div style={{ flex: "1 1 160px" }}>
-              <label style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Building2 size={14} /> Scope
-              </label>
-              <select style={inputStyle} value={slot.scope} onChange={e => onUpdate(slot.id, { scope: e.target.value })}>
+          <div className="kpi-filterbar-fields kpi-analysis-row">
+            <KpiField label="Scope" icon={<Building2 size={14} />} size="sm" htmlFor={`${ids}-scope`}>
+              <select id={`${ids}-scope`} value={slot.scope} onChange={e => onUpdate(slot.id, { scope: e.target.value })}>
                 <option value="">All scopes</option>
                 {scopeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-            </div>
-            <div style={{ flex: "1 1 130px" }}>
-              <label style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Calendar size={14} /> Start
-              </label>
-              <input type="date" value={slot.startDate} onChange={e => onUpdate(slot.id, { startDate: e.target.value })} style={inputStyle} />
-            </div>
-            <div style={{ flex: "1 1 130px" }}>
-              <label style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <Calendar size={14} /> End
-              </label>
-              <input type="date" value={slot.endDate} onChange={e => onUpdate(slot.id, { endDate: e.target.value })} style={inputStyle} />
-            </div>
-            <div style={{ marginLeft: "auto" }}>
-              <Button onClick={() => onRun(slot.id)} disabled={slot.loading} variant="primary">
-                {slot.loading
-                  ? <span style={{ display: "flex", alignItems: "center", gap: "8px" }}><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Analysing…</span>
-                  : <span style={{ display: "flex", alignItems: "center", gap: "8px" }}><Search size={16} /> Analyse</span>}
+            </KpiField>
+            <DateRangeField
+              start={slot.startDate}
+              end={slot.endDate}
+              presets={[{ label: "7 days", days: 7 }, { label: "30 days", days: 30 }]}
+              onChange={(startDate, endDate) => onUpdate(slot.id, { startDate, endDate })}
+            />
+            <div className="kpi-filterbar-actions">
+              <Button
+                onClick={() => onRun(slot.id)}
+                disabled={slot.loading}
+                variant="primary"
+                iconLeft={slot.loading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+              >
+                {slot.loading ? "Analyzing…" : "Analyze"}
               </Button>
             </div>
           </div>
 
-          {/* Error */}
-          {slot.error && (
-            <div style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#ef4444", padding: "12px 16px", borderRadius: "8px", border: "1px solid rgba(220,38,38,0.2)", display: "flex", alignItems: "center", gap: "8px", fontSize: "14px" }}>
-              <AlertCircle size={16} style={{ flexShrink: 0 }} /> {slot.error}
-            </div>
-          )}
+          {slot.error && <KpiError message={slot.error} />}
 
-          {/* Result */}
           {slot.result && !slot.loading && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              {/* Summary card */}
-              <Card>
-                <CardHeader>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
-                    <div>
-                      <CardTitle>{slot.result.kpi_a.replace("KPI", "")} ↔ {slot.result.kpi_b.replace("KPI", "")}</CardTitle>
-                      <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "var(--text-soft)" }}>
-                        {slot.result.point_count} matched 1-hour windows
-                        {slot.result.scope ? ` · Scope: ${slot.result.scope}` : ""}
-                      </p>
-                    </div>
-                    <RBadge r={slot.result.pearson_r} interpretation={slot.result.interpretation} />
-                  </div>
-                </CardHeader>
-              </Card>
+            <>
+              <div className="kpi-analysis-summary">
+                <div>
+                  <h3>{label(slot.result.kpi_a)} ↔ {label(slot.result.kpi_b)}</h3>
+                  <p className="kpi-text-soft">
+                    {slot.result.point_count} matched 1-hour windows
+                    {slot.result.scope ? ` · Scope: ${slot.result.scope}` : ""}
+                  </p>
+                </div>
+                <RBadge r={slot.result.pearson_r} interpretation={slot.result.interpretation} />
+              </div>
 
-              {/* Scatter + trend */}
               {slot.result.data_points.length >= 2 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle style={{ fontSize: "14px" }}>
-                      Scatter: {slot.result.kpi_a.replace("KPI", "")} (x) vs {slot.result.kpi_b.replace("KPI", "")} (y)
-                    </CardTitle>
-                    <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "var(--text-soft)" }}>
-                      Each dot = one 1-hour window · Dashed = OLS trend line
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    <div style={{ height: "320px" }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart
-                          data={[
-                            ...slot.result.data_points.map(p => ({ ...p, type: "scatter" })),
-                            ...computeTrendLine(slot.result.data_points).map(p => ({ ...p, type: "trend" })),
-                          ]}
-                          margin={{ top: 10, right: 20, bottom: 20, left: 10 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis type="number" dataKey="x" name={slot.result.kpi_a}
-                            label={{ value: slot.result.kpi_a.replace("KPI", ""), position: "insideBottom", offset: -10, style: { fontSize: "12px", fill: "var(--text-soft)" } }}
-                            style={{ fontSize: "11px" }} />
-                          <YAxis type="number" dataKey="y" name={slot.result.kpi_b}
-                            label={{ value: slot.result.kpi_b.replace("KPI", ""), angle: -90, position: "insideLeft", offset: 10, style: { fontSize: "12px", fill: "var(--text-soft)" } }}
-                            style={{ fontSize: "11px" }} />
-                          <Tooltip content={<ScatterTooltip kpiA={slot.result.kpi_a} kpiB={slot.result.kpi_b} />} />
-                          <Scatter dataKey="y" data={slot.result.data_points} fill="var(--brand)" fillOpacity={0.6} />
-                          <Line dataKey="trend" data={computeTrendLine(slot.result.data_points)} type="linear" dot={false} stroke="#ef4444" strokeWidth={1.5} strokeDasharray="5 3" legendType="none" />
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
+                <div className="kpi-chart-card">
+                  <header className="kpi-chart-card-head">
+                    <h3>{label(slot.result.kpi_a)} (x) vs {label(slot.result.kpi_b)} (y)</h3>
+                    <p>Each dot is one 1-hour window · dashed line is the least-squares trend</p>
+                  </header>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <ComposedChart
+                      data={[
+                        ...slot.result.data_points.map(p => ({ ...p, type: "scatter" })),
+                        ...computeTrendLine(slot.result.data_points).map(p => ({ ...p, type: "trend" })),
+                      ]}
+                      margin={{ top: 10, right: 20, bottom: 20, left: 10 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
+                      <XAxis type="number" dataKey="x" name={slot.result.kpi_a}
+                        label={{ value: label(slot.result.kpi_a), position: "insideBottom", offset: -10, style: { fontSize: 12, fill: "var(--text-soft)" } }}
+                        tick={{ fontSize: 11, fill: "var(--text-soft)" }} />
+                      <YAxis type="number" dataKey="y" name={slot.result.kpi_b}
+                        label={{ value: label(slot.result.kpi_b), angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 12, fill: "var(--text-soft)" } }}
+                        tick={{ fontSize: 11, fill: "var(--text-soft)" }} />
+                      <Tooltip content={<ScatterTooltip labelA={label(slot.result.kpi_a)} labelB={label(slot.result.kpi_b)} />} />
+                      <Scatter dataKey="y" data={slot.result.data_points} fill="var(--brand)" fillOpacity={0.6} />
+                      <Line dataKey="trend" data={computeTrendLine(slot.result.data_points)} type="linear" dot={false} stroke="var(--warn)" strokeWidth={1.5} strokeDasharray="5 3" legendType="none" />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
               )}
-            </div>
+            </>
           )}
         </div>
       )}
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-    </div>
+    </section>
   );
 }
 
@@ -308,22 +258,11 @@ export function CorrelationPage() {
   const [community, setCommunity] = useState(defaultCommunity);
   const [slots, setSlots] = useState<AnalysisSlot[]>([newSlot()]);
 
-  const scheduledKpis = kpiMeta
-    .filter((k: any) => k.status === "available" && k.registered)
-    .map((k: any) => k.name as string);
-
   const currentBuildings: string[] = communities[community] ?? COMMUNITY_FALLBACK[community] ?? [];
   const scopeOptions = [
     { value: "community", label: "Community (aggregate)" },
     ...currentBuildings.map(b => ({ value: b, label: b })),
   ];
-
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "8px 12px",
-    border: "1px solid var(--line)", borderRadius: "8px",
-    fontSize: "14px", outline: "none",
-    backgroundColor: "var(--bg-elev)", color: "var(--text)",
-  };
 
   const updateSlot = useCallback((id: number, patch: Partial<AnalysisSlot>) => {
     setSlots(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
@@ -363,78 +302,42 @@ export function CorrelationPage() {
   };
 
   return (
-    <div className="page" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className="page">
       <KpiPageHeader
         title="Correlations"
         description="How two KPIs move together across 1-hour windows: spot trade-offs and synergies"
       />
 
-      <div className="page-inner" style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px", flex: 1, backgroundColor: "var(--bg)", paddingBottom: "6rem" }}>
+      <KpiFilterBar ariaLabel="Community">
+        <CommunityField communities={Object.keys(communities)} value={community} onChange={setCommunity} />
+        <aside className="kpi-r-legend" aria-label="About Pearson r">
+          <p><Info size={12} aria-hidden="true" /> About Pearson r</p>
+          <span><strong className="kpi-r-strong">|r| ≥ 0.7</strong> strong · </span>
+          <span><strong className="kpi-r-moderate">0.4 ≤ |r| &lt; 0.7</strong> moderate · </span>
+          <span><strong className="kpi-text-soft">|r| &lt; 0.4</strong> weak</span>
+          <br />
+          <span>Positive r: the KPIs rise together. Negative r: a trade-off.</span>
+        </aside>
+      </KpiFilterBar>
 
-        {/* ── Global filters ── */}
-        <div style={{ backgroundColor: "var(--bg-elev)", padding: "16px 20px", borderRadius: "12px", border: "1px solid var(--line)", boxShadow: "var(--shadow)", display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end" }}>
-          <div style={{ flex: "1 1 180px" }}>
-            <label style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", marginBottom: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-              <MapPin size={15} /> Community
-            </label>
-            <select style={inputStyle} value={community} onChange={e => setCommunity(e.target.value)}>
-              {Object.keys(communities).map(c => (
-                <option key={c} value={c}>{c.replace(/_/g, " ").toUpperCase()}</option>
-              ))}
-            </select>
-          </div>
+      <div className="kpi-results">
+        {slots.map(slot => (
+          <AnalysisPanel
+            key={slot.id}
+            slot={slot}
+            kpiOptions={kpiSelectOptions(kpiMeta)}
+            scopeOptions={scopeOptions}
+            kpiMeta={kpiMeta}
+            onUpdate={updateSlot}
+            onRun={runSlot}
+            onRemove={removeSlot}
+            canRemove={slots.length > 1}
+          />
+        ))}
+      </div>
 
-          {/* Pearson explanation inline */}
-          <div style={{ flex: "2 1 320px", fontSize: "12px", color: "var(--text-soft)", borderLeft: "1px solid var(--line)", paddingLeft: "16px", lineHeight: 1.6 }}>
-            <p style={{ margin: "0 0 4px 0", fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: "4px" }}>
-              <Info size={12} /> About Pearson r
-            </p>
-            <span><strong style={{ color: "#16a34a" }}>|r| ≥ 0.7</strong> Strong · </span>
-            <span><strong style={{ color: "#65a30d" }}>0.4 ≤ |r| &lt; 0.7</strong> Moderate · </span>
-            <span><strong style={{ color: "#6b7280" }}>|r| &lt; 0.4</strong> Weak</span>
-            <br />
-            <span>Positive r → both improve together. Negative r → trade-off.</span>
-          </div>
-        </div>
-
-        {/* ── Analysis slots ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          {slots.map(slot => (
-            <AnalysisPanel
-              key={slot.id}
-              slot={slot}
-              community={community}
-              scheduledKpis={scheduledKpis}
-              scopeOptions={scopeOptions}
-              kpiMeta={kpiMeta}
-              inputStyle={inputStyle}
-              onUpdate={updateSlot}
-              onRun={runSlot}
-              onRemove={removeSlot}
-              canRemove={slots.length > 1}
-            />
-          ))}
-        </div>
-
-        {/* ── Add analysis button ── */}
-        <div>
-          <button
-            onClick={addSlot}
-            style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              padding: "8px 18px", borderRadius: "8px", cursor: "pointer",
-              border: "1px dashed var(--line)", background: "transparent",
-              color: "var(--text-soft)", fontSize: "14px", fontWeight: 500,
-              transition: "all 0.15s",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--brand)", e.currentTarget.style.color = "var(--brand)")}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--line)", e.currentTarget.style.color = "var(--text-soft)")}
-          >
-            <Plus size={16} /> Add another analysis
-          </button>
-        </div>
-
-
+      <div>
+        <Button variant="secondary" iconLeft={<Plus size={16} />} onClick={addSlot}>Add another analysis</Button>
       </div>
     </div>
   );
