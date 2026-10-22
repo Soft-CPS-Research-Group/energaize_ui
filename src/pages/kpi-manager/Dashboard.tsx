@@ -1,19 +1,22 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useId, useState, useMemo, useEffect, useRef } from "react";
 import { fetchKpis, fetchKpiHistory } from "../../api/kpiApi";
 import type { KpiDataPayload } from "../../types/kpi";
 import { KpiStats } from "../../components/kpi/KpiStats";
 import { KpiChart } from "../../components/kpi/KpiChart";
 import { Button } from "../../components/ui/Button";
-import { Activity, Calendar, MapPin, Building2, Search, Loader2, BarChart2, Radio } from "lucide-react";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Search, Loader2, BarChart2, Radio } from "lucide-react";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { useCommunities } from "../../hooks/useCommunities";
-import { useKpiMetadata } from "../../hooks/useKpiMetadata";
-import { MultiSelect } from "../../components/ui/MultiSelect";
+import { kpiDisplayName, kpiSelectOptions, useKpiMetadata } from "../../hooks/useKpiMetadata";
 import type { ProcessResponse } from "../../workers/dataProcessor.worker";
 import { LiveDashboard } from "./LiveDashboard";
-import { EVChargingLoader } from "../../components/ui/EVChargingLoader";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 import { KpiSegmented } from "../../components/kpi/KpiSegmented";
+import {
+  BuildingsField, CommunityField, DateRangeField, KpiField, KpiFilterBar, KpiSelectField, KpiSwitch, toLocalDateString,
+} from "../../components/kpi/KpiFilters";
+import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
 
 
 // ── Chart data types produced by the data-processor worker ─────────────────
@@ -38,16 +41,6 @@ interface ScheduledChartState {
   scopes: string[];
   stats: ScheduledStatItem[];
 }
-
-const QUICK_PRESETS = [
-  { label: "Today", days: 0 },
-  { label: "Last 7 Days", days: 7 },
-  { label: "Last 30 Days", days: 30 },
-];
-
-const getLocalDateString = (d: Date) => {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0];
-};
 
 const defaultEnd = new Date();
 const defaultStart = new Date();
@@ -76,8 +69,8 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
   const defaultCommunity = Object.keys(COMMUNITY_FALLBACK)[0];
   const [community, setCommunity] = useState(defaultCommunity);
   const [buildings, setBuildings] = useState<string[]>([]);
-  const [startDate, setStartDate] = useState(getLocalDateString(defaultStart));
-  const [endDate, setEndDate] = useState(getLocalDateString(defaultEnd));
+  const [startDate, setStartDate] = useState(toLocalDateString(defaultStart));
+  const [endDate, setEndDate] = useState(toLocalDateString(defaultEnd));
   const [selectedKpis, setSelectedKpis] = useState<string[]>([]);
   const [windowOverrides, setWindowOverrides] = useState("");
   const [computeAggregated, setComputeAggregated] = useState(false);
@@ -128,14 +121,6 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
       maxPoints: window.innerWidth > 1000 ? 500 : 250,
     });
   }, [data]);
-
-  const applyPreset = (daysBack: number) => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - daysBack);
-    setEndDate(getLocalDateString(end));
-    setStartDate(getLocalDateString(start));
-  };
 
   const handleFetch = async () => {
     if (buildings.length === 0) {
@@ -257,8 +242,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
       <div className="kpi-grid" >
         {sortedCategories.map((kpiName: any) => {
           const lines = chartData.buildings.map((b: string) => `${b}_${kpiName}`);
-          const meta = kpiMeta.find((m: any) => m.name === kpiName);
-          const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
+          const titleName = kpiDisplayName(kpiMeta.find((m) => m.name === kpiName), kpiName);
           return (
             <KpiChart
               key={`streaming_${kpiName}`}
@@ -291,8 +275,7 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
       <div className="kpi-grid" >
         {entries.map(([kpiName, series]) => {
           const lines = scheduledChartData.scopes.map((s: string) => `${s}_${kpiName}`);
-          const meta = kpiMeta.find((m: any) => m.name === kpiName);
-          const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
+          const titleName = kpiDisplayName(kpiMeta.find((m) => m.name === kpiName), kpiName);
           return (
             <KpiChart
               key={`scheduled_${kpiName}`}
@@ -307,18 +290,16 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
     );
   }, [scheduledChartData, kpiMeta]);
 
-  // Derive available KPI names from metadata
-  const availableKpis = kpiMeta
-    .filter((k: any) => k.status === "available" && k.registered)
-    .map((k: any) => k.name);
-
+  const overrideId = useId();
   const currentBuildings = communities[community] ?? COMMUNITY_FALLBACK[community] ?? [];
+  const busy = loading || processing;
+  const scopes = Array.from(new Set(scheduledChartData.stats.map((stat) => stat.scope)));
 
   return (
     <div className="page">
       <KpiPageHeader
         title="Overview"
-        description={activeTab === "analytics" ? "Analyse KPI data across communities and buildings" : "Real-time telemetry and data quality signals"}
+        description={activeTab === "analytics" ? "Analyze KPI data across communities and buildings" : "Real-time telemetry and data quality signals"}
         actions={
           <KpiSegmented
             segments={(Object.entries(TAB_LABELS) as [DashboardTab, { label: string; icon: React.ReactNode }][]).map(([key, { label, icon }]) => ({ key, label, icon }))}
@@ -330,265 +311,112 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
         }
       />
 
-      {/* ── Shared building selector (used by both tabs) ───────────────────── */}
-      <div style={{ paddingBottom: "0.5rem" }}>
-        <div className="panel" style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
-          <div style={{ flex: "1 1 200px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-              <MapPin size={16} /> Community
-            </label>
-            <select
-              style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-              value={community}
-              onChange={(e) => {
-                setCommunity(e.target.value);
-                setBuildings([]);
-              }}
-            >
-              {Object.keys(communities).map((c) => (
-                <option key={c} value={c}>
-                  {c.replace(/_/g, " ").toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{ flex: "2 1 300px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-              <Building2 size={16} /> Buildings
-            </label>
-            <MultiSelect
-              options={currentBuildings.map((b: string) => ({ label: b, value: b }))}
-              selected={buildings}
-              onChange={setBuildings}
-              placeholder="Select buildings..."
-            />
-          </div>
-        </div>
-      </div>
+      {/* Community and buildings are shared by both views */}
+      <KpiFilterBar ariaLabel="Community and buildings">
+        <CommunityField
+          communities={Object.keys(communities)}
+          value={community}
+          onChange={(c) => { setCommunity(c); setBuildings([]); }}
+        />
+        <BuildingsField buildings={currentBuildings} selected={buildings} onChange={setBuildings} />
+      </KpiFilterBar>
 
-      {/* ── Analytics tab panel ─────────────────────────────────────────────── */}
       <div
         id="overview-panel-analytics"
         role="tabpanel"
         aria-labelledby="overview-tab-analytics"
         hidden={activeTab !== "analytics"}
+        className="kpi-results"
       >
-        {/* Analytics-specific filters */}
-        <div style={{ paddingBottom: "0.5rem" }}>
-          <div className="panel" style={{ display: "flex", flexDirection: "column", gap: "1rem", width: "100%" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
-              <div style={{ flex: "1 1 300px" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-                  <Activity size={16} /> KPIs
-                </label>
-                <MultiSelect
-                  options={availableKpis.map((k: string) => {
-                    const meta = kpiMeta.find(m => m.name === k);
-                    const label = meta?.display_name || meta?.canonical_name || meta?.name || k;
-                    return { label: label, value: k };
-                  })}
-                  selected={selectedKpis}
-                  onChange={setSelectedKpis}
-                  placeholder="Select KPIs..."
+        <KpiFilterBar
+          ariaLabel="Analysis options"
+          footer={
+            <>
+              <div className="kpi-filterbar-options">
+                <KpiSwitch checked={computeAggregated} onChange={setComputeAggregated} label="Include community total" />
+                <KpiSwitch
+                  checked={recompute}
+                  onChange={setRecompute}
+                  label="Recalculate from telemetry"
+                  hint="Compute from raw telemetry instead of reading the stored results"
                 />
               </div>
-              <div style={{ flex: "1 1 200px" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-                  <Activity size={16} /> Granularity Override <span style={{ opacity: 0.6, fontWeight: "normal", marginLeft: "0.25rem" }}>(comma-sep)</span>
-                </label>
-                <input
-                  type="text"
-                  style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                  value={windowOverrides}
-                  onChange={(e) => setWindowOverrides(e.target.value)}
-                  placeholder="e.g. EnergyCostKPI:1h:1h"
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end", justifyContent: "space-between", borderTop: "1px solid var(--line)", paddingTop: "1rem", marginTop: "0.5rem" }}>
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: "1rem" }}>
-                <div style={{ width: "150px" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-                    <Calendar size={16} /> Start Date
-                  </label>
-                  <input
-                    type="date"
-                    style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </div>
-                <div style={{ width: "150px" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.375rem", marginBottom: "0.375rem", fontWeight: 600 }}>
-                    <Calendar size={16} /> End Date
-                  </label>
-                  <input
-                    type="date"
-                    style={{ width: "100%", padding: "0.5rem", borderRadius: "0.5rem", border: "1px solid var(--line)", backgroundColor: "var(--bg-elev)", color: "var(--text)" }}
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem", paddingBottom: "5px" }}>
-                  {QUICK_PRESETS.map((p) => (
-                    <Button
-                      key={p.label}
-                      onClick={() => applyPreset(p.days)}
-                      variant="secondary"
-                      size="sm"
-                    >
-                      {p.label}
-                    </Button>
-                  ))}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", paddingBottom: "9px", paddingLeft: "0.5rem" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={computeAggregated}
-                      onChange={(e) => setComputeAggregated(e.target.checked)}
-                      style={{ width: "1rem", height: "1rem" }}
-                    />
-                    Compute Aggregated Community Level
-                  </label>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer", marginRight: "1rem" }} title="Check this to force recomputation from raw telemetry instead of using scheduled pre-calculated results">
-                  <div style={{ position: "relative" }}>
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={recompute}
-                      onChange={(e) => setRecompute(e.target.checked)}
-                      style={{ position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", borderWidth: 0 }}
-                    />
-                    <div style={{ width: "2.5rem", height: "1.5rem", borderRadius: "999px", background: recompute ? "var(--brand)" : "var(--line)", transition: "all 0.2s" }}></div>
-                    <div style={{ position: "absolute", left: "0.25rem", top: "0.25rem", width: "1rem", height: "1rem", background: "var(--bg-elev)", borderRadius: "50%", transition: "all 0.2s", transform: recompute ? "translateX(1rem)" : "none" }}></div>
-                  </div>
-                  <div style={{ marginLeft: "0.75rem", fontSize: "0.85rem", fontWeight: "bold" }}>
-                    Re-calculation
-                  </div>
-                </label>
+              <div className="kpi-filterbar-actions">
                 <Button
                   onClick={handleFetch}
-                  disabled={loading || processing}
+                  disabled={busy}
                   variant="primary"
-                  iconLeft={
-                    loading ? <Loader2 className="animate-spin" size={16} /> :
-                      processing ? <Loader2 className="animate-spin" size={16} /> :
-                        <Search size={16} />
-                  }
+                  iconLeft={busy ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
                 >
-                  {loading ? 'Fetching...' : processing ? 'Processing Data...' : 'Analyze Data'}
+                  {loading ? "Fetching…" : processing ? "Processing…" : "Analyze"}
                 </Button>
               </div>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        >
+          <KpiSelectField options={kpiSelectOptions(kpiMeta)} selected={selectedKpis} onChange={setSelectedKpis} />
+          <KpiField label="Window override" hint="KPI:window:step, comma-separated" htmlFor={overrideId}>
+            <input
+              id={overrideId}
+              type="text"
+              value={windowOverrides}
+              onChange={(e) => setWindowOverrides(e.target.value)}
+              placeholder="e.g. EnergyCostKPI:2h:2h"
+            />
+          </KpiField>
+          <DateRangeField start={startDate} end={endDate} onChange={(start, end) => { setStartDate(start); setEndDate(end); }} />
+        </KpiFilterBar>
 
-        <main className="page-content panel" style={{ padding: "1.5rem", flex: 1 }}>
-          {error && (
-            <div className="panel form-grid">
-              <Activity size={20} />
-              <p>{error}</p>
-            </div>
-          )}
+        <section className="panel kpi-results" aria-label="Results" aria-busy={busy}>
+          {error ? <KpiError message={error} onRetry={buildings.length > 0 ? handleFetch : undefined} /> : null}
 
-          {(loading || processing) && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem", gap: "1rem" }}>
-              <EVChargingLoader label={loading ? "Downloading data from MongoDB…" : "Running LTTB Downsampling Algorithm…"} />
-              <p style={{ fontSize: "0.8rem", color: "var(--text-soft)", margin: 0 }}>This may take a moment for large timeframes.</p>
-            </div>
-          )}
+          {busy ? (
+            <KpiLoading
+              label={loading ? "Loading KPI results…" : "Preparing charts…"}
+              hint="Long periods can take a moment."
+            />
+          ) : null}
 
-          {/* SCHEDULED KPIs (Aggregates) */}
-          {!loading && !processing && scheduledChartData && scheduledChartData.stats && scheduledChartData.stats.length > 0 && (
-            <div style={{ marginBottom: "2rem" }}>
-              {/* Scope Tabs */}
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem", borderBottom: "1px solid var(--line)", paddingBottom: "1rem" }}>
-                {["All Scopes", ...Array.from(new Set(scheduledChartData.stats.map(s => s.scope)))].map((scopeName) => (
-                  <button
-                    key={scopeName}
-                    onClick={() => setSelectedScopeTab(scopeName)}
-                    style={{
-                      padding: "0.5rem 1rem", borderRadius: "999px", fontSize: "0.85rem",
-                      fontWeight: selectedScopeTab === scopeName ? 600 : 400, cursor: "pointer",
-                      border: `1px solid ${selectedScopeTab === scopeName ? "var(--brand)" : "var(--line)"}`,
-                      background: selectedScopeTab === scopeName ? "var(--brand)" : "var(--bg-elev)",
-                      color: selectedScopeTab === scopeName ? "#fff" : "var(--text)", transition: "all 0.2s",
-                    }}
-                  >
-                    {scopeName}
-                  </button>
-                ))}
-              </div>
-
-              {/* KPI Cards Grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "16px", alignItems: "stretch" }}>
+          {!busy && scheduledChartData.stats.length > 0 ? (
+            <>
+              <KpiSegmented
+                segments={["All Scopes", ...scopes].map((scope) => ({ key: scope, label: scope === "All Scopes" ? "All scopes" : scope }))}
+                value={selectedScopeTab}
+                onChange={setSelectedScopeTab}
+                ariaLabel="Scope"
+              />
+              <div className="kpi-stat-grid">
                 {[...scheduledChartData.stats]
                   .sort((a, b) => a.kpiName.localeCompare(b.kpiName))
-                  .filter(statItem => selectedScopeTab === "All Scopes" || statItem.scope === selectedScopeTab)
-                  .map((statItem: any, idx: number) => {
-                    const { scope, kpiName, summary, timeseries, isStreaming } = statItem;
-                    let val: any = "N/A";
-                    let desc = isStreaming ? "Streaming (live)" : "Scheduled";
-                    const formatSafeDate = (dStr: any) => {
-                      if (!dStr || typeof dStr !== "string") return "";
-                      const parsed = new Date(dStr.replace(" ", "T"));
-                      return isNaN(parsed.getTime()) ? dStr : parsed.toLocaleDateString();
-                    };
-                    if (summary) {
-                      if (isStreaming) val = summary.mean_value ?? summary.total_value ?? summary.value;
-                      else if ("total_value" in summary) val = summary.total_value;
-                      else if ("mean_value" in summary) val = summary.mean_value;
-                      else if ("value" in summary) val = summary.value;
-                    }
-                    if (timeseries && Array.isArray(timeseries) && timeseries.length > 0) {
-                      const start = timeseries[0].period_start;
-                      const end = timeseries[timeseries.length - 1].period_end;
-                      desc = `${isStreaming ? "Avg · " : ""}${formatSafeDate(start)} - ${formatSafeDate(end)}`;
-                    }
-                    if (summary?.coverage_pct !== undefined && summary?.coverage_pct !== null) {
-                      desc += ` · Coverage: ${summary.coverage_pct}%`;
-                    }
-                    const isAllScopes = selectedScopeTab === "All Scopes";
-                    const meta = kpiMeta.find((m: any) => m.name === kpiName);
-                    const titleName = meta?.display_name || meta?.canonical_name || meta?.name || kpiName;
+                  .filter((stat) => selectedScopeTab === "All Scopes" || stat.scope === selectedScopeTab)
+                  .map((stat, idx) => {
+                    const { scope, kpiName, summary, timeseries, isStreaming } = stat;
+                    const meta = kpiMeta.find((m) => m.name === kpiName);
                     return (
-                      <div key={`${scope}_${kpiName}_${idx}`} style={{ display: "flex", flexDirection: "column" }}>
-                        <KpiStats
-                          title={titleName}
-                          subtitle={isAllScopes ? scope : undefined}
-                          value={val != null && !isNaN(Number(val)) ? Number(val).toFixed(2) : "N/A"}
-                          unit={meta?.unit || ""}
-                          kpiName={kpiName}
-                          description={desc}
-                        />
-                      </div>
+                      <KpiStats
+                        key={`${scope}_${kpiName}_${idx}`}
+                        title={kpiDisplayName(meta, kpiName)}
+                        subtitle={selectedScopeTab === "All Scopes" ? scope : undefined}
+                        value={formatStatValue(summary, isStreaming)}
+                        unit={meta?.unit || ""}
+                        meta={meta}
+                        description={describeStat(summary, timeseries, isStreaming)}
+                      />
                     );
                   })}
               </div>
-            </div>
-          )}
+            </>
+          ) : null}
 
-          {!loading && !processing && streamingCharts}
-          {!loading && !processing && scheduledCharts}
+          {!busy && streamingCharts}
+          {!busy && scheduledCharts}
 
-          {/* Empty State */}
-          {!loading && !processing && !error && !data?.scheduled && !data?.streaming && (
-            <div className="panel empty-state">
-              <Search size={48} style={{ opacity: 0.5, marginBottom: "1rem" }} />
-              <p style={{ fontSize: "1.2rem", fontWeight: "bold" }}>No results to display</p>
-              <p className="mt-1">Adjust your filters and click Analyze Data to view KPIs.</p>
-            </div>
-          )}
-        </main>
+          {!busy && !error && !data?.scheduled && !data?.streaming ? (
+            <EmptyState title="No results yet" message="Choose buildings and a period, then select Analyze." />
+          ) : null}
+        </section>
       </div>
 
-      {/* ── Live tab panel ──────────────────────────────────────────────────── */}
       <div
         id="overview-panel-live"
         role="tabpanel"
@@ -599,4 +427,32 @@ export function Dashboard({ preselectedKpi, onPreselectedConsumed }: DashboardPr
       </div>
     </div>
   );
+}
+
+/** Headline value of a summary card: totals for scheduled KPIs, the mean for streaming ones. */
+function formatStatValue(summary: Record<string, number> | null, isStreaming?: boolean): string {
+  if (!summary) return "N/A";
+  const value = isStreaming
+    ? summary.mean_value ?? summary.total_value ?? summary.value
+    : summary.total_value ?? summary.mean_value ?? summary.value;
+  return value != null && !isNaN(Number(value)) ? Number(value).toFixed(2) : "N/A";
+}
+
+function formatDay(value: unknown): string {
+  if (!value || typeof value !== "string") return "";
+  const parsed = new Date(value.replace(" ", "T"));
+  return isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
+}
+
+function describeStat(
+  summary: Record<string, number> | null,
+  timeseries: ScheduledStatItem["timeseries"],
+  isStreaming?: boolean,
+): string {
+  let desc = isStreaming ? "Streaming (live)" : "Scheduled";
+  if (timeseries.length > 0) {
+    desc = `${isStreaming ? "Avg · " : ""}${formatDay(timeseries[0].period_start)} – ${formatDay(timeseries[timeseries.length - 1].period_end)}`;
+  }
+  if (summary?.coverage_pct != null) desc += ` · Coverage ${summary.coverage_pct}%`;
+  return desc;
 }
