@@ -37,6 +37,7 @@ function workspace() {
     "experience-ui",
     "product-art",
     "flexibility-calendar",
+    "flexibility-planning",
     "community-management",
   ])
     run(fs.readFileSync("public/console/" + f + ".js", "utf8"));
@@ -54,6 +55,49 @@ test("calendar includes cross-midnight events without including exclusive end da
   } finally {
     dom.window.close();
   }
+});
+
+test('calendar reads resolved occurrences and never expands a second client-side recurrence', async () => {
+ const {dom,run}=workspace();try{
+  run(`render=()=>{};state.personId='manager';FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-22';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry machine'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var calls=[];window.FlexRecurrence={expand(){throw Error('Client recurrence must not be authoritative');}};B.request=async(s,p,m,b)=>{calls.push({s,p,m,b});return {occurrences:[{event_id:'request',occurrence_id:'request@date',occurrence_at:'2026-10-22T18:00:00Z',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',asset_id:'washer',title:'Laundry',session_type:'appliance',type_specific_data:{duration_minutes:80,energy_required_kwh:.6},status:'active',resolution:'eligible',latest_start:'2026-10-22T21:40:00Z'}],predictions:[]};};sessionsView();`);
+  await new Promise(setImmediate);
+  const html=run('sessionsView()');
+  assert.match(html,/Laundry machine/);assert.match(html,/80 minute cycle/);assert.match(html,/0.6 kWh required/);assert.match(html,/Cycle can start as late/);
+  assert.equal(run('calls.length'),1);assert.equal(run('calls[0].p'),'/api/flexibility/effective');assert.equal(run('calls[0].b.asset_ids[0]'),'washer');
+ }finally{dom.window.close();}
+});
+
+test('failed calendar read is visible and does not reuse another account’s requests', async () => {
+ const {dom,run}=workspace();try{
+  run(`render=()=>{};state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};FlexPlan.result={occurrences:[{title:'Private old request'}]};B.request=async()=>{throw Error('Permissions unavailable');};sessionsView();`);
+  await new Promise(setImmediate);
+  const html=run('sessionsView()');assert.match(html,/Permissions unavailable/);assert.match(html,/Calendar unavailable/);assert.doesNotMatch(html,/Private old request/);
+ }finally{dom.window.close();}
+});
+
+test('appliance wizard preserves the chosen device, cycle length and energy', async () => {
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='manager';var assets=[{id:'washer-a',asset_type:'appliance',data:{name:'Kitchen washer'}},{id:'washer-b',asset_type:'appliance',data:{name:'Utility washer'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'},interruptible:{type:'boolean'}}}});`);
+  await run("editSession(null,'washer-b')");
+  const doc=w.document,submit=()=>doc.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  doc.querySelector('[data-field="starts_at"]').value='2026-10-22T22:00';doc.querySelector('[data-field="ends_at"]').value='2026-10-23T07:00';
+  doc.querySelector('[data-field="duration_minutes"]').value='80';doc.querySelector('[data-field="energy_required_kwh"]').value='0.6';
+  submit();assert.equal(run('writes.length'),0);submit();await new Promise(setImmediate);
+  assert.equal(run('writes[0].b.asset_id'),'washer-b');assert.equal(run('writes[0].b.duration_minutes'),80);assert.equal(run('writes[0].b.energy_required_kwh'),.6);
+  assert.equal(run('writes[0].p'),'/api/flexibility-events/appliances');
+ }finally{dom.window.close();}
+});
+
+test('editing a single recurring appliance occurrence sends an exception with both revisions', async () => {
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer'}}];sessionAssets=()=>assets;sessionVisible=()=>true;var savedEvent={event_id:'event',asset_id:'washer',session_type:'appliance',mode:'recurrent',recurrence:{freq:'DAILY',count:7},title:'Wash',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',revision:4,type_specific_data:{duration_minutes:60,energy_required_kwh:.6}};var occurrence={...savedEvent,occurrence_at:'2026-10-23T18:00:00Z',starts_at:'2026-10-23T18:00:00Z',ends_at:'2026-10-23T23:00:00Z',exception_revision:2};connection.raw={assets,events:[savedEvent]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionUpdate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'}}}});`);
+  await run("editSession('event',null,null,occurrence)");
+  const doc=w.document,submit=()=>doc.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+  assert.equal(doc.querySelector('.repeat-plan').hidden,true);
+  doc.querySelector('[data-field="duration_minutes"]').value='90';submit();submit();await new Promise(setImmediate);
+  assert.equal(run('writes.length'),1);assert.equal(run('writes[0].p'),'/api/flexibility/events/event/exceptions');
+  assert.equal(run('writes[0].b.expected_event_revision'),4);assert.equal(run('writes[0].b.expected_exception_revision'),2);assert.equal(run('writes[0].b.occurrence_at'),'2026-10-23T18:00:00Z');assert.equal(run('writes[0].b.duration_minutes'),90);
+ }finally{dom.window.close();}
 });
 test("request wizard writes only after review, converts SoC and preserves fields when going back", async () => {
   const { dom, w, run } = workspace();
@@ -202,12 +246,14 @@ test("editing keeps the target equipment and does not rewrite recurrence or unre
     dom.window.close();
   }
 });
-test("calendar shows only scoped requests and site navigation clears the prior operation view", () => {
+test("calendar requests only scoped equipment and site navigation clears the prior operation view", async () => {
   const { dom, w, run } = workspace();
   try {
     run(
-      `state.personId='manager';sessionAssets=()=>[{id:'mine'}];connection.raw={assets:[],events:[{event_id:'a',asset_id:'mine',title:'My request',session_type:'appliance',starts_at:'2026-10-13T10:00:00',ends_at:'2026-10-13T12:00:00',type_specific_data:{duration_minutes:60}},{event_id:'b',asset_id:'other',title:'Private request',session_type:'appliance',starts_at:'2026-10-13T10:00:00',ends_at:'2026-10-13T12:00:00',type_specific_data:{duration_minutes:60}}]};FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-13';`,
+      `render=()=>{};state.personId='manager';sessionAssets=()=>[{id:'mine',asset_type:'appliance',data:{name:'Washer'}}];B.request=async(s,p,m,b)=>({occurrences:connection.raw.events.filter(e=>b.asset_ids.includes(e.asset_id)).map(e=>({...e,resolution:'eligible',occurrence_id:e.event_id})),predictions:[]});connection.raw={assets:[],events:[{event_id:'a',asset_id:'mine',title:'My request',session_type:'appliance',starts_at:'2026-10-13T10:00:00',ends_at:'2026-10-13T12:00:00',type_specific_data:{duration_minutes:60}},{event_id:'b',asset_id:'other',title:'Private request',session_type:'appliance',starts_at:'2026-10-13T10:00:00',ends_at:'2026-10-13T12:00:00',type_specific_data:{duration_minutes:60}}]};FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-13';`,
     );
+    run("sessionsView()");
+    await new Promise(setImmediate);
     const html = run("sessionsView()");
     assert.match(html, /My request/);
     assert.doesNotMatch(html, /Private request/);
