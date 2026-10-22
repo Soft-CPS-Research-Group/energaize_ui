@@ -201,7 +201,7 @@ function SystemMeters({ system, updatedAt }: { system: SystemInfo; updatedAt: nu
   }, [updatedAt]);
 
   return (
-    <div className="sys-meters-row" aria-label="Predictor host">
+    <div className="sys-meters-row" aria-label="Predictor container">
       <MeterCard
         label="CPU"
         value={`${cpuPct.toFixed(1)} %`}

@@ -9,13 +9,24 @@ export type ImportanceType = "gain" | "weight" | "cover" | "total_gain" | "total
 export type JobType = "compare" | "missing-data" | "segment" | "hyperparameter-tune";
 export type JobStatus = "PENDING" | "RUNNING" | "DONE" | "FAILED" | "CANCELLED";
 
+/** A house + lane a model forecasts for; unconfirmed until that house's next forecast. */
+export interface ModelUse {
+  house_id: string;
+  lane: Lane;
+  model_kind: ModelType;
+  confirmed: boolean;
+}
+
 export interface ModelMeta {
   model_key: string;
   house_id: string | null;
   lane: Lane;
   model_type: ModelType;
   model_backend?: "xgboost" | "lgbm" | "lstm";
+  model_schema?: "dense" | "sparse";
   active: boolean | null;
+  /** Older predictor builds leave this out. */
+  in_use_by?: ModelUse[];
   file_path: string;
   file_size_kb: number;
   stored_mae: number;
@@ -197,8 +208,9 @@ export async function submitJob(payload: SubmitPayload): Promise<{ job_id: strin
   });
 }
 
+/** Jobs without their results (which can be large); fetch one with getJob to open it. */
 export async function listJobs(): Promise<AnalysisJob[]> {
-  const res = await predictorHttp<{ jobs: AnalysisJob[] }>("/api/analysis/jobs");
+  const res = await predictorHttp<{ jobs: AnalysisJob[] }>("/api/analysis/jobs?summary=true");
   return res.jobs;
 }
 
