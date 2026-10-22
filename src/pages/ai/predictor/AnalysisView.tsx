@@ -592,12 +592,10 @@ function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureI
               <Button variant={selected.house_id != null && selected.active !== true ? "secondary" : "primary"} onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
                 Feature Importance →
               </Button>
-              {selected.house_id != null && selected.active !== true && (
-                <Button variant="danger" iconLeft={<Trash2 size={14} />} className="analysis-drawer-delete"
-                  onClick={() => setConfirmDelete(selected)} disabled={deleteMutation.isPending}>
-                  Delete
-                </Button>
-              )}
+              <Button variant="danger" iconLeft={<Trash2 size={14} />} className="analysis-drawer-delete"
+                onClick={() => setConfirmDelete(selected)} disabled={deleteMutation.isPending}>
+                Delete
+              </Button>
             </div>
           </div>
         </div>,
@@ -613,7 +611,11 @@ function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureI
             <p className="is-muted">
               {isArchived(confirmDelete)
                 ? "It is an archived version; the model in use is not affected."
-                : "No house forecasts with it now, so forecasts are not affected."}
+                : confirmDelete.house_id == null
+                  ? "It is a generic cold-start model: houses without enough history forecast with it until it is retrained."
+                  : confirmDelete.active === true
+                    ? `It is in use: ${confirmDelete.house_id} / ${confirmDelete.lane} has no model to forecast with until another is set active or trained.`
+                    : "No house forecasts with it now, so forecasts are not affected."}
             </p>
           </>
         ) : null}
