@@ -12,6 +12,7 @@ interface Props {
   pending?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  overlayClassName?: string;
 }
 
 export function ConfirmDialog({
@@ -23,10 +24,11 @@ export function ConfirmDialog({
   confirmVariant = "danger",
   pending = false,
   onCancel,
-  onConfirm
+  onConfirm,
+  overlayClassName
 }: Props): JSX.Element {
   return (
-    <Modal title={title} open={open} onClose={onCancel} width="sm">
+    <Modal title={title} open={open} onClose={onCancel} width="sm" overlayClassName={overlayClassName}>
       <section className="confirm-dialog">
         <div>{message}</div>
         <div className="inline-end">

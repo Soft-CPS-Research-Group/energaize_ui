@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LineChart, Line, ScatterChart, Scatter,
@@ -517,9 +518,25 @@ function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureI
       )}
 
       {/* Model detail drawer — portalled to body so it covers the full viewport */}
-      {selected && createPortal(
-        <div className="analysis-overlay" onClick={() => setSelected(null)}>
-          <div className="analysis-drawer" onClick={(e) => e.stopPropagation()}>
+      {createPortal(
+        <AnimatePresence>
+        {selected && (
+        <motion.div key="analysis-overlay" className="analysis-overlay" exit={{ pointerEvents: "none" }}>
+          <motion.div
+            className="analysis-overlay-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setSelected(null)}
+          />
+          <motion.div
+            className="analysis-drawer"
+            initial={{ x: "100%", opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: "100%", opacity: 0 }}
+            transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+          >
             <div className="analysis-drawer-header">
               <h3>{selected.model_key}</h3>
               <button className="icon-btn" aria-label="Close" onClick={() => setSelected(null)}><X size={16} /></button>
@@ -597,14 +614,17 @@ function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureI
                 Delete
               </Button>
             </div>
-          </div>
-        </div>,
+          </motion.div>
+        </motion.div>
+        )}
+        </AnimatePresence>,
         document.body
       )}
 
       <ConfirmDialog
         open={confirmDelete != null}
         title="Delete model"
+        overlayClassName="is-above-drawer"
         message={confirmDelete ? (
           <>
             <p>Delete <code>{confirmDelete.model_key}</code>{confirmDelete.file_size_kb ? ` (${confirmDelete.file_size_kb.toFixed(0)} KB)` : ""}? This cannot be undone.</p>

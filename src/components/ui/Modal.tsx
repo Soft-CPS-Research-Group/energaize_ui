@@ -11,14 +11,16 @@ interface Props {
   width?: "sm" | "md" | "lg" | "xl";
   /** Optional panel that floats to the right of the modal, animating in/out independently. */
   adjacentPanel?: ReactNode;
+  /** Extra class on the overlay, e.g. to lift it above another overlay. */
+  overlayClassName?: string;
 }
 
-export function Modal({ title, open, onClose, children, width = "md", adjacentPanel }: Props): JSX.Element {
+export function Modal({ title, open, onClose, children, width = "md", adjacentPanel, overlayClassName }: Props): JSX.Element {
   return createPortal(
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="modal-overlay"
+          className={`modal-overlay${overlayClassName ? ` ${overlayClassName}` : ""}`}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

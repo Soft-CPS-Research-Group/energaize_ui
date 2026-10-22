@@ -11072,11 +11072,6 @@ button {
   to   { opacity: 1; transform: translateX(0); }
 }
 
-@keyframes analysis-drawer-slide {
-  from { transform: translateX(100%); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
-}
-
 @keyframes analysis-banner-drop {
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -11612,12 +11607,22 @@ button {
 .analysis-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
   z-index: 200;
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
+}
+
+.analysis-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(2px);
+}
+
+/* Dialogs opened from the drawer (e.g. delete confirm) sit above it. */
+.modal-overlay.is-above-drawer {
+  z-index: 210;
 }
 
 .analysis-drawer {
@@ -11627,7 +11632,7 @@ button {
   display: flex;
   flex-direction: column;
   box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3);
-  animation: analysis-drawer-slide 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+  position: relative;
 }
 
 .analysis-drawer-header {
