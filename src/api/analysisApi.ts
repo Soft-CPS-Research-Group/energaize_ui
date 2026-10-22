@@ -33,7 +33,43 @@ export interface ModelMeta {
   n_features: number;
   n_outputs: number;
   stored_at?: string;
+  /** ISO time the model file was written; older predictor builds leave it out. */
+  trained_at?: string | null;
+  /** For archived (old/) models: when it was replaced. */
+  archived_at?: string | null;
   hyperparams?: Record<string, unknown> | null;
+}
+
+export interface ArchivedModel {
+  model_key: string;
+  slot: string;
+  house_id: string | null;
+  lane: Lane | null;
+  model_backend: string;
+  archived_at: string | null;
+  trained_at: string;
+  size_bytes: number;
+}
+
+export interface ArchiveSummary {
+  count: number;
+  size_bytes: number;
+  oldest_archived_at: string | null;
+}
+
+export interface PruneOptions {
+  /** Keep the newest N archived versions of each model. */
+  keep_latest?: number | null;
+  /** Only versions archived longer ago than this. */
+  older_than_days?: number | null;
+  house_id?: string | null;
+}
+
+export interface PruneResult {
+  dry_run: boolean;
+  count: number;
+  freed_bytes: number;
+  models: ArchivedModel[];
 }
 
 export interface FeatureScore {
@@ -228,6 +264,23 @@ export async function promoteModel(modelKey: string): Promise<{ status: string; 
     `/api/analysis/models/${encodeURIComponent(modelKey)}/promote`,
     { method: "POST" }
   );
+}
+
+/** Delete a model file. The predictor refuses (409) models in use and the generic cold-start models. */
+export async function deleteModel(modelKey: string): Promise<{ freed_bytes: number }> {
+  return predictorHttp<{ freed_bytes: number }>(`/api/analysis/models/${encodeURIComponent(modelKey)}`, { method: "DELETE" });
+}
+
+export async function getArchiveSummary(): Promise<ArchiveSummary> {
+  return predictorHttp<ArchiveSummary>("/api/analysis/archive");
+}
+
+/** dry_run lists what would be deleted without deleting it. */
+export async function pruneArchive(options: PruneOptions, dryRun: boolean): Promise<PruneResult> {
+  return predictorHttp<PruneResult>("/api/analysis/archive/prune", {
+    method: "POST",
+    body: JSON.stringify({ ...options, dry_run: dryRun }),
+  });
 }
 
 /** Archived models live under old/ and are not in the production slot. */

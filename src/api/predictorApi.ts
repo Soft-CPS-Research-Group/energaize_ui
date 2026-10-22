@@ -85,6 +85,8 @@ export interface TrainingJob {
   prev_mae: number | null;
   new_mae: number | null;
   hyperparams?: Record<string, unknown> | null;
+  /** Set when the job belongs to a "retrain all houses" batch. */
+  batch_id?: string | null;
 }
 
 export type ModelBackend = "xgboost" | "lgbm" | "lstm";
@@ -257,4 +259,146 @@ export async function getLogs(filter?: string, limit: number = 300): Promise<Log
     params.append("filter", filter);
   }
   return predictorHttp<LogsResponse>(`/api/logs?${params.toString()}`);
+}
+
+// ─── Retrain all houses (batches) ────────────────────────────────────────────
+
+export type BatchStatus = "RUNNING" | "DONE" | "CANCELED" | "STOPPED" | "INTERRUPTED";
+
+export interface BatchOptions {
+  houses?: "all" | string[];
+  lanes?: "both" | "consumption" | "production";
+  /** needed: refused, missing, pre-unit-detection or old models only. */
+  only?: "needed" | "all";
+  max_model_age_days?: number;
+  model_type?: "active" | ModelBackend;
+  max_parallel?: number;
+}
+
+export interface BatchItem {
+  house_id: string;
+  lane: "consumption" | "production";
+  model_type: string;
+  /** Why the lane is in the batch, e.g. "no model" or "forecast refused (scale-drift)". */
+  reason: string;
+  /** 0 refused, 1 no model, 2 trained before unit detection, 3 old, 4 up to date. */
+  priority: number;
+  /** QUEUED, a training job status, or SKIPPED. */
+  status: string;
+  job_id: string | null;
+  message: string;
+  prev_mae: number | null;
+  new_mae: number | null;
+}
+
+export interface BatchSummary {
+  batch_id: string;
+  status: BatchStatus;
+  created_at: string;
+  finished_at: string | null;
+  message: string;
+  options: BatchOptions & { max_parallel?: number };
+  total: number;
+  finished: number;
+  counts: Record<string, number>;
+}
+
+export interface Batch extends BatchSummary {
+  items: BatchItem[];
+}
+
+export interface BatchPlan {
+  dry_run: true;
+  total: number;
+  items: BatchItem[];
+}
+
+export async function planBatch(options: BatchOptions): Promise<BatchPlan> {
+  return predictorHttp<BatchPlan>("/api/batch-train", {
+    method: "POST",
+    body: JSON.stringify({ ...options, dry_run: true }),
+  });
+}
+
+export async function startBatch(options: BatchOptions): Promise<{ message: string; batch: Batch | null }> {
+  return predictorHttp<{ message: string; batch: Batch | null }>("/api/batch-train", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export async function listBatches(): Promise<BatchSummary[]> {
+  const res = await predictorHttp<{ batches: BatchSummary[] }>("/api/batch-train");
+  return res.batches ?? [];
+}
+
+export async function getBatch(batchId: string): Promise<Batch> {
+  return predictorHttp<Batch>(`/api/batch-train/${encodeURIComponent(batchId)}`);
+}
+
+export async function cancelBatch(batchId: string): Promise<{ batch: Batch }> {
+  return predictorHttp<{ batch: Batch }>(`/api/batch-train/${encodeURIComponent(batchId)}/cancel`, { method: "POST" });
+}
+
+// ─── Input data quality ──────────────────────────────────────────────────────
+
+export interface MeterSpec {
+  unit: "kwh" | "kw" | "wh" | "w";
+  cumulative: boolean;
+  negated: boolean;
+}
+
+export interface MeterInfo {
+  spec: MeterSpec;
+  /** e.g. "kW" or "cumulative kWh counter". */
+  label: string;
+  /** declared: house_units.json; model: as the model was trained; legacy-model: old rule for an old model; detected. */
+  source: "declared" | "model" | "legacy-model" | "detected";
+  confidence: "high" | "low" | "none" | null;
+  detection: {
+    label: string;
+    confidence: "high" | "low" | "none";
+    interval_min: number;
+    samples: number;
+    notes: string[];
+  } | null;
+}
+
+export interface ReadingWindowQuality {
+  readings: number;
+  unreadable: number;
+  duplicates: number;
+  counter_resets: number;
+  negatives_zeroed: number;
+  negatives_dropped: number;
+  spikes_dropped: number;
+  slots_total: number;
+  slots_with_data: number;
+  longest_gap_slots: number;
+  coverage: number;
+}
+
+export type RefusalReason = "pre-kwh-fix" | "meter-changed" | "unit-mismatch" | "scale-drift" | "low-confidence";
+
+export interface LaneDataQuality {
+  meter: MeterInfo | null;
+  window: ReadingWindowQuality | null;
+  model: {
+    model_key: string;
+    meter: MeterSpec | null;
+    meter_confidence: string | null;
+    data_level: number | null;
+    trained_at: string | null;
+  } | null;
+  /** The last forecast published nothing for this lane, and why. Cleared by the next good forecast. */
+  refused?: { model_key: string; reason: RefusalReason; at: string } | null;
+}
+
+export interface DataQualityResponse {
+  house_id: string;
+  lanes: Partial<Record<"consumption" | "production", LaneDataQuality>>;
+}
+
+export async function getDataQuality(houseId: string): Promise<DataQualityResponse> {
+  return predictorHttp<DataQualityResponse>(`/api/houses/${encodeURIComponent(houseId)}/data-quality`);
 }

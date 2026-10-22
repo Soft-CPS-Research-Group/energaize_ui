@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, YAxis } from "recharts";
-import { PlusCircle, RotateCcw } from "lucide-react";
+import { Layers, PlusCircle, RotateCcw } from "lucide-react";
 import {
   usePredictorTrainingProgress,
   usePredictorCommand,
@@ -16,6 +16,7 @@ import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { normalizeTs } from "../../../utils/predictorTransforms";
 import type { TrainingJob, SystemInfo } from "../../../api/predictorApi";
 import { TrainWizard } from "./TrainWizard";
+import { BatchPanel, RetrainAllModal } from "./RetrainAll";
 
 interface TrainViewProps {
   selectedHouseId: string | null;
@@ -233,6 +234,7 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
 
   const [showTrainDialog, setShowTrainDialog] = useState(false);
   const [showColdTrainDialog, setShowColdTrainDialog] = useState(false);
+  const [showRetrainAll, setShowRetrainAll] = useState(false);
   const [detailJob, setDetailJob] = useState<TrainingJob | null>(null);
   const [historyScope, setHistoryScope] = useState<"all" | "house">("all");
   const [historyPage, setHistoryPage] = useState(0);
@@ -273,6 +275,13 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
         </Button>
         <Button
           variant="secondary"
+          iconLeft={<Layers size={15} />}
+          onClick={() => setShowRetrainAll(true)}
+        >
+          Retrain All Houses
+        </Button>
+        <Button
+          variant="secondary"
           iconLeft={<RotateCcw size={15} />}
           onClick={() => setShowColdTrainDialog(true)}
           disabled={commandMutation.isPending}
@@ -285,6 +294,8 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
       {systemInfo && <SystemMeters system={systemInfo} updatedAt={dataUpdatedAt} />}
 
       <div className="predictor-train-grid">
+        <BatchPanel timezone={timezone} />
+
         <section className="panel predictor-jobs-panel">
           <div className="predictor-panel-header">
             <h2>Active Training Jobs</h2>
@@ -408,6 +419,8 @@ export function TrainView({ selectedHouseId, timezone }: TrainViewProps) {
         onConfirm={handleColdTrain}
         onCancel={() => setShowColdTrainDialog(false)}
       />
+
+      <RetrainAllModal open={showRetrainAll} onClose={() => setShowRetrainAll(false)} />
 
       <TrainWizard
         open={showTrainDialog}
