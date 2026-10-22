@@ -284,6 +284,29 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .multiselect-all { font-weight: 500; border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; margin-bottom: 2px; }
 .multiselect-empty { margin: 0; padding: 8px 10px; font-size: 13px; color: var(--text-soft); }
 
+/* ── Forms in modals and Scheduler (SchedulerPage.tsx) ───────────────────── */
+.kpi-form { display: flex; flex-direction: column; gap: 16px; }
+.kpi-form-section { display: flex; flex-direction: column; gap: 8px; }
+.kpi-form-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kpi-form-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
+.kpi-form .kpi-field-group > p { margin: 0; font-size: 12px; }
+.kpi-mono { font-family: var(--font-mono, ui-monospace, monospace); }
+.kpi-scheduler-state { display: inline-flex; align-self: flex-start; align-items: center; gap: 8px; margin: 0; padding: 6px 12px; border-radius: 999px; font-size: 12px; background: var(--bg-elev-2); }
+.kpi-job { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg-elev); }
+.kpi-job-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.kpi-job-head h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 14px; font-weight: 500; }
+.kpi-job-head code { font-size: 12px; }
+.kpi-job-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.kpi-job-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 0; }
+.kpi-job-facts dt { font-size: 11px; color: var(--text-soft); }
+.kpi-job-facts dd { margin: 2px 0 0; font-size: 13px; font-weight: 500; }
+.kpi-job-kpis { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.kpi-job-kpis li { padding: 2px 9px; border-radius: 999px; font-size: 11px; background: var(--bg-elev-2); border: 1px solid var(--line); }
+.kpi-job-error {
+  margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--bg-elev));
+}
+
 @media(max-width:700px) {
   body[data-workspace="ai"] .kpi-heading { align-items: flex-start; flex-wrap: wrap; }
   body[data-workspace="ai"] .kpi-heading-actions { width: 100%; }
