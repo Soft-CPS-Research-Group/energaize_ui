@@ -87,9 +87,11 @@ export interface FeatureImportanceResult {
 
 export interface MetricsBundle {
   mae: number;
-  nmae_pct: number;
+  /** Total absolute error over total measured energy, in %; null when there was no energy. */
+  wape_pct?: number | null;
+  /** Results saved before WAPE: the same quantity under its old name. */
+  nmae_pct?: number;
   rmse: number;
-  smape_pct: number;
   r2: number;
   n_samples: number;
   daytime_mae: number | null;
@@ -99,7 +101,7 @@ export interface HorizonStep {
   step: number;
   mae: number;
   rmse: number;
-  smape: number;
+  wape?: number | null;
 }
 
 export interface SegmentResult {
