@@ -270,6 +270,9 @@ body[data-workspace="ai"] .analysis-filter-clear { border-radius: 999px; padding
 body[data-workspace="ai"] .analysis-filter-clear:hover { background: color-mix(in srgb, var(--danger) 8%, var(--bg-elev)); color: var(--danger); }
 body[data-workspace="ai"] .analysis-models-panel { padding: 0; overflow: hidden; border-radius: 18px; }
 .analysis-table-scroll { overflow-x: auto; }
+.analysis-models-group-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px 8px; }
+.analysis-models-group-header h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.analysis-models-group-header .is-muted { font-size: 12px; }
 .analysis-filter-check { display: inline-flex; align-items: center; gap: 6px; padding-bottom: 7px; font-size: 12px; color: var(--text-soft); cursor: pointer; }
 /* Models in use: per-house table, then one line per generic model. */
 body[data-workspace="ai"] .analysis-inuse-panel { padding: 14px 0 0; border-radius: 18px; overflow: hidden; }

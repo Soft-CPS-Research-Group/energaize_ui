@@ -22,7 +22,7 @@ import {
 import {
   BACKEND_LABELS, DETAIL_LABELS, LANE_LABELS, TEST_DAYS_MAX, TEST_DAYS_MIN, VARIANT_LABELS,
   SEGMENT_LABELS, capitalize, fmt, fmtParam, fmtPct, fmtTs, formatDetail, inUseLabel, markInUse, modelLabels,
-  modelsInUse, testDaysValid,
+  groupByHouse, modelsInUse, testDaysValid,
 } from "./analysisFormat";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -443,50 +443,56 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
       ) : (
         <>
         {models && <ModelsInUsePanel models={models} onSelect={setSelected} />}
-        <div className="panel analysis-models-panel">
-          <div className={`analysis-table-scroll${isFetching ? " analysis-table--loading" : ""}`}>
-            <table className="table analysis-table">
-              <thead>
-                <tr>
-                  <th>Model</th>
-                  <th>House</th>
-                  <th>Lane</th>
-                  <th>Variant <InfoTip tip="Warm models are trained on one house's own history. Cold-start models are generic and used while a house has no history yet." /></th>
-                  <th>Type</th>
-                  <th className="is-num">Stored MAE <InfoTip tip="Mean Absolute Error (kWh) recorded at training time on the validation set. Lower is better." /></th>
-                  <th className="is-num">Features <InfoTip tip="Number of input features this model was trained on (lag values, time encodings, etc.)." /></th>
-                  <th className="is-num">Outputs <InfoTip tip="Forecast steps produced per run: 96 steps = 24 hours at 15-minute resolution." /></th>
-                  <th className="is-num">Size</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayedModels.map((m) => (
-                  <tr key={m.model_key} className="is-clickable" tabIndex={0} onClick={() => setSelected(m)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(m); } }}>
-                    <td className="analysis-model-key">
-                      <code>{m.model_key}</code>
-                      {m.active === true && <span className="analysis-active-pill">{inUseLabel(m) ?? "In use"}</span>}
-                      {isArchived(m) && <span className="analysis-archived-pill">Archived</span>}
-                    </td>
-                    <td>{m.house_id ?? <span className="is-muted">Generic</span>}</td>
-                    <td><span className={`analysis-lane-dot is-${m.lane}`} />{LANE_LABELS[m.lane] ?? m.lane}</td>
-                    <td>{VARIANT_LABELS[m.model_type] ?? m.model_type}</td>
-                    <td>{BACKEND_LABELS[effectiveBackend(m)] ?? effectiveBackend(m)}</td>
-                    <td className="is-num">{fmt(m.stored_mae)}</td>
-                    <td className="is-num">{m.n_features}</td>
-                    <td className="is-num">{m.n_outputs}</td>
-                    <td className="is-num is-muted">{m.file_size_kb.toFixed(0)} KB</td>
-                  </tr>
-                ))}
-                {displayedModels.length === 0 && (
-                  <tr><td colSpan={9} className="analysis-table-empty">
-                    {models && models.length === 0 ? "The predictor has no stored models yet." : "No models match the current filters."}
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
+        {displayedModels.length === 0 ? (
+          <div className="panel analysis-models-panel">
+            <p className="analysis-table-empty">
+              {models && models.length === 0 ? "The predictor has no stored models yet." : "No models match the current filters."}
+            </p>
           </div>
-        </div>
+        ) : groupByHouse(displayedModels).map(({ house, models: group }) => (
+          <section key={house ?? "generic"} className="panel analysis-models-panel" aria-label={house ?? "Generic models"}>
+            <div className="analysis-models-group-header">
+              <h3>{house ?? "Generic"}</h3>
+              <span className="is-muted">{group.length} {group.length === 1 ? "model" : "models"}</span>
+              {house == null && <InfoTip tip="Cold-start models, shared by every house that does not have enough history yet." />}
+            </div>
+            <div className={`analysis-table-scroll${isFetching ? " analysis-table--loading" : ""}`}>
+              <table className="table analysis-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Lane</th>
+                    <th>Variant <InfoTip tip="Warm models are trained on one house's own history. Cold-start models are generic and used while a house has no history yet." /></th>
+                    <th>Type</th>
+                    <th className="is-num">Stored MAE <InfoTip tip="Mean Absolute Error (kWh) recorded at training time on the validation set. Lower is better." /></th>
+                    <th className="is-num">Features <InfoTip tip="Number of input features this model was trained on (lag values, time encodings, etc.)." /></th>
+                    <th className="is-num">Outputs <InfoTip tip="Forecast steps produced per run: 96 steps = 24 hours at 15-minute resolution." /></th>
+                    <th className="is-num">Size</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.map((m) => (
+                    <tr key={m.model_key} className="is-clickable" tabIndex={0} onClick={() => setSelected(m)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(m); } }}>
+                      <td className="analysis-model-key">
+                        <code>{m.model_key}</code>
+                        {m.active === true && <span className="analysis-active-pill">{inUseLabel(m) ?? "In use"}</span>}
+                        {isArchived(m) && <span className="analysis-archived-pill">Archived</span>}
+                      </td>
+                      <td><span className={`analysis-lane-dot is-${m.lane}`} />{LANE_LABELS[m.lane] ?? m.lane}</td>
+                      <td>{VARIANT_LABELS[m.model_type] ?? m.model_type}</td>
+                      <td>{BACKEND_LABELS[effectiveBackend(m)] ?? effectiveBackend(m)}</td>
+                      <td className="is-num">{fmt(m.stored_mae)}</td>
+                      <td className="is-num">{m.n_features}</td>
+                      <td className="is-num">{m.n_outputs}</td>
+                      <td className="is-num is-muted">{m.file_size_kb.toFixed(0)} KB</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
         </>
       )}
 

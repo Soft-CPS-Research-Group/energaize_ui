@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelMeta } from "../../../api/analysisApi";
-import { fmtParam, fmtTs, formatDetail, inUseLabel, markInUse, modelLabels, modelsInUse, testDaysValid } from "./analysisFormat";
+import { fmtParam, fmtTs, formatDetail, groupByHouse, inUseLabel, markInUse, modelLabels, modelsInUse, testDaysValid } from "./analysisFormat";
 
 describe("fmtTs", () => {
   it("shows an analysis job time in the chosen timezone", () => {
@@ -98,6 +98,11 @@ describe("models in use", () => {
     expect(after[1].active).toBe(true);
     expect(after[1].in_use_by).toEqual([{ house_id: "R-H-01", lane: "consumption", model_kind: "warm", confirmed: false }]);
     expect(after[2]).toEqual(cold);
+  });
+
+  it("groups models per house with the generic ones last", () => {
+    const h2 = model({ model_key: "xgboost_direct_model_1_year_R-H-02_consumption", house_id: "R-H-02" });
+    expect(groupByHouse([cold, h2, xgb, lgbm]).map((g) => [g.house, g.models.length])).toEqual([["R-H-01", 2], ["R-H-02", 1], [null, 1]]);
   });
 
   it("labels generic models with their house count", () => {

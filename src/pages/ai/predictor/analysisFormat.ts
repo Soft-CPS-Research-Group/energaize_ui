@@ -137,3 +137,12 @@ export function inUseLabel(m: ModelMeta): string | null {
   const houses = new Set(uses.map((u) => u.house_id)).size;
   return `In use · ${houses} ${houses === 1 ? "house" : "houses"}`;
 }
+
+/** Models split per house (sorted), generic models last; each group keeps the given order. */
+export function groupByHouse(models: ModelMeta[]): { house: string | null; models: ModelMeta[] }[] {
+  const groups = new Map<string | null, ModelMeta[]>();
+  for (const m of models) groups.set(m.house_id, [...(groups.get(m.house_id) ?? []), m]);
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a == null ? 1 : b == null ? -1 : a.localeCompare(b)))
+    .map(([house, group]) => ({ house, models: group }));
+}
