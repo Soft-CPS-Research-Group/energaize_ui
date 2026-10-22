@@ -15,7 +15,7 @@ const flexKinds = {
   appliance: ["Appliance", "appliance", "Finish a cycle when you need it"],
   heat_pump: ["Heat pump", "heat", "Set your comfort window"],
   heater: ["Heater", "heat", "Keep your space comfortable"],
-  water_pump: ["Water pump", "pump", "Plan a pumping window"],
+  water_pump: ["Water pump", "pump", "Choose running time and availability"],
 };
 function flexDayEvents(events, key) {
   const start = new Date(key + "T00:00:00"),
@@ -40,12 +40,14 @@ function flexRequirement(e) {
         }) +
         "% at departure"
     : e.session_type === "appliance"
-      ? d.duration_minutes
+      ? (d.cycle_snapshot?.name ? d.cycle_snapshot.name + ' · ' : '') + (d.duration_minutes
         ? d.duration_minutes + " minute cycle"
-        : "Equipment power profile"
+        : "Saved equipment cycle")
+      : e.session_type === 'water_pump'
+        ? d.duration_minutes ? `${Math.floor(d.duration_minutes / 60) ? Math.floor(d.duration_minutes / 60) + ' h ' : ''}${d.duration_minutes % 60 ? d.duration_minutes % 60 + ' min ' : ''}total running time`.trim() : 'Choose the required running time'
       : "Target " +
         d.setpoint +
-        (e.session_type === "water_pump" ? " m³/h" : " °C");
+        " °C";
 }
 sessionsView = function () {
   const month = FlexCalendar.month,
@@ -323,12 +325,8 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
         ...(kind === "ev_charging"
           ? occurrence ? ["soc_at_departure"] : ["soc_at_departure", "soc_at_arrival", "vehicle_id"]
           : kind === "appliance"
-            ? occurrence ? ["duration_minutes", "energy_required_kwh"] : [
-                "duration_minutes",
-                "selected_power_profile",
-                "energy_required_kwh",
-                "interruptible",
-              ]
+            ? ["selected_power_profile"]
+            : kind === 'water_pump' ? ['duration_minutes']
             : ["setpoint"]),
       ];
       const properties = Object.fromEntries(
@@ -346,7 +344,8 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
             ...(kind === "ev_charging"
               ? ["soc_at_departure"]
               : kind === "appliance"
-                ? []
+                ? ['selected_power_profile']
+                : kind === 'water_pump' ? ['duration_minutes']
                 : ["setpoint"]),
           ],
         },
@@ -358,9 +357,11 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
             vehicle_id: sessionAssets()
               .filter((a) => a.asset_type === "ev")
               .map((a) => [a.id, a.data.name]),
-            selected_power_profile: (asset.data.power_profiles || []).map(
-              (p) => [p.id, p.name],
-            ),
+            selected_power_profile: [
+              ...(asset.data.power_profiles || []).map(p => [p.id, p.name]),
+              ...(event?.type_specific_data?.selected_power_profile && !(asset.data.power_profiles || []).some(p => p.id === event.type_specific_data.selected_power_profile)
+                ? [[event.type_specific_data.selected_power_profile, event.type_specific_data.cycle_snapshot?.name || 'Saved cycle']] : []),
+            ],
           },
         },
         "",
@@ -371,10 +372,41 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
       if (departureLabel) departureLabel.firstChild.textContent = 'Ready by *';
       originalInputs = editor.read();
       modal.querySelector("[data-flex-fields]").replaceChildren(editor.node);
+      const needText = modal.querySelector('[data-flex-name]').parentElement.querySelector('.subtitle');
+      needText.textContent = kind === 'appliance' ? 'Choose a cycle saved on this machine and when it can run.'
+        : kind === 'water_pump' ? 'Choose how long the pump needs to run within the available window.'
+        : ['heat_pump','electric_heater'].includes(kind) ? 'Choose when you need comfort and your target temperature.'
+        : 'Choose when the car is available and the charge you need at departure.';
+      if (kind === 'appliance') {
+        const cycle = editor.node.querySelector('[data-field="selected_power_profile"]');
+        if (cycle) cycle.closest('.domain-field').querySelector('.formlabel').firstChild.textContent = 'Cycle *';
+        const summary = document.createElement('p'); summary.className = 'footnote'; summary.setAttribute('aria-live', 'polite');
+        const update = () => {
+          const details = requestDetails();
+          summary.textContent = details.duration_minutes ? `${details.duration_minutes} minutes. The cycle settings come from the equipment.` : (asset.data.power_profiles || []).length ? 'Choose a cycle to see its duration.' : 'Configure the machine’s cycles in Equipment first.';
+        };
+        cycle?.addEventListener('change', update); editor.node.append(summary); update();
+        if (!(asset.data.power_profiles || []).length) {
+          const setup = document.createElement('button'); setup.type = 'button'; setup.className = 'btn'; setup.textContent = 'Set up equipment cycles';
+          setup.onclick = () => editEquipment(asset.id).catch(e => toast(e.message)); editor.node.append(setup);
+        }
+      }
+      if (kind === 'water_pump') {
+        const duration = editor.node.querySelector('[data-field="duration_minutes"]');
+        duration.closest('.domain-field').hidden = true;
+        const runtime = document.createElement('fieldset'); runtime.className = 'pump-runtime-fields';
+        runtime.innerHTML = `<legend>Required running time</legend><label>Hours<input type="number" data-runtime-hours min="0" step="1" required value="${Math.floor(Number(value.duration_minutes || 0) / 60)}"></label><label>Minutes<input type="number" data-runtime-minutes min="0" max="59" step="1" required value="${Number(value.duration_minutes || 0) % 60}"></label>`;
+        runtime.addEventListener('input', () => { duration.value = Number(runtime.querySelector('[data-runtime-hours]').value) * 60 + Number(runtime.querySelector('[data-runtime-minutes]').value); });
+        editor.node.append(runtime);
+      }
       const timeSummary = document.createElement('p');
       timeSummary.className = 'ceramic-time-summary';
       timeSummary.setAttribute('aria-live','polite');
       const arrivalTime = editor.node.querySelector('[data-field="starts_at"]');
+      if (['heat_pump','electric_heater'].includes(kind)) {
+        arrivalTime.closest('.domain-field').querySelector('.formlabel').firstChild.textContent = 'Comfort needed from *';
+        if (departureLabel) departureLabel.firstChild.textContent = 'Comfort needed until *';
+      } else if (kind === 'water_pump' && departureLabel) departureLabel.firstChild.textContent = 'Available until *';
       const updateTimeSummary = () => {
         const from = new Date(arrivalTime?.value), until = new Date(departureTime?.value);
         const format = new Intl.DateTimeFormat('en-GB', {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
@@ -427,9 +459,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
       const setpoint = editor.node.querySelector('[data-field="setpoint"]');
       if (setpoint)
         setpoint.labels[0].firstChild.textContent =
-          kind === "water_pump"
-            ? "Flow rate (m³/h) *"
-            : "Target temperature (°C) *";
+          "Target temperature (°C) *";
       modal.querySelector("[data-flex-name]").textContent = asset.data.name;
       modal.querySelector("[data-flex-glyph]").innerHTML = productArt(
         flexKinds[asset.asset_type][1],
@@ -442,6 +472,15 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
       busy = false;
       if (modal.isConnected) show();
     }
+  }
+  function requestDetails() {
+    const data = editor.read();
+    if (kind !== 'appliance') return data;
+    const saved = event?.type_specific_data;
+    const cycle = saved?.selected_power_profile === data.selected_power_profile && saved?.duration_minutes
+      ? (saved.cycle_snapshot || {name: 'Saved cycle', duration_minutes: saved.duration_minutes})
+      : (asset.data.power_profiles || []).find(p => p.id === data.selected_power_profile);
+    return {...data, duration_minutes: cycle?.duration_minutes, cycle_snapshot: cycle};
   }
   function show() {
     modal
@@ -462,7 +501,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
         ? "Save request"
         : "Continue";
     if (step === 2) {
-      const d = editor.read();
+      const d = requestDetails();
       modal.querySelector("[data-flex-review]").innerHTML = [
         ["Equipment", asset.data.name],
         [
@@ -479,12 +518,6 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
         ],
         ...(d.soc_at_arrival != null
           ? [["Arrival charge", Math.round(d.soc_at_arrival * 100) + "%"]]
-          : []),
-        ...(d.energy_required_kwh != null
-          ? [["Energy required", d.energy_required_kwh + " kWh"]]
-          : []),
-        ...(d.interruptible != null
-          ? [["May pause the cycle", d.interruptible ? "Yes" : "No"]]
           : []),
         ...(d.vehicle_id
           ? [
@@ -503,7 +536,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
     for (const input of modal
       .querySelector("[data-flex-fields]")
       .querySelectorAll("input,select,textarea"))
-      if (!input.disabled && !input.checkValidity()) {
+      if (!input.disabled && !input.closest('.domain-field[hidden]') && !input.checkValidity()) {
         const details = input.closest("details");
         if (details) details.open = true;
         input.reportValidity();
@@ -515,7 +548,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
           input.reportValidity();
           return false;
         }
-    const d = editor.read();
+    const d = requestDetails();
     const recurring = repetition();
     if (
       recurring.recurrence?.until &&
@@ -526,16 +559,17 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
       throw Error("Choose an end time after the start.");
     if (
       kind === "appliance" &&
-      !d.duration_minutes &&
       !d.selected_power_profile
     )
-      throw Error("Choose a cycle duration or an equipment power profile.");
+      throw Error("Choose a cycle registered on this equipment.");
+    if (kind === 'water_pump' && (!Number.isInteger(d.duration_minutes) || d.duration_minutes <= 0))
+      throw Error('Choose a positive running time in hours and minutes.');
     if (
       d.duration_minutes &&
       d.duration_minutes * 60000 >
         Date.parse(d.ends_at) - Date.parse(d.starts_at)
     )
-      throw Error("The cycle needs to fit inside the available time.");
+      throw Error(kind === 'water_pump' ? 'The required running time must fit inside the available window.' : 'The selected cycle needs to fit inside the available window.');
     return true;
   }
   async function submit() {
