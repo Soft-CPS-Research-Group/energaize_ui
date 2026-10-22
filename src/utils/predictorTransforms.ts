@@ -27,7 +27,8 @@ export function normalizeTs(ts: string): string {
 
 /**
  * Floor a Date to the nearest 15-minute boundary.
- * target_time from the API is the wall-clock time the model ran, e.g. 21:23:32.
+ * target_time from the API is the time the forecast cycle ran, in UTC, e.g. 21:23:32Z
+ * (older predictor builds sent Lisbon time with its offset; both parse to the same instant).
  * Predictions are aligned to 15-min slots, so step 0 = 21:15:00, step 1 = 21:30:00, etc.
  */
 export function snap15(date: Date): Date {
@@ -199,7 +200,7 @@ export function buildPredictorTimeline(
   // Add latest predictions anchored at the snapped target_time
   if (predictions) {
     const anchor = predictions.target_time
-      ? snap15(new Date(predictions.target_time))
+      ? snap15(new Date(normalizeTs(predictions.target_time)))
       : (() => {
           const sorted = Array.from(map.values()).sort(
             (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()

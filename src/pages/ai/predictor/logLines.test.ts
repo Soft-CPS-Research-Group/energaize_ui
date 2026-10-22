@@ -12,7 +12,13 @@ describe("parseLogLine", () => {
     expect(entry.message).toBe("R-H-01 | skipped: no data");
   });
 
-  it("reads the live stream format and places the time today", () => {
+  it("reads live lines in the log file format the same way, so they name the same component", () => {
+    const fromFile = parseLogLine("2026-10-21 10:29:58,004 | INFO | cloud | ConsumptionPredictor | Published forecast for R-H-02", NOW);
+    expect(fromFile).toMatchObject({ level: "INFO", logger: "ConsumptionPredictor", message: "Published forecast for R-H-02" });
+    expect(fromFile.time).toBe("2026-10-21T10:29:58Z");
+  });
+
+  it("reads the live stream format of older predictor builds and places the time today", () => {
     const entry = parseLogLine("10:29:58 | INFO     | Published forecast for R-H-02", NOW);
     expect(entry.time).toBe("2026-10-21T10:29:58.000Z");
     expect(entry.level).toBe("INFO");

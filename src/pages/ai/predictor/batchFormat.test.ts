@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batchCountsText, batchPercent, countByReason, currentBatch } from './batchFormat';
+import { batchCountsText, batchPercent, countByReason, currentBatch, houseLabel } from './batchFormat';
 import type { BatchSummary } from '../../../api/predictorApi';
 
 const summary = (id: string, status: BatchSummary['status']): BatchSummary => ({
@@ -13,6 +13,17 @@ describe('countByReason', () => {
       { priority: 0, label: 'Forecast refused', count: 1 },
       { priority: 3, label: 'Old model', count: 2 },
     ]);
+  });
+
+  it('puts the generic model last', () => {
+    expect(countByReason([{ priority: 5 }, { priority: 1 }]).map((g) => g.label)).toEqual(['No model', 'Generic model']);
+  });
+});
+
+describe('houseLabel', () => {
+  it('names generic model lanes and keeps house ids', () => {
+    expect(houseLabel('cold_start')).toBe('Generic');
+    expect(houseLabel('R-H-01')).toBe('R-H-01');
   });
 });
 

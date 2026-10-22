@@ -24,6 +24,16 @@ export function minutesSince(iso: string | null | undefined, now: number): numbe
   return Math.max(0, Math.floor((now - time) / 60_000));
 }
 
+/** "Published 09:03:12 UTC (10:03 Europe/Lisbon)": target_time is the cycle time in UTC. */
+export function forecastTimeTitle(targetTime: string, timezone: string): string {
+  const date = new Date(normalizeTs(targetTime));
+  if (Number.isNaN(date.getTime())) return "";
+  const utc = date.toISOString().slice(11, 19);
+  if (timezone === "UTC") return `Published ${utc} UTC`;
+  const local = date.toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
+  return `Published ${utc} UTC (${local} ${timezone})`;
+}
+
 export function formatAge(minutes: number): string {
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes} min ago`;

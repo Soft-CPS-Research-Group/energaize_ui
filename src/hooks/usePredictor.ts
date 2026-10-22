@@ -16,6 +16,8 @@ import {
   startBatch,
   cancelBatch,
   getDataQuality,
+  getGenericModel,
+  setGenericModel,
   PredictorCommandPayload,
   TrainingJob,
   BatchOptions,
@@ -183,5 +185,27 @@ export function usePredictorDataQuality(houseId: string | null) {
     refetchInterval: 60000,
     // Older predictor builds have no such endpoint; the panel just stays hidden.
     retry: false,
+  });
+}
+
+/** The generic (cold-start) model per lane: chosen backend, trained backends and the houses they pooled. */
+export function usePredictorGenericModel(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["predictor", "generic-model"],
+    queryFn: getGenericModel,
+    enabled,
+    refetchInterval: 60000,
+    // Older predictor builds have no such endpoint.
+    retry: false,
+  });
+}
+
+export function useSetGenericModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: setGenericModel,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["predictor", "generic-model"] });
+    },
   });
 }

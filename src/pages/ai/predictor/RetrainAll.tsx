@@ -9,9 +9,10 @@ import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { useCancelBatch, usePredictorBatch, usePredictorBatches, useStartBatch } from "../../../hooks/usePredictor";
 import { planBatch, type BatchOptions, type ModelBackend } from "../../../api/predictorApi";
 import {
-  BATCH_ITEM_LABELS, BATCH_STATUS_LABELS, batchCountsText, batchPercent, countByReason, currentBatch,
+  BATCH_ITEM_LABELS, BATCH_STATUS_LABELS, batchCountsText, batchPercent, countByReason, currentBatch, houseLabel,
 } from "./batchFormat";
 import { fmtTs } from "./analysisFormat";
+import { ForceOption } from "./GenericModel";
 
 const MODEL_LABELS: Record<string, string> = { xgboost: "XGBoost", lgbm: "LightGBM", lstm: "LSTM" };
 const PREVIEW_ROWS = 50;
@@ -47,12 +48,15 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
   const [model, setModel] = useState<ModelChoice>("active");
   const [maxAge, setMaxAge] = useState("30");
   const [parallel, setParallel] = useState("2");
+  const [includeGeneric, setIncludeGeneric] = useState(false);
+  const [force, setForce] = useState(false);
 
   const ageDays = Number(maxAge);
   const ageValid = maxAge.trim() !== "" && Number.isFinite(ageDays) && ageDays >= 0;
   const options: BatchOptions = {
     houses: "all", lanes, only, model_type: model,
     max_model_age_days: ageValid ? ageDays : 30, max_parallel: Number(parallel),
+    include_generic: includeGeneric, force,
   };
 
   const plan = useQuery({
@@ -117,6 +121,17 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
               options={[["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]] as const} />
             <small>More is faster but uses more of the predictor's CPU and memory while forecasts run.</small>
           </fieldset>
+          <div className="predictor-choice-group">
+            <label className="analysis-filter-check generic-force">
+              <input type="checkbox" checked={includeGeneric} onChange={(e) => setIncludeGeneric(e.target.checked)} />
+              <span>Also retrain the generic model</span>
+            </label>
+            <small>
+              After the houses, so it learns from their latest data.
+              {model === "lstm" ? " It has no LSTM version, so it keeps its own type." : ""}
+            </small>
+          </div>
+          <ForceOption force={force} onChange={setForce} />
         </div>
 
         <section className="retrain-all-plan" aria-label="Plan">
@@ -150,7 +165,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
                     {items.slice(0, PREVIEW_ROWS).map((item, i) => (
                       <tr key={`${item.house_id}-${item.lane}`}>
                         <td className="is-muted">{i + 1}</td>
-                        <td>{item.house_id}</td>
+                        <td>{houseLabel(item.house_id)}</td>
                         <td className="is-capitalized">{item.lane}</td>
                         <td>{MODEL_LABELS[item.model_type] ?? item.model_type}</td>
                         <td className="is-muted">{item.reason}</td>
@@ -165,8 +180,9 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
         </section>
 
         <p className="predictor-wizard-note-text">
-          Each lane becomes a normal training job. A new model replaces the current one only if its error (MAE) is lower.
-          Lanes that are already training are skipped.
+          Each lane becomes a normal training job. {force
+            ? "Every new model replaces the current one."
+            : "A new model replaces the current one only if its error (MAE) is lower."} Lanes that are already training are skipped.
         </p>
 
         <div className="train-modal-footer">
@@ -243,7 +259,7 @@ export function BatchPanel({ timezone }: { timezone: string }) {
                   const improved = item.new_mae != null && item.prev_mae != null && item.new_mae < item.prev_mae;
                   return (
                     <tr key={`${item.house_id}-${item.lane}`} title={item.message || undefined}>
-                      <td>{item.house_id}</td>
+                      <td>{houseLabel(item.house_id)}</td>
                       <td className="is-capitalized">{item.lane}</td>
                       <td>{MODEL_LABELS[item.model_type] ?? item.model_type}</td>
                       <td className="is-muted">{item.reason}</td>
