@@ -357,3 +357,38 @@ body[data-workspace="ai"] .analysis-tabs-bar .predictor-tab { flex-shrink: 0; }
 .analysis-hbar-value { font-size: 12px; color: var(--text-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .analysis-hbar-best { margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 10.5px; color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--bg-elev)); }
 body[data-workspace="ai"] .analysis-table td { white-space: nowrap; }
+
+/* Retrain all houses: options, plan preview and the batch panel. */
+.retrain-all-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; }
+.retrain-all-field-label { font-size: 11px; color: var(--text-soft); }
+.retrain-all-options .predictor-choice-group { align-content: start; }
+.retrain-all-age input, .archive-cleanup-fields input { max-width: 120px; font-size: 13px; padding: 7px 10px; }
+.retrain-all-plan { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.retrain-all-plan h4 { margin: 0; font-size: 13px; font-weight: 500; }
+.retrain-all-plan p { margin: 0; font-size: 12px; }
+.retrain-all-bars { display: grid; gap: 6px; }
+.retrain-all-bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 40px; align-items: center; gap: 10px; font-size: 12px; }
+.retrain-all-bar-row strong { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.retrain-all-bar { height: 8px; border-radius: 999px; background: var(--bg-elev-2, var(--line)); overflow: hidden; }
+.retrain-all-bar-fill { height: 100%; border-radius: inherit; background: var(--brand); }
+.retrain-all-bar-fill.is-p0 { background: var(--warn); }
+.retrain-all-bar-fill.is-p4 { background: var(--text-soft); }
+.retrain-all-table-scroll { max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+.retrain-all-more { padding: 8px 12px; font-size: 11px; }
+.retrain-all-summary { display: grid; gap: 8px; padding: 0 18px 14px; }
+.retrain-all-summary p { margin: 0; font-size: 12px; }
+.retrain-all-when { font-size: 11px; margin-right: auto; }
+.retrain-all-toggle { display: inline-flex; align-items: center; gap: 4px; justify-self: start; }
+@media (max-width: 720px) {
+  .retrain-all-options { grid-template-columns: minmax(0, 1fr); }
+  .retrain-all-bar-row { grid-template-columns: 110px minmax(0, 1fr) 32px; }
+}
+
+/* Archive clean-up and model delete. */
+.archive-cleanup-fields { display: flex; flex-wrap: wrap; gap: 12px; }
+.analysis-drawer-delete { margin-left: auto; }
+.archive-cleanup-summary { margin: 0; font-size: 13px; }
+
+/* Predict: input data panel. */
+.input-source { display: inline-flex; align-items: center; gap: 4px; }
+.is-warning-text { color: var(--warn); }

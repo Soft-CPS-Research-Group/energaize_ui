@@ -34,6 +34,7 @@ export const DETAIL_LABELS: Record<string, string> = {
   model_key: "Model", house_id: "House", lane: "Lane", model_type: "Variant", model_backend: "Type",
   active: "In use", in_use_by: "Used by", file_path: "File", file_size_kb: "Size", stored_mae: "Stored MAE",
   n_features: "Features", n_outputs: "Outputs", model_schema: "Feature schema",
+  trained_at: "Trained", archived_at: "Archived",
 };
 
 export function formatDetail(key: string, value: unknown): string {
@@ -48,6 +49,10 @@ export function formatDetail(key: string, value: unknown): string {
   }
   if (key === "file_size_kb" && typeof value === "number") return `${value.toFixed(1)} KB`;
   if (key === "stored_mae" && typeof value === "number") return `${fmt(value)} kWh`;
+  if ((key === "trained_at" || key === "archived_at") && typeof value === "string") {
+    const date = new Date(normalizeTs(value));
+    return Number.isNaN(date.getTime()) ? value : `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  }
   return String(value);
 }
 

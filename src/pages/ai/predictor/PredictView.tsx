@@ -6,6 +6,7 @@ import {
   usePredictorCommand,
   usePredictorPredictionHistory,
   usePredictorActiveModel,
+  usePredictorDataQuality,
 } from "../../../hooks/usePredictor";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -17,6 +18,8 @@ import { buildPredictorTimeline } from "../../../utils/predictorTransforms";
 import type { ModelBackend } from "../../../api/predictorApi";
 import { useCountUp } from "../../../hooks/useCountUp";
 import { currentSlotKey, formatAge, forecastNotices, hasForecast, minutesSince, nowLineSlot } from "./forecastStatus";
+import { inputNotices } from "./inputQuality";
+import { InputDataPanel } from "./InputDataPanel";
 import {
   ComposedChart,
   Area,
@@ -102,6 +105,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
 
   const { data: stats } = usePredictorStats();
   const { data: activeModel } = usePredictorActiveModel(selectedHouseId);
+  const { data: dataQuality } = usePredictorDataQuality(selectedHouseId);
   const { data: history, isLoading: historyLoading, isFetching: historyFetching } = usePredictorHistory(selectedHouseId);
   const { data: predictions, isLoading: predictionsLoading, isFetching: predFetching } = usePredictorPredictions(selectedHouseId);
   const { consumption: histC, production: histP } = usePredictorPredictionHistory(selectedHouseId);
@@ -180,7 +184,7 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         paused: !!stats?.scheduler_paused,
         now,
         formatTime,
-      })
+      }).concat(inputNotices(selectedHouseId, dataQuality))
     : [];
   const forecastAge = hasForecast(predictions) ? minutesSince(predictions?.target_time, now) : null;
   const modelSummary = activeModel
@@ -575,6 +579,8 @@ export function PredictView({ selectedHouseId, timezone }: PredictViewProps) {
         )}
 
       </section>
+
+      <InputDataPanel data={dataQuality} />
 
       <ConfirmDialog
         open={showForecastDialog}

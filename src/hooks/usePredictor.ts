@@ -11,8 +11,14 @@ import {
   getJob,
   executeCommand,
   cancelJob,
+  listBatches,
+  getBatch,
+  startBatch,
+  cancelBatch,
+  getDataQuality,
   PredictorCommandPayload,
   TrainingJob,
+  BatchOptions,
 } from "../api/predictorApi";
 
 export function usePredictorStats() {
@@ -124,5 +130,58 @@ export function useCancelTrainingJob() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["predictor", "jobs"] });
     },
+  });
+}
+
+/** Training batches; polled faster while one is running. */
+export function usePredictorBatches() {
+  return useQuery({
+    queryKey: ["predictor", "batches"],
+    queryFn: listBatches,
+    refetchInterval: (query) => (query.state.data?.some((b) => b.status === "RUNNING") ? 3000 : 15000),
+  });
+}
+
+/** One batch with its items, polled while it runs. */
+export function usePredictorBatch(batchId: string | null) {
+  return useQuery({
+    queryKey: ["predictor", "batches", batchId],
+    queryFn: () => getBatch(batchId!),
+    enabled: !!batchId,
+    refetchInterval: (query) => (query.state.data?.status === "RUNNING" ? 3000 : false),
+  });
+}
+
+export function useStartBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (options: BatchOptions) => startBatch(options),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["predictor", "batches"] });
+      queryClient.invalidateQueries({ queryKey: ["predictor", "jobs"] });
+    },
+  });
+}
+
+export function useCancelBatch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (batchId: string) => cancelBatch(batchId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["predictor", "batches"] });
+      queryClient.invalidateQueries({ queryKey: ["predictor", "jobs"] });
+    },
+  });
+}
+
+/** How the house's meters are read and the quality of the latest forecast window. */
+export function usePredictorDataQuality(houseId: string | null) {
+  return useQuery({
+    queryKey: ["predictor", "data-quality", houseId],
+    queryFn: () => getDataQuality(houseId!),
+    enabled: !!houseId,
+    refetchInterval: 60000,
+    // Older predictor builds have no such endpoint; the panel just stays hidden.
+    retry: false,
   });
 }

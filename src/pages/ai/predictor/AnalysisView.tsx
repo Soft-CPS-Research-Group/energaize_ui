@@ -5,16 +5,17 @@ import {
   LineChart, Line, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell,
 } from "recharts";
-import { Download, RefreshCcw, X, ChevronDown, ChevronRight, Play } from "lucide-react";
+import { Download, RefreshCcw, X, ChevronDown, ChevronRight, Play, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { EVChargingLoader } from "../../../components/ui/EVChargingLoader";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { InfoTip } from "../../../components/ui/InfoTip";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { getHouses } from "../../../api/predictorApi";
 import {
-  listModels, getFeatureImportance, activateModel, isArchivedModel as isArchived, submitJob, listJobs, getJob, cancelJob, getExportUrl,
+  listModels, getFeatureImportance, activateModel, deleteModel, isArchivedModel as isArchived, submitJob, listJobs, getJob, cancelJob, getExportUrl,
   type ModelMeta, type FeatureImportanceResult, type AnalysisJob,
   type CompareResult, type MissingDataResult, type SegmentAnalysisResult, type HpTuneResult,
   type ImportanceType, type Lane, type ParamSpec, type SubmitPayload, type MetricsBundle, type JobStatus, type JobType,
@@ -24,6 +25,7 @@ import {
   SEGMENT_LABELS, capitalize, fmt, fmtParam, fmtPct, fmtTs, formatDetail, inUseLabel, markInUse, modelLabels,
   groupByHouse, modelsInUse, testDaysValid,
 } from "./analysisFormat";
+import { ArchiveCleanupModal, formatBytes } from "./ArchiveCleanup";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -316,7 +318,7 @@ function ModelsInUsePanel({ models, onSelect }: { models: ModelMeta[]; onSelect:
 
 // ─── Tab 1: Model Browser ─────────────────────────────────────────────────────
 
-function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance: (key: string) => void }) {
+function ModelBrowserTab({ onOpenFeatureImportance, timezone }: { onOpenFeatureImportance: (key: string) => void; timezone: string }) {
   const queryClient = useQueryClient();
   const { notifySuccess, notifyError } = useApiFeedback();
   const { data: models, isLoading, isFetching, isError, error, refetch } = useQuery({
@@ -344,14 +346,28 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
     onError: (err) => notifyError("Promote Failed", err),
   });
 
+  const [confirmDelete, setConfirmDelete] = useState<ModelMeta | null>(null);
+  const [showCleanup, setShowCleanup] = useState(false);
+  const deleteMutation = useMutation({
+    mutationFn: (m: ModelMeta) => deleteModel(m.model_key),
+    onSuccess: (res, m) => {
+      notifySuccess("Model deleted", `${m.model_key} was deleted (${formatBytes(res.freed_bytes ?? 0)} freed).`);
+      setConfirmDelete(null);
+      setSelected(null);
+      queryClient.setQueryData<ModelMeta[]>(["analysis", "models"], (old) => old?.filter((x) => x.model_key !== m.model_key));
+      queryClient.invalidateQueries({ queryKey: ["analysis", "models"] });
+      queryClient.invalidateQueries({ queryKey: ["analysis", "archive"] });
+    },
+    onError: (err) => notifyError("Model not deleted", err),
+  });
+
   // Filters
   const [filterLane, setFilterLane] = useState<"all" | Lane>("all");
   const [filterHouse, setFilterHouse] = useState("all");
   const [filterModelType, setFilterModelType] = useState<"all" | "warm" | "cold_start">("all");
   const [filterBackend, setFilterBackend] = useState<"all" | "xgboost" | "lgbm" | "lstm">("all");
   const [inUseOnly, setInUseOnly] = useState(false);
-  // The API sends no training date, so models sort by error or by house.
-  const [sortBy, setSortBy] = useState<"mae-asc" | "mae-desc" | "house">("mae-asc");
+  const [sortBy, setSortBy] = useState<"mae-asc" | "mae-desc" | "house" | "newest">("mae-asc");
 
   // model_backend is optional — backend defaults to xgboost when absent
   const effectiveBackend = (m: ModelMeta) => m.model_backend ?? "xgboost";
@@ -372,6 +388,8 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
     .sort((a, b) => {
       if (sortBy === "mae-asc")  return (a.stored_mae ?? Infinity) - (b.stored_mae ?? Infinity);
       if (sortBy === "mae-desc") return (b.stored_mae ?? -Infinity) - (a.stored_mae ?? -Infinity);
+      // Older predictor builds send no training date; those models go last.
+      if (sortBy === "newest") return (b.trained_at ?? "").localeCompare(a.trained_at ?? "");
       return (a.house_id ?? "~").localeCompare(b.house_id ?? "~") || a.lane.localeCompare(b.lane) || a.model_key.localeCompare(b.model_key);
     });
 
@@ -417,6 +435,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
             <option value="mae-asc">Lowest MAE first</option>
             <option value="mae-desc">Highest MAE first</option>
             <option value="house">House</option>
+            <option value="newest">Newest first</option>
           </select>
         </label>
         <label className="analysis-filter-check">
@@ -430,6 +449,7 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
             </button>
           )}
           {models && <span className="analysis-models-count">{displayedModels.length} of {models.length} models</span>}
+          <Button variant="secondary" size="sm" iconLeft={<Trash2 size={13} />} onClick={() => setShowCleanup(true)}>Clean up archive</Button>
           <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={13} className={isFetching ? "is-spinning" : ""} />} onClick={() => refetch()} disabled={isFetching}>Refresh</Button>
         </div>
       </div>
@@ -572,11 +592,38 @@ function ModelBrowserTab({ onOpenFeatureImportance }: { onOpenFeatureImportance:
               <Button variant={selected.house_id != null && selected.active !== true ? "secondary" : "primary"} onClick={() => { onOpenFeatureImportance(selected.model_key); setSelected(null); }}>
                 Feature Importance →
               </Button>
+              {selected.house_id != null && selected.active !== true && (
+                <Button variant="danger" iconLeft={<Trash2 size={14} />} className="analysis-drawer-delete"
+                  onClick={() => setConfirmDelete(selected)} disabled={deleteMutation.isPending}>
+                  Delete
+                </Button>
+              )}
             </div>
           </div>
         </div>,
         document.body
       )}
+
+      <ConfirmDialog
+        open={confirmDelete != null}
+        title="Delete model"
+        message={confirmDelete ? (
+          <>
+            <p>Delete <code>{confirmDelete.model_key}</code>{confirmDelete.file_size_kb ? ` (${confirmDelete.file_size_kb.toFixed(0)} KB)` : ""}? This cannot be undone.</p>
+            <p className="is-muted">
+              {isArchived(confirmDelete)
+                ? "It is an archived version; the model in use is not affected."
+                : "No house forecasts with it now, so forecasts are not affected."}
+            </p>
+          </>
+        ) : null}
+        confirmLabel="Delete model"
+        pending={deleteMutation.isPending}
+        onConfirm={() => confirmDelete && deleteMutation.mutate(confirmDelete)}
+        onCancel={() => setConfirmDelete(null)}
+      />
+
+      <ArchiveCleanupModal open={showCleanup} houses={uniqueHouses} timezone={timezone} onClose={() => setShowCleanup(false)} />
     </div>
   );
 }
@@ -1438,7 +1485,7 @@ export function AnalysisView({ timezone }: { timezone: string }) {
       </div>
 
       <div className="analysis-tab-content">
-        {mountedTabs.has(0) && <div className={activeTab === 0 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><ModelBrowserTab onOpenFeatureImportance={handleOpenFI} /></div>}
+        {mountedTabs.has(0) && <div className={activeTab === 0 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><ModelBrowserTab onOpenFeatureImportance={handleOpenFI} timezone={timezone} /></div>}
         {mountedTabs.has(1) && <div className={activeTab === 1 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><FeatureImportanceTab initialModelKey={fiModelKey} /></div>}
         {mountedTabs.has(2) && <div className={activeTab === 2 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><CompareModelsTab initialJob={loadedJobs[2]} /></div>}
         {mountedTabs.has(3) && <div className={activeTab === 3 ? "analysis-tab-pane is-active" : "analysis-tab-pane"}><SegmentAnalysisTab initialJob={loadedJobs[3]} /></div>}
