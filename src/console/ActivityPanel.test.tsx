@@ -43,6 +43,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("Activity", () => {
+  it("shows only the server verified account name for new changes", async () => {
+    fetcher.mockResolvedValueOnce(
+      page([{ ...item, actor_status: "verified", actor_name: "Alice" }]),
+    );
+    render(<ActivityPanel scope={{}} onClose={() => {}} />);
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Author unavailable in this historical record"),
+    ).not.toBeInTheDocument();
+  });
   it("loads the current equipment, keeps actor uncertainty and expands recorded details", async () => {
     render(
       <ActivityPanel
@@ -90,18 +100,33 @@ describe("Activity", () => {
     await screen.findByText("No recorded activity");
     await userEvent.selectOptions(screen.getByLabelText("Period"), "custom");
     expect(fetcher).toHaveBeenCalledTimes(1);
+    const recent = new Date();
+    recent.setDate(recent.getDate() - 3);
+    const key = [
+      recent.getFullYear(),
+      String(recent.getMonth() + 1).padStart(2, "0"),
+      String(recent.getDate()).padStart(2, "0"),
+    ].join("-");
     fireEvent.change(screen.getByLabelText("From"), {
-      target: { value: "2026-10-01" },
+      target: { value: key },
     });
     fireEvent.change(screen.getByLabelText("Through"), {
-      target: { value: "2026-10-03" },
+      target: { value: key },
     });
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
     const end = new URL(
       fetcher.mock.calls[1][0],
       "http://localhost",
     ).searchParams.get("until");
-    expect(new Date(end!).getDate()).toBe(4);
+    recent.setDate(recent.getDate() + 1);
+    expect(new Date(end!).getDate()).toBe(recent.getDate());
+    fireEvent.change(screen.getByLabelText("From"), {
+      target: { value: "2020-01-01" },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(
+      screen.queryByRole("option", { name: "Last 90 days" }),
+    ).not.toBeInTheDocument();
   });
   it("hides old data on filter changes and ignores late responses", async () => {
     let resolve!: (response: Response) => void;

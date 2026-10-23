@@ -23,7 +23,8 @@ interface Confirmation {
   target: string;
   note: string;
   recorded_at: string;
-  actor_status: "unverified";
+  actor_status: "unverified" | "verified";
+  actor_name?: string | null;
 }
 export interface ActivityItem {
   id: string;
@@ -34,7 +35,8 @@ export interface ActivityItem {
   resource_name: string;
   action: string;
   status: "pending" | "resolved";
-  actor_status: "unavailable";
+  actor_status: "unavailable" | "verified";
+  actor_name?: string | null;
   confirmations: Confirmation[];
 }
 interface Page {
@@ -81,6 +83,14 @@ export function ActivityPanel({
   const inFlight = useRef(false),
     generation = useRef(0);
   const custom = days === "custom";
+  const dayKey = (value: Date) =>
+    [
+      value.getFullYear(),
+      String(value.getMonth() + 1).padStart(2, "0"),
+      String(value.getDate()).padStart(2, "0"),
+    ].join("-");
+  const oldest = dayKey(new Date(anchor.getTime() - 30 * 86400000));
+  const today = dayKey(anchor);
   const rangeEnd = custom && end ? new Date(end + "T00:00:00") : anchor;
   const rangeStart =
     custom && start
@@ -93,7 +103,9 @@ export function ActivityPanel({
       start &&
       end &&
       rangeStart < rangeEnd &&
-      rangeEnd.getTime() - rangeStart.getTime() <= 366 * 86400000
+      start >= oldest &&
+      end <= today &&
+      rangeEnd.getTime() - rangeStart.getTime() <= 31 * 86400000
     );
   const key = [
     scope.communityId,
@@ -240,7 +252,6 @@ export function ActivityPanel({
             <option value="1">Last 24 hours</option>
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
             <option value="custom">Choose dates</option>
           </select>
         </label>
@@ -274,6 +285,8 @@ export function ActivityPanel({
             From
             <input
               type="date"
+              min={oldest}
+              max={today}
               value={start}
               onChange={(e) => setStart(e.target.value)}
             />
@@ -282,18 +295,20 @@ export function ActivityPanel({
             Through
             <input
               type="date"
+              min={oldest}
+              max={today}
               value={end}
               onChange={(e) => setEnd(e.target.value)}
             />
           </label>
           {!valid && (
-            <span role="status">Choose a valid range of up to one year.</span>
+            <span role="status">Choose dates within the last 30 days.</span>
           )}
         </div>
       )}
       <p className="activity-coverage">
-        Inventory changes and configuration reviews. Times are shown in your
-        local time zone.
+        Inventory changes and configuration reviews from the last 30 days. Times
+        are shown in your local time zone.
       </p>
       <div
         className="activity-scroll"
@@ -334,7 +349,11 @@ export function ActivityPanel({
                   </span>
                 </div>
                 <p className="activity-action">{words(item.action)}</p>
-                <small>Author unavailable in this historical record</small>
+                <small>
+                  {item.actor_status === "verified"
+                    ? item.actor_name || "Verified account · name unavailable"
+                    : "Author unavailable in this historical record"}
+                </small>
                 <details>
                   <summary>
                     <SlidersHorizontal size={13} /> Configuration review{" "}
@@ -348,7 +367,11 @@ export function ActivityPanel({
                           <p>{c.note}</p>
                           <small>
                             Manual confirmation · {date(c.recorded_at)},{" "}
-                            {time(c.recorded_at)} · Author unverified
+                            {time(c.recorded_at)} ·{" "}
+                            {c.actor_status === "verified"
+                              ? c.actor_name ||
+                                "Verified account · name unavailable"
+                              : "Author unverified"}
                           </small>
                         </div>
                       ))
