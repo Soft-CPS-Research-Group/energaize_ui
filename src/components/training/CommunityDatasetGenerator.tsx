@@ -12,16 +12,17 @@ interface House { site: { id: string; name?: string }; assets: Asset[]; channels
 interface Options {
   name: string; site_ids: string[]; asset_ids: string[]; from_ts: string | null; until_ts: string | null;
   seconds_per_time_step: number; signals: Record<string, Record<string, string>>; battery_initial_soc: Record<string, number>;
+  ev_initial_soc?: Record<string, number>;
   market_enabled: boolean | null; grid_import_price: number | null; grid_export_price: number | null;
   community_buy_price: number | null; community_sell_price: number | null; description: string;
 }
 interface Defaults { options: Options; sites: House[]; timezone: string; community: { name: string; community_contracts?: unknown[] };
   suggested_period: { from_ts: string | null; until_ts: string | null }; problems: { message: string; site_id: string }[] }
-interface Build { id: string; state: string; options: Options; report: { phase?: string; error?: string | { problems?: { message: string }[] }; warnings?: string[]; samples?: number; from_ts?: string; until_ts?: string; controlled_batteries?: number; result?: { name: string; version: number }; validation?: { ok: boolean } } }
+interface Build { id: string; state: string; options: Options; report: { phase?: string; error?: string | { problems?: { message: string }[] }; warnings?: string[]; samples?: number; from_ts?: string; until_ts?: string; controlled_batteries?: number; controlled_evs?: number; controlled_chargers?: number; controlled_appliances?: number; result?: { name: string; version: number }; validation?: { ok: boolean } } }
 const terminal = new Set(['completed', 'failed', 'ready']);
 const signalLabels: Record<string, string> = { load: 'Consumo não flexível', grid_import: 'Importação da rede', grid_export: 'Exportação para a rede', solar: 'Produção solar', price: 'Preço de compra', battery_in: 'Carga histórica da bateria', battery_out: 'Descarga histórica da bateria', soc: 'Estado de carga da bateria' };
 const steps = ['Comunidade', 'Simulação', 'Rever e gerar'];
-const assetLabels: Record<string, string> = { battery: 'Bateria', pv_system: 'Produção solar', grid_meter: 'Contador', ev_charger: 'Carregador', electric_vehicle: 'Veículo elétrico', non_shiftable_load: 'Consumo', appliance: 'Equipamento', shiftable_load: 'Carga flexível', heat_pump: 'Bomba de calor' };
+const assetLabels: Record<string, string> = { battery: 'Bateria', pv_system: 'Produção solar', grid_meter: 'Contador', ev_charger: 'Carregador', ev: 'Veículo elétrico', electric_vehicle: 'Veículo elétrico', non_shiftable_load: 'Consumo', appliance: 'Equipamento', shiftable_load: 'Carga flexível', heat_pump: 'Bomba de calor' };
 const stateLabels: Record<string, string> = { queued: 'Em espera', preparing: 'A preparar os dados', validating: 'A validar a simulação', publishing: 'A guardar no servidor', completed: 'Concluído', failed: 'Não foi possível gerar', ready: 'Dados verificados — prontos a guardar' };
 const priceLabels = { grid_import_price: 'Compra à rede', grid_export_price: 'Venda à rede', community_buy_price: 'Compra na comunidade', community_sell_price: 'Venda na comunidade' } as const;
 const dateLabel = (value?: string | null, zone = 'UTC') => value ? new Intl.DateTimeFormat('pt-PT', { dateStyle: 'short', timeStyle: 'short', timeZone: zone }).format(new Date(value)) : 'Por determinar';
@@ -74,6 +75,7 @@ function Generator({ workspaceId }: { workspaceId: string }) {
   const selectedHouses = data.sites.filter(h => options.site_ids.includes(h.site.id));
   const selectedAssets = selectedHouses.flatMap(h => h.assets).filter(a => options.asset_ids.includes(a.id));
   const batteries = selectedAssets.filter(a => a.asset_type === 'battery');
+  const vehicles = [...new Map(selectedAssets.filter(a => a.asset_type === 'ev').map(a => [a.id, a])).values()];
   const selectedProblems = data.problems.filter(p => options.site_ids.includes(p.site_id));
   const valid = !!options.site_ids.length && !!options.name.trim();
   const period = options.from_ts || options.until_ts
@@ -121,6 +123,8 @@ function Generator({ workspaceId }: { workspaceId: string }) {
           <div><dt>Resolução</dt><dd>{interval}</dd></div>
           <div><dt>Baterias</dt><dd>{batteries.length ? `${batteries.length} · características registadas na comunidade` : 'Sem baterias selecionadas'}</dd></div>
           <div><dt>Tarifas e mercado</dt><dd>{Object.keys(priceLabels).some(k => options[k as keyof typeof priceLabels] !== null) || options.market_enabled !== null ? 'Com ajustes para este cenário' : 'Da configuração da comunidade'}</dd></div>
+          <div><dt>Veículos e equipamentos</dt><dd>Sessões, características e ciclos registados na comunidade</dd></div>
+          <div><dt>Previsões de preço</dt><dd>Horizontes guardados em cada instante · 1, 2 e 3 horas</dd></div>
         </dl>
         <details className="dataset-options"><summary>Período e resolução <ChevronDown size={16} aria-hidden="true" /></summary><fieldset disabled={busy}>
           <p>O período automático usa o maior segmento comum completo, até um ano e dentro do limite de extração. As datas abaixo usam UTC; a simulação usa {data.timezone}.</p>
@@ -134,6 +138,8 @@ function Generator({ workspaceId }: { workspaceId: string }) {
           <div className="dataset-field-grid">{(Object.keys(priceLabels) as (keyof typeof priceLabels)[]).filter(key => options.market_enabled !== false || !key.startsWith('community_')).map(key => <label key={key}>{priceLabels[key]} (€/kWh)<input type="number" step="any" placeholder="Da comunidade" value={options[key] ?? ''} onChange={e => change(key, e.target.value === '' ? null : Number(e.target.value))} /></label>)}</div>
           {batteries.length > 0 && <p>As baterias usam as características registadas e o estado de carga medido no início do período.</p>}
           {batteries.map(a => <label key={a.id}>Carga inicial · {a.data.name || 'Bateria'} (0–1)<input type="number" min={0} max={1} step="0.01" placeholder="Medição no início do período" value={options.battery_initial_soc[a.id] ?? ''} onChange={e => { const next = { ...options.battery_initial_soc }; if (e.target.value === '') delete next[a.id]; else next[a.id] = Number(e.target.value); change('battery_initial_soc', next); }} /></label>)}
+          {vehicles.map(a => <label key={a.id}>Carga inicial · {a.data.name || 'Veículo elétrico'} (0–1)<input type="number" min={0} max={1} step="0.01" placeholder="Da medição ou da sessão de chegada" value={options.ev_initial_soc?.[a.id] ?? ''} onChange={e => { const next = { ...options.ev_initial_soc }; if (e.target.value === '') delete next[a.id]; else next[a.id] = Number(e.target.value); change('ev_initial_soc', next); }} /></label>)}
+          <p>Quando falta um horizonte de preço, usa-se o preço conhecido nesse instante. O relatório indica essa cobertura. A simulação não envia comandos para os equipamentos reais.</p>
         </fieldset></details>
         <details className="dataset-options"><summary>Rever fontes de dados <ChevronDown size={16} aria-hidden="true" /></summary><fieldset disabled={busy}>
           <p>As séries são identificadas automaticamente na configuração existente. Só é necessário escolher uma origem quando a correspondência está em falta ou é ambígua.</p>
@@ -159,7 +165,7 @@ function Generator({ workspaceId }: { workspaceId: string }) {
         {build.error && <p role="alert">{build.error.message}</p>}
         {build.data && <div className="dataset-build-status" role="status"><strong>{report?.result ? `Dataset ${report.result.name} disponível` : stateLabels[build.data.state] || 'A processar'}</strong>
           {busy && <p>Podes fechar esta janela. A preparação continua no servidor.</p>}
-          {!!report?.samples && <p>{report.samples} intervalos · {report.controlled_batteries || 0} baterias controláveis · {dateLabel(report.from_ts, data.timezone)} — {dateLabel(report.until_ts, data.timezone)}</p>}
+          {!!report?.samples && <p>{report.samples} intervalos · {report.controlled_batteries || 0} baterias · {report.controlled_evs || 0} veículos · {report.controlled_chargers || 0} carregadores · {report.controlled_appliances || 0} aparelhos controláveis · {dateLabel(report.from_ts, data.timezone)} — {dateLabel(report.until_ts, data.timezone)}</p>}
           {error && <div role="alert">{typeof error === 'string' ? error : <ul>{error.problems?.map((p, i) => <li key={i}>{p.message}</li>)}</ul>}</div>}
           {!!report?.warnings?.length && <details><summary>Pressupostos e capacidades <ChevronDown size={14} aria-hidden="true" /></summary><ul>{report.warnings.map(w => <li key={w}>{w}</li>)}</ul></details>}
           {publish.error && <p role="alert">{publish.error.message}</p>}
