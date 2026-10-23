@@ -1,4 +1,5 @@
 import { TimeseriesPlot } from "../../components/charts/TimeseriesPlot";
+import { JobProvenance } from "../../components/training/JobProvenance";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -4482,6 +4483,7 @@ export function JobDetailPage(): JSX.Element {
 
               <section className="job-overview-columns">
                 <div className="job-overview-column">
+                  <JobProvenance jobId={jobId} status={displayStatus} />
                   <article className="job-overview-section">
                     <header>
                       <h3>Identification</h3>

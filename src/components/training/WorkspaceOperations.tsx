@@ -5,6 +5,8 @@ import { useTrainingWorkspace } from '../../contexts/TrainingWorkspaceContext';
 import type { RuntimeInstance } from '../../api/runtimeApi';
 import type { ApiResponse, KpiResult } from '../../types/kpi';
 import { Button } from '../ui/Button';
+import { Link } from 'react-router-dom';
+import { ModelHouseMapping, type ModelProvenance } from './JobProvenance';
 
 function KpiResults({ result }: { result: ApiResponse }) {
   const rows: Array<{scope:string; metric:string; point:KpiResult}> = [];
@@ -35,7 +37,7 @@ export function WorkspaceOperations() {
     {state.data?.instances.map(i => <article className="training-operation-row" key={i.id}><header><strong>{i.name}</strong><span>{i.health.replaceAll('_',' ')} · {i.observed_state.replaceAll('_',' ')}</span></header><dl><div><dt>Image</dt><dd>{i.image}</dd></div><div><dt>Applied configuration</dt><dd>{i.applied_config_version || 'Not applied'}</dd></div><div><dt>Mode</dt><dd>{i.mode}</dd></div></dl></article>)}
     {state.data && !state.data.instances.length && workspace?.kind === 'community' && <p>No runtime instances are associated with this community.</p>}
     <h3>Model candidates</h3>
-    {state.data?.models.map(m => <p key={m.id}><strong>{m.name}</strong> · version {m.version}{m.detail.source_job_id ? ` · source job ${String(m.detail.source_job_id)}` : ' · imported bundle'}</p>)}
+    {state.data?.models.map(m => <article key={m.id}><p><strong>{m.name}</strong> · version {m.version}{m.detail.source_job_id ? <> · <Link to={`/app/ai/jobs/${encodeURIComponent(String(m.detail.source_job_id))}`}>Source experiment</Link></> : ' · imported bundle'}</p><ModelHouseMapping provenance={m.detail.provenance as ModelProvenance | undefined} /></article>)}
     {canManage && <div className="training-folder-toolbar"><select aria-label="Finished job" value={jobId} onChange={e => setJobId(e.target.value)}><option value="">Select a finished job</option>{finished.data?.filter(j => j.status === 'finished').map(j => <option key={j.job_id} value={j.job_id}>{j.job_info?.job_name || j.job_id}</option>)}</select><Button disabled={!jobId || promote.isPending} onClick={() => promote.mutate()}>Register model from job</Button></div>}
     {promote.error && <p role="alert">{promote.error.message}</p>}{promote.isSuccess && <p role="status">Model candidate registered. Deployment remains a separate action below.</p>}
     {workspace?.kind === 'community' && <><h3>Operational KPIs</h3>{state.data && !state.data.kpi_available ? <p>Operational KPIs have not been connected to this community yet.</p> : <><p>Measured operation for a selected period. Simulation KPIs remain attached to their jobs.</p><div className="training-folder-toolbar"><label>From <input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} /></label><label>Until <input type="datetime-local" value={until} onChange={e => setUntil(e.target.value)} /></label><Button disabled={!from || !until || kpis.isPending} onClick={() => kpis.mutate()}>Load KPIs</Button></div>{kpis.error && <p role="alert">{kpis.error.message}</p>}{kpis.data && <KpiResults result={kpis.data} />}</>}</>}
