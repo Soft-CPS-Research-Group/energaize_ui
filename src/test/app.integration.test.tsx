@@ -575,6 +575,24 @@ describe("App integration", () => {
     expect(screen.getByDisplayValue("completed")).toBeInTheDocument();
   });
 
+  it.each(["finished", "failed", "canceled"])("updates an open job detail to %s and refreshes its result", async terminal => {
+    seedAiSession();
+    let status = "running";
+    const resultStates: string[] = [];
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/status/lifecycle-test`, () => HttpResponse.json({ job_id: "lifecycle-test", status })),
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/lifecycle-test`, () => {
+        resultStates.push(status);
+        return HttpResponse.json({ status });
+      })
+    );
+    renderApp("/app/ai/jobs/lifecycle-test");
+    expect((await screen.findAllByText("running")).length).toBeGreaterThan(0);
+    status = terminal;
+    await waitFor(() => expect(screen.getAllByText(terminal).length).toBeGreaterThan(0), { timeout: 7500 });
+    await waitFor(() => expect(resultStates).toContain(terminal));
+  }, 12000);
+
   it("keeps email notification metadata out of the jobs table and shows it in job details", async () => {
     seedAiSession();
     const user = userEvent.setup();

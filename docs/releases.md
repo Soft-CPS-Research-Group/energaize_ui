@@ -14,3 +14,9 @@ scope, and link registered candidates to their source experiment. Managers can
 register verified finished candidates directly from the job. Failed/canceled jobs
 and unverified community exports cannot be presented as ready candidates. Previous
 attempt exports remain visible without preventing registration of a new export.
+# 0.4.1 — live job detail (2026-10-23)
+
+The open job detail polls status, metadata and progress while work is active,
+then refreshes the final result when it finishes, fails or is canceled. It stops
+polling after a terminal status. Integration tests exercise those transitions
+without a page reload.

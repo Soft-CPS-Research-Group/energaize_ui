@@ -2425,23 +2425,27 @@ export function JobDetailPage(): JSX.Element {
   const statusQuery = useQuery({
     queryKey: ["job-status", jobId],
     queryFn: () => getJobStatus(jobId),
-    enabled: Boolean(jobId)
+    enabled: Boolean(jobId),
+    refetchInterval: query => ["finished", "completed", "failed", "canceled", "cancelled", "stopped"].includes(query.state.data?.status || "") ? false : LOGS_POLL_MS
   });
+  const jobPollingInterval = ["finished", "completed", "failed", "canceled", "cancelled", "stopped"].includes(statusQuery.data?.status || "") ? false : LOGS_POLL_MS;
 
   const infoQuery = useQuery({
-    queryKey: ["job-info", jobId],
+    queryKey: ["job-info", jobId, statusQuery.data?.status],
     queryFn: () => getJobInfo(jobId),
-    enabled: Boolean(jobId)
+    enabled: Boolean(jobId),
+    refetchInterval: jobPollingInterval
   });
 
   const progressQuery = useQuery({
-    queryKey: ["job-progress", jobId],
+    queryKey: ["job-progress", jobId, statusQuery.data?.status],
     queryFn: () => getJobProgress(jobId),
-    enabled: Boolean(jobId)
+    enabled: Boolean(jobId),
+    refetchInterval: jobPollingInterval
   });
 
   const resultQuery = useQuery({
-    queryKey: ["job-result", jobId],
+    queryKey: ["job-result", jobId, statusQuery.data?.status],
     queryFn: () => getJobResult(jobId),
     enabled: Boolean(jobId)
   });
