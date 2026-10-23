@@ -485,3 +485,31 @@ test('cancelled request history remains accessible and respects equipment scope 
   assert.match(w.document.querySelector('[role=dialog]').textContent,/No saved requests/);
  }finally{dom.window.close();}
 });
+
+test('site editor submits its opening version, hides metadata and keeps a conflicting draft',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`var original={name:'Old home',version:'a'.repeat(64)};var writes=[];var reloads=0;checkPermission=async()=>{};loadBackend=async()=>{reloads++;};toast=()=>{};operationSchemas=async()=>({SiteUpdate:{type:'object',properties:{name:{type:'string'},expected_version:{type:'string'}}}});B.request=async(s,p,m,b)=>{writes.push(b);throw Object.assign(Error('Stale'),{status:409,code:'resource.version_conflict'});};`);
+  await run(`structuredEditor({title:'Site settings',schema:'SiteUpdate',value:original,method:'PUT',path:'/api/sites/home'})`);
+  assert.equal(w.document.querySelector('[data-field="expected_version"]'),null);
+  run(`original.version='b'.repeat(64)`);
+  const form=w.document.querySelector('#overlay form'),name=form.querySelector('[data-field="name"]');name.value='My unsaved home';
+  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(setImmediate);
+  assert.equal(run('writes[0].expected_version'),'a'.repeat(64));assert.equal(run('writes[0].name'),'My unsaved home');assert.equal(name.value,'My unsaved home');assert.equal(form.querySelector('[type="submit"]').disabled,true);
+  assert.match(form.textContent,/Your edits are still here/);form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(setImmediate);assert.equal(run('writes.length'),1);assert.equal(run('reloads'),0);
+  [...form.querySelectorAll('button')].find(b=>b.textContent==='Discard edits and reload').click();await new Promise(setImmediate);assert.equal(run('reloads'),1);assert.equal(w.document.querySelector('#overlay form'),null);
+ }finally{dom.window.close();}
+});
+test('equipment settings use the envelope version and creation sends no version',async()=>{
+ const {dom,run}=workspace();try{
+  run(`connection.raw={assets:[{id:'battery',asset_type:'battery',version:'c'.repeat(64),data:{name:'Storage'}}]};var options;structuredEditor=async o=>{options=o;};`);
+  await run(`editEquipment('battery')`);assert.equal(run('options.value.version'),'c'.repeat(64));assert.equal(run('options.path'),'/api/assets/batteries/battery');
+ }finally{dom.window.close();}
+});
+
+test('legacy channel editor forwards each channel version and reports partial conflict',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`var channels=[{backendId:'one',name:'Power',version:'a'.repeat(64),capability_type:'sensor'},{backendId:'two',name:'Charge',version:'b'.repeat(64),capability_type:'sensor'}];currentAssets=()=>[{id:'asset',backendId:'asset',name:'Battery',channels}];channelForm=()=>'';M.validation=()=>null;M.payload=c=>({name:c.name});checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};var writes=[];B.request=async(s,p,m,b)=>{writes.push(b);if(writes.length===2)throw Object.assign(Error('Stale'),{status:409});return {};};inspectAsset('asset');`);
+  const form=w.document.querySelector('#overlay form');form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(setImmediate);
+  assert.equal(run('writes[0].expected_version'),'a'.repeat(64));assert.equal(run('writes[1].expected_version'),'b'.repeat(64));assert.match(form.textContent,/1 of 2 channels saved/);assert.equal(form.querySelector('[type="submit"]').disabled,true);
+ }finally{dom.window.close();}
+});

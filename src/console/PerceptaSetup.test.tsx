@@ -4,7 +4,7 @@ import {PerceptaSetup} from './PerceptaSetup';
 beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
 afterEach(()=>vi.unstubAllGlobals());
 function setup(initialSetup=false,failLaunch=false,community=false,equipment=false){
- const channel={capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
+ const channel={version:'a'.repeat(64),capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
  const total={...channel,capability_id:'total',name:'Community import',collection:{parameter_type_id:'energy_in_total',role:'community_output',privacy:'community',necessary:true}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);let data:unknown={};
   if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1']}];
@@ -139,4 +139,21 @@ it('keeps house measurements in the general step and restores the owner when nav
  expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/sites/site/signals')&&init?.method==='POST')).toBe(true);
  expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/recs/')&&(init?.method||'GET')!=='GET')).toBe(false);
  expect(screen.getByRole('region',{name:'From your community'})).toBeInTheDocument();
+});
+
+it('keeps a channel draft after a conflict and reloads only at the user’s request',async()=>{
+ const fetcher=setup(false,false,false,true);const original=fetcher.getMockImplementation()!;
+ fetcher.mockImplementation(async(input,init)=>init?.method==='PUT'&&String(input).endsWith('/signals/channel')?new Response(JSON.stringify({detail:'Stale',error:{code:'resource.version_conflict'}}),{status:409}):original(input,init));
+ fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
+ fireEvent.click(await screen.findByRole('button',{name:/Grid import/}));
+ fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'My unsaved measurement'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Your edits have been kept');
+ expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('My unsaved measurement');
+ expect(screen.getByRole('button',{name:'Save measurement'})).toBeDisabled();
+ const writes=()=>fetcher.mock.calls.filter(([url,init])=>String(url).endsWith('/signals/channel')&&init?.method==='PUT');
+ expect(writes()).toHaveLength(1);expect(JSON.parse(String(writes()[0][1]?.body)).expected_version).toBe('a'.repeat(64));
+ fireEvent.click(screen.getByRole('button',{name:'Discard edits and reload'}));
+ await screen.findByText('Latest data loaded. Select the measurement again to review and edit.');
+ expect(screen.queryByRole('textbox',{name:'Name'})).not.toBeInTheDocument();expect(writes()).toHaveLength(1);
 });

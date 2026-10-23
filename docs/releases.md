@@ -20,3 +20,8 @@ The open job detail polls status, metadata and progress while work is active,
 then refreshes the final result when it finishes, fails or is canceled. It stops
 polling after a terminal status. Integration tests exercise those transitions
 without a page reload.
+
+
+## Concurrent editing follow-up
+
+Inventory and channel editors now send the version originally read and retain unsaved input on conflicts. Site contract edits and Percepta channel configuration use the same protection. Reloading after a conflict is an explicit user action. See [concurrent editing](concurrent-editing.md) for coverage and deployment compatibility.

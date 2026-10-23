@@ -52,7 +52,7 @@ contractEditor=async function(scope='community'){
    rows.forEach((row,i)=>{const get=n=>row.querySelector(`[name="${n}"]`).value;const old=extra[Number(row.dataset.chargeRow)];let code=old?.code||'fixed_charge_'+i;while(components.some(c=>c.code===code))code+='_extra';components.push({...contractComponent(code,'standing',{}),...old,code,unit:get('charge_unit_'+row.dataset.chargeRow),price:{kind:'fixed',value:Number(get('charge_value_'+row.dataset.chargeRow))}});});
   }
   base.components=components;patch[key]=v?versions.map(x=>x.id===v.id?base:x):[base];
-  await B.request('community','/api/'+(community?'recs/'+c.recId:'sites/'+s.id),'PUT',patch);
+  await B.request('community','/api/'+(community?'recs/'+c.recId:'sites/'+s.id),'PUT',community?patch:B.versioned(patch,record));
  });
  const add=overlay.querySelector('[data-charge-add]');let index=extra.length;
  add?.addEventListener('click',()=>overlay.querySelector('#simple-charges').insertAdjacentHTML('beforeend',chargeRow(null,index++)));
