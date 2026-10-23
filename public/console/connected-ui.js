@@ -25,9 +25,9 @@ async function loadBackend(){
  if(current&&((current.role==='manager')!==(window.AppBridge.session.role==='rec_manager')))throw Error('Your workspace permissions have changed. Sign out and sign in again.');
  state.loggedIn=!!current;state.personId=current?.id||null;
  connection.permissions.clear();
- if(current&&current.role!=='manager'){
+ if(current){
   const effective=await B.request('community','/api/identity/permissions');
-  for(const kind of ['site','asset'])for(const action of ['read','manage','control'])for(const id of effective[action+'_'+kind]||[])connection.permissions.set(permissionKey(kind,id,action),true);
+  for(const kind of ['site','asset'])for(const action of ['read','manage','control','request'])for(const id of effective[action+'_'+kind]||[])connection.permissions.set(permissionKey(kind,id,action),true);
  }
  connection.loading=false;connection.error=null;document.body.classList.remove('connecting');render();
 }
@@ -101,3 +101,12 @@ state.page=window.AppBridge?.path==='/communities'?'communities':'overview';
 state.site=null;state.equipment=null;
 document.addEventListener('click',e=>{const choice=e.target.closest('[data-community]');if(choice){const c=communities[Number(choice.dataset.community)];if(c)sessionStorage.setItem('console-community',c.recId);}},true);
 render();loadBackend().then(()=>refreshHistory()).catch(showConnectionError);
+
+function flexCanRequest(assetId) {
+  return connection.permissions.get(permissionKey('asset', assetId, 'request')) === true;
+}
+function flexCanEdit(event) {
+  return !!event && event.created_by === person().id && flexCanRequest(event.asset_id) &&
+    ['vehicle_id', 'charger_id'].every(field => !event.type_specific_data?.[field] || flexCanRequest(event.type_specific_data[field])) &&
+    event.status !== 'cancelled' && event.mode !== 'forecast';
+}

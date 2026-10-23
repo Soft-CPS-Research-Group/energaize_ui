@@ -5,6 +5,36 @@ const FlexHomePlan = { key: '', raw: null, rows: null, error: null, sequence: 0 
 const flexDateTime = value => new Date(value).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const flexLabels = { eligible: 'Available request', conflict: 'Overlapping requests · review needed', superseded: 'Replaced by a higher-priority request', cancelled: 'Cancelled', needs_attention: 'Review the time window or running requirement', suggestion: 'Predicted use · confirm your needs', blocked_by_declared_request: 'Prediction covered by a declared request' };
 
+async function requireFlexAuthor(event) {
+  const access = await B.request('flexibility', '/api/flexibility/events/' + event.event_id + '/access');
+  if (!access.can_edit) throw Error('Only the author with current equipment access can change this request.');
+  return access;
+}
+async function flexRequestDetails(eventId) {
+  const event = connection.raw.events.find(e => e.event_id === eventId);
+  if (!event) throw Error('Reload the calendar to view this request.');
+  const [access, revisions, delivery] = await Promise.all([
+    B.request('flexibility', '/api/flexibility/events/' + eventId + '/access'),
+    B.request('flexibility', '/api/flexibility/events/' + eventId + '/revisions'),
+    B.request('flexibility', '/api/flexibility/events/' + eventId + '/delivery'),
+  ]);
+  const latest = delivery.changes[0];
+  const pending = latest?.deliveries.filter(d => d.state === 'pending').length || 0;
+  const deliveryText = !latest?.deliveries.length ? 'Saved in Flexibility. No consumer is connected to this change.' :
+    pending ? 'Saved in Flexibility. Waiting for ' + pending + ' consumer acknowledgement(s).' :
+      'Connected consumers have acknowledged this change.';
+  drawer('Request details', `<h3>${esc(event.title)}</h3><p>Created by ${esc(access.author_name || (access.legacy_unattributed ? 'Unknown (older request)' : 'Former account'))} · revision ${esc(access.revision)}</p><p>${access.can_edit ? 'You can edit or cancel your request.' : 'Read only. Changes require the author and current equipment access.'}</p><h3>Who can view this request</h3><ul>${access.readers.map(p => `<li>${esc(p.name)}${p.is_author ? ' · author' : ''}</li>`).join('')}</ul><p class="footnote">${esc(access.sharing)}</p><p>Sharing is managed through the home and equipment access settings.</p><h3>Saved changes</h3><ul>${revisions.map(r => `<li>Revision ${r.revision} · ${esc(flexDateTime(r.recorded_at))} · ${esc(r.snapshot.status)}</li>`).join('') || '<li>No recorded revisions for this older request.</li>'}</ul><h3>Delivery to connected services</h3><p role="status">${esc(deliveryText)}</p><p class="footnote">Acknowledgement confirms that a service applied the change. It does not confirm a physical action on the equipment.</p>`, '<button type="button" class="btn" data-flex-details-refresh>Refresh details</button>');
+  overlay.querySelector('[data-flex-details-refresh]').onclick = () => flexRequestDetails(eventId).catch(e => toast(e.message));
+}
+
+function flexRequestHistory() {
+  const allowed = new Set(sessionAssets().map(a => a.id));
+  const rows = (connection.raw?.events || []).filter(e => e.mode !== 'forecast' && allowed.has(e.asset_id) && (!FlexPlan.asset || e.asset_id === FlexPlan.asset))
+    .sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at));
+  drawer('Request history', '<p>Saved requests, including cancelled series. Select a request to view its author, access and delivery status.</p>' +
+    (rows.map(e => `<article><h3>${esc(e.title)}</h3><p>${esc(equipmentRecord(e.asset_id)?.data.name || 'Equipment')} · ${esc(e.status || 'active')} · revision ${esc(e.revision)}</p><button type="button" class="btn text" data-flex-details="${esc(e.event_id)}">Details & access</button></article>`).join('') || '<p>No saved requests for this equipment.</p>'));
+}
+
 function refreshFlexPlan() { FlexPlan.key = ''; FlexPlan.sequence++; render(); }
 function loadFlexPlan(assets, start, end) {
   const key = [person().id, ...assets.map(a => a.id).sort(), start.toISOString(), end.toISOString()].join('|');
@@ -25,9 +55,9 @@ function loadFlexPlan(assets, start, end) {
 }
 
 function flexRow(e) {
-  const forecast = e.source === 'forecast', asset = equipmentRecord(e.asset_id), canEdit = !forecast && e.status !== 'cancelled' && asset?.asset_type !== 'ev' && (person().role === 'manager' || connection.permissions.get(permissionKey('asset', e.asset_id, 'control')));
+  const forecast = e.source === 'forecast', asset = equipmentRecord(e.asset_id), canEdit = !forecast && e.status !== 'cancelled' && asset?.asset_type !== 'ev' && flexCanEdit(e);
   const detail = forecast ? `${e.duration_minutes} minute typical use · ${e.sample_count} observed sessions` : flexRequirement(e);
-  return `<article class="flex-agenda-item ${e.resolution === 'cancelled' ? 'flex-cancelled' : ''}"><span class="flex-agenda-icon">${icon(flexKinds[asset?.asset_type]?.[1] || 'clock')}</span><div><strong>${esc(forecast ? 'Predicted use' : e.title)}</strong><p>${esc(asset?.data.name || 'Equipment')}</p><p>${esc(flexDateTime(e.starts_at))} — ${esc(flexDateTime(e.ends_at))}</p><small>${esc(detail)}</small><small class="flex-resolution" data-resolution="${esc(e.resolution)}">${esc(flexLabels[e.resolution] || e.resolution)}</small>${e.latest_start && e.resolution === 'eligible' ? `<small>Cycle can start as late as ${esc(flexDateTime(e.latest_start))}</small>` : ''}${e.exception_revision ? '<small>Changed for this occurrence</small>' : ''}${e.resolution === 'needs_attention' ? `<small>${esc(e.timing_status === 'running_time_required' ? 'This older pump request needs a running time; its flow value cannot determine a duration.' : (e.timing_status || '').replaceAll('_', ' '))} Edit this occurrence to complete its requirements.</small>` : ''}${forecast ? '<small>This pattern is a suggestion, not permission to operate equipment.</small>' : ''}${canEdit ? `<div class="actions"><button type="button" class="btn text" data-flex-occ-edit="${esc(e.occurrence_id)}">Edit</button><button type="button" class="btn text" data-flex-occ-cancel="${esc(e.occurrence_id)}">Cancel</button></div>` : ''}</div></article>`;
+  return `<article class="flex-agenda-item ${e.resolution === 'cancelled' ? 'flex-cancelled' : ''}"><span class="flex-agenda-icon">${icon(flexKinds[asset?.asset_type]?.[1] || 'clock')}</span><div><strong>${esc(forecast ? 'Predicted use' : e.title)}</strong><p>${esc(asset?.data.name || 'Equipment')}</p><p>${esc(flexDateTime(e.starts_at))} — ${esc(flexDateTime(e.ends_at))}</p><small>${esc(detail)}</small><small class="flex-resolution" data-resolution="${esc(e.resolution)}">${esc(flexLabels[e.resolution] || e.resolution)}</small>${e.latest_start && e.resolution === 'eligible' ? `<small>Cycle can start as late as ${esc(flexDateTime(e.latest_start))}</small>` : ''}${e.exception_revision ? '<small>Changed for this occurrence</small>' : ''}${e.resolution === 'needs_attention' ? `<small>${esc(e.timing_status === 'running_time_required' ? 'This older pump request needs a running time; its flow value cannot determine a duration.' : (e.timing_status || '').replaceAll('_', ' '))} Edit this occurrence to complete its requirements.</small>` : ''}${forecast ? '<small>This pattern is a suggestion, not permission to operate equipment.</small>' : ''}${!forecast ? `<small>Revision ${esc(e.revision)} · ${e.created_by === person().id ? 'Your request' : 'Shared request'}</small><button class="btn text" data-flex-details="${esc(e.event_id)}">Details & access</button>` : ''}${canEdit ? `<div class="actions"><button type="button" class="btn text" data-flex-occ-edit="${esc(e.occurrence_id)}">Edit</button><button type="button" class="btn text" data-flex-occ-cancel="${esc(e.occurrence_id)}">Cancel</button></div>` : ''}</div></article>`;
 }
 
 sessionsView = function () {
@@ -47,14 +77,22 @@ sessionsView = function () {
     return `<div class="flex-day ${day.getMonth() !== month.getMonth() ? 'outside' : ''} ${key === selected ? 'selected' : ''} ${key === flexDay(new Date()) ? 'today' : ''}"><button class="flex-day-pick" data-flex-day="${key}" aria-pressed="${key === selected}" aria-label="${day.toLocaleDateString('en-GB', { dateStyle: 'full' })}, ${rows.length} requests"><span>${day.getDate()}</span>${rows.length ? `<small>${rows.length} request${rows.length === 1 ? '' : 's'}</small>` : ''}</button><div class="flex-day-events">${rows.slice(0, 2).map(e => `<button data-flex-day="${key}" class="calendar-event" title="${esc(flexLabels[e.resolution])}">${e.recurrence ? '↻ ' : ''}${esc(equipmentRecord(e.asset_id)?.data.name || e.title)}</button>`).join('')}${guesses.length ? `<button class="calendar-event forecast" data-flex-day="${key}">◌ ${guesses.length} prediction${guesses.length === 1 ? '' : 's'}</button>` : ''}${rows.length > 2 ? `<button data-flex-day="${key}">+${rows.length - 2} more</button>` : ''}</div></div>`;
   }).join('');
   const issueCount = events.filter(e => ['conflict', 'needs_attention'].includes(e.resolution)).length;
-  return title('Flexibility', 'Your equipment, available times and requirements.', button('New request', 'new-session', 'plus', true)) +
-    `<div class="flex-planning-toolbar"><label class="formlabel">Equipment<select data-flex-filter aria-label="Filter flexibility by equipment"><option value="">All equipment</option>${all.map(a => `<option value="${a.id}" ${a.id === FlexPlan.asset ? 'selected' : ''}>${esc(a.data.name)} · ${esc(flexKinds[a.asset_type][0])}</option>`).join('')}</select></label><div class="actions"><button class="btn" data-flex-rules ${!assets.length ? 'disabled' : ''}>Rules & predictions</button><button class="btn text" data-flex-refresh>Refresh</button></div></div>` +
+  return title('Flexibility', 'Your equipment, available times and requirements.', (all.some(a => flexCanRequest(a.id)) ? button('New request', 'new-session', 'plus', true) : '<span class="footnote">Read-only calendar</span>')) +
+    `<div class="flex-planning-toolbar"><label class="formlabel">Equipment<select data-flex-filter aria-label="Filter flexibility by equipment"><option value="">All equipment</option>${all.map(a => `<option value="${a.id}" ${a.id === FlexPlan.asset ? 'selected' : ''}>${esc(a.data.name)} · ${esc(flexKinds[a.asset_type][0])}</option>`).join('')}</select></label><div class="actions"><button class="btn" data-flex-history>Request history</button><button class="btn" data-flex-rules ${!assets.length ? 'disabled' : ''}>Rules & predictions</button><button class="btn text" data-flex-refresh>Refresh</button></div></div>` +
     (FlexPlan.pending ? '<p class="notice" role="status">Loading saved requests and predictions…</p>' : FlexPlan.error ? `<p class="notice" role="alert">${esc(FlexPlan.error)} <button type="button" class="btn text" data-flex-refresh>Try again</button></p>` : issueCount ? `<p class="notice" role="status">${issueCount} occurrence${issueCount === 1 ? '' : 's'} need attention. Select the day to review overlapping requests or clock changes.</p>` : '') +
-    `<div class="flex-calendar-key"><span>● One-off</span><span>↻ Recurring</span><span>◌ Prediction to review</span></div><div class="flex-planner"><section class="flex-calendar" aria-label="Flexibility calendar"><header><h2>${month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h2><div class="actions"><button class="btn text" data-flex-month="today">Today</button><button class="icon-btn" aria-label="Previous month" data-flex-month="-1">${icon('left')}</button><button class="icon-btn" aria-label="Next month" data-flex-month="1">${icon('right')}</button></div></header><div class="flex-weekdays">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<span>${d}</span>`).join('')}</div><div class="flex-days">${cells}</div></section><aside class="flex-agenda"><div class="eyebrow">SELECTED DAY</div><h2>${new Date(selected + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}</h2>${dayRows.map(flexRow).join('')}${suggested.map(flexRow).join('')}${!dayRows.length && !suggested.length ? `<div class="flex-day-empty">${icon('clock')}<h3>${FlexPlan.pending ? 'Loading…' : FlexPlan.error ? 'Calendar unavailable' : 'No plans for this day'}</h3><p>${FlexPlan.error ? 'Refresh to retrieve saved requests.' : 'Choose equipment and add its available time window.'}</p></div>` : ''}<button class="btn primary" data-flex-add="${selected}">${icon('plus')} Plan something</button></aside></div><p class="footnote">Times are shown in ${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}. Recurrences follow their saved time zone. Requests and predictions do not confirm equipment execution.</p>`;
+    `<div class="flex-calendar-key"><span>● One-off</span><span>↻ Recurring</span><span>◌ Prediction to review</span></div><div class="flex-planner"><section class="flex-calendar" aria-label="Flexibility calendar"><header><h2>${month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h2><div class="actions"><button class="btn text" data-flex-month="today">Today</button><button class="icon-btn" aria-label="Previous month" data-flex-month="-1">${icon('left')}</button><button class="icon-btn" aria-label="Next month" data-flex-month="1">${icon('right')}</button></div></header><div class="flex-weekdays">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<span>${d}</span>`).join('')}</div><div class="flex-days">${cells}</div></section><aside class="flex-agenda"><div class="eyebrow">SELECTED DAY</div><h2>${new Date(selected + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}</h2>${dayRows.map(flexRow).join('')}${suggested.map(flexRow).join('')}${!dayRows.length && !suggested.length ? `<div class="flex-day-empty">${icon('clock')}<h3>${FlexPlan.pending ? 'Loading…' : FlexPlan.error ? 'Calendar unavailable' : 'No plans for this day'}</h3><p>${FlexPlan.error ? 'Refresh to retrieve saved requests.' : 'Choose equipment and add its available time window.'}</p></div>` : ''}${assets.some(a => flexCanRequest(a.id)) ? `<button class="btn primary" data-flex-add="${selected}">${icon('plus')} Plan something</button>` : ''}</aside></div><p class="footnote">Times are shown in ${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}. Recurrences follow their saved time zone. Requests and predictions do not confirm equipment execution.</p>`;
 };
 
 const planEditSession = editSession;
-editSession = (id = null, assetId = null, vehicleId = null, occurrence = null) => planEditSession(id, assetId || (!id && FlexPlan.asset) || null, vehicleId, occurrence);
+editSession = async (id = null, assetId = null, vehicleId = null, occurrence = null) => {
+  if (id) {
+    const event = connection.raw.events.find(e => e.event_id === id);
+    if (!event) throw Error('Reload the calendar before editing.');
+    if (event.mode === 'forecast') { toast('Automatic forecasts are supplied by the system.'); return; }
+    await requireFlexAuthor(event);
+  }
+  return planEditSession(id, assetId || (!id && FlexPlan.asset) || null, vehicleId, occurrence);
+};
 
 personalChargingPlan = function (site) {
   const ids = availableAssets().filter(a => a.site_id === site.id && a.asset_type === 'ev_charger').map(a => a.id);
@@ -76,10 +114,11 @@ personalChargingPlan = function (site) {
 async function flexOccurrenceAction(occurrence, cancel) {
   const source = connection.raw.events.find(e => e.event_id === occurrence.event_id);
   if (!source) throw Error('Reload the calendar before editing this request.');
+  await requireFlexAuthor(source);
   const single = async () => {
     if (!cancel) return editSession(source.event_id, null, null, occurrence);
     drawer('Cancel this occurrence', `<p>Cancel ${esc(source.title)} on ${esc(flexDateTime(occurrence.starts_at))}? Other dates in the series stay available.</p>`, save('Cancel this occurrence'), () => saveRemote(async () => {
-      await checkPermission('asset', source.asset_id, 'control');
+      await requireFlexAuthor(source);
       await B.request('flexibility', '/api/flexibility/events/' + source.event_id + '/exceptions', 'PUT', {
         action: 'cancel', occurrence_at: occurrence.occurrence_at, expected_event_revision: source.revision,
         expected_exception_revision: occurrence.exception_revision || 0,
@@ -95,8 +134,10 @@ async function flexOccurrenceAction(occurrence, cancel) {
 cancelSession = async function (id) {
   const event = connection.raw.events.find(e => e.event_id === id);
   if (!event || !sessionVisible(event) || event.mode === 'forecast') return;
+  await requireFlexAuthor(event);
   drawer(event.recurrence ? 'Cancel entire series' : 'Cancel request', `<p>Cancel ${esc(event.title)}${event.recurrence ? ' on every date in this series' : ''}? The cancellation is kept in the request history.</p>`, save('Cancel request'), () => saveRemote(async () => {
-    await checkPermission('asset', event.asset_id, 'control');
+    if (event.mode === 'forecast') { toast('Automatic forecasts are supplied by the system.'); return; }
+    await requireFlexAuthor(event);
     await B.request('flexibility', '/api/flexibility-events/' + id + '?expected_revision=' + event.revision, 'DELETE');
   }));
 };
@@ -114,7 +155,7 @@ async function flexRules(assetId) {
     B.request('flexibility', '/api/flexibility/assets/' + assetId + '/forecasts'),
     B.request('flexibility', '/api/flexibility/assets/' + assetId + '/observation-channels').catch(e => ({ channels: [], error: e.message })),
   ]);
-  const p = policy.settings, canEdit = person().role === 'manager' || connection.permissions.get(permissionKey('asset', assetId, 'control'));
+  const p = policy.settings, canEdit = flexCanRequest(assetId);
   const latest = forecasts.jobs[0], prediction = forecasts.prediction;
   const stateText = { disabled: 'Predictions are off', not_requested: 'No prediction requested yet', pending: 'Waiting for the prediction service', running: 'Learning from observed activity', completed: 'Prediction completed', insufficient_data: 'More observed history is needed', failed: 'Prediction could not be completed' }[forecasts.state];
   const numberField = (label, name, min, max, step = 1) => `<label class="formlabel">${label}<input type="number" name="${name}" min="${min}" ${max ? `max="${max}"` : ''} step="${step}" value="${esc(p[name])}" required></label>`;
@@ -122,7 +163,7 @@ async function flexRules(assetId) {
     const error = overlay.querySelector('.flex-rule-error'), submit = overlay.querySelector('[type="submit"]');
     try {
       submit.disabled = true;
-      await checkPermission('asset', assetId, 'control');
+      await checkPermission('asset', assetId, 'request');
       const settings = { ...p, explicit_priority: String(data.get('explicit_priority')), forecast_enabled: data.has('forecast_enabled'), forecast_usage: 'suggestions', observation_channel_id: String(data.get('observation_channel_id')) || null, timezone: String(data.get('timezone')) };
       for (const name of ['active_above', 'maximum_gap_minutes', 'history_days', 'minimum_sessions', 'horizon_days', 'refresh_minutes', 'prediction_valid_hours']) settings[name] = Number(data.get(name));
       await B.request('flexibility', '/api/flexibility/assets/' + assetId + '/policy', 'PUT', { expected_revision: policy.revision, settings });
@@ -142,6 +183,9 @@ document.addEventListener('change', e => {
   if (e.target.matches('[data-flex-filter]')) { FlexPlan.asset = e.target.value; render(); }
 });
 document.addEventListener('click', e => {
+  if (e.target.closest('[data-flex-history]')) { flexRequestHistory(); return; }
+  const details = e.target.closest('[data-flex-details]');
+  if (details) { flexRequestDetails(details.dataset.flexDetails).catch(e => toast(e.message)); return; }
   const button = e.target.closest('[data-flex-occ-edit],[data-flex-occ-cancel],[data-flex-rules],[data-flex-refresh]');
   if (!button) return;
   if (button.hasAttribute('data-flex-refresh')) { refreshFlexPlan(); return; }
