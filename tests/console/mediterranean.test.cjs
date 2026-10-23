@@ -71,7 +71,7 @@ function setupScene(run) {
  {id:'battery',backendId:'battery',assetType:'battery',name:'Home battery',channels:[],sourcePayload:{}},
  {id:'charger',backendId:'charger',assetType:'ev_charger',name:'EV charger',channels:[],sourcePayload:{}},
  {id:'meter',backendId:'meter',assetType:'grid_meter',name:'Grid meter',channels:[{backendId:'grid-import',name:'active_power_import',capability_type:'sensor',enabled:true}],sourcePayload:{}}]};
- communities[0].sites=[sceneSite];state.community=0;sessionAssets=()=>sceneSite.assets.map(a=>({id:a.id,asset_type:a.assetType}));
+ for(const a of sceneSite.assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);communities[0].sites=[sceneSite];state.community=0;sessionAssets=()=>sceneSite.assets.map(a=>({id:a.id,asset_type:a.assetType}));
  render=()=>{app.innerHTML=siteGraph(sceneSite);};render();`);
 }
 
@@ -103,7 +103,7 @@ test("resident image, equipment dock and graph exclude equipment outside access 
  const {dom,w,run}=workspace();
  try {
   setupScene(run);
-  run(`state.personId='ana';availableSites=()=>[sceneSite];availableAssets=()=>[{id:'solar'}];render();`);
+  run(`state.personId='ana';connection.permissions.clear();availableSites=()=>[sceneSite];availableAssets=()=>[{id:'solar'}];render();`);
   assert.equal(w.document.querySelectorAll('.ceramic-equipment-dock [data-med-select]').length,2);
   assert.match(w.document.querySelector('.ceramic-photo img').src,/house-solar.webp$/);
   w.document.querySelector('[data-med-select="solar"]').click();
@@ -117,11 +117,11 @@ test("flexibility action is shown only for controllable equipment and user strin
  const {dom,w,run}=workspace();
  try {
   setupScene(run);
-  run(`state.personId='ana';availableSites=()=>[sceneSite];availableAssets=()=>[{id:'charger'}];sceneSite.assets[2].name='<img src=x onerror=alert(1)>';render();`);
+  run(`state.personId='ana';connection.permissions.clear();availableSites=()=>[sceneSite];availableAssets=()=>[{id:'charger'}];sceneSite.assets[2].name='<img src=x onerror=alert(1)>';render();`);
   w.document.querySelector('[data-med-select="charger"]').click();
   assert.equal(w.document.querySelector('.ceramic-inspector img'),null);
   assert.equal(w.document.querySelector('[data-equipment-session]'),null);
-  run(`connection.permissions.set(permissionKey('asset','charger','control'),true);render();`);
+  run(`connection.permissions.set(permissionKey('asset','charger','request'),true);render();`);
   assert.ok(w.document.querySelector('[data-equipment-session="charger"]'));
  } finally {dom.window.close();}
 });
@@ -166,7 +166,7 @@ test("topology shows all sites without intersecting wires and limits resident eq
   assert.equal(w.document.querySelectorAll('.ceramic-topology-node[data-site]').length,1);
   assert.equal(w.document.querySelectorAll('.ceramic-topology .edge').length,0);
   assert.ok(w.document.querySelector('.ceramic-export image'));
-  run(`state.personId='ana';availableSites=()=>[sceneSite];availableAssets=()=>[{id:'solar'}];app.innerHTML=siteTopology();`);
+  run(`state.personId='ana';connection.permissions.clear();availableSites=()=>[sceneSite];availableAssets=()=>[{id:'solar'}];app.innerHTML=siteTopology();`);
   assert.equal(w.document.querySelectorAll('.ceramic-topology-node').length,1);
   assert.ok(w.document.querySelector('[data-personal-asset="solar"]'));
   assert.doesNotMatch(w.document.querySelector('.ceramic-export').textContent,/Home battery|EV charger/);
