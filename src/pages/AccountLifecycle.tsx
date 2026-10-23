@@ -1,8 +1,9 @@
 import {useCallback, useEffect, useState} from 'react';
+import {AccountDeletion, type OwnedHome} from './AccountDeletion';
 import {identity} from '../api/identityApi';
 
 type Operation = {id:string; reason:string; status:string; retrying:boolean};
-type Overview = {communities:Array<{id:string;name:string;owned_home_ids:string[]}>;operations:Operation[]};
+type Overview = {owned_homes?:OwnedHome[];owned_assets?:OwnedHome[];demo?:boolean;communities:Array<{id:string;name:string;owned_home_ids:string[]}>;operations:Operation[]};
 
 export function AccountLifecycle():JSX.Element {
   const [data,setData]=useState<Overview|null>(null);
@@ -32,5 +33,6 @@ export function AccountLifecycle():JSX.Element {
       </form>}
       {!!data?.operations.length&&<><h3>Recent account operations</h3>{data.operations.map(op=><p key={op.id}>{op.reason==='membership_ended'?'Community departure':'Access update'} · {op.status==='applied'?'Completed':op.retrying?'Updating connected services · retrying':'Updating connected services'}</p>)}<button className="btn text" disabled={busy} onClick={()=>void load().catch(e=>setError(e.message))}>Refresh status</button></>}
     </div></section>
+    {data&&<AccountDeletion homes={data.owned_homes??[]} assets={data.owned_assets??[]} demo={data.demo??true} onChange={load}/>}
   </>;
 }

@@ -6,6 +6,7 @@ import { CommunityConsoleEntry } from "./routes/CommunityConsoleEntry";
 import { usesCommunityConsole } from "./routes/communityConsole";
 import { AppShell } from "./components/layout/AppShell";
 import { useAuth } from "./contexts/AuthContext";
+import { AccountDeletedPage } from "./pages/AccountDeletedPage";
 import { AccountAccessPage } from "./pages/AccountAccessPage";
 import { PeoplePage } from "./pages/PeoplePage";
 import { AccountPage } from "./pages/AccountPage";
@@ -69,6 +70,7 @@ function AppRoutes(): JSX.Element {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<AccountAccessPage recovery />} />
             <Route path="/account-access" element={<AccountAccessPage />} />
+            <Route path="/account-deleted" element={<AccountDeletedPage />} />
 
             <Route element={<AuthGuard />}>
                 <Route path="/communities" element={<CommunitiesPage />} />
