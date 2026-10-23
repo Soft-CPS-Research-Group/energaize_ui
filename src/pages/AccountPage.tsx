@@ -7,6 +7,7 @@ import {identity} from '../api/identityApi';
 import {PageHeader} from '../components/ui/PageHeader';
 import {roleHomePath,roleLabel} from '../utils/roles';
 import './Accounts.css';
+import {AccountLifecycle} from './AccountLifecycle';
 export function AccountPage():JSX.Element{
   const {session,updateProfile,refreshProfile,logout,switchRole}=useAuth();const {theme,setTheme}=useUI();const navigate=useNavigate();
   const [name,setName]=useState(session?.name||'');const [timezone,setTimezone]=useState(session?.timezone||'Europe/Lisbon');const [language,setLanguage]=useState(session?.language||'pt');
@@ -48,5 +49,6 @@ export function AccountPage():JSX.Element{
       <label>Appearance<select value={theme} onChange={e=>setTheme(e.target.value as 'light'|'dark')}><option value="light">Light</option><option value="dark">Dark</option></select></label>
       {(session?.role==='rec_manager'||session?.role==='prosumer')&&<Link className="btn btn-secondary" to="/app/people">Homes and people</Link>}
     </div></section>
+    <AccountLifecycle/>
   </div>;
 }
