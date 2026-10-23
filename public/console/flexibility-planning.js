@@ -27,6 +27,14 @@ async function flexRequestDetails(eventId) {
   overlay.querySelector('[data-flex-details-refresh]').onclick = () => flexRequestDetails(eventId).catch(e => toast(e.message));
 }
 
+function flexRequestHistory() {
+  const allowed = new Set(sessionAssets().map(a => a.id));
+  const rows = (connection.raw?.events || []).filter(e => e.mode !== 'forecast' && allowed.has(e.asset_id) && (!FlexPlan.asset || e.asset_id === FlexPlan.asset))
+    .sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at));
+  drawer('Request history', '<p>Saved requests, including cancelled series. Select a request to view its author, access and delivery status.</p>' +
+    (rows.map(e => `<article><h3>${esc(e.title)}</h3><p>${esc(equipmentRecord(e.asset_id)?.data.name || 'Equipment')} · ${esc(e.status || 'active')} · revision ${esc(e.revision)}</p><button type="button" class="btn text" data-flex-details="${esc(e.event_id)}">Details & access</button></article>`).join('') || '<p>No saved requests for this equipment.</p>'));
+}
+
 function refreshFlexPlan() { FlexPlan.key = ''; FlexPlan.sequence++; render(); }
 function loadFlexPlan(assets, start, end) {
   const key = [person().id, ...assets.map(a => a.id).sort(), start.toISOString(), end.toISOString()].join('|');
@@ -70,7 +78,7 @@ sessionsView = function () {
   }).join('');
   const issueCount = events.filter(e => ['conflict', 'needs_attention'].includes(e.resolution)).length;
   return title('Flexibility', 'Your equipment, available times and requirements.', (all.some(a => flexCanRequest(a.id)) ? button('New request', 'new-session', 'plus', true) : '<span class="footnote">Read-only calendar</span>')) +
-    `<div class="flex-planning-toolbar"><label class="formlabel">Equipment<select data-flex-filter aria-label="Filter flexibility by equipment"><option value="">All equipment</option>${all.map(a => `<option value="${a.id}" ${a.id === FlexPlan.asset ? 'selected' : ''}>${esc(a.data.name)} · ${esc(flexKinds[a.asset_type][0])}</option>`).join('')}</select></label><div class="actions"><button class="btn" data-flex-rules ${!assets.length ? 'disabled' : ''}>Rules & predictions</button><button class="btn text" data-flex-refresh>Refresh</button></div></div>` +
+    `<div class="flex-planning-toolbar"><label class="formlabel">Equipment<select data-flex-filter aria-label="Filter flexibility by equipment"><option value="">All equipment</option>${all.map(a => `<option value="${a.id}" ${a.id === FlexPlan.asset ? 'selected' : ''}>${esc(a.data.name)} · ${esc(flexKinds[a.asset_type][0])}</option>`).join('')}</select></label><div class="actions"><button class="btn" data-flex-history>Request history</button><button class="btn" data-flex-rules ${!assets.length ? 'disabled' : ''}>Rules & predictions</button><button class="btn text" data-flex-refresh>Refresh</button></div></div>` +
     (FlexPlan.pending ? '<p class="notice" role="status">Loading saved requests and predictions…</p>' : FlexPlan.error ? `<p class="notice" role="alert">${esc(FlexPlan.error)} <button type="button" class="btn text" data-flex-refresh>Try again</button></p>` : issueCount ? `<p class="notice" role="status">${issueCount} occurrence${issueCount === 1 ? '' : 's'} need attention. Select the day to review overlapping requests or clock changes.</p>` : '') +
     `<div class="flex-calendar-key"><span>● One-off</span><span>↻ Recurring</span><span>◌ Prediction to review</span></div><div class="flex-planner"><section class="flex-calendar" aria-label="Flexibility calendar"><header><h2>${month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h2><div class="actions"><button class="btn text" data-flex-month="today">Today</button><button class="icon-btn" aria-label="Previous month" data-flex-month="-1">${icon('left')}</button><button class="icon-btn" aria-label="Next month" data-flex-month="1">${icon('right')}</button></div></header><div class="flex-weekdays">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<span>${d}</span>`).join('')}</div><div class="flex-days">${cells}</div></section><aside class="flex-agenda"><div class="eyebrow">SELECTED DAY</div><h2>${new Date(selected + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}</h2>${dayRows.map(flexRow).join('')}${suggested.map(flexRow).join('')}${!dayRows.length && !suggested.length ? `<div class="flex-day-empty">${icon('clock')}<h3>${FlexPlan.pending ? 'Loading…' : FlexPlan.error ? 'Calendar unavailable' : 'No plans for this day'}</h3><p>${FlexPlan.error ? 'Refresh to retrieve saved requests.' : 'Choose equipment and add its available time window.'}</p></div>` : ''}${assets.some(a => flexCanRequest(a.id)) ? `<button class="btn primary" data-flex-add="${selected}">${icon('plus')} Plan something</button>` : ''}</aside></div><p class="footnote">Times are shown in ${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}. Recurrences follow their saved time zone. Requests and predictions do not confirm equipment execution.</p>`;
 };
@@ -175,6 +183,7 @@ document.addEventListener('change', e => {
   if (e.target.matches('[data-flex-filter]')) { FlexPlan.asset = e.target.value; render(); }
 });
 document.addEventListener('click', e => {
+  if (e.target.closest('[data-flex-history]')) { flexRequestHistory(); return; }
   const details = e.target.closest('[data-flex-details]');
   if (details) { flexRequestDetails(details.dataset.flexDetails).catch(e => toast(e.message)); return; }
   const button = e.target.closest('[data-flex-occ-edit],[data-flex-occ-cancel],[data-flex-rules],[data-flex-refresh]');

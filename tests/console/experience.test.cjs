@@ -475,3 +475,13 @@ test('stale permission is rechecked before opening another author request',async
   assert.equal(w.document.querySelector('[role=dialog]'),null);
  }finally{dom.window.close();}
 });
+
+test('cancelled request history remains accessible and respects equipment scope and filter',()=>{
+ const {dom,w,run}=workspace();try{
+  run(`sessionAssets=()=>[{id:'washer'}];equipmentRecord=()=>({data:{name:'Washer'}});connection.raw={events:[{event_id:'a',asset_id:'washer',title:'Cancelled wash',status:'cancelled',revision:3},{event_id:'b',asset_id:'other',title:'Other home',status:'active',revision:1}]};flexRequestHistory();`);
+  let text=w.document.querySelector('[role=dialog]').textContent;
+  assert.match(text,/Cancelled wash/);assert.match(text,/cancelled/);assert.match(text,/revision 3/);assert.doesNotMatch(text,/Other home/);
+  run("FlexPlan.asset='other';flexRequestHistory()");
+  assert.match(w.document.querySelector('[role=dialog]').textContent,/No saved requests/);
+ }finally{dom.window.close();}
+});
