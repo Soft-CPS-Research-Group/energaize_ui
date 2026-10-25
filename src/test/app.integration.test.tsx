@@ -575,6 +575,110 @@ describe("App integration", () => {
     expect(screen.getByDisplayValue("completed")).toBeInTheDocument();
   });
 
+  it("shows a completed job without waiting for optional results or scanning its files", async () => {
+    seedAiSession();
+    let releaseResult!: () => void;
+    const pending = new Promise<void>(resolve => { releaseResult = resolve; });
+    let resultRequests = 0;
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, async () => {
+        resultRequests++;
+        await pending;
+        return HttpResponse.json({ simulation_data_available: false });
+      }),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      })
+    );
+    try {
+      renderApp("/app/ai/jobs/job-completed-001");
+      expect(await screen.findByRole("button", { name: "Open Logs" })).toBeInTheDocument();
+      await waitFor(() => expect(resultRequests).toBe(1));
+      expect(indexRequests).toBe(0);
+      await userEvent.setup().click(screen.getByRole("button", { name: "Timeseries" }));
+      expect(await screen.findByText("Loading simulation index...")).toBeInTheDocument();
+      expect(screen.queryByText("No simulation data files")).not.toBeInTheDocument();
+    } finally {
+      await act(async () => { releaseResult(); await pending; });
+    }
+  });
+
+  it("shows known missing simulation files without requesting an index, and keeps inline KPIs", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () =>
+        HttpResponse.json({ simulation_data_available: false, kpis: { total_cost_eur: 120.5 } })),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=timeseries");
+    expect(await screen.findByText("No simulation data files")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "KPIs" }));
+    await user.click(await screen.findByRole("button", { name: /All KPI drill-down/i }));
+    expect(await screen.findByText("120.5", { exact: false })).toBeInTheDocument();
+    expect(indexRequests).toBe(0);
+  });
+
+  it("shows missing KPIs directly without an empty scorecard or index scan", async () => {
+    seedAiSession();
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () =>
+        HttpResponse.json({ simulation_data_available: false })),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=kpis");
+    expect(await screen.findByText("No KPIs available")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Decision scorecard" })).not.toBeInTheDocument();
+    expect(indexRequests).toBe(0);
+  });
+
+  it("still loads a deployment bundle when no simulation CSVs exist", async () => {
+    seedAiSession();
+    let manifestRequests = 0;
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () =>
+        HttpResponse.json({ simulation_data_available: false })),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      }),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/file`, () => {
+        manifestRequests++;
+        return HttpResponse.text(JSON.stringify({ schema_version: "1.0", models: [] }));
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=deploy");
+    expect(await screen.findByRole("heading", { name: "Artifact Manifest" })).toBeInTheDocument();
+    expect(manifestRequests).toBe(1);
+    expect(indexRequests).toBe(0);
+  });
+
+  it.each([404, 503])("checks older result metadata and distinguishes index response %s from empty results", async status => {
+    seedAiSession();
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () => HttpResponse.json({})),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ detail: "Test response" }, { status });
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=timeseries");
+    expect(await screen.findByText(status === 404 ? "No simulation data files" : "Could not load simulation files")).toBeInTheDocument();
+    expect(indexRequests).toBe(1);
+  });
+
   it.each(["finished", "failed", "canceled"])("updates an open job detail to %s and refreshes its result", async terminal => {
     seedAiSession();
     let status = "running";

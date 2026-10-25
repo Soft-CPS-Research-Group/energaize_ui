@@ -25,3 +25,16 @@ without a page reload.
 ## Concurrent editing follow-up
 
 Inventory and channel editors now send the version originally read and retain unsaved input on conflicts. Site contract edits and Percepta channel configuration use the same protection. Reloading after a conflict is an explicit user action. See [concurrent editing](concurrent-editing.md) for coverage and deployment compatibility.
+
+## 0.4.2 — prompt result availability (2026-10-25)
+
+Job overview renders without waiting for optional progress or result files. The
+simulation index loads only when a results tab is opened, after result metadata
+arrives. An explicit `simulation_data_available: false` skips the index request
+and shows an empty state immediately. Inline KPIs and deployment bundles remain
+available independently of simulation CSVs. Jobs without the availability field
+still query the index; a missing directory is empty, while access/server failures
+remain errors instead of silently falling back to example data.
+
+Regression coverage includes delayed results, absent simulation files, inline
+KPIs, bundles without CSVs, older metadata, index failures and live job completion.

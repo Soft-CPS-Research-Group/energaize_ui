@@ -62,6 +62,7 @@ import {
   type NetworkArchitectureStat
 } from "../../components/ai/NetworkArchitectureGraph";
 import {
+  findSimulationDataAvailable,
   findSimulationDataDir,
   findSimulationDataSessionDefault,
   getSimulationDataIndex,
@@ -2433,21 +2434,21 @@ export function JobDetailPage(): JSX.Element {
   const infoQuery = useQuery({
     queryKey: ["job-info", jobId, statusQuery.data?.status],
     queryFn: () => getJobInfo(jobId),
-    enabled: Boolean(jobId),
+    enabled: Boolean(jobId && statusQuery.isSuccess),
     refetchInterval: jobPollingInterval
   });
 
   const progressQuery = useQuery({
     queryKey: ["job-progress", jobId, statusQuery.data?.status],
     queryFn: () => getJobProgress(jobId),
-    enabled: Boolean(jobId),
+    enabled: Boolean(jobId && statusQuery.isSuccess),
     refetchInterval: jobPollingInterval
   });
 
   const resultQuery = useQuery({
     queryKey: ["job-result", jobId, statusQuery.data?.status],
     queryFn: () => getJobResult(jobId),
-    enabled: Boolean(jobId)
+    enabled: Boolean(jobId && statusQuery.isSuccess)
   });
 
   const configsQuery = useQuery({
@@ -2479,8 +2480,8 @@ export function JobDetailPage(): JSX.Element {
     )
   });
 
-  const isLoading =
-    statusQuery.isLoading || infoQuery.isLoading || progressQuery.isLoading || resultQuery.isLoading;
+  const isLoading = statusQuery.isPending || (statusQuery.isSuccess && infoQuery.isPending);
+  const resultError = activeTab !== "overview" && resultQuery.isError;
 
   useEffect(() => {
     if (activeTab === "overview") return;
@@ -2499,6 +2500,7 @@ export function JobDetailPage(): JSX.Element {
 
   const status = statusQuery.data?.status || "unknown";
   const isCompleted = isCompletedForResults(status);
+  const simulationDataAvailable = findSimulationDataAvailable(resultQuery.data);
   const simulationDataDir = useMemo(() => findSimulationDataDir(resultQuery.data), [resultQuery.data]);
   const simulationDataSessionDefault = useMemo(
     () => findSimulationDataSessionDefault(resultQuery.data),
@@ -2506,15 +2508,18 @@ export function JobDetailPage(): JSX.Element {
   );
 
   const simulationIndexQuery = useQuery({
-    queryKey: ["simulation-data-index", jobId, simulationDataDir, simulationDataSessionDefault],
+    queryKey: ["simulation-data-index", jobId, status, simulationDataAvailable, simulationDataDir, simulationDataSessionDefault],
     queryFn: () =>
       getSimulationDataIndex({
         jobId,
         simulationDataDir,
+        simulationDataAvailable,
         simulationDataSessionDefault
       }),
-    enabled: Boolean(jobId && isCompleted)
+    enabled: Boolean(jobId && isCompleted && activeTab !== "overview" && resultQuery.isSuccess),
+    retry: false
   });
+  const resultsLoading = resultQuery.isPending || simulationIndexQuery.isPending;
 
   const latestSimulationFiles = useMemo(
     () => filterFilesToLatestEpisode(simulationIndexQuery.data?.files || []),
@@ -2761,7 +2766,7 @@ export function JobDetailPage(): JSX.Element {
         manifest: parseJsonRecord(backendManifest.content)
       };
     },
-    enabled: Boolean(activeTab === "deploy" && isCompleted && jobId)
+    enabled: Boolean(activeTab === "deploy" && isCompleted && jobId && simulationIndexQuery.isSuccess)
   });
 
   const kpiCommunityLabel =
@@ -4406,7 +4411,7 @@ export function JobDetailPage(): JSX.Element {
           <EVChargingLoader label="Loading job details..." />
         </section>
       ) : null}
-      {!isLoading && (statusQuery.isError || infoQuery.isError || resultQuery.isError) ? (
+      {!isLoading && (statusQuery.isError || infoQuery.isError || resultError) ? (
         <EmptyState
           title="Could not load job details"
           message="Please retry from the Jobs page or check orchestrator connectivity."
@@ -4418,7 +4423,7 @@ export function JobDetailPage(): JSX.Element {
         />
       ) : null}
 
-      {!isLoading && !statusQuery.isError && !infoQuery.isError && !resultQuery.isError ? (
+      {!isLoading && !statusQuery.isError && !infoQuery.isError && !resultError ? (
         <section className="job-detail-body">
           {activeTab === "overview" ? (
             <section className="panel job-overview-shell">
@@ -4737,7 +4742,7 @@ export function JobDetailPage(): JSX.Element {
                   title="Timeseries available after completion"
                   message="This job is not completed yet, so final result series are not available."
                 />
-              ) : simulationIndexQuery.isLoading ? (
+              ) : resultsLoading ? (
                 <section className="datasets-loader-preview">
                   <EVChargingLoader label="Loading simulation index..." />
                 </section>
@@ -5063,10 +5068,12 @@ export function JobDetailPage(): JSX.Element {
                   title="KPIs available after completion"
                   message="This job is still running or queued."
                 />
-              ) : simulationIndexQuery.isLoading ? (
+              ) : resultsLoading ? (
                 <section className="datasets-loader-preview">
                   <EVChargingLoader label="Loading KPI index..." />
                 </section>
+              ) : simulationIndexQuery.isError || kpiCsvQuery.isError ? (
+                <EmptyState title="Could not load KPIs" message="Please retry or check orchestrator connectivity." />
               ) : kpiCsvQuery.isLoading && kpiFilePath ? (
                 <section className="datasets-loader-preview">
                   <EVChargingLoader label="Loading KPI file..." />
@@ -5272,7 +5279,9 @@ export function JobDetailPage(): JSX.Element {
 	                    </section>
 	                  </section>
 	                </div>
-	              ) : (
+	              ) : displayKpis.length === 0 ? (
+                    <EmptyState title="No KPIs available" message="This job has no KPI results." />
+                  ) : (
 	                <>
 	                  {kpiScorecardContent}
 
@@ -5353,10 +5362,12 @@ export function JobDetailPage(): JSX.Element {
                   title="Deploy artifacts available after completion"
                   message="This job is still running or queued."
                 />
-              ) : simulationIndexQuery.isLoading || deployManifestQuery.isLoading ? (
+              ) : resultsLoading || deployManifestQuery.isLoading ? (
                 <section className="datasets-loader-preview">
                   <EVChargingLoader label="Loading deployment bundle..." />
                 </section>
+              ) : simulationIndexQuery.isError ? (
+                <EmptyState title="Could not load deployment artifacts" message="Please retry or check orchestrator connectivity." />
               ) : deployBuildingScopes.length > 0 || Boolean(deployManifestQuery.data) ? (
                 <div className="deploy-layout">
                   <TimeseriesTree
