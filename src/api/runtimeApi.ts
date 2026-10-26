@@ -13,6 +13,7 @@ export interface RuntimeHost { id: string; name: string; mode: 'simulation' | 'd
 export interface RuntimeInstance {
   id: string; name: string; kind: 'percepta' | 'controller'; site_ids: string[]; host_id: string;
   configuration_error?: string|null;
+  rollback_available?: boolean;
   configuration_mode?: "prepared"|"generated";
   mode: 'simulation' | 'docker'; managed: boolean; image: string; container_name: string;
   observed_state: string; desired_state: string; health: string; error?: string | null;

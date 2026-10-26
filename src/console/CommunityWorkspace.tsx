@@ -23,7 +23,8 @@ import calendarCss from 'react-day-picker/style.css?inline';
 import telemetryCss from './telemetry.css?inline';
 import { PerceptaSetup } from './PerceptaSetup';
 import { RuntimePanel } from './RuntimePanel';
-import { SiteMachine } from './SiteMachine';
+import { DeploymentWorkspace } from './DeploymentWorkspace';
+import deploymentCss from './deployment.css?inline';
 import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
 import perceptaCss from './percepta.css?inline';
@@ -32,7 +33,7 @@ import experienceCss from './experience.css?inline';
 import mediterraneanCss from './mediterranean.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss].join('\n')
+const styles = [deploymentCss,baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
 type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'showChannelConfiguration'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
@@ -74,10 +75,10 @@ export function CommunityWorkspace(): JSX.Element {
     const environment=createWorkspaceEnvironment(shadow,body,bridge);
     const sync=()=>{
       roots.forEach((root,node)=>{if(!node.isConnected){root.unmount();roots.delete(node);}});
-      if(session.role==='rec_manager')shadow.querySelectorAll<HTMLElement>('[data-site-machine]').forEach(node=>{
+      if(session.role==='rec_manager')shadow.querySelectorAll<HTMLElement>('[data-deployment-site]').forEach(node=>{
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);
-        root.render(<SiteMachine siteId={node.dataset.siteMachine!}/>);
+        root.render(<DeploymentWorkspace siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)}/>);
       });
       shadow.querySelectorAll<HTMLElement>('[data-resident-services]').forEach(node=>{
         if(roots.has(node))return;
