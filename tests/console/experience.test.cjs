@@ -43,6 +43,20 @@ function workspace() {
     run(fs.readFileSync("public/console/" + f + ".js", "utf8"));
   return { dom, w, run };
 }
+test('house overview and settings retain the machine slot after layout composition', () => {
+  const {dom, run} = workspace();
+  try {
+    run("state.community=0;state.site=communities[0].sites[0].id;state.equipment=null;");
+    for (const tab of ['summary','settings']) {
+      run(`state.tab='${tab}'`);
+      const html=run('siteDetailOriginal()');
+      assert.equal((html.match(/data-site-machine=/g)||[]).length,1);
+      assert.ok(html.includes(`data-site-machine="${run('chosen().id')}"`));
+    }
+    run("state.tab='algorithm'");
+    assert.doesNotMatch(run('siteDetailOriginal()'),/data-site-machine=/);
+  } finally {dom.window.close();}
+});
 test("calendar includes cross-midnight events without including exclusive end day", () => {
   const { dom, run } = workspace();
   try {

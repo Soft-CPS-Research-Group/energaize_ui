@@ -38,3 +38,12 @@ remain errors instead of silently falling back to example data.
 
 Regression coverage includes delayed results, absent simulation files, inline
 KPIs, bundles without CSVs, older metadata, index failures and live job completion.
+# 26 October 2026 — local machine association
+
+REC Managers can read the machine associated with each house in Overview and
+Settings: name, hardware, memory and deployment-registration status. A house with
+no machine and an associated machine awaiting connection have distinct states.
+The display does not equate registration with online status or running services.
+It reads the existing scoped deployment-plan API without changing associations,
+service placement, source addresses or launch behavior. Request failures are
+explicit and previous-house responses cannot replace the current house's display.

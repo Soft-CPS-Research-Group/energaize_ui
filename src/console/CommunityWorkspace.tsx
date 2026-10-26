@@ -23,6 +23,7 @@ import calendarCss from 'react-day-picker/style.css?inline';
 import telemetryCss from './telemetry.css?inline';
 import { PerceptaSetup } from './PerceptaSetup';
 import { RuntimePanel } from './RuntimePanel';
+import { SiteMachine } from './SiteMachine';
 import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
 import perceptaCss from './percepta.css?inline';
@@ -73,6 +74,11 @@ export function CommunityWorkspace(): JSX.Element {
     const environment=createWorkspaceEnvironment(shadow,body,bridge);
     const sync=()=>{
       roots.forEach((root,node)=>{if(!node.isConnected){root.unmount();roots.delete(node);}});
+      if(session.role==='rec_manager')shadow.querySelectorAll<HTMLElement>('[data-site-machine]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);
+        root.render(<SiteMachine siteId={node.dataset.siteMachine!}/>);
+      });
       shadow.querySelectorAll<HTMLElement>('[data-resident-services]').forEach(node=>{
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);

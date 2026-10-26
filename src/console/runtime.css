@@ -7,3 +7,4 @@
 .runtime-tools > summary { cursor:pointer;color:var(--muted);font-size:13px }
 .runtime-tools .runtime-actions { margin-top:16px }
 .runtime-configuration-state small:last-child:not(:first-child) { margin-top:6px;font-size:11px;line-height:1.5 }
+.site-machine{margin:20px 0}.site-machine h2{display:flex;align-items:center;gap:8px}.site-machine .definition-list{margin-bottom:12px}.site-machine p:last-child{margin-bottom:0}
