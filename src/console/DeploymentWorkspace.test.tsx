@@ -312,6 +312,7 @@ it("keeps all internal connection paths inside their host for all service placem
       { ...initial, services: placements },
       true,
     );
+    expect(layout.width).toBeLessThanOrEqual(936);
     expect(layout.edges.map((e) => e.id)).toEqual([
       "inference",
       "forecasting",

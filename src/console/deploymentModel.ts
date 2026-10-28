@@ -82,7 +82,7 @@ export const connections: {
   {
     id: "inference",
     target: "controller",
-    label: "HTTP · request / response",
+    label: "HTTP · response ↔",
     description:
       "Percepta sends a prediction request; inference returns the result on the same HTTP connection. The final service address and configuration contract are pending.",
     twoWay: true,
@@ -170,10 +170,14 @@ export function graphLayout(
   const destinations = map.destinations.filter((d) =>
     planning ? d.placement !== "other" : true,
   );
-  const width = destinations.length === 1 ? 720 : 510;
+  const compact = destinations.length > 1;
+  const width = compact ? 410 : 720;
+  const gap = 64,
+    padding = compact ? 18 : 24,
+    nodeWidth = compact ? 148 : 164;
   const hosts: HostBox[] = destinations.map((destination, i) => ({
     destination,
-    x: i * (width + 80) + 16,
+    x: i * (width + gap) + 16,
     y: 16,
     width,
     height: 0,
@@ -207,9 +211,9 @@ export function graphLayout(
       destination,
       state,
       component,
-      x: host.x + (left ? 24 : width - 188),
+      x: host.x + (left ? padding : width - padding - nodeWidth),
       y: host.y + 130 + row * 150 + duplicates * 82,
-      width: 164,
+      width: nodeWidth,
       height: 66,
     });
   };
@@ -251,7 +255,7 @@ export function graphLayout(
           const sx = source.x + source.width,
             tx = target.x;
           if (internal) {
-            const lane = sx + 28 + i * 20;
+            const lane = sx + ((tx - sx) * (i + 1)) / 5;
             return [
               {
                 id: link.id,
@@ -281,7 +285,7 @@ export function graphLayout(
     hosts,
     nodes,
     edges,
-    width: hosts.length * (width + 80) - 48,
+    width: hosts.length * (width + gap) - gap + 32,
     height: Math.max(380, ...hosts.map((h) => h.height + h.y)) + 20,
   };
 }
