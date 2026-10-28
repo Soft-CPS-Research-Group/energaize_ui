@@ -222,13 +222,32 @@ it("checks only on request and retains the last observation with its timestamp",
     destinations: [
       {
         ...data.destinations[0],
-        check: { state: "online", checked_at: "2020-01-01T00:00:00Z" },
+        check: {
+          state: "online",
+          checked_at: "2020-01-01T00:00:00Z",
+          architecture: "x86_64",
+          message:
+            "Docker responds. Application connections are checked separately.",
+        },
       },
       data.destinations[1],
     ],
   });
   await open();
-  expect(screen.getByText("Online at last check")).toBeInTheDocument();
+  const online = screen.getByText("Online");
+  expect(online).toBeInTheDocument();
+  const header = online.closest("header")!;
+  expect(header).toHaveTextContent("Last checked");
+  expect(header.querySelector("time")).toHaveAttribute(
+    "dateTime",
+    "2020-01-01T00:00:00Z",
+  );
+  expect(header).toHaveTextContent("x86_64");
+  expect(
+    screen.queryByText(
+      "Docker responds. Application connections are checked separately.",
+    ),
+  ).not.toBeInTheDocument();
   expect(screen.queryByText("Check expired")).not.toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
   fetcher.mockImplementationOnce(
@@ -326,8 +345,8 @@ it("keeps all internal connection paths inside their host for all service placem
       for (const node of members) {
         expect(node.x).toBeGreaterThan(host.x);
         expect(node.x + node.width).toBeLessThan(host.x + host.width);
-        expect(node.y).toBeGreaterThanOrEqual(host.y + 108);
-        expect(node.y + node.height).toBeLessThan(host.y + host.height - 84);
+        expect(node.y).toBeGreaterThanOrEqual(host.y + 112);
+        expect(node.y + node.height).toBeLessThan(host.y + host.height - 20);
         for (const other of members.filter((n) => n !== node)) {
           expect(
             node.x + node.width <= other.x ||

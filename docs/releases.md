@@ -73,3 +73,11 @@ clear corridor with centred labels, while same-machine links stay inside their
 box. Header status has a dedicated line so long machine names can wrap.
 Placement, draft persistence and launch behaviour are unchanged. Verified across
 all eight placements, with server-only and mixed layouts inspected in the UI.
+
+## 28 October 2026 — topology-style deployment map
+
+Deployment uses the house topology's visual language: open icon nodes, names
+below each component and green connection branches. Machine headers place
+status and last-check time on the right, with architecture and memory beside
+the identity. The diagnostic footer was removed. Saved plans, manual checking
+and deployment operations are unchanged.

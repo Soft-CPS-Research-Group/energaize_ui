@@ -196,7 +196,7 @@ export function graphLayout(
       x: 0,
       y: 0,
       width: 188,
-      height: 66,
+      height: 96,
     });
   };
   const cloud = destinations.find((d) => d.placement === "cloud");
@@ -228,19 +228,19 @@ export function graphLayout(
         connections.some((c) => c.target === n.kind),
     );
   const mixed = hosts.length > 1;
-  const gap = planning ? (hasInternal ? 160 : 200) : 48;
+  const gap = planning ? (hasInternal ? 148 : 176) : 48;
   let nextX = 16;
   for (const host of hosts) {
     const members = nodes.filter((n) => n.destination === host.destination.id);
     const backend = members.find((n) => n.kind === "backend");
     const paired =
       !!source && source.destination === host.destination.id && hasInternal;
-    host.width = paired ? (mixed ? 484 : 680) : 300;
-    if (mixed && hasInternal && !paired) host.width = 250;
+    host.width = paired ? (mixed ? 440 : 680) : 360;
+    if (mixed && hasInternal && !paired) host.width = 304;
     host.x = nextX;
     nextX += host.width + gap;
-    const nodeWidth = paired ? (mixed ? 164 : 188) : 188;
-    const bodyTop = backend && members.length > 1 ? 222 : 132;
+    const nodeWidth = paired ? (mixed ? 128 : 160) : 188;
+    const bodyTop = backend && members.length > 1 ? 244 : 132;
     const targets = members.filter(
       (n) => n !== backend && (!paired || n !== source),
     );
@@ -252,7 +252,7 @@ export function graphLayout(
           ? host.width - 20 - nodeWidth
           : 20
         : (host.width - nodeWidth) / 2;
-      node.y = bodyTop + i * 94;
+      node.y = bodyTop + i * 112;
     });
     if (backend) {
       backend.x = (host.width - backend.width) / 2;
@@ -261,10 +261,10 @@ export function graphLayout(
     if (paired && source) {
       source.width = nodeWidth;
       source.x = sourceOnLeft ? 20 : host.width - 20 - nodeWidth;
-      source.y = bodyTop + ((targets.length - 1) * 94) / 2;
+      source.y = bodyTop + ((targets.length - 1) * 112) / 2;
     }
-    host.height = Math.max(306, ...members.map((n) => n.y + n.height + 108));
-    if (members.length === 1 && backend) host.height = 350;
+    host.height = Math.max(256, ...members.map((n) => n.y + n.height + 24));
+    if (members.length === 1 && backend) host.height = 290;
   }
   const tallest = Math.max(0, ...hosts.map((h) => h.height));
   for (const host of hosts) host.y += (tallest - host.height) / 2;
@@ -280,15 +280,11 @@ export function graphLayout(
     if (targets.length) {
       const centers = targets.map(
         (n) =>
-          n.y +
-          n.height / 2 +
-          hosts.find((h) => h.destination.id === n.destination)!.y,
+          n.y + 28 + hosts.find((h) => h.destination.id === n.destination)!.y,
       );
       sourceHost.y = Math.max(
         16,
-        (Math.min(...centers) + Math.max(...centers)) / 2 -
-          source.y -
-          source.height / 2,
+        (Math.min(...centers) + Math.max(...centers)) / 2 - source.y - 28,
       );
     }
   }
@@ -299,7 +295,7 @@ export function graphLayout(
   }
   const edges: Edge[] = !source
     ? []
-    : connections.flatMap<Edge>((link, i) => {
+    : connections.flatMap<Edge>((link) => {
         const target = nodes.find((n) => n.kind === link.target);
         if (!target) return [];
         const sourceHost = hosts.find(
@@ -310,14 +306,14 @@ export function graphLayout(
         )!;
         const internal = source.destination === target.destination;
         const right = target.x > source.x;
-        const sx = right ? source.x + source.width : source.x;
-        const tx = right ? target.x : target.x + target.width;
-        const sy = source.y + 15 + i * 12;
-        const ty = target.y + target.height / 2;
+        const sx = source.x + source.width / 2 + (right ? 28 : -28);
+        const tx = target.x + target.width / 2 + (right ? -28 : 28);
+        const sy = source.y + 28;
+        const ty = target.y + 28;
         const lane = internal
-          ? sx + (right ? 1 : -1) * (7 + i * 3)
+          ? sx + (right ? 1 : -1) * 20
           : (right ? sourceHost.x + sourceHost.width : sourceHost.x) +
-            (right ? 1 : -1) * (12 + i * 5);
+            (right ? 1 : -1) * 16;
         const corridorCenter = right
           ? (sourceHost.x + sourceHost.width + targetHost.x) / 2
           : (targetHost.x + targetHost.width + sourceHost.x) / 2;

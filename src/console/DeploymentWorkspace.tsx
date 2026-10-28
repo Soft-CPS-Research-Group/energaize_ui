@@ -388,22 +388,48 @@ export function DeploymentWorkspace({
                     ) : (
                       <Cpu size={23} />
                     )}
-                    <div>
+                    <div className="deployment-host-identity">
                       <span className="eyebrow">
                         {h.destination.placement === "cloud"
                           ? "CENTRAL SERVER"
                           : "HOUSE MACHINE"}
                       </span>
                       <h3>{h.destination.name}</h3>
+                      <small className="deployment-hardware">
+                        {h.destination.check.architecture ||
+                          "Architecture not checked"}
+                        {h.destination.check.memory_bytes
+                          ? ` · ${(h.destination.check.memory_bytes / 1024 ** 3).toFixed(1)} GiB`
+                          : ""}
+                      </small>
                     </div>
-                    <span
-                      className={
-                        "deployment-state state-" + h.destination.check.state
-                      }
-                    >
-                      <i />
-                      {stateName(h.destination.check.state)}
-                    </span>
+                    <div className="deployment-host-status">
+                      <span
+                        className={
+                          "deployment-state state-" + h.destination.check.state
+                        }
+                      >
+                        <i />
+                        {h.destination.check.state === "online"
+                          ? "Online"
+                          : h.destination.check.state === "unreachable"
+                            ? "Unreachable"
+                            : stateName(h.destination.check.state)}
+                      </span>
+                      <time
+                        dateTime={h.destination.check.checked_at || undefined}
+                      >
+                        {h.destination.check.checked_at ? (
+                          <>
+                            Last checked at
+                            <br />
+                            {stamp(h.destination.check.checked_at)}
+                          </>
+                        ) : (
+                          "Never checked"
+                        )}
+                      </time>
+                    </div>
                   </header>
                   {!layout.nodes.some(
                     (n) =>
@@ -416,23 +442,6 @@ export function DeploymentWorkspace({
                         : "No services deployed for this house"}
                     </p>
                   )}
-                  <footer>
-                    <span>
-                      {h.destination.check.architecture || "Machine"}
-                      {h.destination.check.memory_bytes
-                        ? ` · ${(h.destination.check.memory_bytes / 1024 ** 3).toFixed(1)} GiB`
-                        : ""}
-                    </span>
-                    <time
-                      dateTime={h.destination.check.checked_at || undefined}
-                    >
-                      {stamp(h.destination.check.checked_at)}
-                    </time>
-                    <small>
-                      {h.destination.check.message ||
-                        "Use Check machines to verify access."}
-                    </small>
-                  </footer>
                 </section>
               ))}
               <svg
@@ -465,7 +474,9 @@ export function DeploymentWorkspace({
                     d={edge.path}
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.3"
+                    strokeWidth="2"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
                     strokeDasharray={
                       edge.id === "forecasting" ? "4 5" : undefined
                     }
@@ -571,12 +582,16 @@ export function DeploymentWorkspace({
                       setHoverHost(null);
                     }}
                   >
-                    {icon(node.kind)}
-                    <span>
+                    <span className="deployment-service-icon">
+                      {icon(node.kind)}
+                    </span>
+                    <span className="deployment-service-name">
                       <strong>{node.name}</strong>
                       <small>{node.state}</small>
                     </span>
-                    {movable && <GripVertical size={13} />}
+                    {movable && (
+                      <GripVertical className="deployment-grip" size={13} />
+                    )}
                   </button>
                 );
               })}
