@@ -82,7 +82,7 @@ export const connections: {
   {
     id: "inference",
     target: "controller",
-    label: "HTTP · response ↔",
+    label: "HTTP ↔",
     description:
       "Percepta sends a prediction request; inference returns the result on the same HTTP connection. The final service address and configuration contract are pending.",
     twoWay: true,
