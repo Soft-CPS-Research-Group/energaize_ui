@@ -21,6 +21,8 @@ import {
   X,
 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
+import { PerceptaSetup } from "./PerceptaSetup";
+import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { RuntimePanel } from "./RuntimePanel";
 import {
   connections,
@@ -315,7 +317,7 @@ export function DeploymentWorkspace({
         </div>
       )}
       {!map || !draft || !layout ? (
-        <p role="status">Loading deployment…</p>
+        <EVChargingLoader label="Loading deployment…" />
       ) : (
         <>
           <div className="deployment-toolbar">
@@ -349,8 +351,8 @@ export function DeploymentWorkspace({
           <div className="deployment-instruction">
             {planning ? (
               <>
-                <GripVertical size={14} /> Drag a service to a machine, or click
-                it to choose a destination. Click an arrow label to edit its
+                <GripVertical size={14} /> Drag a service to a machine. Click a
+                service to configure it, or an arrow label to edit its
                 connection.
               </>
             ) : (
@@ -652,61 +654,27 @@ export function DeploymentWorkspace({
               {message}
             </p>
           )}
-          {currentService && (
+          {currentService === "percepta" && (
+            <PerceptaSetup
+              siteId={siteId}
+              configurationOnly
+              open
+              hideTrigger
+              onOpenChange={(open) => {
+                if (!open) setEditing(null);
+              }}
+              onChange={() => {}}
+            />
+          )}
+          {currentService && currentService !== "percepta" && (
             <Overlay
-              title={names[currentService]}
+              title={"Configure " + names[currentService]}
               onClose={() => setEditing(null)}
             >
-              <div className="deployment-service-entry">
-                <span className="deployment-service-icon">
-                  {icon(currentService)}
-                </span>
-                <p>
-                  {currentService === "percepta"
-                    ? "Data sources, channels and collection."
-                    : currentService === "controller"
-                      ? "Runtime instances and inference models."
-                      : "Forecasting configuration is not available yet."}
-                </p>
-                {currentService !== "forecasting" && (
-                  <button
-                    className="btn primary"
-                    onClick={() => {
-                      setEditing(null);
-                      setDetail(currentService);
-                    }}
-                  >
-                    Manage {names[currentService]} <ChevronRight size={15} />
-                  </button>
-                )}
-              </div>
-              <label className="deployment-field">
-                Planned destination
-                <select
-                  value={draft.services[currentService]}
-                  onChange={(e) =>
-                    place(currentService, e.target.value as Placement)
-                  }
-                >
-                  {map.destinations
-                    .filter(
-                      (d) => d.placement === "cloud" || d.placement === "local",
-                    )
-                    .map((d) => (
-                      <option key={d.id} value={d.placement}>
-                        {d.name}
-                        {!d.registered ? " · registration pending" : ""}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <p className="deployment-caption">
-                Moving a component updates this plan. Service settings are
-                managed separately.
+              <p>
+                {names[currentService]} configuration for the deployment plan is
+                not available yet.
               </p>
-              <button className="btn primary" onClick={() => setEditing(null)}>
-                Done
-              </button>
             </Overlay>
           )}
           {currentLink && (
@@ -839,21 +807,20 @@ export function DeploymentWorkspace({
                           {assigned.map((kind) => (
                             <button
                               key={kind}
-                              disabled={kind === "forecasting"}
                               onClick={() => {
                                 setReview(false);
-                                setDetail(kind);
+                                setEditing(kind);
                               }}
-                              aria-label={"Manage " + names[kind]}
+                              aria-label={"Configure " + names[kind]}
                             >
                               <span className="deployment-service-icon">
                                 {icon(kind)}
                               </span>
                               <strong>{names[kind]}</strong>
                               <small>
-                                {kind === "forecasting"
-                                  ? "Setup pending"
-                                  : "Manage service"}
+                                {kind === "percepta"
+                                  ? "Configure"
+                                  : "Setup pending"}
                               </small>
                             </button>
                           ))}

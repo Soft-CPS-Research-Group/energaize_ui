@@ -3,7 +3,7 @@ import {afterEach,beforeAll,expect,it,vi} from 'vitest';
 import {PerceptaSetup} from './PerceptaSetup';
 beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
 afterEach(()=>vi.unstubAllGlobals());
-function setup(initialSetup=false,failLaunch=false,community=false,equipment=false){
+function setup(initialSetup=false,failLaunch=false,community=false,equipment=false,configurationOnly=false){
  const channel={version:'a'.repeat(64),capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
  const total={...channel,capability_id:'total',name:'Community import',collection:{parameter_type_id:'energy_in_total',role:'community_output',privacy:'community',necessary:true}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);let data:unknown={};
@@ -23,7 +23,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   return new Response(JSON.stringify(data));
  });
  vi.stubGlobal('fetch',fetcher);
- render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured initialSetup={initialSetup} onChange={vi.fn()}/>);
+ render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured configurationOnly={configurationOnly} initialSetup={initialSetup} onChange={vi.fn()}/>);
  return fetcher;
 }
 async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');fireEvent.click(screen.getByRole('button',{name:'View equipment for Meter connection'}));}
@@ -156,4 +156,23 @@ it('keeps a channel draft after a conflict and reloads only at the user’s requ
  fireEvent.click(screen.getByRole('button',{name:'Discard edits and reload'}));
  await screen.findByText('Latest data loaded. Select the measurement again to review and edit.');
  expect(screen.queryByRole('textbox',{name:'Name'})).not.toBeInTheDocument();expect(writes()).toHaveLength(1);
+});
+
+it('configures sources and measurements without offering or calling runtime launch in deployment mode',async()=>{
+ const fetcher=setup(true,false,false,false,true);
+ fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));
+ expect(screen.getByRole('status')).toHaveClass('ev-loader');
+ await screen.findByText('Meter connection');
+ expect(screen.getByText(/step 1 of 2/)).toBeInTheDocument();
+ expect(screen.queryByText(/Settings & start|Collection starts only/)).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Next: general measurements'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
+ expect(screen.getByRole('button',{name:'Done'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText('Measurement saved.');
+ expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/sites/site/signals')&&init?.method==='POST')).toBe(true);
+ expect(screen.queryByRole('button',{name:/Create & start|Generate configuration|Next: review/})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Done'}));
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+ expect(fetcher.mock.calls.some(([url])=>/\/(hosts|launch|preview|operations)(\/|$)/.test(String(url)))).toBe(false);
 });

@@ -17,6 +17,22 @@ import {
 vi.mock("./RuntimePanel", () => ({
   RuntimePanel: ({ kind }: { kind: string }) => <div>Configure {kind}</div>,
 }));
+vi.mock("./PerceptaSetup", () => ({
+  PerceptaSetup: ({
+    configurationOnly,
+    onOpenChange,
+  }: {
+    configurationOnly: boolean;
+    onOpenChange: (open: boolean) => void;
+  }) => (
+    <div role="dialog" aria-label="Configure Percepta">
+      <span>
+        {configurationOnly ? "Sources and measurements only" : "Runtime setup"}
+      </span>
+      <button onClick={() => onOpenChange(false)}>Close configuration</button>
+    </div>
+  ),
+}));
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -122,14 +138,26 @@ const open = async () => {
   );
   await screen.findByRole("heading", { name: "SoftCPS server" });
 };
+function moveInference() {
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  const host = screen.getByRole("region", { name: "Raspberry · Leça" });
+  vi.spyOn(host, "getBoundingClientRect").mockReturnValue({
+    left: 500,
+    right: 1000,
+    top: 0,
+    bottom: 600,
+  } as DOMRect);
+  const node = screen.getByRole("button", { name: /Inference · Draft/ });
+  fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(node, { clientX: 700, clientY: 200 });
+  fireEvent.pointerUp(node, { clientX: 700, clientY: 200 });
+  fireEvent.click(node);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+}
 it("keeps a saved draft separate from runtime and blocks unsupported bundle launch", async () => {
   const fetcher = mock();
   await open();
-  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
-  fireEvent.change(screen.getByLabelText("Planned destination"), {
-    target: { value: "local" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  moveInference();
   fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
   await screen.findByText("Draft saved. Running services have not changed.");
   const write = fetcher.mock.calls.find(
@@ -207,6 +235,8 @@ it("moves a service by dragging into a house, without saving or launching it", a
   fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
   fireEvent.pointerMove(node, { clientX: 700, clientY: 200 });
   fireEvent.pointerUp(node, { clientX: 700, clientY: 200 });
+  fireEvent.click(node);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
@@ -214,10 +244,10 @@ it("moves a service by dragging into a house, without saving or launching it", a
     name: "Planned services on Raspberry · Leça",
   });
   expect(
-    within(plannedHouse).getByRole("button", { name: "Manage Inference" }),
+    within(plannedHouse).getByRole("button", { name: "Configure Inference" }),
   ).toBeInTheDocument();
   expect(
-    within(plannedHouse).getByRole("button", { name: "Manage Percepta" }),
+    within(plannedHouse).getByRole("button", { name: "Configure Percepta" }),
   ).toBeInTheDocument();
 });
 it("checks only on request and retains the last observation with its timestamp", async () => {
@@ -269,11 +299,7 @@ it("checks only on request and retains the last observation with its timestamp",
 it("preserves edits when a save fails", async () => {
   const fetcher = mock();
   await open();
-  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
-  fireEvent.change(screen.getByLabelText("Planned destination"), {
-    target: { value: "local" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  moveInference();
   fetcher.mockImplementationOnce(
     async () =>
       new Response(
@@ -401,26 +427,34 @@ it("keeps all internal connection paths inside their host for all service placem
   expect(operation.nodes.map((n) => n.kind)).toEqual(["backend"]);
 });
 
-it("opens the existing managers from the plan and preserves unsaved placement on return", async () => {
+it("opens configuration directly and retains unsaved placement when closing it", async () => {
   const fetcher = mock();
   await open();
-  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
-  fireEvent.change(screen.getByLabelText("Planned destination"), {
-    target: { value: "local" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Manage Inference" }));
-  expect(screen.getByText("Configure controller")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Back to deployment" }));
-  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
-  expect(screen.getByLabelText("Planned destination")).toHaveValue("local");
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  moveInference();
+  fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
+  expect(
+    screen.getByRole("dialog", { name: "Configure Percepta" }),
+  ).toHaveTextContent("Sources and measurements only");
+  expect(
+    screen.queryByLabelText("Planned destination"),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Close configuration" }));
+  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
   expect(
     screen.getByRole("region", {
       name: "Planned services on Raspberry · Leça",
     }),
   ).toHaveTextContent("Inference");
-  fireEvent.click(screen.getByRole("button", { name: "Manage Percepta" }));
-  expect(screen.getByText("Configure percepta")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Configure Percepta" }));
+  expect(
+    screen.getByRole("dialog", { name: "Configure Percepta" }),
+  ).toHaveTextContent("Sources and measurements only");
+  fireEvent.click(screen.getByRole("button", { name: "Close configuration" }));
+  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
+  expect(
+    screen.getByRole("dialog", { name: "Configure Inference" }),
+  ).toHaveTextContent("not available yet");
+  expect(screen.queryByText("Configure controller")).not.toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
 });

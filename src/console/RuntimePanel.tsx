@@ -1,3 +1,4 @@
+import {EVChargingLoader} from '../components/ui/EVChargingLoader';
 import { PerceptaTelemetryStatus } from './PerceptaTelemetryStatus';
 import { PerceptaSetup } from './PerceptaSetup';
 import { RuntimeServiceStatus, serviceState } from './RuntimeServiceStatus';
@@ -78,7 +79,7 @@ export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
     {error&&<div role="alert" className="notice">{error}<button className="btn text" onClick={()=>void load()}>Retry</button></div>}
 
     {siteId&&kind==='percepta'&&<PerceptaSetup siteId={siteId} configured={!initialSetup} initialSetup={initialSetup} open={setupOpen} onOpenChange={setSetupOpen} hideTrigger onChange={()=>{void load();}}/>}
-    {loading?<p role="status">Loading runtime…</p>:!active.length?<div className="runtime-empty"><Box size={30}/><h3>{kind==='percepta'?'Percepta is not configured':'No runtime instance assigned'}</h3><p>{kind==='percepta'?'Connect the sources, choose the channels and start collecting data for this house.':'Registered services will appear here.'}</p>{siteId&&kind==='percepta'&&<button className="btn primary" onClick={()=>{setInitialSetup(true);setSetupOpen(true);}}>Configure Percepta</button>}</div>:active.map(item=><article className="runtime-instance" key={item.id}>
+    {loading?<EVChargingLoader label="Loading runtime…"/>:!active.length?<div className="runtime-empty"><Box size={30}/><h3>{kind==='percepta'?'Percepta is not configured':'No runtime instance assigned'}</h3><p>{kind==='percepta'?'Connect the sources, choose the channels and start collecting data for this house.':'Registered services will appear here.'}</p>{siteId&&kind==='percepta'&&<button className="btn primary" onClick={()=>{setInitialSetup(true);setSetupOpen(true);}}>Configure Percepta</button>}</div>:active.map(item=><article className="runtime-instance" key={item.id}>
       {!(item.kind==='percepta'&&item.configuration_mode==='generated'&&item.mode==='docker'&&item.site_ids[0])&&<div className="runtime-instance-head"><div className="runtime-title"><span className="runtime-component-icon">{item.kind==='percepta'?<Radio size={24}/>:<Cpu size={24}/>}</span><div><h3>{item.name}</h3><p>{item.kind==='percepta'?'Site data collection':'Site energy controller'}</p></div></div><span className={'runtime-state state-'+item.observed_state}>{serviceState(item)}</span></div>}
       {!(item.kind==='percepta'&&item.configuration_mode==='generated'&&item.mode==='docker')&&<RuntimeServiceStatus item={item}/>}
       {item.configuration_error&&<p className="notice" role="alert">{item.configuration_error}</p>}
