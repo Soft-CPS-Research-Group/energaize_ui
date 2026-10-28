@@ -319,6 +319,38 @@ it("keeps all internal connection paths inside their host for all service placem
       "broker",
       "mongo",
     ]);
+    for (const host of layout.hosts) {
+      const members = layout.nodes.filter(
+        (n) => n.destination === host.destination.id,
+      );
+      for (const node of members) {
+        expect(node.x).toBeGreaterThan(host.x);
+        expect(node.x + node.width).toBeLessThan(host.x + host.width);
+        expect(node.y).toBeGreaterThanOrEqual(host.y + 108);
+        expect(node.y + node.height).toBeLessThan(host.y + host.height - 84);
+        for (const other of members.filter((n) => n !== node)) {
+          expect(
+            node.x + node.width <= other.x ||
+              other.x + other.width <= node.x ||
+              node.y + node.height <= other.y ||
+              other.y + other.height <= node.y,
+          ).toBe(true);
+        }
+      }
+      // Single-column cards have equal space on their left and right.
+      if (new Set(members.map((n) => n.x + n.width / 2)).size === 1) {
+        expect(members[0].x + members[0].width / 2).toBe(
+          host.x + host.width / 2,
+        );
+      }
+    }
+    for (const edge of layout.edges.filter((e) => !e.internal)) {
+      const [left, right] = layout.hosts;
+      expect(edge.x).toBe((left.x + left.width + right.x) / 2);
+      // Connection text has its own corridor, clear of both machines.
+      expect(edge.x - 60).toBeGreaterThan(left.x + left.width);
+      expect(edge.x + 60).toBeLessThan(right.x);
+    }
     for (const edge of layout.edges.filter((e) => e.internal)) {
       const source = layout.nodes.find((n) => n.kind === "percepta")!,
         host = layout.hosts.find(

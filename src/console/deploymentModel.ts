@@ -170,16 +170,11 @@ export function graphLayout(
   const destinations = map.destinations.filter((d) =>
     planning ? d.placement !== "other" : true,
   );
-  const compact = destinations.length > 1;
-  const width = compact ? 410 : 720;
-  const gap = 64,
-    padding = compact ? 18 : 24,
-    nodeWidth = compact ? 148 : 164;
-  const hosts: HostBox[] = destinations.map((destination, i) => ({
+  const hosts: HostBox[] = destinations.map((destination) => ({
     destination,
-    x: i * (width + gap) + 16,
+    x: 0,
     y: 16,
-    width,
+    width: 0,
     height: 0,
   }));
   const nodes: GraphNode[] = [];
@@ -190,20 +185,7 @@ export function graphLayout(
     state: string,
     component?: Component,
   ) => {
-    const host = hosts.find((h) => h.destination.id === destination);
-    if (!host) return;
-    const left = kind === "percepta" || kind === "backend";
-    const row =
-      kind === "backend" || kind === "controller"
-        ? 0
-        : kind === "mongo"
-          ? 3
-          : kind === "broker"
-            ? 2
-            : 1;
-    const duplicates = nodes.filter(
-      (n) => n.destination === destination && n.kind === kind,
-    ).length;
+    if (!hosts.some((h) => h.destination.id === destination)) return;
     nodes.push({
       id,
       kind,
@@ -211,9 +193,9 @@ export function graphLayout(
       destination,
       state,
       component,
-      x: host.x + (left ? padding : width - padding - nodeWidth),
-      y: host.y + 130 + row * 150 + duplicates * 82,
-      width: nodeWidth,
+      x: 0,
+      y: 0,
+      width: 188,
       height: 66,
     });
   };
@@ -235,57 +217,125 @@ export function graphLayout(
     for (const c of map.components.filter((c) => !c.planned))
       add(c.id, c.kind, c.destination_id, stateName(c.state), c);
   }
-  for (const host of hosts)
-    host.height = Math.max(
-      320,
-      ...nodes
-        .filter((n) => n.destination === host.destination.id)
-        .map((n) => n.y - host.y + n.height + 100),
+  const source = planning
+    ? nodes.find((n) => n.kind === "percepta")
+    : undefined;
+  const hasInternal =
+    !!source &&
+    nodes.some(
+      (n) =>
+        n.destination === source.destination &&
+        connections.some((c) => c.target === n.kind),
     );
-  const source = nodes.find((n) => n.kind === "percepta");
-  const edges: Edge[] =
-    !planning || !source
-      ? []
-      : connections.flatMap<Edge>((link, i) => {
-          const target = nodes.find((n) => n.kind === link.target);
-          if (!target) return [];
-          const sy = source.y + source.height / 2,
-            ty = target.y + target.height / 2;
-          const internal = source.destination === target.destination;
-          const sx = source.x + source.width,
-            tx = target.x;
-          if (internal) {
-            const lane = sx + ((tx - sx) * (i + 1)) / 5;
-            return [
-              {
-                id: link.id,
-                internal,
-                path: `M ${sx} ${sy} H ${lane} V ${ty} H ${tx}`,
-                x: tx - 9,
-                y: ty - 13,
-              },
-            ];
-          }
-          const right = target.x > source.x;
-          const start = right ? sx : source.x,
-            slane = right ? sx + 18 : source.x - 12,
-            tlane = tx - 16;
-          const crossY = 232 + i * 18;
-          return [
-            {
-              id: link.id,
-              internal,
-              path: `M ${start} ${sy} H ${slane} V ${crossY} H ${tlane} V ${ty} H ${tx}`,
-              x: (slane + tlane) / 2,
-              y: crossY - 8,
-            },
-          ];
-        });
+  const mixed = hosts.length > 1;
+  const gap = planning ? (hasInternal ? 160 : 200) : 48;
+  let nextX = 16;
+  for (const host of hosts) {
+    const members = nodes.filter((n) => n.destination === host.destination.id);
+    const backend = members.find((n) => n.kind === "backend");
+    const paired =
+      !!source && source.destination === host.destination.id && hasInternal;
+    host.width = paired ? (mixed ? 484 : 680) : 300;
+    if (mixed && hasInternal && !paired) host.width = 250;
+    host.x = nextX;
+    nextX += host.width + gap;
+    const nodeWidth = paired ? (mixed ? 164 : 188) : 188;
+    const bodyTop = backend && members.length > 1 ? 222 : 132;
+    const targets = members.filter(
+      (n) => n !== backend && (!paired || n !== source),
+    );
+    const sourceOnLeft = !mixed || host.destination.placement !== "cloud";
+    targets.forEach((node, i) => {
+      node.width = nodeWidth;
+      node.x = paired
+        ? sourceOnLeft
+          ? host.width - 20 - nodeWidth
+          : 20
+        : (host.width - nodeWidth) / 2;
+      node.y = bodyTop + i * 94;
+    });
+    if (backend) {
+      backend.x = (host.width - backend.width) / 2;
+      backend.y = 132;
+    }
+    if (paired && source) {
+      source.width = nodeWidth;
+      source.x = sourceOnLeft ? 20 : host.width - 20 - nodeWidth;
+      source.y = bodyTop + ((targets.length - 1) * 94) / 2;
+    }
+    host.height = Math.max(306, ...members.map((n) => n.y + n.height + 108));
+    if (members.length === 1 && backend) host.height = 350;
+  }
+  const tallest = Math.max(0, ...hosts.map((h) => h.height));
+  for (const host of hosts) host.y += (tallest - host.height) / 2;
+  // A lone Percepta faces the middle of its remote dependencies, rather than
+  // the middle of a server header and footer.
+  if (source && mixed && !hasInternal) {
+    const sourceHost = hosts.find(
+      (h) => h.destination.id === source.destination,
+    )!;
+    const targets = nodes.filter((n) =>
+      connections.some((c) => c.target === n.kind),
+    );
+    if (targets.length) {
+      const centers = targets.map(
+        (n) =>
+          n.y +
+          n.height / 2 +
+          hosts.find((h) => h.destination.id === n.destination)!.y,
+      );
+      sourceHost.y = Math.max(
+        16,
+        (Math.min(...centers) + Math.max(...centers)) / 2 -
+          source.y -
+          source.height / 2,
+      );
+    }
+  }
+  for (const node of nodes) {
+    const host = hosts.find((h) => h.destination.id === node.destination)!;
+    node.x += host.x;
+    node.y += host.y;
+  }
+  const edges: Edge[] = !source
+    ? []
+    : connections.flatMap<Edge>((link, i) => {
+        const target = nodes.find((n) => n.kind === link.target);
+        if (!target) return [];
+        const sourceHost = hosts.find(
+          (h) => h.destination.id === source.destination,
+        )!;
+        const targetHost = hosts.find(
+          (h) => h.destination.id === target.destination,
+        )!;
+        const internal = source.destination === target.destination;
+        const right = target.x > source.x;
+        const sx = right ? source.x + source.width : source.x;
+        const tx = right ? target.x : target.x + target.width;
+        const sy = source.y + 15 + i * 12;
+        const ty = target.y + target.height / 2;
+        const lane = internal
+          ? sx + (right ? 1 : -1) * (7 + i * 3)
+          : (right ? sourceHost.x + sourceHost.width : sourceHost.x) +
+            (right ? 1 : -1) * (12 + i * 5);
+        const corridorCenter = right
+          ? (sourceHost.x + sourceHost.width + targetHost.x) / 2
+          : (targetHost.x + targetHost.width + sourceHost.x) / 2;
+        return [
+          {
+            id: link.id,
+            internal,
+            path: `M ${sx} ${sy} H ${lane} V ${ty} H ${tx}`,
+            x: internal ? (sx + tx) / 2 : corridorCenter,
+            y: ty - 12,
+          },
+        ];
+      });
   return {
     hosts,
     nodes,
     edges,
-    width: hosts.length * (width + gap) - gap + 32,
+    width: nextX - gap + 16,
     height: Math.max(380, ...hosts.map((h) => h.height + h.y)) + 20,
   };
 }

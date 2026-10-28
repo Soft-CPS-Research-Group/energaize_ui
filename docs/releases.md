@@ -64,3 +64,12 @@ containers. Bundle launch remains unavailable while its final service contracts 
 launcher are pending. Existing configuration and runtime controls remain reachable
 under In operation. Machine observations retain the last result and timestamp;
 checks run on request, with no expiry timer in the UI.
+
+## 28 October 2026 — deployment diagram spacing
+
+Machine boxes now fit their contents. Single-column components are centred;
+Percepta faces the middle of its dependencies. Cross-machine arrows share a
+clear corridor with centred labels, while same-machine links stay inside their
+box. Header status has a dedicated line so long machine names can wrap.
+Placement, draft persistence and launch behaviour are unchanged. Verified across
+all eight placements, with server-only and mixed layouts inspected in the UI.

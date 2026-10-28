@@ -80,6 +80,7 @@
 }
 .deployment-host {
   position: absolute;
+  box-sizing: border-box;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
@@ -92,13 +93,19 @@
   box-shadow: 0 0 0 5px #16815d12;
 }
 .deployment-host > header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 23px minmax(0, 1fr);
+  align-content: center;
   align-items: center;
-  gap: 12px;
-  padding: 22px 24px;
+  column-gap: 10px;
+  row-gap: 8px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--line);
-  height: 96px;
+  height: 108px;
   box-sizing: border-box;
+}
+.deployment-host > header > svg {
+  grid-row: 1;
 }
 .deployment-host h3 {
   font-size: 15px;
@@ -114,8 +121,8 @@
   gap: 5px;
   font-size: 9px;
   line-height: 1.4;
-  margin-left: auto;
-  max-width: 90px;
+  grid-column: 2;
+  max-width: none;
   color: var(--muted);
 }
 .deployment-state i {
@@ -149,7 +156,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px 14px;
-  min-height: 68px;
+  min-height: 84px;
   box-sizing: border-box;
 }
 .deployment-host footer time {
@@ -427,6 +434,6 @@
   color: var(--muted);
 }
 
-.deployment-edge-label.internal {
-  transform: translate(-100%, -50%);
+.deployment-edge-label:not(.internal) {
+  background: var(--bg);
 }
