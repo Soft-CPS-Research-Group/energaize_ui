@@ -1,41 +1,346 @@
-import {fireEvent,render,screen,waitFor} from '@testing-library/react';
-import {afterEach,expect,it,vi} from 'vitest';
-import {DeploymentWorkspace,type DeploymentMap} from './DeploymentWorkspace';
-vi.mock('./RuntimePanel',()=>({RuntimePanel:({kind}:{kind:string})=><div>Configure {kind}</div>}));
-afterEach(()=>vi.unstubAllGlobals());
-const data:DeploymentMap={site_id:'house',revision:'r1',destinations:[{id:'cloud',name:'SoftCPS server',placement:'cloud',registered:true,check:{state:'not_checked'}},{id:'pi',name:'Raspberry · Leça',placement:'local',registered:true,check:{state:'not_checked'}}],components:[{id:'percepta',name:'Percepta',kind:'percepta',destination_id:'pi',planned_destination_id:'pi',state:'not_deployed',planned:true,supported:true},{id:'controller',name:'Inference',kind:'controller',destination_id:'cloud',planned_destination_id:'cloud',state:'not_deployed',planned:true,supported:true},{id:'forecasting',name:'Forecasting',kind:'forecasting',destination_id:'cloud',planned_destination_id:'cloud',state:'not_deployed',planned:true,supported:false}],links:[{id:'broker',source:'percepta',target:'broker',label:'Message broker · AMQP',state:'not_configured',message:'Configure an address reachable from this deployment destination.'}],warnings:[]};
-it('shows planned destinations without claiming online and nests configuration under deployment',async()=>{
- vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(data))));
- render(<DeploymentWorkspace siteId="house" siteName="House" navigate={()=>{}}/>);
- expect(await screen.findByRole('heading',{name:'SoftCPS server'})).toBeInTheDocument();
- expect(screen.getByRole('heading',{name:'Raspberry · Leça'})).toBeInTheDocument();
- expect(screen.queryByText('Online')).not.toBeInTheDocument();
- expect(screen.getByRole('button',{name:/Forecasting/})).toBeDisabled();
- fireEvent.click(screen.getByRole('button',{name:/Percepta Not deployed/}));
- expect(screen.getByText('Configure percepta')).toBeInTheDocument();
- fireEvent.click(screen.getByRole('button',{name:'Deployment'}));
- expect(await screen.findByRole('heading',{name:'Deployment'})).toBeInTheDocument();
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { DeploymentWorkspace } from "./DeploymentWorkspace";
+import {
+  graphLayout,
+  services,
+  type DeploymentMap,
+  type Draft,
+  type Placement,
+} from "./deploymentModel";
+vi.mock("./RuntimePanel", () => ({
+  RuntimePanel: ({ kind }: { kind: string }) => <div>Configure {kind}</div>,
+}));
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
 });
-it('checks only the selected site and renders failures instead of a false online state',async()=>{
- const fetcher=vi.fn(async(_url:string,options?:RequestInit)=>options?.method==='POST'?new Response(JSON.stringify({detail:'Machine check unavailable'}),{status:503}):new Response(JSON.stringify(data)));
- vi.stubGlobal('fetch',fetcher);render(<DeploymentWorkspace siteId="house" siteName="House" navigate={()=>{}}/>);
- await screen.findByRole('heading',{name:'SoftCPS server'});fireEvent.click(screen.getByRole('button',{name:'Check machines'}));
- expect(await screen.findByRole('alert')).toHaveTextContent('Machine check unavailable');
- expect(fetcher.mock.calls[1][0]).toContain('/sites/house/deployment-check');
- expect(screen.queryByText('Online')).not.toBeInTheDocument();
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
-it('ignores a late response for a previously selected house',async()=>{
- let finish!:(value:Response)=>void;
- vi.stubGlobal('fetch',vi.fn((url:string)=>url.includes('/old/')?new Promise<Response>(r=>{finish=r;}):Promise.resolve(new Response(JSON.stringify({...data,site_id:'new',destinations:[data.destinations[0]]})))));
- const {rerender}=render(<DeploymentWorkspace siteId="old" siteName="Old" navigate={()=>{}}/>);
- rerender(<DeploymentWorkspace siteId="new" siteName="New" navigate={()=>{}}/>);
- await screen.findByRole('heading',{name:'SoftCPS server'});finish(new Response(JSON.stringify(data)));
- await waitFor(()=>expect(screen.queryByRole('heading',{name:'Raspberry · Leça'})).not.toBeInTheDocument());
+const data: DeploymentMap = {
+  site_id: "house",
+  revision: "r1",
+  destinations: [
+    {
+      id: "cloud",
+      name: "SoftCPS server",
+      placement: "cloud",
+      registered: true,
+      check: { state: "not_checked" },
+    },
+    {
+      id: "pi",
+      name: "Raspberry · Leça",
+      placement: "local",
+      registered: true,
+      check: { state: "not_checked" },
+    },
+  ],
+  components: [
+    {
+      id: "percepta",
+      name: "Percepta",
+      kind: "percepta",
+      destination_id: "pi",
+      planned_destination_id: "pi",
+      state: "not_deployed",
+      planned: true,
+      supported: true,
+    },
+    {
+      id: "controller",
+      name: "Inference",
+      kind: "controller",
+      destination_id: "cloud",
+      planned_destination_id: "cloud",
+      state: "not_deployed",
+      planned: true,
+      supported: true,
+    },
+    {
+      id: "forecasting",
+      name: "Forecasting",
+      kind: "forecasting",
+      destination_id: "cloud",
+      planned_destination_id: "cloud",
+      state: "not_deployed",
+      planned: true,
+      supported: false,
+    },
+  ],
+  links: [],
+  warnings: [],
+};
+const initial: Draft = {
+  site_id: "house",
+  revision: null,
+  base_revision: "r1",
+  current_base_revision: "r1",
+  updated_at: null,
+  stale: false,
+  services: { percepta: "local", controller: "cloud", forecasting: "cloud" },
+  connections: {},
+  launch_available: false,
+  blockers: ["Final service contracts are pending."],
+};
+function mock(map = data, draft = initial) {
+  const fetcher = vi.fn(
+    async (url: string, options?: RequestInit) =>
+      new Response(
+        JSON.stringify(
+          options?.method === "PUT"
+            ? {
+                ...draft,
+                ...JSON.parse(options.body as string),
+                revision: "saved",
+                updated_at: "2026-10-28T12:00:00Z",
+              }
+            : url.endsWith("deployment-draft")
+              ? draft
+              : map,
+        ),
+      ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  return fetcher;
+}
+const open = async () => {
+  render(
+    <DeploymentWorkspace siteId="house" siteName="House" navigate={() => {}} />,
+  );
+  await screen.findByRole("heading", { name: "SoftCPS server" });
+};
+it("keeps a saved draft separate from runtime and blocks unsupported bundle launch", async () => {
+  const fetcher = mock();
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
+  fireEvent.change(screen.getByLabelText("Destination"), {
+    target: { value: "local" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  await screen.findByText("Draft saved. Running services have not changed.");
+  const write = fetcher.mock.calls.find(
+    ([, options]) => options?.method === "PUT",
+  )!;
+  expect(write[0]).toContain("/sites/house/deployment-draft");
+  expect(JSON.parse(write[1]!.body as string).services.controller).toBe(
+    "local",
+  );
+  expect(
+    fetcher.mock.calls.filter(([, o]) => o?.method === "POST"),
+  ).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: /In operation/ }));
+  expect(
+    screen.queryByRole("button", { name: /Percepta · Draft/ }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getAllByText("No services deployed for this house"),
+  ).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+  expect(
+    screen.getByRole("button", { name: "Deploy · not available yet" }),
+  ).toBeDisabled();
+  expect(screen.getByRole("dialog")).toHaveTextContent(
+    "Final service contracts are pending.",
+  );
 });
-it('does not keep an expired machine observation online',async()=>{
- const expired={...data,destinations:[{...data.destinations[0],check:{state:'online',checked_at:new Date(Date.now()-120000).toISOString()}}]};
- vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(expired))));
- render(<DeploymentWorkspace siteId="house" siteName="House" navigate={()=>{}}/>);
- expect(await screen.findByText('Check expired')).toBeInTheDocument();
- expect(screen.queryByText('Online')).not.toBeInTheDocument();
+it("allows editing connection overlays with cancel and save; automatic mode clears overrides", async () => {
+  mock();
+  await open();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Edit broker connection" }),
+  );
+  fireEvent.change(screen.getByLabelText("Connection"), {
+    target: { value: "manual" },
+  });
+  fireEvent.change(screen.getByLabelText("Host or IP"), {
+    target: { value: "broker.example" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Edit broker connection" }),
+  );
+  expect(screen.getByLabelText("Connection")).toHaveValue("automatic");
+  fireEvent.change(screen.getByLabelText("Connection"), {
+    target: { value: "manual" },
+  });
+  fireEvent.change(screen.getByLabelText("Host or IP"), {
+    target: { value: "broker.example" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Update draft" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Edit broker connection" }),
+  );
+  expect(screen.getByLabelText("Host or IP")).toHaveValue("broker.example");
+  fireEvent.change(screen.getByLabelText("Connection"), {
+    target: { value: "automatic" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Update draft" }));
+  expect(
+    screen.getByRole("button", { name: "Edit broker connection" }),
+  ).not.toHaveTextContent("edited");
+});
+it("moves a service by dragging into a house, without saving or launching it", async () => {
+  const fetcher = mock();
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  await open();
+  const host = screen.getByRole("region", { name: "Raspberry · Leça" });
+  vi.spyOn(host, "getBoundingClientRect").mockReturnValue({
+    left: 500,
+    right: 1000,
+    top: 0,
+    bottom: 600,
+  } as DOMRect);
+  const node = screen.getByRole("button", { name: /Inference · Draft/ });
+  fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(node, { clientX: 700, clientY: 200 });
+  fireEvent.pointerUp(node, { clientX: 700, clientY: 200 });
+  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+  expect(
+    within(screen.getByRole("dialog")).getAllByText("Raspberry · Leça"),
+  ).toHaveLength(2);
+});
+it("checks only on request and retains the last observation with its timestamp", async () => {
+  const fetcher = mock({
+    ...data,
+    destinations: [
+      {
+        ...data.destinations[0],
+        check: { state: "online", checked_at: "2020-01-01T00:00:00Z" },
+      },
+      data.destinations[1],
+    ],
+  });
+  await open();
+  expect(screen.getByText("Online at last check")).toBeInTheDocument();
+  expect(screen.queryByText("Check expired")).not.toBeInTheDocument();
+  expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
+  fetcher.mockImplementationOnce(
+    async () =>
+      new Response(JSON.stringify({ detail: "Machine check unavailable" }), {
+        status: 503,
+      }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Check machines" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Machine check unavailable",
+  );
+  expect(fetcher.mock.calls[2][0]).toContain("/sites/house/deployment-check");
+});
+it("preserves edits when a save fails", async () => {
+  const fetcher = mock();
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
+  fireEvent.change(screen.getByLabelText("Destination"), {
+    target: { value: "local" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  fetcher.mockImplementationOnce(
+    async () =>
+      new Response(
+        JSON.stringify({ detail: "Another editor saved this draft" }),
+        { status: 409 },
+      ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Another editor");
+  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+});
+it("ignores late responses after changing houses", async () => {
+  const pending: ((r: Response) => void)[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) =>
+      url.includes("/old/")
+        ? new Promise<Response>((r) => pending.push(r))
+        : Promise.resolve(
+            new Response(
+              JSON.stringify(
+                url.endsWith("deployment-draft")
+                  ? {
+                      ...initial,
+                      services: {
+                        percepta: "cloud",
+                        controller: "cloud",
+                        forecasting: "cloud",
+                      },
+                    }
+                  : { ...data, destinations: [data.destinations[0]] },
+              ),
+            ),
+          ),
+    ),
+  );
+  const { rerender } = render(
+    <DeploymentWorkspace siteId="old" siteName="Old" navigate={() => {}} />,
+  );
+  rerender(
+    <DeploymentWorkspace siteId="new" siteName="New" navigate={() => {}} />,
+  );
+  await screen.findByRole("heading", { name: "SoftCPS server" });
+  pending[0](new Response(JSON.stringify(data)));
+  pending[1](new Response(JSON.stringify(initial)));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", { name: "Raspberry · Leça" }),
+    ).not.toBeInTheDocument(),
+  );
+});
+it("keeps all internal connection paths inside their host for all service placement combinations", () => {
+  for (let mask = 0; mask < 8; mask++) {
+    const placements = Object.fromEntries(
+      services.map((s, i) => [s, mask & (1 << i) ? "local" : "cloud"]),
+    ) as Record<(typeof services)[number], Placement>;
+    const layout = graphLayout(
+      data,
+      { ...initial, services: placements },
+      true,
+    );
+    expect(layout.edges.map((e) => e.id)).toEqual([
+      "inference",
+      "forecasting",
+      "broker",
+      "mongo",
+    ]);
+    for (const edge of layout.edges.filter((e) => e.internal)) {
+      const source = layout.nodes.find((n) => n.kind === "percepta")!,
+        host = layout.hosts.find(
+          (h) => h.destination.id === source.destination,
+        )!;
+      const tokens = edge.path.split(" ");
+      let axis = "";
+      for (let i = 0; i < tokens.length; i++) {
+        if (["M", "H", "V"].includes(tokens[i])) {
+          axis = tokens[i];
+          continue;
+        }
+        const n = Number(tokens[i]);
+        const horizontal = axis === "H" || axis === "M";
+        expect(n).toBeGreaterThanOrEqual(horizontal ? host.x : host.y);
+        expect(n).toBeLessThanOrEqual(
+          horizontal ? host.x + host.width : host.y + host.height,
+        );
+        if (axis === "M") axis = "V";
+      }
+    }
+  }
+  const operation = graphLayout(data, initial, false);
+  expect(operation.edges).toHaveLength(0);
+  expect(operation.nodes.map((n) => n.kind)).toEqual(["backend"]);
 });

@@ -47,3 +47,20 @@ The display does not equate registration with online status or running services.
 It reads the existing scoped deployment-plan API without changing associations,
 service placement, source addresses or launch behavior. Request failures are
 explicit and previous-house responses cannot replace the current house's display.
+
+## 28 October 2026 — deployment planning workspace
+
+House Deployment now separates the editable plan from observed runtime instances.
+REC Managers can drag Percepta, inference and forecasting between the central
+server and the associated machine, or choose a destination in a component dialog.
+Internal arrows stay inside their host. Compact connection labels open an editor
+with automatic suggestions or a host/port override. Forecasting's direct data
+exchange remains explicitly proposed; inference shows HTTP request/response.
+
+Drafts persist through the new scoped runtime `deployment-draft` API, with revision
+conflicts preserving unsaved edits. Review shows current versus proposed placement
+and pending delivery requirements. Saving never changes the launch policy or running
+containers. Bundle launch remains unavailable while its final service contracts and
+launcher are pending. Existing configuration and runtime controls remain reachable
+under In operation. Machine observations retain the last result and timestamp;
+checks run on request, with no expiry timer in the UI.
