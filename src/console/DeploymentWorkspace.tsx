@@ -42,7 +42,9 @@ function Overlay({
   title,
   children,
   onClose,
+  wide = false,
 }: {
+  wide?: boolean;
   title: string;
   children: ReactNode;
   onClose: () => void;
@@ -62,7 +64,7 @@ function Overlay({
   return (
     <dialog
       ref={ref}
-      className="deployment-dialog"
+      className={"deployment-dialog" + (wide ? " deployment-dialog-wide" : "")}
       aria-labelledby={id}
       onCancel={onClose}
       onClick={(e) => {
@@ -597,19 +599,6 @@ export function DeploymentWorkspace({
               })}
             </div>
           </div>
-          <div className="deployment-legend">
-            <span>
-              {planning
-                ? "Solid arrows: known interaction. Dashed arrow: data exchange to confirm. All connections remain unverified."
-                : "Instance state comes from the runtime backend; it does not certify all data connections."}
-            </span>
-            {map.destinations.some((d) => d.placement === "local") && (
-              <span>
-                Machine management: VPN / SSH · separate from application
-                traffic
-              </span>
-            )}
-          </div>
           {planning && (
             <footer className="deployment-actions">
               <div>
@@ -668,12 +657,31 @@ export function DeploymentWorkspace({
               title={names[currentService]}
               onClose={() => setEditing(null)}
             >
-              <p>
-                Choose where this service should run. This changes the draft
-                only.
-              </p>
+              <div className="deployment-service-entry">
+                <span className="deployment-service-icon">
+                  {icon(currentService)}
+                </span>
+                <p>
+                  {currentService === "percepta"
+                    ? "Data sources, channels and collection."
+                    : currentService === "controller"
+                      ? "Runtime instances and inference models."
+                      : "Forecasting configuration is not available yet."}
+                </p>
+                {currentService !== "forecasting" && (
+                  <button
+                    className="btn primary"
+                    onClick={() => {
+                      setEditing(null);
+                      setDetail(currentService);
+                    }}
+                  >
+                    Manage {names[currentService]} <ChevronRight size={15} />
+                  </button>
+                )}
+              </div>
               <label className="deployment-field">
-                Destination
+                Planned destination
                 <select
                   value={draft.services[currentService]}
                   onChange={(e) =>
@@ -692,12 +700,9 @@ export function DeploymentWorkspace({
                     ))}
                 </select>
               </label>
-              <p className="deployment-hint">
-                {currentService === "percepta"
-                  ? "Source credentials and equipment mappings stay in the existing Percepta configuration. They are not copied into this plan."
-                  : currentService === "controller"
-                    ? "Inference accepts HTTP requests. Image, model and final endpoint will be selected when its delivery contract is ready."
-                    : "The current forecast worker communicates with the Flexibility backend. Its launch package and proposed Percepta exchange are still pending."}
+              <p className="deployment-caption">
+                Moving a component updates this plan. Service settings are
+                managed separately.
               </p>
               <button className="btn primary" onClick={() => setEditing(null)}>
                 Done
@@ -786,87 +791,167 @@ export function DeploymentWorkspace({
           )}
           {review && (
             <Overlay
-              title="Review deployment plan"
+              title="Review deployment"
+              wide
               onClose={() => setReview(false)}
             >
-              <p>
-                {siteName} ·{" "}
-                {dirty
-                  ? "Unsaved changes"
-                  : draft.revision
-                    ? "Saved draft"
-                    : "Suggested plan"}
-              </p>
-              <div className="deployment-review">
+              <div className="deployment-review-heading">
+                <span>{siteName}</span>
+                <small>
+                  {dirty
+                    ? "Unsaved changes"
+                    : draft.revision
+                      ? "Saved draft"
+                      : "Suggested plan"}
+                </small>
+              </div>
+              <div className="deployment-review-machines">
+                {map.destinations
+                  .filter(
+                    (d) => d.placement === "cloud" || d.placement === "local",
+                  )
+                  .map((d) => {
+                    const assigned = services.filter(
+                      (kind) => draft.services[kind] === d.placement,
+                    );
+                    return (
+                      <section
+                        className="deployment-review-machine"
+                        key={d.id}
+                        aria-label={"Planned services on " + d.name}
+                      >
+                        <div className="deployment-review-machine-title">
+                          {d.placement === "cloud" ? (
+                            <Cloud size={23} />
+                          ) : (
+                            <Cpu size={23} />
+                          )}
+                          <div>
+                            <small>
+                              {d.placement === "cloud"
+                                ? "CENTRAL SERVER"
+                                : "HOUSE MACHINE"}
+                            </small>
+                            <h4>{d.name}</h4>
+                          </div>
+                        </div>
+                        <div className="deployment-review-services">
+                          {assigned.map((kind) => (
+                            <button
+                              key={kind}
+                              disabled={kind === "forecasting"}
+                              onClick={() => {
+                                setReview(false);
+                                setDetail(kind);
+                              }}
+                              aria-label={"Manage " + names[kind]}
+                            >
+                              <span className="deployment-service-icon">
+                                {icon(kind)}
+                              </span>
+                              <strong>{names[kind]}</strong>
+                              <small>
+                                {kind === "forecasting"
+                                  ? "Setup pending"
+                                  : "Manage service"}
+                              </small>
+                            </button>
+                          ))}
+                          {!assigned.length && <p>No services assigned</p>}
+                        </div>
+                        {d.placement === "cloud" && (
+                          <div className="deployment-review-shared">
+                            <span>{icon("broker")} Message broker</span>
+                            <span>{icon("mongo")} MongoDB</span>
+                            <small>Shared infrastructure · proposed</small>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })}
+              </div>
+              <details className="deployment-review-details">
+                <summary>
+                  Connections{" "}
+                  <span>
+                    {Object.values(draft.connections).filter(
+                      (c) => c?.mode === "manual",
+                    ).length
+                      ? "Custom settings"
+                      : "Automatic settings"}
+                  </span>
+                </summary>
+                {connections.map((c) => (
+                  <div className="deployment-review-line" key={c.id}>
+                    <span>Percepta → {names[c.target]}</span>
+                    <small>
+                      {draft.connections[c.id]?.mode === "manual"
+                        ? `${draft.connections[c.id]?.host}${draft.connections[c.id]?.port ? ":" + draft.connections[c.id]?.port : ""}`
+                        : "Automatic · to validate"}
+                    </small>
+                  </div>
+                ))}
+              </details>
+              <details className="deployment-review-details">
+                <summary>
+                  Changes <span>Current → planned</span>
+                </summary>
                 {services.map((kind) => (
-                  <div key={kind}>
+                  <div className="deployment-review-line" key={kind}>
                     <strong>{names[kind]}</strong>
-                    <span>
-                      <small>
-                        {map.components
-                          .filter((c) => c.kind === kind && !c.planned)
-                          .map(
-                            (c) =>
-                              map.destinations.find(
-                                (d) => d.id === c.destination_id,
-                              )?.name || c.destination_id,
-                          )
-                          .join(", ") || "Not deployed"}{" "}
-                        →{" "}
-                      </small>
+                    <small>
+                      {map.components
+                        .filter((c) => c.kind === kind && !c.planned)
+                        .map(
+                          (c) =>
+                            map.destinations.find(
+                              (d) => d.id === c.destination_id,
+                            )?.name || c.destination_id,
+                        )
+                        .join(", ") || "Not deployed"}{" "}
+                      →{" "}
                       {map.destinations.find(
                         (d) => d.placement === draft.services[kind],
                       )?.name || "Destination unavailable"}
-                    </span>
+                    </small>
                   </div>
                 ))}
-              </div>
-              <p>
-                Shared broker and MongoDB: central placement proposed.
-                Connections use automatic suggestions unless you edited an
-                arrow.
-              </p>
-              <div className="deployment-review">
-                {connections.map((c) => (
-                  <div key={c.id}>
-                    <strong>{names[c.target]}</strong>
-                    <span>
-                      {draft.connections[c.id]?.mode === "manual"
-                        ? `${draft.connections[c.id]?.host}:${draft.connections[c.id]?.port}`
-                        : "Automatic · review at launch"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <h4>Before this bundle can launch</h4>
-              <ul>
-                {draft.blockers.map((b) => (
-                  <li key={b}>{b}</li>
-                ))}
-              </ul>
-              <p className="deployment-hint">
-                Saving records your plan. It does not launch, stop or move
-                containers, or change the existing launch policy.
-              </p>
-              <div className="deployment-dialog-actions">
-                <button
-                  className="btn"
-                  disabled={saving}
-                  onClick={() =>
-                    void save().then((ok) => {
-                      if (ok) setReview(false);
-                    })
-                  }
-                >
-                  Save reviewed draft
-                </button>
-                <button
-                  className="btn primary"
-                  disabled
-                  title="Final service contracts and bundle launcher are pending"
-                >
-                  Deploy · not available yet
-                </button>
+              </details>
+              <details className="deployment-review-availability">
+                <summary>
+                  Deployment not available yet <span>View requirements</span>
+                </summary>
+                <ul>
+                  {draft.blockers.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              </details>
+              <div className="deployment-review-footer">
+                <small>
+                  Saving keeps this plan for later. Running services stay as
+                  they are.
+                </small>
+                <div className="deployment-dialog-actions">
+                  <button
+                    className="btn"
+                    disabled={saving}
+                    onClick={() =>
+                      void save().then((ok) => {
+                        if (ok) setReview(false);
+                      })
+                    }
+                  >
+                    Save reviewed draft
+                  </button>
+                  <button
+                    className="btn primary"
+                    disabled
+                    title="Final service contracts and bundle launcher are pending"
+                  >
+                    Deploy
+                  </button>
+                </div>
               </div>
             </Overlay>
           )}

@@ -81,3 +81,11 @@ below each component and green connection branches. Machine headers place
 status and last-check time on the right, with architecture and memory beside
 the identity. The diagnostic footer was removed. Saved plans, manual checking
 and deployment operations are unchanged.
+
+## 28 October 2026 — visual plan review and service management
+
+Review groups the proposed services by machine, with connection details and
+current-to-planned changes available on demand. Bundle launch remains unavailable.
+The map's explanatory legend was removed. Clicking Percepta or Inference now
+provides direct access to the existing service manager, including the Percepta
+source/channel setup wizard. Returning preserves unsaved deployment placement.

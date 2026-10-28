@@ -126,7 +126,7 @@ it("keeps a saved draft separate from runtime and blocks unsupported bundle laun
   const fetcher = mock();
   await open();
   fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
-  fireEvent.change(screen.getByLabelText("Destination"), {
+  fireEvent.change(screen.getByLabelText("Planned destination"), {
     target: { value: "local" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -151,9 +151,7 @@ it("keeps a saved draft separate from runtime and blocks unsupported bundle laun
   ).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
-  expect(
-    screen.getByRole("button", { name: "Deploy · not available yet" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Deploy" })).toBeDisabled();
   expect(screen.getByRole("dialog")).toHaveTextContent(
     "Final service contracts are pending.",
   );
@@ -212,9 +210,15 @@ it("moves a service by dragging into a house, without saving or launching it", a
   expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+  const plannedHouse = screen.getByRole("region", {
+    name: "Planned services on Raspberry · Leça",
+  });
   expect(
-    within(screen.getByRole("dialog")).getAllByText("Raspberry · Leça"),
-  ).toHaveLength(2);
+    within(plannedHouse).getByRole("button", { name: "Manage Inference" }),
+  ).toBeInTheDocument();
+  expect(
+    within(plannedHouse).getByRole("button", { name: "Manage Percepta" }),
+  ).toBeInTheDocument();
 });
 it("checks only on request and retains the last observation with its timestamp", async () => {
   const fetcher = mock({
@@ -266,7 +270,7 @@ it("preserves edits when a save fails", async () => {
   const fetcher = mock();
   await open();
   fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
-  fireEvent.change(screen.getByLabelText("Destination"), {
+  fireEvent.change(screen.getByLabelText("Planned destination"), {
     target: { value: "local" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
@@ -395,4 +399,28 @@ it("keeps all internal connection paths inside their host for all service placem
   const operation = graphLayout(data, initial, false);
   expect(operation.edges).toHaveLength(0);
   expect(operation.nodes.map((n) => n.kind)).toEqual(["backend"]);
+});
+
+it("opens the existing managers from the plan and preserves unsaved placement on return", async () => {
+  const fetcher = mock();
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
+  fireEvent.change(screen.getByLabelText("Planned destination"), {
+    target: { value: "local" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Manage Inference" }));
+  expect(screen.getByText("Configure controller")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Back to deployment" }));
+  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
+  expect(screen.getByLabelText("Planned destination")).toHaveValue("local");
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+  expect(
+    screen.getByRole("region", {
+      name: "Planned services on Raspberry · Leça",
+    }),
+  ).toHaveTextContent("Inference");
+  fireEvent.click(screen.getByRole("button", { name: "Manage Percepta" }));
+  expect(screen.getByText("Configure percepta")).toBeInTheDocument();
+  expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
 });

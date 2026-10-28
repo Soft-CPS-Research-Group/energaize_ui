@@ -284,16 +284,6 @@
 .deployment-edge-label.proposed {
   font-style: italic;
 }
-.deployment-legend {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.6;
-  padding: 14px 2px;
-}
 .deployment-actions {
   display: flex;
   align-items: center;
@@ -392,16 +382,176 @@
   gap: 10px;
   margin-top: 24px;
 }
-.deployment-review > div {
+.deployment-dialog-wide {
+  width: min(760px, calc(100vw - 32px));
+  border-radius: 22px;
+}
+.deployment-dialog-wide .deployment-dialog-content {
+  padding: 24px;
+}
+.deployment-review-heading {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
-  padding: 14px 0;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 13px;
+
+  margin-bottom: 16px;
+}
+.deployment-review-heading small {
+  font-size: 11px;
+}
+.deployment-review-machines {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.deployment-review-machine {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background: var(--bg);
+}
+.deployment-review-machine-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brand);
+}
+.deployment-review-machine-title small {
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.deployment-review-machine-title h4 {
+  color: var(--text);
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 550;
+}
+.deployment-review-services {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px 0;
+}
+.deployment-review-services button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.deployment-review-services button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.deployment-review-services strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.deployment-review-services small {
+  font-size: 10px;
+  color: var(--muted);
+}
+.deployment-review-services
+  button:not(:disabled):hover
+  .deployment-service-icon {
+  box-shadow: 0 0 0 3px var(--tint);
+}
+.deployment-review-shared {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--muted);
+}
+.deployment-review-shared span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+}
+.deployment-review-shared svg {
+  width: 14px;
+  height: 14px;
+}
+.deployment-review-shared small {
+  flex-basis: 100%;
+  font-size: 9px;
+}
+.deployment-review-details {
   border-bottom: 1px solid var(--line);
+  padding: 12px 0;
   font-size: 12px;
 }
-.deployment-review span {
+.deployment-review-details summary,
+.deployment-review-availability summary {
+  cursor: pointer;
+}
+.deployment-review-details summary span,
+.deployment-review-availability summary span {
+  float: right;
   color: var(--muted);
+  font-size: 11px;
+}
+.deployment-review-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 20px;
+  padding: 12px 0 0;
+  font-size: 11px;
+}
+.deployment-review-line small {
+  color: var(--muted);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.deployment-review-availability {
+  margin-top: 12px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 12px;
+}
+.deployment-review-footer {
+  margin-top: 14px;
+}
+.deployment-review-footer > small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.deployment-review-footer .deployment-dialog-actions {
+  margin-top: 12px;
+}
+.deployment-service-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 0 20px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+@media (max-width: 600px) {
+  .deployment-dialog-wide .deployment-dialog-content {
+    padding: 20px;
+  }
+  .deployment-review-details summary span,
+  .deployment-review-availability summary span {
+    float: none;
+    display: block;
+    margin-top: 6px;
+  }
 }
 .deployment-spinning {
   animation: deployment-spin 1s linear infinite;
@@ -465,4 +615,16 @@
   .deployment-node:hover .deployment-service-icon {
     transform: none;
   }
+}
+
+.deployment-review-services .deployment-service-icon {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  border-radius: 14px;
+}
+
+.deployment-review-services .deployment-service-icon svg {
+  width: 24px;
+  height: 24px;
 }
