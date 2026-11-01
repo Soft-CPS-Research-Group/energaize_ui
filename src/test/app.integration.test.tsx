@@ -799,7 +799,7 @@ describe("App integration", () => {
   it("opens the connected flexibility area from a direct resident route", async () => {
     useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/app/community/flexibility');const view=await communityScreen();
     expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
-    expect(view.getByText('No plans for this day')).toBeInTheDocument();
+    expect(await view.findByText('No plans for this day')).toBeInTheDocument();
     expect(view.getByRole('region',{name:'Flexibility calendar'})).toBeInTheDocument();
   });
 

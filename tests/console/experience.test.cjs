@@ -73,21 +73,25 @@ test("calendar includes cross-midnight events without including exclusive end da
   }
 });
 
-test('calendar reads resolved occurrences and never expands a second client-side recurrence', async () => {
- const {dom,run}=workspace();try{
-  run(`render=()=>{};state.personId='manager';FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-22';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry machine'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};var calls=[];window.FlexRecurrence={expand(){throw Error('Client recurrence must not be authoritative');}};B.request=async(s,p,m,b)=>{calls.push({s,p,m,b});return {occurrences:[{event_id:'request',occurrence_id:'request@date',occurrence_at:'2026-10-22T18:00:00Z',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',asset_id:'washer',title:'Laundry',session_type:'appliance',type_specific_data:{duration_minutes:80,energy_required_kwh:.6},status:'active',resolution:'eligible',latest_start:'2026-10-22T21:40:00Z'}],predictions:[]};};sessionsView();`);
-  await new Promise(setImmediate);
-  const html=run('sessionsView()');
-  assert.match(html,/Laundry machine/);assert.match(html,/80 minute cycle/);assert.doesNotMatch(html,/0.6 kWh required/);assert.match(html,/Cycle can start as late/);
-  assert.equal(run('calls.length'),1);assert.equal(run('calls[0].p'),'/api/flexibility/effective');assert.equal(run('calls[0].b.asset_ids[0]'),'washer');
+test('calendar passes scoped equipment, programmes and date context to the React workspace', () => {
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='manager';FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-22';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry machine',power_profiles:[{id:'eco',name:'Eco'}]}}];sessionAssets=()=>assets;connection.permissions.set(permissionKey('asset','washer','request'),true);connection.raw={assets,events:[]};window.FlexRecurrence={expand(){throw Error('Client recurrence must not be authoritative');}};`);
+  const html=run('sessionsView()');w.document.getElementById('app').innerHTML=html;
+  const mount=w.document.querySelector('[data-flex-calendar]');assert.ok(mount);
+  assert.deepEqual(JSON.parse(mount.dataset.flexEquipment),[{id:'washer',name:'Laundry machine',kind:'appliance',canEdit:true,cycles:[{id:'eco',name:'Eco'}]}]);
+  assert.equal(mount.dataset.flexInitialDay,'2026-10-22');assert.equal(mount.dataset.flexActor,'manager');
+  assert.doesNotMatch(html,/Request history|Rules & predictions|Prediction to review|data-flex-selection-asset/);
  }finally{dom.window.close();}
 });
 
-test('failed calendar read is visible and does not reuse another account’s requests', async () => {
- const {dom,run}=workspace();try{
-  run(`render=()=>{};state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};FlexPlan.result={occurrences:[{title:'Private old request'}]};B.request=async()=>{throw Error('Permissions unavailable');};sessionsView();`);
+test('calendar action bridge preserves the date and equipment for the existing illustrated wizard', async () => {
+ const {dom,w,run}=workspace();try{
+  run(`render=()=>{};var opened=null;editSession=async(...args)=>{opened=args;};`);
+  w.document.dispatchEvent(new w.CustomEvent('flex-calendar-state',{detail:{day:'2026-11-12',month:'2026-11-01T00:00:00Z',asset:'washer'}}));
+  assert.equal(run('FlexCalendar.day'),'2026-11-12');assert.equal(run('FlexPlan.asset'),'washer');
+  w.document.dispatchEvent(new w.CustomEvent('flex-calendar-action',{detail:{action:'create',day:'2026-11-13',assetId:'charger'}}));
   await new Promise(setImmediate);
-  const html=run('sessionsView()');assert.match(html,/Permissions unavailable/);assert.match(html,/Calendar unavailable/);assert.doesNotMatch(html,/Private old request/);
+  assert.deepEqual(JSON.parse(run('JSON.stringify(opened)')),[null,'charger']);assert.equal(run('FlexCalendar.day'),'2026-11-13');
  }finally{dom.window.close();}
 });
 
@@ -272,7 +276,9 @@ test("calendar requests only scoped equipment and site navigation clears the pri
     run("sessionsView()");
     await new Promise(setImmediate);
     const html = run("sessionsView()");
-    assert.match(html, /My request/);
+    w.document.getElementById('app').innerHTML=html;
+    const passed=JSON.parse(w.document.querySelector('[data-flex-calendar]').dataset.flexEquipment);
+    assert.deepEqual(passed.map(a=>a.id),['mine']);
     assert.doesNotMatch(html, /Private request/);
     run(
       `render=()=>{};state.operationsPage='sessions';state.inventory='vehicles';app.innerHTML='<table><tbody><tr data-site="mine"><td>Home</td></tr></tbody></table>';`,

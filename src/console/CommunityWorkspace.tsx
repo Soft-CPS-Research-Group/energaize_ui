@@ -25,6 +25,8 @@ import { PerceptaSetup } from './PerceptaSetup';
 import { RuntimePanel } from './RuntimePanel';
 import { DeploymentWorkspace } from './DeploymentWorkspace';
 import deploymentCss from './deployment.css?inline';
+import { FlexibilityCalendar, type CalendarEquipment } from './FlexibilityCalendar';
+import availabilityCss from './flexibility-calendar.css?inline';
 import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
 import perceptaCss from './percepta.css?inline';
@@ -33,7 +35,7 @@ import experienceCss from './experience.css?inline';
 import mediterraneanCss from './mediterranean.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [deploymentCss,baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss].join('\n')
+const styles = [deploymentCss,baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss,availabilityCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
 type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'showChannelConfiguration'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
@@ -79,6 +81,14 @@ export function CommunityWorkspace(): JSX.Element {
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);
         root.render(<DeploymentWorkspace siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)}/>);
+      });
+      shadow.querySelectorAll<HTMLElement>('[data-flex-calendar]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);
+        let equipment:CalendarEquipment[]=[];try{equipment=JSON.parse(node.dataset.flexEquipment||'[]');}catch{/* an empty inventory is valid */}
+        root.render(<FlexibilityCalendar equipment={equipment} actorId={node.dataset.flexActor||''} initialDay={node.dataset.flexInitialDay} initialMonth={node.dataset.flexInitialMonth} initialAsset={node.dataset.flexInitialAsset} refreshTarget={node}
+          onAction={detail=>node.dispatchEvent(new CustomEvent('flex-calendar-action',{detail,bubbles:true,composed:true}))}
+          onState={detail=>node.dispatchEvent(new CustomEvent('flex-calendar-state',{detail,bubbles:true,composed:true}))}/>);
       });
       shadow.querySelectorAll<HTMLElement>('[data-resident-services]').forEach(node=>{
         if(roots.has(node))return;
