@@ -803,6 +803,21 @@ describe("App integration", () => {
     expect(view.getByRole('region',{name:'Flexibility calendar'})).toBeInTheDocument();
   });
 
+  it("opens an empty flexibility calendar for a resident without a community or site", async () => {
+    const fixture=useCommunityBackendFixture();
+    const resident=fixture.users.find(u=>u.id==='resident')!;
+    resident.rec_memberships=[];resident.site_accesses=[];
+    server.use(http.get('*/community-api/api/recs/',()=>HttpResponse.json([])),http.get('*/community-api/api/sites/',()=>HttpResponse.json([])));
+    seedCommunitySession('prosumer');renderApp('/app/community/flexibility');const view=await communityScreen();
+    expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
+    expect(await view.findByText('No plans for this day')).toBeInTheDocument();
+    expect(view.getByRole('button',{name:'All equipment 0 connected'})).toHaveAttribute('aria-pressed','true');
+    expect(view.queryByRole('button',{name:'Plan flexibility'})).not.toBeInTheDocument();
+    expect(view.queryByText('Unable to open your workspace')).not.toBeInTheDocument();
+    await userEvent.setup().click(within(view.getByRole('navigation',{name:'Primary navigation'})).getByRole('button',{name:'Overview'}));
+    expect(await view.findByText('No site assigned yet')).toBeInTheDocument();
+  });
+
   it("lets a resident leave Flexibility through every primary menu destination", async () => {
     const user = userEvent.setup();
     useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/app/community/flexibility');

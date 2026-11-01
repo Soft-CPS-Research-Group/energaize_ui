@@ -65,7 +65,7 @@ sessionsView = function () {
   const all = sessionAssets().filter(a => flexKinds[a.asset_type]);
   if (FlexPlan.asset && !all.some(a => a.id === FlexPlan.asset)) FlexPlan.asset = '';
   const equipment = all.map(a => ({id:a.id,name:a.data.name,kind:a.asset_type,canEdit:flexCanRequest(a.id),cycles:(a.data.power_profiles || []).map(p=>({id:p.id,name:p.name}))}));
-  return title('Flexibility', 'Plan when your equipment is available.', all.some(a=>flexCanRequest(a.id)) ? button('Plan flexibility', 'new-session', 'plus', true) : '') +
+  return (comm() ? title : personalTitle)('Flexibility', 'Plan when your equipment is available.', all.some(a=>flexCanRequest(a.id)) ? button('Plan flexibility', 'new-session', 'plus', true) : '') +
     `<div data-flex-calendar data-flex-equipment="${esc(JSON.stringify(equipment))}" data-flex-actor="${esc(person().id)}" data-flex-initial-day="${esc(FlexCalendar.day || flexDay(new Date()))}" data-flex-initial-month="${esc(FlexCalendar.month.toISOString())}" data-flex-initial-asset="${esc(FlexPlan.asset)}"></div>`;
 };
 document.addEventListener('flex-calendar-state', e => {
