@@ -194,12 +194,11 @@ describe("Flexibility calendar", () => {
       "true",
     );
     expect(within(agenda()).getByText("charge target")).toBeVisible();
-    expect(
-      container.querySelector(".availability-entry.is-forecast"),
-    ).toHaveClass("is-used");
-    expect(
-      container.querySelector(".availability-entry.is-recurrent"),
-    ).toHaveClass("is-contributing");
+    const today = container.querySelector(".availability-day.is-current")!;
+    expect(today.querySelectorAll('[data-calendar-asset="ev"]')).toHaveLength(
+      1,
+    );
+    expect(today).not.toHaveTextContent(/Recurring|Prediction/);
     expect(
       screen.queryByRole("button", {
         name: /request history|rules & predictions|refresh|approve/i,
@@ -210,6 +209,154 @@ describe("Flexibility calendar", () => {
         ([url]) => !url.includes("simulated-predictions"),
       ),
     ).toBe(true);
+  });
+  it("opens just the clicked equipment, while the day number restores the whole day", async () => {
+    rows.push({
+      ...occurrence,
+      occurrence_id: "washer-occ",
+      asset_id: "washer",
+      event_id: "washer-event",
+    });
+    const user = userEvent.setup();
+    render(<FlexibilityCalendar {...props} />);
+    await within(agenda()).findByText("Window in use");
+    expect(within(agenda()).getAllByRole("heading", { level: 3 })).toHaveLength(
+      2,
+    );
+    const cell = screen.getByRole("region", { name: "Flexibility calendar" });
+    await user.click(
+      within(cell).getByRole("button", {
+        name: "Home charger · Sunday 1 November",
+      }),
+    );
+    expect(
+      within(agenda()).getByRole("heading", { name: "Home charger" }),
+    ).toBeVisible();
+    expect(
+      within(agenda()).queryByRole("heading", { name: "Laundry" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(agenda()).getByText("Prediction", { exact: true }),
+    ).toBeVisible();
+    expect(
+      within(agenda()).getByText("Recurring", { exact: true }),
+    ).toBeVisible();
+    // A calendar click narrows the inspector, not the equipment filter or the month.
+    expect(
+      screen.getByRole("button", { name: "All equipment 2 connected" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(cell).getByRole("button", {
+        name: "Laundry · Sunday 1 November",
+      }),
+    ).toBeVisible();
+    await user.click(
+      within(agenda()).getByRole("button", { name: "Plan something" }),
+    );
+    expect(action).toHaveBeenLastCalledWith({
+      action: "create",
+      day: "2026-11-01",
+      assetId: "ev",
+      occurrence: undefined,
+    });
+    await user.click(
+      within(cell).getByRole("button", {
+        name: "Sunday 1 November",
+      }),
+    );
+    expect(within(agenda()).getAllByRole("heading", { level: 3 })).toHaveLength(
+      2,
+    );
+    await user.click(
+      within(cell).getByRole("button", {
+        name: "Home charger · Sunday 1 November",
+      }),
+    );
+    await user.click(
+      within(agenda()).getByRole("button", {
+        name: "All equipment for this day",
+      }),
+    );
+    expect(within(agenda()).getAllByRole("heading", { level: 3 })).toHaveLength(
+      2,
+    );
+  });
+  it("bounds the day list and uses a searchable equipment chooser for a large inventory", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      ...equipment[0],
+      id: `charger-${i + 1}`,
+      name: `Charger ${i + 1}`,
+    }));
+    rows = many.map((a) => ({
+      ...occurrence,
+      asset_id: a.id,
+      occurrence_id: a.id,
+      event_id: a.id,
+    }));
+    const user = userEvent.setup();
+    const { container } = render(
+      <FlexibilityCalendar {...props} equipment={many} />,
+    );
+    await within(agenda()).findByRole("heading", { name: "Charger 12" });
+    const current = container.querySelector(
+      ".availability-day.is-current",
+    ) as HTMLElement;
+    expect(current.querySelectorAll("[data-calendar-asset]")).toHaveLength(4);
+    expect(
+      within(current).getByRole("button", { name: "+8 equipment" }),
+    ).toBeVisible();
+    const filter = screen.getByRole("group", {
+      name: "Filter flexibility by equipment",
+    });
+    expect(within(filter).getAllByRole("button")).toHaveLength(2);
+    await user.click(
+      within(filter).getByRole("button", {
+        name: "Choose equipment",
+      }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Choose equipment" });
+    expect(
+      within(dialog).getByRole("searchbox", { name: "Search equipment" }),
+    ).toHaveFocus();
+    await user.type(within(dialog).getByRole("searchbox"), "Charger 12");
+    expect(
+      within(dialog).queryByRole("button", { name: "Charger 1" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Charger 12" }),
+    );
+    await waitFor(() =>
+      expect(
+        within(agenda()).getAllByRole("heading", { level: 3 }),
+      ).toHaveLength(1),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const requests = fetcher.mock.calls.filter(([url]) =>
+      url.endsWith("/effective"),
+    );
+    expect(
+      JSON.parse(requests[requests.length - 1][1].body as string).asset_ids,
+    ).toEqual(["charger-12"]);
+    await user.click(
+      within(filter).getByRole("button", { name: "Charger 12" }),
+    );
+    await user.type(screen.getByRole("searchbox"), "unknown");
+    expect(screen.getByText("No equipment found.")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      within(filter).getByRole("button", { name: "Charger 12" }),
+    ).toHaveFocus();
+    await user.click(
+      within(filter).getByRole("button", {
+        name: "All equipment 12 connected",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        within(agenda()).getAllByRole("heading", { level: 3 }),
+      ).toHaveLength(12),
+    );
   });
   it("does not select a forecast when the backend chose a dated request", async () => {
     rows[0] = {

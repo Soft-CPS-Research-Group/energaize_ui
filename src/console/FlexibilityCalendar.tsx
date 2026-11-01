@@ -3,6 +3,9 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Search,
+  X,
   Layers3,
   Plus,
   Repeat2,
@@ -95,8 +98,6 @@ const dayLabel = (value: string) =>
 function rangeLabel(start: string | null, end: string | null) {
   return `${hour(start)} – ${hour(end)}${start && end && isoDay(start) !== isoDay(end) ? " · next day" : ""}`;
 }
-const usesTimes = (e: Entry) =>
-  e.selectedFields.some((f) => f === "starts_at" || f === "ends_at");
 const fieldNames: Record<string, string> = {
   starts_at: "arrival",
   ends_at: "departure",
@@ -184,6 +185,41 @@ export function FlexibilityCalendar({
     [loading, setLoading] = useState(true);
   const [preferences, setPreferences] = useState<string | null>(null),
     [reload, setReload] = useState(0);
+  const [focusedAsset, setFocusedAsset] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false),
+    [search, setSearch] = useState("");
+  const picker = useRef<HTMLDivElement>(null),
+    pickerButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (picker.current && !event.composedPath().includes(picker.current))
+        setPickerOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPickerOpen(false);
+        pickerButton.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [pickerOpen]);
+  const chooseAsset = (id: string) => {
+    setAsset(id);
+    setFocusedAsset(null);
+    setPreferences(null);
+    setPickerOpen(false);
+  };
+  const chooseDay = (value: string, id: string | null = null) => {
+    setDay(value);
+    setFocusedAsset(id);
+    setPreferences(null);
+  };
   const request = useRef<AbortController>();
   const seq = useRef(0);
   const shown = useMemo(
@@ -365,6 +401,9 @@ export function FlexibilityCalendar({
     );
   }, [snapshot, equipment]);
   const selected = entries.filter((e) => onDay(e, day));
+  const contextEquipment = focusedAsset
+    ? shown.filter((a) => a.id === focusedAsset)
+    : shown;
   const selectedOffers = (id: string) =>
     (snapshot?.selections[id]?.offers || []).filter((o) => {
       const anchor = o.occurrence_at || o.starts_at || o.ends_at;
@@ -376,7 +415,7 @@ export function FlexibilityCalendar({
   const move = (amount: number) => {
     const d = new Date(month.getFullYear(), month.getMonth() + amount, 1);
     setMonth(d);
-    setDay(dayKey(d));
+    chooseDay(dayKey(d));
   };
   const dayAction = (
     action: CalendarAction["action"],
@@ -402,7 +441,7 @@ export function FlexibilityCalendar({
   return (
     <div className="availability-workspace">
       <div
-        className="availability-equipment"
+        className={`availability-equipment ${equipment.length > 4 ? "has-picker" : ""}`}
         role="group"
         aria-label="Filter flexibility by equipment"
       >
@@ -410,8 +449,7 @@ export function FlexibilityCalendar({
           className={!asset ? "is-active" : ""}
           aria-pressed={!asset}
           onClick={() => {
-            setAsset("");
-            setPreferences(null);
+            chooseAsset("");
           }}
         >
           <Layers3 size={22} />
@@ -419,47 +457,114 @@ export function FlexibilityCalendar({
             All equipment<small>{equipment.length} connected</small>
           </span>
         </button>
-        {equipment.map((a) => (
-          <button
-            key={a.id}
-            className={asset === a.id ? "is-active" : ""}
-            aria-pressed={asset === a.id}
-            onClick={() => {
-              setAsset(a.id);
-              setPreferences(null);
-            }}
-          >
-            <EquipmentArt type={a.kind} />
-            <span>
-              {a.name}
-              <small>
-                {a.kind === "ev_charger"
-                  ? "EV charging"
-                  : a.kind === "appliance"
-                    ? "Appliance"
-                    : "Equipment"}
-              </small>
-            </span>
-          </button>
-        ))}
-      </div>
-      <div className="availability-legend">
-        <span>
-          <Repeat2 size={14} />
-          Recurring
-        </span>
-        <span>
-          <span className="availability-dot" />
-          One-off
-        </span>
-        <span>
-          <Sparkles size={14} />
-          Prediction
-        </span>
-        <span className="availability-chosen-key">
-          <Check size={14} />
-          Used in the plan
-        </span>
+        {equipment.length <= 4 ? (
+          equipment.map((a) => (
+            <button
+              key={a.id}
+              className={asset === a.id ? "is-active" : ""}
+              aria-pressed={asset === a.id}
+              onClick={() => chooseAsset(a.id)}
+            >
+              <EquipmentArt type={a.kind} />
+              <span>
+                {a.name}
+                <small>
+                  {a.kind === "ev_charger"
+                    ? "EV charging"
+                    : a.kind === "appliance"
+                      ? "Appliance"
+                      : "Equipment"}
+                </small>
+              </span>
+            </button>
+          ))
+        ) : (
+          <div className="availability-equipment-picker" ref={picker}>
+            <button
+              ref={pickerButton}
+              className={`availability-picker-trigger ${asset ? "is-active" : ""}`}
+              aria-haspopup="dialog"
+              aria-expanded={pickerOpen}
+              onClick={() => {
+                setPickerOpen(!pickerOpen);
+                setSearch("");
+              }}
+            >
+              {asset ? (
+                <EquipmentArt
+                  type={equipment.find((a) => a.id === asset)?.kind}
+                />
+              ) : (
+                <Search size={20} />
+              )}
+              <span>
+                {asset
+                  ? equipment.find((a) => a.id === asset)?.name
+                  : "Choose equipment"}
+              </span>
+              <ChevronDown size={16} />
+            </button>
+            {pickerOpen && (
+              <div
+                className="availability-picker-menu"
+                role="dialog"
+                aria-label="Choose equipment"
+              >
+                <header>
+                  <strong>Equipment</strong>
+                  <button
+                    className="icon-btn"
+                    aria-label="Close equipment chooser"
+                    onClick={() => {
+                      setPickerOpen(false);
+                      pickerButton.current?.focus();
+                    }}
+                  >
+                    <X size={16} />
+                  </button>
+                </header>
+                <label className="availability-equipment-search">
+                  <Search size={16} />
+                  <input
+                    autoFocus
+                    type="search"
+                    aria-label="Search equipment"
+                    placeholder="Search equipment…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </label>
+                <div className="availability-picker-options">
+                  {equipment
+                    .filter((a) =>
+                      a.name
+                        .toLocaleLowerCase()
+                        .includes(search.trim().toLocaleLowerCase()),
+                    )
+                    .map((a) => (
+                      <button
+                        key={a.id}
+                        aria-pressed={asset === a.id}
+                        onClick={() => {
+                          chooseAsset(a.id);
+                          pickerButton.current?.focus();
+                        }}
+                      >
+                        <EquipmentArt type={a.kind} />
+                        <span>{a.name}</span>
+                        {asset === a.id && <Check size={15} />}
+                      </button>
+                    ))}
+                  {!equipment.some((a) =>
+                    a.name
+                      .toLocaleLowerCase()
+                      .includes(search.trim().toLocaleLowerCase()),
+                  ) && <p>No equipment found.</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {error && (
         <p className="availability-message" role="alert">
@@ -499,7 +604,7 @@ export function FlexibilityCalendar({
                 onClick={() => {
                   const now = new Date();
                   setMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-                  setDay(dayKey(now));
+                  chooseDay(dayKey(now));
                 }}
               >
                 Today
@@ -528,7 +633,10 @@ export function FlexibilityCalendar({
           <div className="availability-days">
             {days.map((date) => {
               const key = dayKey(date),
-                rows = entries.filter((e) => onDay(e, key));
+                rows = entries.filter((e) => onDay(e, key)),
+                devices = shown.filter((a) =>
+                  rows.some((e) => e.assetId === a.id),
+                );
               return (
                 <div
                   key={key}
@@ -538,47 +646,38 @@ export function FlexibilityCalendar({
                     className={`availability-date ${key === dayKey(new Date()) ? "is-today" : ""}`}
                     aria-label={dayLabel(key)}
                     aria-pressed={day === key}
-                    onClick={() => setDay(key)}
+                    onClick={() => chooseDay(key)}
                   >
                     <time dateTime={key}>{date.getDate()}</time>
-                    <small>{rows.length ? `${rows.length} sources` : ""}</small>
+                    <small>
+                      {devices.length
+                        ? `${devices.length} ${devices.length === 1 ? "device" : "devices"}`
+                        : ""}
+                    </small>
                   </button>
                   <div className="availability-day-entries">
-                    {rows.slice(0, 6).map((e) => (
+                    {devices.slice(0, 4).map((a) => (
                       <button
-                        key={e.id}
-                        className={`availability-entry is-${e.source} ${usesTimes(e) ? "is-used" : e.selectedFields.length ? "is-contributing" : ""} ${e.inactive ? "is-inactive" : ""}`}
-                        data-selected={!!e.selectedFields.length}
-                        aria-label={`${equipment.find((a) => a.id === e.assetId)?.name} · ${labels[e.source]} · ${rangeLabel(e.start, e.end)}`}
-                        onClick={() => setDay(key)}
-                        title={`${equipment.find((a) => a.id === e.assetId)?.name} · ${labels[e.source]} · ${rangeLabel(e.start, e.end)}${e.selectedFields.length ? " · Used in the plan" : ""}`}
+                        key={a.id}
+                        className={`availability-entry is-equipment ${day === key && focusedAsset === a.id ? "is-focused" : ""}`}
+                        data-calendar-asset={a.id}
+                        aria-label={`${a.name} · ${dayLabel(key)}`}
+                        aria-pressed={day === key && focusedAsset === a.id}
+                        onClick={() => chooseDay(key, a.id)}
+                        title={a.name}
                       >
+                        <EquipmentArt type={a.kind} />
                         <span className="availability-entry-name">
-                          {e.selectedFields.length ? (
-                            <Check size={12} />
-                          ) : e.source === "forecast" ? (
-                            <Sparkles size={12} />
-                          ) : e.source === "recurrent" ? (
-                            <Repeat2 size={12} />
-                          ) : (
-                            <span className="availability-dot" />
-                          )}
-                          {equipment.find((a) => a.id === e.assetId)?.name}
+                          {a.name}
                         </span>
-                        <small>
-                          {labels[e.source]} ·{" "}
-                          {e.start && isoDay(e.start) < key
-                            ? `until ${hour(e.end)}`
-                            : hour(e.start)}
-                        </small>
                       </button>
                     ))}
-                    {rows.length > 6 && (
+                    {devices.length > 4 && (
                       <button
                         className="availability-more"
-                        onClick={() => setDay(key)}
+                        onClick={() => chooseDay(key)}
                       >
-                        +{rows.length - 6} more
+                        +{devices.length - 4} equipment
                       </button>
                     )}
                   </div>
@@ -594,8 +693,19 @@ export function FlexibilityCalendar({
           <header>
             <span className="eyebrow">YOUR AVAILABILITY</span>
             <h2>{dayLabel(day)}</h2>
+            {focusedAsset && !asset && (
+              <button
+                className="availability-day-all"
+                onClick={() => {
+                  setFocusedAsset(null);
+                  setPreferences(null);
+                }}
+              >
+                All equipment for this day
+              </button>
+            )}
           </header>
-          {shown
+          {contextEquipment
             .filter(
               (a) =>
                 selected.some((e) => e.assetId === a.id) ||
@@ -837,10 +947,10 @@ export function FlexibilityCalendar({
               </p>
             </div>
           )}
-          {shown.some((a) => a.canEdit) && (
+          {contextEquipment.some((a) => a.canEdit) && (
             <button
               className="btn primary availability-add"
-              onClick={() => dayAction("create", asset)}
+              onClick={() => dayAction("create", asset || focusedAsset || "")}
             >
               <Plus size={17} />
               Plan something
