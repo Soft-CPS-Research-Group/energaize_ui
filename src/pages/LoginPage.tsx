@@ -3,7 +3,7 @@ import { AUTH_TRANSITION_DURATION_MS, useAuthTransition } from "../contexts/Auth
 import { motion } from "framer-motion";
 import { AuthBackdrop } from "../components/ui/AuthBackdrop";
 import { Eye, EyeOff, Info, Lock, Mail } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { InstitutionalDock } from "../components/layout/InstitutionalDock";
 import { Modal } from "../components/ui/Modal";
@@ -11,7 +11,9 @@ import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { APP_NAME, AUTH_SCENE_STORAGE_KEY, MOCK_USERS } from "../constants";
 import { useAuth } from "../contexts/AuthContext";
 import { useUI } from "../contexts/UIContext";
-import { roleHomePath, roleLabel } from "../utils/roles";
+import { TestAccountPicker } from "../components/ui/TestAccountPicker";
+import type { TestAccountChoice } from "../api/testAccounts";
+import { roleHomePath } from "../utils/roles";
 
 import "./MediterraneanLogin.css";
 
@@ -56,7 +58,7 @@ function pickRandomLine(lines: readonly string[]): string {
 }
 
 export function LoginPage(): JSX.Element {
-  const { session, login } = useAuth();
+  const { session, login, switchRole } = useAuth();
   const transition = useAuthTransition();
   const { theme, setTheme } = useUI();
   const navigate = useNavigate();
@@ -71,18 +73,12 @@ export function LoginPage(): JSX.Element {
   const [authSceneLine, setAuthSceneLine] = useState("");
   const [accountsModalOpen, setAccountsModalOpen] = useState(false);
   const sceneTimeoutRef = useRef<number | null>(null);
-  const loginAccounts = useMemo(
-    () =>
-      Object.entries(MOCK_USERS)
-        .map(([accountEmail, account]) => ({
-          email: accountEmail,
-          password: account.password,
-          name: account.name,
-          role: roleLabel(account.role)
-        }))
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    []
-  );
+  const [choice,setChoice]=useState<TestAccountChoice|null>(null);
+  const chooseAccount=(selected:TestAccountChoice)=>{
+    setChoice(selected);setEmail(selected.account.email);
+    setPassword(MOCK_USERS[selected.account.email]?.password||'');
+    setRemember(true);setError(null);setAccountsModalOpen(false);
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -139,7 +135,12 @@ export function LoginPage(): JSX.Element {
     setError(null);
     transition.begin(pickRandomLine(LOGIN_SCENE_LINES));
     try {
-      const signedIn = await login({ email, password, remember });
+      let signedIn = await login({ email, password, remember });
+      if(choice?.account.email.toLowerCase()===email.trim().toLowerCase()){
+        if(choice.context.role!==signedIn.role){await switchRole(choice.context.role);signedIn={...signedIn,role:choice.context.role};}
+        if(choice.context.community_id)sessionStorage.setItem('console-community',choice.context.community_id);
+        if(choice.context.site_id)sessionStorage.setItem('console-site-'+signedIn.id,choice.context.site_id);
+      }
       // Mount the real workspace now. Its readiness signal releases the overlay
       // after the minimum animation time, without remounting or fetching twice.
       navigate(roleHomePath(signedIn.role), { replace: true });
@@ -187,33 +188,7 @@ export function LoginPage(): JSX.Element {
       </div>
 
       <Modal title="Available test accounts" open={accountsModalOpen} onClose={() => setAccountsModalOpen(false)} width="md">
-        <section className="login-accounts-modal">
-          <p>Select a test account to fill in the sign-in form. Community access follows the users and permissions registered in the backend.</p>
-          <ul className="login-accounts-list">
-            {loginAccounts.map((account) => (
-              <li key={account.email}>
-                <button
-                  type="button"
-                  className="login-account-item"
-                  onClick={() => {
-                    setEmail(account.email);
-                    setPassword(account.password);
-                    setRemember(true);
-                    setError(null);
-                    setAccountsModalOpen(false);
-                  }}
-                >
-                  <div className="login-account-main">
-                    <strong>{account.name}</strong>
-                    <small>{account.role}</small>
-                  </div>
-                  <code>{account.email}</code>
-                  <code>{account.password}</code>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <TestAccountPicker onSelect={chooseAccount}/>
       </Modal>
 
       <motion.main
@@ -239,13 +214,14 @@ export function LoginPage(): JSX.Element {
             <p>Sign in to your workspace.</p>
           </header>
 
+          {choice&&<p className="login-test-context">{[choice.context.community_name,choice.context.site_name||choice.account.name].filter(Boolean).join(' · ')}</p>}
           <label>
             <span>Email</span>
             <div className="input-wrap">
               <Mail size={15} />
               <input
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {setEmail(event.target.value);setChoice(null);}}
                 type="email"
                 placeholder="you@energaize.io"
                 required
