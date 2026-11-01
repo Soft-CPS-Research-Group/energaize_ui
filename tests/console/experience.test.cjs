@@ -43,6 +43,23 @@ function workspace() {
     run(fs.readFileSync("public/console/" + f + ".js", "utf8"));
   return { dom, w, run };
 }
+test('a late Overview plan updates its cache without rebuilding a different view',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='ana';var site={id:'home'};availableAssets=()=>[{id:'charger',site_id:'home',asset_type:'ev_charger'}];connection.raw={};var resolvePlan;var requests=0;var renders=0;B.request=()=>{requests++;return new Promise(resolve=>resolvePlan=resolve);};render=()=>{renders++;};app.innerHTML=personalChargingPlan(site);`);
+  assert.match(w.document.querySelector('[data-home-plan]').textContent,/Loading your saved charging plan/);
+  run(`app.innerHTML='<section data-calendar-sentinel>Flexibility</section>';`);
+  const calendar=w.document.querySelector('[data-calendar-sentinel]');
+  await run("resolvePlan({effective:[]});Promise.resolve().then(()=>{}).then(()=>{}).then(()=>{});");
+  assert.equal(run('renders'),0);
+  assert.equal(w.document.querySelector('[data-calendar-sentinel]'),calendar);
+  run('app.innerHTML=personalChargingPlan(site)');
+  assert.equal(run('requests'),1,'Returning to Overview uses the completed cached plan');
+  assert.match(w.document.querySelector('[data-home-plan]').textContent,/No applicable charging request/);
+  run('connection.raw={};app.innerHTML=personalChargingPlan(site)');
+  await run("resolvePlan({effective:[]});Promise.resolve().then(()=>{}).then(()=>{}).then(()=>{});");
+  assert.equal(run('renders'),1,'Overview still refreshes its own visible summary');
+ }finally{dom.window.close();}
+});
 test('resident flexibility follows the selected home across calendar, filter and request choices', () => {
  const {dom,run}=workspace();
  try {
