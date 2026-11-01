@@ -179,6 +179,94 @@ afterEach(() => {
 const agenda = () =>
   screen.getByRole("complementary", { name: "Flexibility for selected day" });
 describe("Flexibility calendar", () => {
+  it("starts independent reads together and keeps a visible loader until the calendar is ready", async () => {
+    let declared!: (response: Response) => void;
+    let chosen!: (response: Response) => void;
+    fetcher.mockImplementation(
+      (url: string) =>
+        new Promise<Response>((resolve) => {
+          if (url.endsWith("/effective")) declared = resolve;
+          else chosen = resolve;
+        }),
+    );
+    render(<FlexibilityCalendar {...props} equipment={[equipment[0]]} />);
+    // A slow availability response must not delay starting the selection read.
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading your flexibility",
+    );
+    expect(
+      within(agenda()).queryByText("No plans for this day"),
+    ).not.toBeInTheDocument();
+    await act(async () =>
+      declared(new Response(JSON.stringify({ occurrences: rows }))),
+    );
+    expect(
+      screen.getByRole("region", { name: "Flexibility calendar" }),
+    ).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toBeVisible();
+    await act(async () => chosen(new Response(JSON.stringify(result))));
+    expect(await within(agenda()).findByText("Window in use")).toBeVisible();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Flexibility calendar" }),
+    ).toHaveAttribute("aria-busy", "false");
+  });
+  it("aborts every old-scope read and ignores late results when equipment changes", async () => {
+    const original = fetcher.getMockImplementation()!;
+    const pending: Array<{
+      url: string;
+      init: RequestInit;
+      resolve: (response: Response) => void;
+    }> = [];
+    let hold = true;
+    fetcher.mockImplementation((url: string, init: RequestInit = {}) =>
+      hold
+        ? new Promise<Response>((resolve) =>
+            pending.push({ url, init, resolve }),
+          )
+        : original(url, init),
+    );
+    const view = render(<FlexibilityCalendar {...props} />);
+    await waitFor(() => expect(pending).toHaveLength(3));
+    hold = false;
+    view.rerender(
+      <FlexibilityCalendar {...props} equipment={[equipment[1]]} />,
+    );
+    expect(
+      await within(agenda()).findByText("No plans for this day"),
+    ).toBeVisible();
+    expect(pending.every(({ init }) => init.signal?.aborted)).toBe(true);
+    // Simulate a transport which completes despite cancellation.
+    await act(async () => {
+      for (const p of pending) p.resolve(await original(p.url, p.init));
+    });
+    expect(
+      within(agenda()).queryByRole("heading", { name: "Home charger" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(agenda()).queryByText("Window in use"),
+    ).not.toBeInTheDocument();
+    expect(within(agenda()).getByText("No plans for this day")).toBeVisible();
+  });
+  it("ends loading and reports an unavailable calendar when declared availability fails", async () => {
+    const original = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation((url: string, init: RequestInit = {}) =>
+      url.endsWith("/effective")
+        ? Promise.resolve(
+            new Response('{"detail":"Unavailable"}', { status: 503 }),
+          )
+        : original(url, init),
+    );
+    render(<FlexibilityCalendar {...props} />);
+    expect(
+      await within(agenda()).findByText("Calendar unavailable"),
+    ).toBeVisible();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      within(agenda()).queryByText("Window in use"),
+    ).not.toBeInTheDocument();
+  });
   it("defaults to all equipment and shows forecast and recurring contributions from backend origins", async () => {
     const { container } = render(<FlexibilityCalendar {...props} />);
     expect(await within(agenda()).findByText("Window in use")).toBeVisible();

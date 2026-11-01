@@ -99,11 +99,12 @@ personalChargingPlan = function (site) {
     B.request('flexibility', '/api/flexibility/effective', 'POST', { asset_ids: ids, from: now.toISOString(), until: new Date(+now + 31 * 86400000).toISOString() })
       .then(result => { if (sequence === FlexHomePlan.sequence) FlexHomePlan.rows = result.effective; })
       .catch(error => { if (sequence === FlexHomePlan.sequence) FlexHomePlan.error = error.message; })
-      .finally(() => { if (sequence === FlexHomePlan.sequence) render(); });
+      // A late Overview response must not rebuild a calendar opened meanwhile.
+      .finally(() => { if (sequence === FlexHomePlan.sequence && document.querySelector('[data-home-plan]')?.dataset.homePlan === site.id) render(); });
   }
   const next = (FlexHomePlan.rows || []).filter(e => e.session_type === 'ev_charging' && Date.parse(e.ends_at) > +now).sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at))[0];
   const text = FlexHomePlan.error ? 'The charging plan could not be loaded. Open Flexibility to retry.' : FlexHomePlan.rows === null ? 'Loading your saved charging plan…' : next ? flexDateTime(next.ends_at) + ' · ' + flexRequirement(next) : 'No applicable charging request in the next 31 days. Review any conflicts in Flexibility.';
-  return `<section class="personal-next-plan"><span class="plan-product-art">${productArt('charger')}</span><div><h2>${next ? 'Next departure' : 'Your charging plan'}</h2><p>${esc(text)}</p><small>Requested target · charging completion is not confirmed</small></div><button class="btn" data-op-page="sessions">View plan</button></section>`;
+  return `<section class="personal-next-plan" data-home-plan="${esc(site.id)}"><span class="plan-product-art">${productArt('charger')}</span><div><h2>${next ? 'Next departure' : 'Your charging plan'}</h2><p>${esc(text)}</p><small>Requested target · charging completion is not confirmed</small></div><button class="btn" data-op-page="sessions">View plan</button></section>`;
 };
 
 async function flexOccurrenceAction(occurrence, cancel) {

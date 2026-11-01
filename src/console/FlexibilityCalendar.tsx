@@ -18,6 +18,7 @@ import {
 } from "../api/flexibilitySelection";
 import { EquipmentArt } from "./EquipmentArt";
 import { FlexibilityPreferences } from "./FlexibilityPreferences";
+import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 
 export interface CalendarEquipment {
   id: string;
@@ -259,26 +260,30 @@ export function FlexibilityCalendar({
         { length: Math.ceil(shown.length / 100) },
         (_, i) => shown.slice(i * 100, i * 100 + 100),
       );
-      const declared = await Promise.all(
-        chunks.map((group) =>
-          selectionRequest<{ occurrences: CalendarOccurrence[] }>(
-            "/effective",
-            {
-              method: "POST",
-              body: JSON.stringify({
-                asset_ids: group.map((a) => a.id),
-                from: start,
-                until,
-              }),
-              signal: abort.signal,
-            },
+      const selectable = shown.filter((a) =>
+        ["ev_charger", "appliance"].includes(a.kind),
+      );
+      // Neither read depends on the other. Start both together rather than
+      // adding the declared-availability round trip to every calendar load.
+      const [declared, results] = await Promise.all([
+        Promise.all(
+          chunks.map((group) =>
+            selectionRequest<{ occurrences: CalendarOccurrence[] }>(
+              "/effective",
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  asset_ids: group.map((a) => a.id),
+                  from: start,
+                  until,
+                }),
+                signal: abort.signal,
+              },
+            ),
           ),
         ),
-      );
-      const results = await Promise.allSettled(
-        shown
-          .filter((a) => ["ev_charger", "appliance"].includes(a.kind))
-          .map(
+        Promise.allSettled(
+          selectable.map(
             async (a) =>
               [
                 a.id,
@@ -288,17 +293,14 @@ export function FlexibilityCalendar({
                 ),
               ] as const,
           ),
-      );
+        ),
+      ]);
       if (abort.signal.aborted || current !== seq.current) return;
       const selections: Record<string, ChosenFlexibility> = {};
       const failures: string[] = [];
       results.forEach((r, i) => {
         if (r.status === "fulfilled") selections[r.value[0]] = r.value[1];
-        else
-          failures.push(
-            shown.filter((a) => ["ev_charger", "appliance"].includes(a.kind))[i]
-              .name,
-          );
+        else failures.push(selectable[i].name);
       });
       setSnapshot({
         occurrences: declared.flatMap((r) => r.occurrences),
@@ -581,9 +583,9 @@ export function FlexibilityCalendar({
         </p>
       )}
       {loading && (
-        <p className="availability-loading" role="status">
-          Loading your flexibility…
-        </p>
+        <div className="availability-loading">
+          <EVChargingLoader compact label="Loading your flexibility…" />
+        </div>
       )}
       <div className="availability-layout">
         <section
