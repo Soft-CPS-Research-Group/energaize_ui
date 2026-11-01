@@ -358,7 +358,12 @@
   color: var(--muted);
   margin-top: 14px;
 }
-.availability-loading,
+.availability-loading {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+  padding: 8px 0;
+}
 .availability-message {
   font-size: 12px;
   line-height: 1.5;
