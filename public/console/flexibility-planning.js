@@ -64,26 +64,19 @@ function flexRow(e) {
 sessionsView = function () {
   const all = sessionAssets().filter(a => flexKinds[a.asset_type]);
   if (FlexPlan.asset && !all.some(a => a.id === FlexPlan.asset)) FlexPlan.asset = '';
-  const assets = FlexPlan.asset ? all.filter(a => a.id === FlexPlan.asset) : all;
-  const month = FlexCalendar.month, first = new Date(month.getFullYear(), month.getMonth(), 1), start = new Date(first);
-  start.setDate(1 - ((first.getDay() + 6) % 7));
-  const end = new Date(start); end.setDate(end.getDate() + 42);
-  loadFlexPlan(assets, start, end);
-  const events = FlexPlan.result?.occurrences || [], predictions = FlexPlan.result?.predictions || [];
-  const selected = FlexCalendar.day || flexDay(new Date()), dayRows = flexDayEvents(events, selected);
-  const suggested = flexDayEvents(predictions.filter(p => p.resolution === 'suggestion'), selected);
-  const cells = Array.from({ length: 42 }, (_, i) => {
-    const day = new Date(start); day.setDate(day.getDate() + i);
-    const key = flexDay(day), rows = flexDayEvents(events.filter(e => e.status !== 'cancelled'), key), guesses = flexDayEvents(predictions.filter(p => p.resolution === 'suggestion'), key);
-    return `<div class="flex-day ${day.getMonth() !== month.getMonth() ? 'outside' : ''} ${key === selected ? 'selected' : ''} ${key === flexDay(new Date()) ? 'today' : ''}"><button class="flex-day-pick" data-flex-day="${key}" aria-pressed="${key === selected}" aria-label="${day.toLocaleDateString('en-GB', { dateStyle: 'full' })}, ${rows.length} requests"><span>${day.getDate()}</span>${rows.length ? `<small>${rows.length} request${rows.length === 1 ? '' : 's'}</small>` : ''}</button><div class="flex-day-events">${rows.slice(0, 2).map(e => `<button data-flex-day="${key}" class="calendar-event" title="${esc(flexLabels[e.resolution])}">${e.recurrence ? '↻ ' : ''}${esc(equipmentRecord(e.asset_id)?.data.name || e.title)}</button>`).join('')}${guesses.length ? `<button class="calendar-event forecast" data-flex-day="${key}">◌ ${guesses.length} prediction${guesses.length === 1 ? '' : 's'}</button>` : ''}${rows.length > 2 ? `<button data-flex-day="${key}">+${rows.length - 2} more</button>` : ''}</div></div>`;
-  }).join('');
-  const issueCount = events.filter(e => ['conflict', 'needs_attention'].includes(e.resolution)).length;
-  return title('Flexibility', 'Your equipment, available times and requirements.', (assets.some(a => flexCanRequest(a.id)) ? button('New request', 'new-session', 'plus', true) : '<span class="footnote">Read-only calendar</span>')) +
-    `<div class="flex-planning-toolbar"><label class="formlabel">Equipment<select data-flex-filter aria-label="Filter flexibility by equipment"><option value="">All equipment</option>${all.map(a => `<option value="${a.id}" ${a.id === FlexPlan.asset ? 'selected' : ''}>${esc(a.data.name)} · ${esc(flexKinds[a.asset_type][0])}</option>`).join('')}</select></label><div class="actions"><button class="btn" data-flex-history>Request history</button><button class="btn" data-flex-rules ${!assets.length ? 'disabled' : ''}>Rules & predictions</button><button class="btn text" data-flex-refresh>Refresh</button></div></div>` +
-    (FlexPlan.asset && ['ev_charger','appliance'].includes(assets[0]?.asset_type) ? `<div data-flex-selection-asset="${esc(FlexPlan.asset)}" data-flex-selection-name="${esc(assets[0].data.name)}" data-flex-selection-kind="${esc(assets[0].asset_type)}" data-flex-selection-actor="${esc(person().id)}" data-flex-selection-edit="${flexCanRequest(FlexPlan.asset)}" data-flex-selection-from="${esc(new Date(selected + 'T00:00:00').toISOString())}" data-flex-selection-until="${esc(flexSelectionDayEnd(selected))}" data-flex-selection-cycles="${esc(JSON.stringify((assets[0].data.power_profiles || []).map(p => ({id:p.id,name:p.name}))))}"></div>` : '<p class="footnote">Select an EV charger or washing appliance to view the backend selection and its rules.</p>') +
-    (FlexPlan.pending ? '<p class="notice" role="status">Loading saved requests and predictions…</p>' : FlexPlan.error ? `<p class="notice" role="alert">${esc(FlexPlan.error)} <button type="button" class="btn text" data-flex-refresh>Try again</button></p>` : issueCount ? `<p class="notice" role="status">${issueCount} occurrence${issueCount === 1 ? '' : 's'} need attention. Select the day to review overlapping requests or clock changes.</p>` : '') +
-    `<p class="footnote">O calendário mantém os pedidos declarados. A oferta resolvida e a origem dos valores aparecem no painel do equipamento acima.</p><div class="flex-calendar-key"><span>● One-off</span><span>↻ Recurring</span><span>◌ Prediction to review</span></div><div class="flex-planner"><section class="flex-calendar" aria-label="Flexibility calendar"><header><h2>${month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h2><div class="actions"><button class="btn text" data-flex-month="today">Today</button><button class="icon-btn" aria-label="Previous month" data-flex-month="-1">${icon('left')}</button><button class="icon-btn" aria-label="Next month" data-flex-month="1">${icon('right')}</button></div></header><div class="flex-weekdays">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<span>${d}</span>`).join('')}</div><div class="flex-days">${cells}</div></section><aside class="flex-agenda"><div class="eyebrow">SELECTED DAY</div><h2>${new Date(selected + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}</h2>${dayRows.map(flexRow).join('')}${suggested.map(flexRow).join('')}${!dayRows.length && !suggested.length ? `<div class="flex-day-empty">${icon('clock')}<h3>${FlexPlan.pending ? 'Loading…' : FlexPlan.error ? 'Calendar unavailable' : 'No plans for this day'}</h3><p>${FlexPlan.error ? 'Refresh to retrieve saved requests.' : 'Choose equipment and add its available time window.'}</p></div>` : ''}${assets.some(a => flexCanRequest(a.id)) ? `<button class="btn primary" data-flex-add="${selected}">${icon('plus')} Plan something</button>` : ''}</aside></div><p class="footnote">Times are shown in ${esc(Intl.DateTimeFormat().resolvedOptions().timeZone)}. Recurrences follow their saved time zone. Requests and predictions do not confirm equipment execution.</p>`;
+  const equipment = all.map(a => ({id:a.id,name:a.data.name,kind:a.asset_type,canEdit:flexCanRequest(a.id),cycles:(a.data.power_profiles || []).map(p=>({id:p.id,name:p.name}))}));
+  return title('Flexibility', 'Plan when your equipment is available.', all.some(a=>flexCanRequest(a.id)) ? button('Plan flexibility', 'new-session', 'plus', true) : '') +
+    `<div data-flex-calendar data-flex-equipment="${esc(JSON.stringify(equipment))}" data-flex-actor="${esc(person().id)}" data-flex-initial-day="${esc(FlexCalendar.day || flexDay(new Date()))}" data-flex-initial-month="${esc(FlexCalendar.month.toISOString())}" data-flex-initial-asset="${esc(FlexPlan.asset)}"></div>`;
 };
+document.addEventListener('flex-calendar-state', e => {
+  FlexCalendar.day=e.detail.day;FlexCalendar.month=new Date(e.detail.month);FlexPlan.asset=e.detail.asset;
+});
+document.addEventListener('flex-calendar-action', e => {
+  const {action, day, assetId, occurrence}=e.detail;
+  FlexCalendar.day=day;FlexPlan.asset=assetId;
+  const task=action==='create'?editSession(null,assetId||null):flexOccurrenceAction(occurrence,action==='cancel');
+  task.catch(error=>toast(error.message));
+});
 
 const planEditSession = editSession;
 editSession = async (id = null, assetId = null, vehicleId = null, occurrence = null) => {
@@ -196,7 +189,4 @@ document.addEventListener('click', e => {
   if (occurrence) flexOccurrenceAction(occurrence, !!button.dataset.flexOccCancel).catch(e => toast(e.message));
 });
 
-// Refresh other people's edits and prediction expiry without interrupting an open form.
-setInterval(() => {
-  if (state.loggedIn && state.operationsPage === 'sessions' && !connection.loading && !overlay.querySelector('[role="dialog"]')) refreshFlexPlan();
-}, 60000);
+// The React calendar owns its refresh timer and cancels it when this route closes.

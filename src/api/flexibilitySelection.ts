@@ -25,7 +25,8 @@ export interface ChosenOffer {
 }
 export interface ChosenFlexibility {
   asset_id: string; policy_revision: number; computed_at: string;
-  forecast?: {request_id:string;revision:number;generated_at:string;valid_until:string;model_version:string;simulated:true}|null;
+  forecast?: {prediction_id?:string;request_id:string;revision:number;generated_at:string;valid_until:string;model_version:string;simulated:true}|null;
+  forecast_windows?: Array<{event_id?:string|null;occurrence_at?:string|null;starts_at:string|null;ends_at:string|null;soc_at_arrival?:number|null}>;
   forecast_state: string; offers: ChosenOffer[]; decision_id: string | null;
 }
 export async function selectionRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
