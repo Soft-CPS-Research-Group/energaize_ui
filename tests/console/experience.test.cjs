@@ -43,6 +43,37 @@ function workspace() {
     run(fs.readFileSync("public/console/" + f + ".js", "utf8"));
   return { dom, w, run };
 }
+test('resident flexibility follows the selected home across calendar, filter and request choices', () => {
+ const {dom,run}=workspace();
+ try {
+  run(`state.personId='ana';var home={id:'regua'};selectedPersonalSite=()=>home;
+   var assets=[{id:'regua-evse',asset_type:'ev_charger',data:{site_id:'regua',name:'Regua charger'}},{id:'office-evse',asset_type:'ev_charger',data:{site_id:'office',name:'Office charger'}},{id:'vehicle',asset_type:'ev',data:{name:'My EV'}},{id:'private',asset_type:'appliance',data:{site_id:'regua',name:'Private washer'}},{id:'retired',asset_type:'appliance',data:{site_id:'regua',lifecycle_status:'retired'}}];
+   connection.raw={assets,events:[]};availableAssets=()=>assets.filter(a=>a.id!=='private');
+   for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);
+   FlexPlan.asset='office-evse';`);
+  assert.deepEqual(JSON.parse(run('JSON.stringify(sessionAssets().map(a=>a.id))')),['regua-evse','vehicle']);
+  let doc=new JSDOM(run('sessionsView()')).window.document;
+  assert.deepEqual(JSON.parse(doc.querySelector('[data-flex-calendar]').dataset.flexEquipment).map(a=>a.id),['regua-evse']);
+  assert.equal(run('FlexPlan.asset'),'');
+  assert.equal(run("sessionVisible({asset_id:'office-evse'})"),false);
+  assert.equal(run("sessionVisible({asset_id:'regua-evse',type_specific_data:{vehicle_id:'vehicle'}})"),true);
+  run("home={id:'office'};FlexPlan.asset='regua-evse'");
+  doc=new JSDOM(run('sessionsView()')).window.document;
+  assert.deepEqual(JSON.parse(doc.querySelector('[data-flex-calendar]').dataset.flexEquipment).map(a=>a.id),['office-evse']);
+  assert.equal(run('FlexPlan.asset'),'');
+  run("home={id:'no-charger'}");
+  doc=new JSDOM(run('sessionsView()')).window.document;
+  assert.deepEqual(JSON.parse(doc.querySelector('[data-flex-calendar]').dataset.flexEquipment),[]);
+ } finally {dom.window.close();}
+});
+test('manager flexibility retains its community scope and direct equipment remains available without an assigned home',()=>{
+ const {dom,run}=workspace();try{
+  run(`state.personId='manager';state.community=0;communities[0].recId='rec';communities[0].sites=[{id:'a'},{id:'b'}];connection.raw={assets:[{id:'a-evse',asset_type:'ev_charger',data:{site_id:'a'}},{id:'b-evse',asset_type:'ev_charger',data:{site_Id:'b'}},{id:'other',asset_type:'ev_charger',data:{site_id:'outside'}}]};`);
+  assert.deepEqual(JSON.parse(run('JSON.stringify(sessionAssets().map(a=>a.id))')),['a-evse','b-evse']);
+  run("state.personId='ana';selectedPersonalSite=()=>undefined;availableAssets=()=>[{id:'other'}]");
+  assert.deepEqual(JSON.parse(run('JSON.stringify(sessionAssets().map(a=>a.id))')),['other']);
+ }finally{dom.window.close();}
+});
 test('house overview stays focused and deployment is restricted to the manager workspace', () => {
   const {dom, run} = workspace();
   try {
