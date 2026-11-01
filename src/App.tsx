@@ -27,6 +27,7 @@ import { PredictorWorkspacePage } from "./pages/PredictorWorkspacePage";
 import { RoleWorkspacePage } from "./pages/RoleWorkspacePage";
 import { CommunityLogsPage } from "./pages/community/CommunityLogsPage";
 import { ProsumerFlexibilityPage } from "./pages/community/ProsumerFlexibilityPage";
+import { FlexibilityForecastDemo } from "./console/FlexibilityForecastDemo";
 import { ConfigsPage } from "./pages/ai/ConfigsPage";
 import { DatasetsPage } from "./pages/ai/DatasetsPage";
 import { DeployChartsPage } from "./pages/ai/DeployChartsPage";
@@ -71,6 +72,7 @@ function AppRoutes(): JSX.Element {
             <Route path="/forgot-password" element={<AccountAccessPage recovery />} />
             <Route path="/account-access" element={<AccountAccessPage />} />
             <Route path="/account-deleted" element={<AccountDeletedPage />} />
+            <Route path="/demo/flexibility" element={<FlexibilityForecastDemo />} />
 
             <Route element={<AuthGuard />}>
                 <Route path="/communities" element={<CommunitiesPage />} />

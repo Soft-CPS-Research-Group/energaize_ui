@@ -801,6 +801,14 @@ describe("App integration", () => {
     expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
     expect(view.getByText('No plans for this day')).toBeInTheDocument();
     expect(view.getByRole('region',{name:'Flexibility calendar'})).toBeInTheDocument();
+    expect(view.getByRole('link',{name:/Demonstração de forecasts/})).toHaveAttribute('href','/demo/flexibility');
+  });
+
+  it("opens the isolated forecast demonstration directly without a resident session", async () => {
+    renderApp('/demo/flexibility');
+    expect(await screen.findByRole('heading',{name:'Flexibilidade e previsões'})).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent('fictícios');
+    expect(screen.getByLabelText('Equipamento')).toHaveValue('demo-ev');
   });
 
   it("lets a resident leave Flexibility through every primary menu destination", async () => {
