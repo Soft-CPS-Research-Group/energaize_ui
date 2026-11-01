@@ -3,7 +3,7 @@
    Interaction: explicit scenario switches, local request edits and a reversible reset. */
 import { useState } from 'react';
 import { ArrowLeft, FlaskConical, RotateCcw } from 'lucide-react';
-import { demoAction, demoEquipment, demoScenarios, durationHours, formatDemoTime, makeDemo, windowState, type Source } from './flexibilityDemoModel';
+import { compareDemoPolicies, demoAction, demoEquipment, demoScenarios, demoScenarioExplanation, durationHours, formatDemoTime, makeDemo, windowState, type Source } from './flexibilityDemoModel';
 import './flexibility-demo.css';
 
 const sources: Record<Source, string> = { recurring: 'Recorrente', punctual: 'Pontual', forecast: 'Forecast' };
@@ -25,7 +25,7 @@ export function FlexibilityForecastDemo({ onClose }: { onClose?: () => void }) {
   return <main className="flex-demo" lang="pt-PT">
     <header className="flex-demo-head">
       <div><span className="flex-demo-kicker"><FlaskConical size={16} /> Demonstração · dados simulados</span>
-        <h1>Flexibilidade e previsões</h1><p>Compare as fontes e experimente alterações antes de definir a seleção automática.</p></div>
+        <h1>Flexibilidade e previsões</h1><p>Mude o cenário e compare a janela que cada política de seleção produziria.</p></div>
       <div className="flex-demo-actions">{onClose && <button onClick={onClose}><ArrowLeft size={16}/> Voltar ao calendário</button>}
         <button onClick={() => setState(makeDemo(state.assetId, state.scenario))}><RotateCcw size={16}/> Repor cenário</button></div>
     </header>
@@ -39,9 +39,23 @@ export function FlexibilityForecastDemo({ onClose }: { onClose?: () => void }) {
       </select></label>
       <p><strong>{equipment.requirement}</strong><span>Horas de Lisboa · relógio simulado: {formatDemoTime(state.now)}</span></p>
     </section>
+    <section className="flex-demo-comparison" aria-labelledby="flex-demo-comparison-title">
+      <span className="flex-demo-kicker">1 · O resultado de cada hipótese</span>
+      <h2 id="flex-demo-comparison-title">Como funcionaria a seleção automática?</h2>
+      <p className="flex-demo-scenario-summary" role="status">{demoScenarioExplanation(state)}</p>
+      <p className="flex-demo-footnote">Três políticas simuladas, nenhuma aprovada. Estes resultados não são guardados como decisões reais nem representam um horário de execução.</p>
+      <div className="flex-demo-policy-results">{compareDemoPolicies(state).map(result => <article key={result.policy} aria-label={result.policy}>
+        <h3>{result.policy}</h3><p>{result.rule}</p>
+        <strong className="flex-demo-policy-window">{result.startsAt && result.endsAt ? `${formatDemoTime(result.startsAt)} → ${formatDemoTime(result.endsAt)}` : 'Sem janela viável'}</strong>
+        <p><b>Fontes consideradas:</b> {result.sources.map(source => sources[source]).join(' + ') || 'Nenhuma'}</p>
+        <p>{result.reason}</p>
+        {!!result.excluded.length && <ul>{result.excluded.map(reason => <li key={reason}>{reason}</li>)}</ul>}
+      </article>)}</div>
+      <p className="flex-demo-footnote">Comparamos janelas temporais de equipamentos fictícios com participação assumida. Cumprir o SoC do EV exige dados físicos adicionais. Não há comandos nem aprovação individual de forecasts.</p>
+    </section>
     <div className="flex-demo-workspace">
       <section className="flex-demo-windows" aria-labelledby="flex-demo-windows-title">
-        <div className="flex-demo-section-head"><h2 id="flex-demo-windows-title">Janelas por origem</h2><span>Escolha automática por definir</span></div>
+        <div className="flex-demo-section-head"><h2 id="flex-demo-windows-title">2 · Dados de entrada por origem</h2><span>As políticas finais continuam por definir</span></div>
         <div className="flex-demo-axis" aria-hidden="true"><span>{formatDemoTime(state.windows[0].startsAt)}</span><span>{formatDemoTime(new Date(until).toISOString())}</span></div>
         <ul className="flex-demo-window-list">{state.windows.map(window => {
           const status = windowState(window, state.now);
@@ -53,6 +67,7 @@ export function FlexibilityForecastDemo({ onClose }: { onClose?: () => void }) {
             {window.source === 'punctual' && !window.cancelled && <div className="flex-demo-actions"><button onClick={() => act('earlier')}>Antecipar fim em 1 hora</button><button onClick={() => act('cancel')}>Cancelar pedido pontual</button></div>}
           </li>;
         })}</ul>
+        {!forecast && <div className="flex-demo-forecast-placeholder"><strong>Forecast · {forecastStates[state.forecastStatus]}</strong><p>Não há janela prevista para desenhar neste cenário. As janelas declaradas acima não mudam por faltar uma previsão.</p></div>}
         {!punctual && <button className="flex-demo-primary" onClick={() => act('create')}>Criar novo pedido pontual simulado</button>}
         <p className="flex-demo-footnote">A recorrência é apresentada como uma ocorrência de exemplo. A expansão real das séries pertence ao backend. Cancelar o pedido pontual preserva a previsão e o histórico.</p>
       </section>
@@ -71,7 +86,7 @@ export function FlexibilityForecastDemo({ onClose }: { onClose?: () => void }) {
     </div>
     <section className="flex-demo-discussion" aria-labelledby="flex-demo-discussion-title">
       <span className="flex-demo-kicker">Para discussão</span><h2 id="flex-demo-discussion-title">Que fonte deve o backend utilizar?</h2><p>{scenario.question}</p>
-      <div><strong>Nenhuma fonte selecionada nesta demonstração.</strong><p>A escolha da fonte e a otimização do horário são decisões distintas. O método de registo existe; a política ainda será acordada.</p></div>
+      <div><strong>Nenhuma política aprovada para produção.</strong><p>Os resultados acima são comparações simuladas. A escolha da fonte e a otimização do horário são decisões distintas.</p></div>
     </section>
     <details className="flex-demo-history" open><summary>Histórico desta demonstração ({state.history.length})</summary>
       <ol aria-live="polite">{state.history.map((entry, index) => <li key={index}>{entry}</li>)}</ol>

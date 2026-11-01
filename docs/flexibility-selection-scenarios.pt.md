@@ -4,6 +4,16 @@ Preparado em 1 de novembro de 2026. **Nenhuma das políticas abaixo está aprova
 ou implementada.** A demonstração está em `/demo/flexibility`; os resultados são
 simulados e não acionam equipamentos.
 
+## Como usar a demonstração revista
+
+O topo da página compara agora três hipóteses, sem gravar decisões reais:
+A prefere o pedido específico, B cruza-o com forecast válido de disponibilidade
+e C prefere esse forecast. No EV inicial, as janelas resultantes são 19–07,
+20–07 e 20–08. Sem forecast utilizável, as três recorrem ao pedido pontual; a
+razão fica explícita. Na máquina de lavar, B pode não produzir janela viável
+porque a interseção não comporta os 90 minutos do ciclo. As regras são exemplos
+para discussão, não uma política adotada pelo backend.
+
 ## As duas decisões
 
 1. Que informação de flexibilidade é válida para este equipamento e período?

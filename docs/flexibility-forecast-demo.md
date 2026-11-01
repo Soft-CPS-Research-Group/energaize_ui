@@ -1,5 +1,19 @@
 # Flexibility forecast demonstration — 1 November 2026
 
+## Selection comparison clarification
+
+The first version only exposed inputs; it did not make the effect of a proposed
+selection understandable. The demo now leads with three explicitly hypothetical
+policy outcomes: A prefers a specific declaration; B intersects the applicable
+declaration with a valid availability forecast; C prefers the valid forecast. None
+is approved or applied in production. Missing, expired and usage-only forecasts
+are excluded with a visible reason. A washer intersection shorter than 90 minutes
+is infeasible. Missing forecasts have an explicit placeholder in the input area.
+
+For the initial EV, the three outcomes are 19–07, 20–07 and 20–08. With a waiting
+forecast all fall back to the one-off 19–07; receiving the result changes B/C.
+Identical outcomes can be correct, and the page explains the differing causes.
+
 ## Review
 
 Run the UI and open `/demo/flexibility`. The resident/manager Flexibility calendar
@@ -23,7 +37,7 @@ real results after agreement of the semantics, IDs, horizon and validity.
 ## Walkthrough
 
 1. Open **Fontes sobrepostas** on the EV. Compare recurring 18–08, one-off 19–07,
-   and the simulated forecast 20–08. None is automatically selected.
+   and the simulated forecast 20–08. A/B/C show hypothetical outcomes; no production decision is recorded.
 2. Advance the one-off ending by one hour. Its revision increments; recurring and
    forecast sources remain unchanged. Cancel it, then create a new one-off request.
    The cancelled row and operation history remain, as does the forecast.
@@ -73,7 +87,7 @@ statistical model may inform eligibility but cannot invent missing authorization
 
 The executable UI covers S02/S04/S05/S07/S08/S09/S10/S11/S12 and source comparison.
 The table also contains discussion-only cases; it does not claim to implement a
-policy evaluator, HVAC/pump dynamics, optimization, recurring-series management,
+production policy evaluator, HVAC/pump dynamics, optimization, recurring-series management,
 forecast-only authorization, or the real predictor/consumer integrations.
 
 For each policy considered later, record the equipment, period, eligible sources

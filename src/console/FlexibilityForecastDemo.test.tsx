@@ -5,12 +5,23 @@ import { FlexibilityForecastDemo } from './FlexibilityForecastDemo';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe('Flexibility forecast demo workflow', () => {
+  it('shows concrete policy outcomes and explains the missing forecast when changing scenario', async () => {
+    const user = userEvent.setup(); render(<FlexibilityForecastDemo />);
+    const policyB = () => within(screen.getByRole('article', { name: 'B · Cruzar declaração e previsão' }));
+    expect(policyB().getByText(/Usa apenas a parte comum/)).toBeVisible();
+    await user.selectOptions(screen.getByLabelText('Cenário'),'waiting');
+    expect(screen.getByText(/Não há janela prevista para desenhar/)).toBeVisible();
+    expect(policyB().getByText(/Sem forecast utilizável/)).toBeVisible();
+    await user.click(screen.getByRole('button',{name:'Receber resultado simulado'}));
+    expect(policyB().getByText(/Usa apenas a parte comum/)).toBeVisible();
+    expect(screen.queryByText(/Não há janela prevista para desenhar/)).not.toBeInTheDocument();
+  });
   it('identifies simulation, edits and cancels a request without touching APIs or forecast history', async () => {
     const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
     const user = userEvent.setup();
     render(<FlexibilityForecastDemo />);
     expect(screen.getByRole('note')).toHaveTextContent('fictícios');
-    expect(screen.getByText('Nenhuma fonte selecionada nesta demonstração.')).toBeVisible();
+    expect(screen.getByText('Nenhuma política aprovada para produção.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Antecipar fim em 1 hora' }));
     expect(screen.getByRole('listitem', { name: /Pontual · revisão 2/ })).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Cancelar pedido pontual' }));
@@ -23,17 +34,17 @@ describe('Flexibility forecast demo workflow', () => {
   it('simulates asynchronous receipt, duplicate delivery and an old result, and resets locally', async () => {
     const user = userEvent.setup(); render(<FlexibilityForecastDemo />);
     await user.selectOptions(screen.getByLabelText('Cenário'), 'waiting');
-    expect(screen.getByRole('status')).toHaveTextContent('À espera');
+    expect(within(screen.getByRole('complementary', { name: 'Estado e origem da previsão' })).getByRole('status')).toHaveTextContent('À espera');
     expect(screen.queryByRole('listitem', { name: /Forecast/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Receber resultado simulado' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Resultado recebido');
+    expect(within(screen.getByRole('complementary', { name: 'Estado e origem da previsão' })).getByRole('status')).toHaveTextContent('Resultado recebido');
     await user.click(screen.getByRole('button', { name: 'Simular reentrega' }));
     await user.click(screen.getByRole('button', { name: 'Simular resultado antigo' }));
     expect(screen.getAllByRole('listitem', { name: /Forecast/ })).toHaveLength(1);
     expect(screen.getByText(/mesmo pedido e revisão/)).toBeVisible();
     expect(screen.getByText(/revisão anterior à já recebida/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Repor cenário' }));
-    expect(screen.getByRole('status')).toHaveTextContent('À espera');
+    expect(within(screen.getByRole('complementary', { name: 'Estado e origem da previsão' })).getByRole('status')).toHaveTextContent('À espera');
     expect(screen.queryByText(/mesmo pedido e revisão/)).not.toBeInTheDocument();
   });
   it('explains absent/failed/expired forecasts and does not ask for human approval', async () => {

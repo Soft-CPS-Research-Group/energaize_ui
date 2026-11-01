@@ -68,7 +68,7 @@ export function demoAction(state: DemoState, action: 'earlier' | 'cancel' | 'cre
   if (action === 'receive') {
     if (state.forecastStatus !== 'waiting') return state;
     const fixture = makeDemo(state.assetId, 'overlap').windows.find(w => w.source === 'forecast')!;
-    return record('Resultado simulado recebido · revisão 1. Nenhuma fonte foi selecionada.', {
+    return record('Resultado simulado recebido · revisão 1. Comparação atualizada; nenhuma decisão real gravada.', {
       forecastStatus: 'ready', resultRevision: 1, windows: [...state.windows, { ...fixture, generatedAt: state.now, validUntil: new Date(Date.parse(state.now) + 86400000).toISOString() }],
     });
   }
@@ -99,3 +99,62 @@ export function formatDemoTime(value: string): string {
   return new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }).format(new Date(value));
 }
 export function durationHours(window: DemoWindow): number { return (Date.parse(window.endsAt) - Date.parse(window.startsAt)) / 3600000; }
+
+export interface DemoSelection {
+  policy: string;
+  rule: string;
+  sources: Source[];
+  startsAt?: string;
+  endsAt?: string;
+  reason: string;
+  excluded: string[];
+}
+
+/** Counterfactual policies for comparison only; no production decision is recorded. */
+export function compareDemoPolicies(state: DemoState): DemoSelection[] {
+  const excluded: string[] = [];
+  const candidates = state.windows.filter(window => {
+    const label = window.source === 'forecast' ? 'Forecast' : window.source === 'punctual' ? 'Pontual' : 'Recorrente';
+    const status = windowState(window, state.now);
+    const reason = window.assetId !== state.assetId ? 'outro equipamento' : status === 'cancelled' ? 'cancelado' : status === 'expired' ? 'expirado' :
+      window.meaning === 'usual_use' ? 'prevê utilização, não disponibilidade' : undefined;
+    if (reason) { excluded.push(`${label}: ${reason}.`); return false; }
+    return true;
+  });
+  if (!state.windows.some(w => w.source === 'forecast')) excluded.push({ waiting: 'Forecast: ainda não recebido.', no_history: 'Forecast: histórico insuficiente; janela desconhecida.', error: 'Forecast: cálculo falhou; janela desconhecida.', ready: 'Forecast: sem janela disponível.' }[state.forecastStatus]);
+  const find = (source: Source) => candidates.find(w => w.source === source);
+  const explicit = find('punctual') || find('recurring');
+  const forecast = find('forecast');
+  const make = (policy: string, rule: string, window: DemoWindow | undefined, reason: string): DemoSelection => ({
+    policy, rule, sources: window ? [window.source] : [], startsAt: window?.startsAt, endsAt: window?.endsAt,
+    reason: window ? reason : 'Sem fonte temporal válida nesta hipótese.', excluded: [...excluded],
+  });
+  const first = make('A · Preferir declaração específica', 'Pontual → recorrente → forecast válido.', explicit || forecast,
+    explicit ? `Usa o pedido ${explicit.source === 'punctual' ? 'pontual' : 'recorrente'}; a previsão não altera a janela declarada nesta política.` : 'Só resta uma previsão válida de disponibilidade.');
+  const second = make('B · Cruzar declaração e previsão', 'Parte do pontual, ou recorrente; cruza com forecast de disponibilidade quando existir.', explicit || forecast,
+    explicit ? 'Sem forecast utilizável: conserva a janela declarada, sem a restringir por uma previsão ausente ou inválida.' : 'Só resta uma previsão válida de disponibilidade.');
+  if (explicit && forecast) {
+    const start = Math.max(Date.parse(explicit.startsAt), Date.parse(forecast.startsAt));
+    const end = Math.min(Date.parse(explicit.endsAt), Date.parse(forecast.endsAt));
+    second.sources = [explicit.source, 'forecast'];
+    second.startsAt = new Date(start).toISOString(); second.endsAt = new Date(end).toISOString();
+    second.reason = 'Usa apenas a parte comum à declaração e à disponibilidade estimada.';
+    if (end <= start || (state.assetId === 'demo-washer' && end - start < 90 * 60000)) {
+      second.startsAt = undefined; second.endsAt = undefined;
+      second.reason = end <= start ? 'Sem interseção: as duas fontes não oferecem uma janela comum.' : 'Interseção insuficiente: o ciclo Eco de 90 minutos não cabe. Não se encurta o ciclo.';
+    }
+  }
+  const third = make('C · Preferir previsão válida', 'Forecast de disponibilidade → pontual → recorrente.', forecast || explicit,
+    forecast ? 'Nesta hipótese a janela prevista prevalece, mesmo sendo diferente do pedido. Avaliar se isto é aceitável.' : 'Forecast ausente ou inválido: recorre ao pedido explícito disponível.');
+  return [first, second, third];
+}
+
+export function demoScenarioExplanation(state: DemoState): string {
+  const forecast = state.windows.find(w => w.source === 'forecast');
+  if (state.forecastStatus === 'waiting') return 'O forecast ainda não chegou: não existe uma janela prevista. Os pedidos do utilizador mantêm-se. Ao receber o resultado, B e C podem mudar.';
+  if (state.forecastStatus === 'no_history') return 'O predictor não conseguiu estimar: a janela prevista é desconhecida. As três hipóteses recorrem aos pedidos existentes.';
+  if (state.forecastStatus === 'error') return 'O cálculo falhou: não há janela prevista utilizável. O efeito temporal pode ser igual ao de “sem histórico”, mas a causa é diferente.';
+  if (forecast && windowState(forecast, state.now) === 'expired') return 'O forecast existe, mas expirou: aparece no histórico e fica excluído da comparação. Os pedidos mantêm-se.';
+  if (forecast?.meaning === 'usual_use') return 'A previsão é de utilização habitual. Mostramos o intervalo, mas não o usamos como uma janela de disponibilidade.';
+  return 'Existem três fontes. Compare abaixo: A mantém o pedido específico, B cruza-o com a previsão e C dá prioridade à previsão. São hipóteses para discussão.';
+}

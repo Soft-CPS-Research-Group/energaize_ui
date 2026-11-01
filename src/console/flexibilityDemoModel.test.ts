@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { demoAction, durationHours, formatDemoTime, makeDemo, windowState } from './flexibilityDemoModel';
+import { compareDemoPolicies, demoAction, durationHours, formatDemoTime, makeDemo, windowState } from './flexibilityDemoModel';
 
 describe('isolated flexibility demonstration', () => {
   it('keeps sources separate without selecting a winner', () => {
@@ -87,5 +87,41 @@ describe('isolated flexibility demonstration', () => {
     expect(washer.requestId).not.toBe(ev.requestId);
     expect(washer.windows.every(w => w.assetId === 'demo-washer')).toBe(true);
     expect(washer.windows.some(w => w.cancelled)).toBe(false);
+  });
+});
+
+describe('hypothetical selection comparison', () => {
+  it('makes the three different EV results explicit without writing a decision', () => {
+    const state = makeDemo();
+    const [a,b,c] = compareDemoPolicies(state);
+    expect([a.startsAt,b.startsAt,c.startsAt]).toEqual(['2026-11-02T19:00:00.000Z','2026-11-02T20:00:00.000Z','2026-11-02T20:00:00.000Z']);
+    expect([a.endsAt,b.endsAt,c.endsAt]).toEqual(['2026-11-03T07:00:00.000Z','2026-11-03T07:00:00.000Z','2026-11-03T08:00:00Z']);
+    expect(state.history).toHaveLength(2);
+  });
+  it.each(['waiting','no-history','error','expired','usual-use'])('excludes unusable forecasts in %s and preserves explicit input', scenario => {
+    const state = makeDemo('demo-ev',scenario);
+    for (const result of compareDemoPolicies(state)) {
+      expect(result.sources).toEqual(['punctual']);
+      expect(result.startsAt).toBe(state.windows[1].startsAt);
+      expect(result.excluded.some(reason => reason.startsWith('Forecast:'))).toBe(true);
+    }
+  });
+  it('changes policies B/C when the waiting forecast arrives but keeps A unchanged', () => {
+    const waiting = makeDemo('demo-ev','waiting');
+    const before = compareDemoPolicies(waiting);
+    const after = compareDemoPolicies(demoAction(waiting,'receive'));
+    expect(after[0].startsAt).toBe(before[0].startsAt);
+    expect(after[1].startsAt).not.toBe(before[1].startsAt);
+    expect(after[2].endsAt).not.toBe(before[2].endsAt);
+  });
+  it('rejects a combined washer window that cannot fit its cycle', () => {
+    const result = compareDemoPolicies(makeDemo('demo-washer'))[1];
+    expect(result.startsAt).toBeUndefined();
+    expect(result.reason).toContain('90 minutos não cabe');
+  });
+  it('never reselects cancelled requests and reports no window when no candidate remains', () => {
+    const state = demoAction(makeDemo(),'cancel');
+    expect(compareDemoPolicies(state)[0].sources).toEqual(['recurring']);
+    expect(compareDemoPolicies({...state,windows:state.windows.map(w=>({...w,cancelled:true}))}).every(r=>!r.startsAt)).toBe(true);
   });
 });
