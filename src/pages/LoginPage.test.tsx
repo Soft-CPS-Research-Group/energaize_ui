@@ -13,7 +13,7 @@ let controls: ReturnType<typeof useAuthTransition>;
 function Probe(){controls=useAuthTransition();return null;}
 const mount=()=>render(<AuthTransitionProvider><Probe/><LoginPage/></AuthTransitionProvider>);
 beforeEach(() => {vi.useFakeTimers(); mocks.auth.session=null; mocks.navigate.mockReset(); sessionStorage.clear();mocks.auth.login.mockImplementation(async () => {const session={role:'prosumer'};mocks.auth.session=session;return session;});});
-afterEach(() => {cleanup(); vi.useRealTimers();});
+afterEach(() => {cleanup(); vi.unstubAllGlobals(); vi.useRealTimers();});
 it('navigates immediately to start workspace loading but holds the scene for three seconds', async () => {
  const view=mount();
  await act(async()=> {fireEvent.click(screen.getByRole('button',{name:'Log in'}));});
@@ -47,4 +47,20 @@ it('returns to the form after an authentication error without navigating',async(
  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Log in'}));});
  expect(view.container.querySelector('.is-arrive')).toBeNull();expect(screen.getByText('Unable to sign in')).toBeTruthy();
  act(()=>vi.advanceTimersByTime(6000));expect(mocks.navigate).not.toHaveBeenCalled();
+});
+it('keeps the selected existing home as a UI preference only after a successful login',async()=>{
+ vi.useRealTimers();
+ const {MOCK_USERS}=await import('../constants');const email='prosumer@energaize.io';
+ const account={id:'existing-resident',email,name:'Demo Resident',contexts:[{role:'prosumer',community_id:'existing-community',community_name:'Testing',site_id:'existing-home',site_name:'Existing home',equipment_count:2}]};
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({accounts:[account]}))));
+ mocks.auth.login.mockImplementation(async()=>{const value={id:account.id,role:'prosumer'};mocks.auth.session=value;return value;});
+ mount();fireEvent.click(screen.getByRole('button',{name:'View test accounts'}));
+ fireEvent.click(await screen.findByRole('button',{name:/Existing home Demo Resident/}));
+ expect(screen.getByRole('textbox',{name:'Email'})).toHaveValue(email);
+ expect(screen.getByLabelText('Password',{exact:true})).toHaveValue(MOCK_USERS[email].password);
+ expect(sessionStorage.getItem('console-community')).toBeNull();
+ await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Log in'}));});
+ expect(sessionStorage.getItem('console-community')).toBe('existing-community');
+ expect(sessionStorage.getItem('console-site-'+account.id)).toBe('existing-home');
+ vi.unstubAllGlobals();
 });
