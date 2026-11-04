@@ -1,19 +1,48 @@
-# Activity beside the account
+# Activity timeline
 
-The Community workspace exposes a small history icon immediately before the account control. It is available to REC Managers and prosumers; it is not a primary-navigation item. A centered modal provides period/type filters, context scoping and a progressively loaded timeline.
+REC Managers and consumers open Activity from the history icon beside the account
+menu. It is a modal timeline scoped initially to the current community, home or
+equipment, with an option to broaden the selection to accessible resources.
 
-## Data and access
+## Records and authorization
 
-`GET /community-api/api/identity/activity` uses the existing signed-in session. The backend applies authorization before pagination. The manager sees permitted communities; a person sees permitted sites. The current site/equipment is the initial filter when opening from its page, with an option to broaden to accessible sites. Outside a community, all authorized records can be queried.
+The panel reads `/community-api/api/identity/activity` using the existing account
+session. The backend applies authorization before pagination: managers see their
+permitted communities and consumers see their permitted sites.
 
-The initial source is **committed inventory configuration reviews**, not arbitrary Docker output or a complete audit of every backend. Open/resolved reflects the current review status; confirmation times and notes are in its detail. The primary timeline time remains the original inventory change. Historical records do not contain verified authors, so no actor name is inferred from their untrusted free-text field. New authenticated inventory changes and confirmations display the account name from the server-verified identity. Internal operations without an initiating user remain unattributed.
+The current source is committed inventory configuration reviews. This is not a
+complete cross-service audit or a Docker log viewer. Open/resolved describes the
+review's current status; confirmation times and notes appear in its detail. The
+timeline's primary timestamp remains the original inventory change.
 
-Periods: 24 hours, 7/30 days, or custom dates inside the last 30 days. Custom end dates include the selected local day. Requests use ISO timestamps, a 40-item page and an opaque cursor. Scroll or Load older activity fetches the next page. Changing filters cancels stale requests. Missing-backend, expired-session, loading, empty and retry states are explicit. Native dialog semantics provide modal focus and Escape dismissal.
+Authenticated changes display the name supplied by the verified server identity.
+Historical free-text author fields do not establish an author, and internal
+operations without an initiating user remain unattributed.
 
-## Verification
+## Filters and loading
 
-`npm test` covers filters, pagination/deduplication, late responses, custom date bounds, unavailable service, confirmations and closing. `npm run test:console` checks the existing workspace runtime. `npm run build` type-checks and builds the app. Visual verification uses the actual local Community API and existing configuration reviews; no production records are created for the demonstration.
+- Periods: last 24 hours, 7 days, 30 days, or custom dates within the last 30 days.
+- Custom end dates include the selected local day; API requests use ISO timestamps.
+- Requests use 40-item pages and an opaque cursor. Scrolling or **Load older
+  activity** retrieves another page.
+- Changing filters cancels stale requests. Loading, empty, expired-session,
+  unavailable-service and retry states are distinct.
+- The modal supports focus handling and Escape dismissal.
 
-## Follow-up
+## Retention and limits
 
-The Community backend applies a 30-day read window and removes resolved reviews 30 days after final resolution. Unresolved configuration obligations remain in Configuration reviews. A full functional audit still needs coverage of Flexibility/Runtime/Training, authorized records for deleted resources and cross-service delivery. Those are backend increments, not labels that the UI should invent. The role policy remains: managers may view flexibility requests; this activity panel adds no ability to create them on another person's behalf.
+The Community backend applies the 30-day read window and removes resolved reviews
+30 days after final resolution. Unresolved obligations remain in Configuration
+reviews. Reading activity does not grant permission to modify the underlying
+resource or create another person's flexibility request.
+
+Flexibility, Runtime and Training events, deleted-resource visibility and
+cross-service delivery require their own backend coverage before they can be
+presented as part of this timeline.
+
+## Maintenance
+
+`src/console/ActivityPanel.tsx` implements the panel. Its tests cover filtering,
+pagination, deduplication, late responses, date bounds, errors and closing.
+See [development checks](development.md#checks) and
+[Community Console](COMMUNITY_CONSOLE.md) for setup and related controls.

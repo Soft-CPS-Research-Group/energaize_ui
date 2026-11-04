@@ -1,17 +1,43 @@
 # Concurrent editing
 
-Site, equipment and channel editors keep the version returned with the data shown when the form opens. Updates send it as `expected_version`; they never fetch a newer version merely to make an old draft save successfully.
+Versioned editors keep the version returned with the data shown when the form
+opens. Updates send that value as `expected_version`; they do not fetch a newer
+version merely to make an old draft save successfully.
 
-Covered paths:
+## Covered editors
 
 - Site identity, location and technical settings.
-- Site reference contracts and community-condition overrides (the version belongs to the site).
-- Equipment characteristics; the version comes from the asset response envelope, alongside `data`.
-- Channel settings, including Percepta measurements and actuator definitions for equipment/site/community channels.
-- Stored-reading bindings and unlink operations. Telemetry accepts `expected_version` in the query string on these two endpoints, preserving the existing binding body.
+- Site reference contracts and community-condition overrides; the version belongs
+  to the site.
+- Equipment characteristics; the version comes from the asset response envelope
+  alongside `data`.
+- Channel settings, including Percepta measurement and actuator definitions for
+  equipment, site and community channels.
+- Stored-reading bindings and unlink operations. These Telemetry endpoints accept
+  `expected_version` in the query string, preserving the existing binding body.
 
-On a conflict, the form keeps the draft visible and blocks repeated submission. “Discard edits and reload” explicitly abandons the draft and loads the latest data. The user opens the editor again to review it. There is no automatic merge or force-save. A batch of channels can partially succeed; the error reports how many were saved.
+## Conflict behavior
 
-Creation requests do not send an update version. Community records, connection profiles and runtime settings have separate contracts; this change does not introduce version fields into those contracts. Older backend responses without a version remain usable but cannot provide this additional stale-form protection. Deploy the updated backend and UI together to enable it fully.
+When the backend reports a conflict, the form keeps the draft visible and blocks
+repeated submission. **Discard edits and reload** explicitly abandons that draft
+and loads current data. The user then reopens the editor to review it. There is no
+automatic merge or force-save.
 
-Validation includes original-version capture despite a background model change, conflict metadata, draft retention, absence of automatic retry, explicit reload, asset envelope mapping, and the React Percepta editor. Backend tests cover version forwarding and conflict responses on binding/unbinding.
+A batch of channel changes can partially succeed because each save is a separate
+request. The error reports how many changes were saved.
+
+## Contract boundaries
+
+Creation requests do not send an update version. Community records, connection
+profiles and runtime settings have separate contracts. This mechanism does not
+add version fields to those contracts.
+
+An older backend response without a version cannot provide this stale-form
+protection. Backend and frontend support must both be present for versioned edits.
+
+## Maintenance
+
+Regression tests cover original-version capture, conflict metadata, retained
+drafts, explicit reload, asset envelope mapping and the React Percepta editor.
+Backend tests cover forwarding and conflict responses for binding operations.
+See [development checks](development.md#checks) for the frontend commands.
