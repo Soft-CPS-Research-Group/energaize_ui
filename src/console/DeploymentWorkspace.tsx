@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
 import { PerceptaSetup } from "./PerceptaSetup";
+import { PerceptaMessages } from "./PerceptaMessages";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { RuntimePanel } from "./RuntimePanel";
 import {
@@ -106,6 +107,7 @@ export function DeploymentWorkspace({
   siteName: string;
   navigate: (path: string) => void;
 }) {
+  const [messagesOpen, setMessagesOpen] = useState(false);
   const [map, setMap] = useState<DeploymentMap | null>(null),
     [draft, setDraft] = useState<Draft | null>(null),
     [saved, setSaved] = useState<Draft | null>(null);
@@ -155,6 +157,7 @@ export function DeploymentWorkspace({
   }, [siteId]);
   useEffect(() => {
     setMap(null);
+    setMessagesOpen(false);
     setDraft(null);
     setSaved(null);
     setEditing(null);
@@ -267,6 +270,7 @@ export function DeploymentWorkspace({
         />
       </section>
     );
+  if (messagesOpen) return <PerceptaMessages key={siteId} siteId={siteId} siteName={siteName} onBack={() => setMessagesOpen(false)} />;
   const planning = view === "plan",
     layout = map && draft ? graphLayout(map, draft, planning) : null;
   const currentService =
@@ -287,7 +291,7 @@ export function DeploymentWorkspace({
             running.
           </p>
         </div>
-        <button
+        <div className="actions"><button className="btn" onClick={() => setMessagesOpen(true)}><Radio size={15}/>Percepta messages</button><button
           className="btn"
           disabled={checking}
           onClick={() => void check()}
@@ -298,6 +302,7 @@ export function DeploymentWorkspace({
           />
           {checking ? "Checking machines…" : "Check machines"}
         </button>
+        </div>
       </header>
       {error && (
         <div className="notice" role="alert">

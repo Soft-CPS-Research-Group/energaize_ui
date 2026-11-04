@@ -344,3 +344,18 @@ Presentation: refined translucent navigation, menus and inspectors; simplified o
 Release preparation: all UI tests now run before publication; images have a commit-SHA tag as well as main's `latest`. Updated the obsolete Jobs comparison test to check the current two-job reference/candidate view instead of removed ID column headings. Docker proxies accept startup API URLs and work with the infrastructure's internal service names; legacy path redirects preserve the public port. Use a pinned UI SHA during the first coordinated rollout because the existing UI infrastructure has Watchtower for `latest`.
 
 Validation: 178 React tests, 20 classic workspace tests, production build and Docker build passed. Backend unit/domain/router suite: 683 passed. The running local APIs also passed form round-trips for all 13 equipment types, contracts/site overrides and five session types, plus ownership grant/revocation, tags, Mongo source discovery and cursor pagination. The release container served routes and all four API proxies. Credentials and local `.env` files are excluded from commits. Server-specific Mongo credentials, inventory/mappings and the selected image versions must be installed separately; an image does not copy local database contents.
+
+
+## Percepta message inspection
+
+REC Manager → community → house → Deploy → **Percepta messages** opens a read-only
+view of the last 30 persisted Percepta output messages. It refreshes every five
+seconds, with pause, search, pinned selection, section/JSON views and copy/download.
+The timestamp belongs to the stored output; polling success is not evidence that
+every channel is valid or that inference is consuming messages. Values marked
+`generated` retain that marker. No-source, no-data, stale and failed states are distinct.
+
+The API resolves the source from the authorized house; the browser never submits
+a database, collection, container or broker credential. RH01 in Matisse uses its
+existing `percepta-mongo` reference. This viewer does not consume queues, start
+Percepta, change deployment plans or call inference.

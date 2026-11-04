@@ -30,12 +30,13 @@ import availabilityCss from './flexibility-calendar.css?inline';
 import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
 import perceptaCss from './percepta.css?inline';
+import messagesCss from './percepta-messages.css?inline';
 import presentationCss from './presentation.css?inline';
 import experienceCss from './experience.css?inline';
 import mediterraneanCss from './mediterranean.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [deploymentCss,baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss,availabilityCss].join('\n')
+const styles = [deploymentCss,baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss,messagesCss,availabilityCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
 type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'showChannelConfiguration'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
