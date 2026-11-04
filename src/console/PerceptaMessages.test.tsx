@@ -14,7 +14,7 @@ it('inspects real payload sections and JSON without requiring an inference', asy
   render(<PerceptaMessages siteId="house" siteName="RH01" onBack={back}/>);
   expect(await screen.findByText('Receiving recent messages')).toBeInTheDocument();
   expect(api).toHaveBeenCalledWith('/api/runtime/percepta/sites/house/messages', expect.objectContaining({ signal: expect.any(AbortSignal) }));
-  fireEvent.click(screen.getByRole('button', { name: 'JSON', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'JSON' }));
   expect(screen.getByText(/"generated": true/)).toBeInTheDocument();
   expect(screen.getByText(/Source: living_lab/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /Back to deployment/ }));
