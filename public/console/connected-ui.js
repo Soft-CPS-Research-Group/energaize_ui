@@ -11,7 +11,7 @@ async function checkPermission(kind,id,action='manage'){
 async function loadBackend(){
  const selected=sessionStorage.getItem('console-community')||communities[state.community]?.recId;
  const tasks={recs:['community','/api/recs/'],sites:['community','/api/sites/'],assets:['community','/api/assets/'],users:['community','/api/users/'],profiles:['telemetry','/api/telemetry-profiles/'],roles:['access','/api/roles/'],grants:['access','/api/grants/'],events:['flexibility','/api/flexibility-events/'],calendars:['flexibility','/api/calendars/']};
- const result={};await Promise.all(Object.entries(tasks).map(async([key,[service,path]])=>{try{result[key]=await B.request(service,path);connection.status[service]='Connected';}catch(e){connection.status[service]=e.message;throw e;}}));
+ const result={};await Promise.all(Object.entries(tasks).map(async([key,[service,path]])=>{try{result[key]=await B.request(service,path,'GET',undefined,key==='profiles'?AbortSignal.timeout(45000):undefined);connection.status[service]='Connected';}catch(e){connection.status[service]=e.message;throw e;}}));
  connection.raw=result;
  const managers=new Set(result.roles.filter(r=>r.role_name==='rec_manager').map(r=>r.role_id||r.id)),today=P.today();
  const managerIds=new Set(result.grants.filter(g=>managers.has(g.role_id)&&g.grant_status==='active'&&g.validity.start<=today&&today<=g.validity.end).map(g=>g.user_id));
