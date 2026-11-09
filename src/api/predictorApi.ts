@@ -443,3 +443,107 @@ export interface DataQualityResponse {
 export async function getDataQuality(houseId: string): Promise<DataQualityResponse> {
   return predictorHttp<DataQualityResponse>(`/api/houses/${encodeURIComponent(houseId)}/data-quality`);
 }
+
+// ---- EV flexibility (Flexibility backend jobs) -----------------------------
+
+/** One predicted plug-in session, as the predictor sent it to Flexibility. Instants are UTC ISO strings. */
+export interface FlexWindow {
+  starts_at: string;
+  ends_at: string;
+  arrival_range: { p10: string; p90: string };
+  departure_range: { p10: string; p90: string };
+  /** 0-1, null when the charger reports no SoC. */
+  soc_at_arrival: number | null;
+  soc_at_departure: number | null;
+  charger_id: string | null;
+  vehicle_id: string | null;
+  /** Share of past weeks with a plug-in on that weekday. */
+  probability: number;
+  sample_count: number;
+}
+
+export type FlexJobStatus = "completed" | "insufficient_data" | "failed";
+export type FlexForecastSource = "personal" | "global";
+
+/** One Flexibility job the predictor handled. */
+export interface FlexForecast {
+  job_id: string;
+  asset_id: string;
+  house_id: string | null;
+  charger_id: string | null;
+  vehicle_id: string | null;
+  finished_at: string;
+  status: FlexJobStatus;
+  /** "lost" when Flexibility never took the result (lease expired, unreachable). */
+  delivery: "delivered" | "lost";
+  reason: string | null;
+  error: string | null;
+  from_at: string;
+  until_at: string;
+  cutoff_at: string;
+  model: { name: string; version: string } | null;
+  /** Per target (arrival, duration, soc_start, soc_stop): the charger's own forest or the fleet one. */
+  sources: Record<string, FlexForecastSource> | null;
+  session_count: number | null;
+  observed_from: string | null;
+  observed_until: string | null;
+  windows: FlexWindow[];
+}
+
+export interface FlexForecastSummary {
+  job_id: string;
+  finished_at: string;
+  status: FlexJobStatus;
+  delivery: "delivered" | "lost";
+  reason: string | null;
+  from_at: string;
+  until_at: string;
+  model: { name: string; version: string } | null;
+  sources: Record<string, FlexForecastSource> | null;
+  session_count: number | null;
+  window_count: number;
+  first_window: FlexWindow | null;
+}
+
+export interface FlexAsset {
+  asset_id: string;
+  house_id: string | null;
+  charger_id: string | null;
+  vehicle_id: string | null;
+  /** False for a charger that left config/flex_assets.json but still has forecasts in the log. */
+  mapped: boolean;
+  latest: FlexForecastSummary | null;
+}
+
+export interface FlexAssetsResponse {
+  enabled: boolean;
+  assets: FlexAsset[];
+}
+
+export interface FlexWorkerState {
+  enabled: boolean;
+  worker_id?: string;
+  running?: boolean;
+  last_contact_at?: string | null;
+  last_error?: string | null;
+  jobs?: { completed: number; insufficient_data: number; failed: number; lost: number };
+  current_job?: string | null;
+  model?: "qrf" | "kde";
+  global_model?: { built_at: string; cutoff_at: string; assets: number; sessions: number; targets: string[] } | null;
+  assets?: string[];
+}
+
+export async function getFlexWorker(): Promise<FlexWorkerState> {
+  return predictorHttp<FlexWorkerState>("/api/flexibility/worker");
+}
+
+export async function getFlexAssets(): Promise<FlexAssetsResponse> {
+  return predictorHttp<FlexAssetsResponse>("/api/flexibility/assets");
+}
+
+export async function getFlexAssetForecasts(assetId: string, limit: number = 10): Promise<FlexForecast[]> {
+  const res = await predictorHttp<{ asset_id: string; forecasts: FlexForecast[] }>(
+    `/api/flexibility/assets/${encodeURIComponent(assetId)}/forecasts?limit=${limit}`,
+  );
+  return res.forecasts ?? [];
+}

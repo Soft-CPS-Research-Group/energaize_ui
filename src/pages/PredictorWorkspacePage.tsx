@@ -8,6 +8,7 @@ import { PredictView } from "./ai/predictor/PredictView";
 import { TrainView } from "./ai/predictor/TrainView";
 import { LogsView } from "./ai/predictor/LogsView";
 import { AnalysisView } from "./ai/predictor/AnalysisView";
+import { FlexibilityView } from "./ai/predictor/FlexibilityView";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Button } from "../components/ui/Button";
@@ -21,6 +22,7 @@ const TAB_COPY = {
   Train: "Retrain a house's models and follow the job until it finishes.",
   Logs: "Live log stream from the forecasting service.",
   Analysis: "Compare stored models and choose which one each house uses.",
+  Flexibility: "EV plug-in forecasts sent to the Flexibility backend, per charger.",
 } as const;
 
 /** "House 3 has no measurement source. Building B (R-H-09) is not forecast." for the sites a community workspace cannot show. */
@@ -38,7 +40,8 @@ export function PredictorWorkspacePage(): JSX.Element {
   const isLogsTab     = location.pathname.endsWith("/logs");
   const isTrainTab    = location.pathname.endsWith("/train");
   const isAnalysisTab = location.pathname.endsWith("/analysis");
-  const heroTitle     = isLogsTab ? "Logs" : isTrainTab ? "Train" : isAnalysisTab ? "Analysis" : "Predict";
+  const isFlexTab     = location.pathname.endsWith("/flexibility");
+  const heroTitle     = isLogsTab ? "Logs" : isTrainTab ? "Train" : isAnalysisTab ? "Analysis" : isFlexTab ? "Flexibility" : "Predict";
   const [selectedHouse, setSelectedHouseState] = useState<string | null>(
     () => readStorage<string | null>(STORAGE_KEYS.predictorHouse, null)
   );
@@ -149,7 +152,7 @@ export function PredictorWorkspacePage(): JSX.Element {
         </div>
 
         <div className="ai-heading-actions predictor-heading-actions">
-          {!isLogsTab && !isAnalysisTab && (
+          {!isLogsTab && !isAnalysisTab && !isFlexTab && (
             <select
               value={selectedHouse || ""}
               onChange={(e) => setSelectedHouse(e.target.value)}
@@ -181,6 +184,7 @@ export function PredictorWorkspacePage(): JSX.Element {
           <Route path="/train" element={<TrainView selectedHouseId={selectedHouse} timezone={timezone} />} />
           <Route path="/logs" element={<LogsView timezone={timezone} />} />
           <Route path="/analysis" element={<AnalysisView timezone={timezone} />} />
+          <Route path="/flexibility" element={<FlexibilityView timezone={timezone} />} />
           <Route path="*" element={<Navigate to="/app/predictor" replace />} />
         </Routes>
       </div>

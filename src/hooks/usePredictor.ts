@@ -18,6 +18,9 @@ import {
   getDataQuality,
   getGenericModel,
   setGenericModel,
+  getFlexWorker,
+  getFlexAssets,
+  getFlexAssetForecasts,
   PredictorCommandPayload,
   TrainingJob,
   BatchOptions,
@@ -224,5 +227,37 @@ export function useSetGenericModel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["predictor", "generic-model"] });
     },
+  });
+}
+
+/** The EV flexibility worker: on/off, model, job counts and the fleet forest. */
+export function useFlexWorker() {
+  return useQuery({
+    queryKey: ["predictor", "flex", "worker"],
+    queryFn: getFlexWorker,
+    refetchInterval: 30000,
+    // Older predictor builds have no such endpoint.
+    retry: false,
+  });
+}
+
+/** Chargers the EV worker can forecast, each with its latest job. */
+export function useFlexAssets() {
+  return useQuery({
+    queryKey: ["predictor", "flex", "assets"],
+    queryFn: getFlexAssets,
+    refetchInterval: 60000,
+    retry: false,
+  });
+}
+
+/** Recent EV forecast jobs of one charger, newest first. */
+export function useFlexAssetForecasts(assetId: string | null) {
+  return useQuery({
+    queryKey: ["predictor", "flex", "forecasts", assetId],
+    queryFn: () => getFlexAssetForecasts(assetId!),
+    enabled: !!assetId,
+    refetchInterval: 60000,
+    retry: false,
   });
 }

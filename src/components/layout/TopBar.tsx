@@ -32,6 +32,7 @@ const PREDICTOR_TABS = [
   { to: "/app/predictor/train", label: "Train" },
   { to: "/app/predictor/logs", label: "Logs" },
   { to: "/app/predictor/analysis", label: "Analysis" },
+  { to: "/app/predictor/flexibility", label: "Flexibility" },
 ];
 
 const KPI_TABS = [
