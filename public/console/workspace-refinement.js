@@ -22,10 +22,13 @@ function channelConfiguration(c){
  const configured=!!(local||stored||c.source||c.tag||c.external_device_id);
  return {tone:!missing.length?'complete':configured?'partial':'empty',missing};
 }
+function unusedChannelTemplate(c){
+ return c.configuration_status==='template'&&!c.enabled&&!c.tag&&!c.external_device_id&&!c.mongo_binding&&!c.simulation_binding&&!c.collection;
+}
 function equipmentConfiguration(a){
  const data=a.sourcePayload||a.specification||{},fields=technicalChecklist[a.assetType||a.asset_type]||[];
  const missing=fields.filter(k=>!hasDefinition(data[k])).map(k=>DomainForm.label(k));
- const channels=(a.channels||[]).filter(c=>c.configuration_status!=='template'||c.enabled||c.tag||c.external_device_id||c.mongo_binding||c.simulation_binding);
+ const channels=(a.channels||[]).filter(c=>!unusedChannelTemplate(c));
  for(const c of channels){const review=channelConfiguration(c);if(review.missing.length)missing.push((c.label||c.description||c.name)+': '+review.missing.join(', '));}
  if(!channels.length)missing.push('Configure measurement or control channels');
  const populated=fields.some(k=>hasDefinition(data[k]))||(a.channels||[]).some(c=>channelConfiguration(c).tone!=='empty');
@@ -52,7 +55,20 @@ healthSection=function(){
 };
 assetTable=function(){return `<div class="sectionhead"><h2>Equipment</h2>${person().role==='manager'||P.sitePermission(person(),chosen()?.id,'manage')?button('Add equipment','add-asset','plus'):''}</div><div class="tablewrap"><table><thead><tr><th>Equipment</th><th title="One channel per measured quantity or command">Channels</th><th title="External collection references; several channels can share one tag">Tags</th><th>Status</th></tr></thead><tbody>${currentAssets().map(a=>`<tr class="action-row" data-asset="${esc(a.id)}" tabindex="0" aria-label="Open ${esc(a.name)}"><td><span class="namebtn"><span class="square">${icon(a.icon)}</span>${esc(a.name)}</span></td><td>${a.channels.length}</td><td>${new Set(a.channels.map(c=>c.tag).filter(Boolean)).size}</td><td>${configurationDot(equipmentConfiguration(a),a.name)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">No equipment installed yet.</td></tr>'}</tbody></table></div>`;};
 // Replace each channel's status cell independently, retaining its settings action.
-channelTable=function(a){return ['sensor','actuator'].map(kind=>{const channels=a.channels.filter(c=>c.capability_type===kind);return channels.length?`<section class="channels-section"><div class="sectionhead"><h2>${kind==='sensor'?'Measurement channels':'Control channels'}</h2><span class="muted">${channels.length} channels</span></div><div class="tablewrap"><table><thead><tr><th>Channel</th><th>Collection reference</th><th>Unit</th><th>Interval</th><th>Status</th></tr></thead><tbody>${channels.map(c=>`<tr class="action-row" data-channel-edit="${esc(c.name)}" tabindex="0" aria-label="Configure ${esc(c.label||c.name)}"><td><strong>${esc(c.label||c.name)}</strong></td><td class="tag-value">${esc(c.tag||c.external_device_id||'—')}${c.source_field?`<small>${esc(c.source_field)}</small>`:''}</td><td>${esc(c.unit||'—')}</td><td>${kind==='sensor'?intervalLabel(c.sampling_interval_seconds):'—'}</td><td>${configurationDot(channelConfiguration(c),c.label||c.name)}</td></tr>`).join('')}</tbody></table></div></section>`:'';}).join('');};
+channelTable=function(a){
+ return ['sensor','actuator'].map(kind=>{
+  const channels=a.channels.filter(c=>c.capability_type===kind);
+  if(!channels.length)return '';
+  const configured=channels.filter(c=>!unusedChannelTemplate(c));
+  const templates=channels.filter(unusedChannelTemplate);
+  const table=(items,isTemplate=false)=>`<div class="tablewrap"><table><thead><tr><th>Channel</th><th>Collection reference</th><th>Unit</th><th>Interval</th><th>Status</th></tr></thead><tbody>${items.map(c=>{
+   const name=c.label||c.name;
+   const collection=c.collection?.role==='input'?'Percepta input':c.mongo_binding?'Stored readings':'';
+   return `<tr class="action-row" data-channel-edit="${esc(c.name)}" tabindex="0" aria-label="Configure ${esc(name)}"><td><strong>${esc(name)}</strong></td><td class="tag-value">${esc(c.tag||c.external_device_id||'—')}${collection?`<small>${collection}</small>`:''}${c.source_field?`<small>${esc(c.source_field)}</small>`:''}</td><td>${esc(c.unit||'—')}</td><td>${kind==='sensor'?intervalLabel(c.sampling_interval_seconds):'—'}</td><td>${isTemplate?'Unused':configurationDot(channelConfiguration(c),name)}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+  return `<section class="channels-section"><div class="sectionhead"><h2>${kind==='sensor'?'Measurement channels':'Control channels'}</h2><span class="muted">${configured.length} channels</span></div>${configured.length?table(configured):''}${templates.length?`<details><summary>Unused templates (${templates.length})</summary>${table(templates,true)}</details>`:''}</section>`;
+ }).join('');
+};
 function communitySettingsView(){
  const c=comm(),p=c.sourcePayload||{},contracts=p.community_contracts||[];
  return title('Community settings','Community identity, operating interval and shared tariff rules.')+`<section class="settings-section"><div><h2>General</h2><p>Name, location and managing entity.</p></div><div><dl class="definition-list"><div><dt>Name</dt><dd>${esc(c.name)}</dd></div><div><dt>Location</dt><dd>${esc(c.place||'Not set')}</dd></div><div><dt>Managing entity</dt><dd>${esc(c.manager)}</dd></div><div><dt>Control interval</dt><dd>${intervalLabel(c.cadence)}</dd></div></dl><button class="btn" data-action="edit-community-details">Edit community</button></div></section><section class="settings-section"><div><h2>Community tariff</h2><p>Shared prices and rules. Site-specific exceptions stay in each site's settings.</p></div><div>${contracts.map(v=>`<div class="record"><div><strong>${esc(v.name)} · v${v.version}</strong><small>${esc(v.valid_from)} — ${esc(v.valid_until||'Open ended')} · ${v.components.length} price components</small></div></div>`).join('')||'<p class="muted">No community tariff configured.</p>'}<button class="btn" data-action="contracts">Edit community tariff</button></div></section>`;

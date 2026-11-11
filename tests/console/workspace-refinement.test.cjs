@@ -18,6 +18,34 @@ test('configuration distinguishes empty, partial and complete without treating u
  assert.equal(run("channelConfiguration({unit:'kW',capability_type:'sensor',value_semantics:'instantaneous',sampling_interval_seconds:15,simulation_binding:{baseline:1}}).tone"),'complete');
  }finally{dom.window.close();}
 });
+test('the equipment catalogue puts unused templates behind a disclosure',()=>{
+ const {dom,run}=workspace();try{
+  const html=run(`channelTable({channels:[
+   {name:'voltage',capability_type:'sensor',configuration_status:'template',enabled:false},
+   {name:'grid import',capability_type:'sensor',enabled:true,collection:{role:'input'}},
+   {name:'historical phase',capability_type:'sensor',enabled:true,mongo_binding:{}}
+  ]})`);
+  const page=dom.window.document.createElement('div');page.innerHTML=html;
+  assert.equal(page.querySelector('details summary').textContent,'Unused templates (1)');
+  assert.equal(page.querySelector('details [data-channel-edit]').dataset.channelEdit,'voltage');
+  assert.match(page.querySelector('[data-channel-edit="grid import"]').textContent,/Percepta input/);
+  assert.match(page.querySelector('[data-channel-edit="historical phase"]').textContent,/Stored readings/);
+ }finally{dom.window.close();}
+});
+test('equipment reviews are scoped to the selected resource',()=>{
+ const {dom,run}=workspace();try{
+  run(fs.readFileSync('public/console/community-management.js','utf8'));
+  run(`communities.splice(0,communities.length,{recId:'rec',sites:[]});state.community=0;state.page='sites';state.site='house';state.equipment='meter';
+   configurationWork.rows=[
+    {rec_id:'rec',site_id:'house',resource_id:'house'},
+    {rec_id:'rec',site_id:'house',resource_id:'meter'},
+    {rec_id:'other',site_id:'house',resource_id:'meter'}
+   ];`);
+  assert.equal(run("currentConfigurationWork().map(row=>row.resource_id).join(',')"),'meter');
+  run('state.equipment=null;');
+  assert.equal(run('currentConfigurationWork().length'),2);
+ }finally{dom.window.close();}
+});
 test('equipment wizard preserves values across steps and creates only once after review',async()=>{
  const {dom,w,run}=workspace();try{
  run(`communities.splice(0,communities.length,{recId:'rec',name:'Test community',sites:[{id:'site',name:'Test home',assets:[]}]});state.community=0;state.site='site';

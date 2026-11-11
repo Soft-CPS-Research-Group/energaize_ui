@@ -184,6 +184,20 @@ it("keeps a saved draft separate from runtime and blocks unsupported bundle laun
     "Final service contracts are pending.",
   );
 });
+it("opens the running service by default and keeps the plan available", async () => {
+  mock({
+    ...data,
+    components: [
+      { ...data.components[0], state: "running", planned: false, instance_id: "running-percepta" },
+      ...data.components.slice(1),
+    ],
+  });
+  await open();
+  expect(screen.getByRole("button", { name: /In operation/ })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByRole("button", { name: /Percepta · Draft/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
+  expect(screen.getByRole("button", { name: /Deployment plan/ })).toHaveAttribute("aria-pressed", "true");
+});
 it("allows editing connection overlays with cancel and save; automatic mode clears overrides", async () => {
   mock();
   await open();

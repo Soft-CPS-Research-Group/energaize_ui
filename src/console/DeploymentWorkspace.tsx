@@ -111,7 +111,7 @@ export function DeploymentWorkspace({
   const [map, setMap] = useState<DeploymentMap | null>(null),
     [draft, setDraft] = useState<Draft | null>(null),
     [saved, setSaved] = useState<Draft | null>(null);
-  const [view, setView] = useState<"plan" | "operation">("plan"),
+  const [view, setView] = useState<"plan" | "operation" | null>(null),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
   const [checking, setChecking] = useState(false),
@@ -163,7 +163,7 @@ export function DeploymentWorkspace({
     setEditing(null);
     setDetail(null);
     setReview(false);
-    setView("plan");
+    setView(null);
     setMessage("");
     setChecking(false);
     setSaving(false);
@@ -267,7 +267,9 @@ export function DeploymentWorkspace({
       </section>
     );
   if (messagesOpen) return <PerceptaMessages key={siteId} siteId={siteId} siteName={siteName} onBack={() => setMessagesOpen(false)} />;
-  const planning = view === "plan",
+  const planning = view === null
+      ? !map?.components.some((component) => !component.planned && component.state === "running")
+      : view === "plan",
     layout = map && draft ? graphLayout(map, draft, planning) : null;
   const currentService =
     editing && services.includes(editing as Service)
