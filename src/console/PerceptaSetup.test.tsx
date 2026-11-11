@@ -10,7 +10,8 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1']}];
   else if(url.endsWith('/equipment-sources'))data=[];
   else if(url.endsWith('/equipment/asset/source'))data={asset_id:'asset',...JSON.parse(String(init?.body))};
-  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}}];
+  else if(url.endsWith('/connections')&&init?.method==='POST')data={id:'omie',provider:'omie',name:'OMIE day-ahead prices'};
+  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'omie',name:'OMIE day-ahead prices',transport:'scheduled',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}}];
   else if(url.endsWith('/launch'))data={instance_id:'instance',operation:{id:'operation',status:failLaunch?'failed':'succeeded',error:failLaunch?'Source unavailable':undefined}};
   else if(url.includes('/sites/site/signals'))data={capabilities:[]};
   else if(url.includes('/recs/rec/signals'))data={capabilities:[total]};
@@ -68,6 +69,28 @@ it('edits shared measurements from the community entry point',async()=>{
  await screen.findByText('Shared measurement saved. Houses use this definition when their configuration is applied.');
  expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/recs/rec/signals/total')&&init?.method==='PUT')).toBe(true);
  expect(within(dialog).queryByRole('button',{name:'Generate configuration'})).not.toBeInTheDocument();
+});
+it('adds a native OMIE source without credentials and saves the selected market',async()=>{
+ const fetcher=setup(false,false,true);
+ fireEvent.click(screen.getByRole('button',{name:'Community data'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Add source'}));
+ fireEvent.change(screen.getByRole('combobox',{name:/^Service$/}),{target:{value:'omie'}});
+ expect(screen.queryByLabelText('Service address')).not.toBeInTheDocument();
+ expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+ await screen.findByText('OMIE day-ahead prices');
+ fireEvent.click(screen.getByRole('button',{name:'Next: shared data'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
+ fireEvent.change(screen.getByRole('combobox',{name:/^Measurement$/}),{target:{value:'price'}});
+ const market=screen.getByRole('combobox',{name:/^Market/});
+ expect(market).toHaveValue('pt_spot_price');
+ fireEvent.change(market,{target:{value:'es_spot_price'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText(/Shared measurement saved/);
+ const source=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/connections')&&init?.method==='POST');
+ const price=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/recs/rec/signals')&&init?.method==='POST');
+ expect(JSON.parse(String(source?.[1]?.body))).toMatchObject({provider:'omie',configuration:{}});
+ expect(JSON.parse(String(price?.[1]?.body))).toMatchObject({unit:'EUR/kWh',collection:{source_binding:{connection_id:'omie',match_key:'es_spot_price'}}});
 });
 it('fills known connection defaults and asks for credentials only for the selected connector',async()=>{
  setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');

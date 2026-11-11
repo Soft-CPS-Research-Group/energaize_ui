@@ -5,6 +5,7 @@ export type Contract={parameter_type_id:string;vehicle_id?:string|null;parameter
 export type Channel={version?:string|null;capability_id:string;name:string;unit:string;enabled:boolean;capability_type:string;data_type:string;quantity?:string;collection?:Contract|null};
 export type Profile={profile_id:string;asset_type:string;entity_key?:string;capabilities:Channel[]};
 export type Owner={id:string;name:string;scope:'assets'|'sites'|'recs'};
+export const isPriceSource = (provider: string) => provider === 'ren' || provider === 'omie';
 export async function api<T>(path:string,body?:unknown,method='GET'):Promise<T>{
  const response=await fetch(path,{method,headers:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
  if(!response.ok){const error=await response.json().catch(()=>({}));const failure=Object.assign(new Error(error.error?.message||(typeof error.detail==='string'?error.detail:JSON.stringify(error.detail||'Unable to save configuration'))),{status:response.status,code:error.error?.code});throw failure;}
