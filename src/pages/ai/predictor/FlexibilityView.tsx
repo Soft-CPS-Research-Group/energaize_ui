@@ -54,7 +54,7 @@ function WorkerStrip({ worker, assets, timezone }: { worker: FlexWorkerState | u
         )}
       </div>
       <div className="predictor-status-item">
-        <span>Fleet forest <InfoTip tip="Fitted on every mapped charger together. Chargers with little history use it until their own history is enough: 20 sessions for arrival, 40 for dwell, 10 for SoC." width={280} /></span>
+        <span>Fleet forest <InfoTip tip="Fitted on every EV charger together. Chargers with little history use it until their own history is enough: 20 sessions for arrival, 40 for dwell, 10 for SoC." width={280} /></span>
         <strong>{fleet ? `${fleet.assets} chargers` : "Not built"}</strong>
         <small>{fleet ? `${fleet.sessions} sessions · fitted ${fmtTs(fleet.built_at, timezone)}` : "Needs two chargers with history"}</small>
       </div>
@@ -100,7 +100,7 @@ function ChargerTable({ assets, selected, onSelect, timezone }: {
                     <button type="button" className="flex-asset-name" onClick={() => onSelect(asset.asset_id)} title={asset.asset_id}>
                       {chargerName(asset)}
                     </button>
-                    {!asset.mapped && <small className="is-muted"> no longer mapped</small>}
+                    {!asset.mapped && <small className="is-muted"> no longer in the backend</small>}
                   </td>
                   <td>{asset.vehicle_id ?? <span className="is-muted">Any</span>}</td>
                   <td>
@@ -258,8 +258,8 @@ export function FlexibilityView({ timezone }: { timezone: string }) {
           <h2>Chargers</h2>
           <p className="is-muted">
             {community
-              ? `No charger of ${community.name}'s houses is in the predictor's asset map.`
-              : "No charger is mapped yet. Add the Flexibility asset ids to config/flex_assets.json on the forecasting service."}
+              ? `The EnergAIze backend has no EV charger in ${community.name}'s houses.`
+              : "The EnergAIze backend has no EV charger linked to Percepta yet."}
           </p>
         </div>
       ) : (
