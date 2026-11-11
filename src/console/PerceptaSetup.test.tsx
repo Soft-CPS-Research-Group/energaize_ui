@@ -18,7 +18,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   else if(url.includes('/community-api/api/sites/site'))data={id:'site',name:'My house',assigned_rec_id:'rec'};
   else if(url.includes('/community-api/api/assets/'))data=[{id:'asset',data:{site_id:'site',name:'Grid meter'}}];
   else if(url.includes('/connections'))data=[{id:'connection',name:'Meter connection',provider:'softcps'},{id:'second',name:'Second source',provider:'softcps'},{id:'prices',name:'Market prices',provider:'ren'}];
-  else if(url.endsWith('/preview'))data={version:'123abc',channel_count:1,warnings:[],payload:{},executable:true,applied:false};
+  else if(url.split('?')[0].endsWith('/preview'))data={version:'123abc',channel_count:1,warnings:[],payload:{},executable:true,applied:false};
   else if(url.includes('/percepta/sites/site'))data={environment_key:'house',frequency_seconds:15,timezone:'UTC'};
   return new Response(JSON.stringify(data));
  });

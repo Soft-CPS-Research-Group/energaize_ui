@@ -9,7 +9,7 @@ export async function runtimeRequest<T>(path: string, init?: RequestInit): Promi
   }
   return response.json();
 }
-export interface RuntimeHost { id: string; name: string; mode: 'simulation' | 'docker'; allowed_images?: string[]; network?: string }
+export interface RuntimeHost { id: string; name: string; mode: 'simulation' | 'docker'; allowed_images?: string[]; percepta_collection_image?: string; network?: string }
 export interface RuntimeInstance {
   id: string; name: string; kind: 'percepta' | 'controller'; site_ids: string[]; host_id: string;
   configuration_error?: string|null;
