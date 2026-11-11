@@ -30,6 +30,20 @@ export function PerceptaMeasurementEditor({channel,owner,profile,source,connecti
   {owner.scope==='sites'&&contract.parameter_type_id==='non_shiftable_load'&&<p role="note" className="percepta-helper">This Percepta calculation currently omits solar generation. Its output needs validation before use.</p>}
   <details><summary>Advanced measurement settings</summary><div className="percepta-fields"><label>Unit<input value={unit} onChange={e=>setUnit(e.target.value)}/></label><label>Value type<select value={dataType} onChange={e=>setDataType(e.target.value)}>{['float','integer','boolean','string'].map(v=><option key={v}>{v}</option>)}</select></label><label>Technical parameter key<input value={contract.parameter_key||''} onChange={e=>setContract({...contract,parameter_key:e.target.value||null})}/></label><label>Privacy<select value={contract.privacy} onChange={e=>setContract({...contract,privacy:e.target.value})}>{['private','community','public'].map(v=><option key={v}>{v}</option>)}</select></label></div>
   {contract.role==='input'&&<div className="percepta-fields"><label>Field or match key<input value={binding?.match_key||''} onChange={e=>setBinding('match_key',e.target.value||null)}/></label><label>Topic<input value={binding?.topic||''} onChange={e=>setBinding('topic',e.target.value||null)}/></label></div>}
+  {contract.role === 'input' && chosenProvider === 'cleanwatts_2' && (
+    <label>
+      Unit reported by the device
+      <select
+        value={binding?.source_measurement_unit ?? ''}
+        onChange={event => setBinding('source_measurement_unit', event.target.value || null)}
+      >
+        <option value="">Select a unit</option>
+        <option value="Wh">Wh</option>
+        <option value="kWh">kWh</option>
+      </select>
+      <small>Required for the current Percepta format. The measurement unit above is the unit used after conversion.</small>
+    </label>
+  )}
   {contract.temporal_behavior&&<div className="percepta-fields"><label>Period<input type="number" required min="1" value={contract.temporal_behavior.periodicity.value} onChange={e=>setContract({...contract,temporal_behavior:{...contract.temporal_behavior!,periodicity:{...contract.temporal_behavior!.periodicity,value:Number(e.target.value)}}})}/></label><label>Time unit<select value={contract.temporal_behavior.periodicity.unit} onChange={e=>setContract({...contract,temporal_behavior:{...contract.temporal_behavior!,periodicity:{...contract.temporal_behavior!.periodicity,unit:e.target.value}}})}>{['seconds','min','hours'].map(v=><option key={v}>{v}</option>)}</select></label><label>Aggregation<select value={contract.temporal_behavior.aggregation_operation} onChange={e=>setContract({...contract,temporal_behavior:{...contract.temporal_behavior!,aggregation_operation:e.target.value}})}>{['sum','mean','last','min','max'].map(v=><option key={v}>{v}</option>)}</select></label><label>Fill missing periods<select value={contract.temporal_behavior.fill_operation} onChange={e=>setContract({...contract,temporal_behavior:{...contract.temporal_behavior!,fill_operation:e.target.value}})}>{['none','linear','ffill','zero'].map(v=><option key={v}>{v}</option>)}</select></label></div>}
   {contract.temporal_behavior&&<label className="percepta-check"><input type="checkbox" checked={contract.temporal_behavior.cumulative} onChange={e=>setContract({...contract,temporal_behavior:{...contract.temporal_behavior!,cumulative:e.target.checked}})}/>Accumulated quantity over the period</label>}
   {contract.role==='input'&&<label className="percepta-check"><input type="checkbox" checked={binding?.mapping_required??true} onChange={e=>setBinding('mapping_required',e.target.checked)}/>External mapping required</label>}
