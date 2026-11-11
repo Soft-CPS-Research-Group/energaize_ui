@@ -118,6 +118,8 @@ export interface PredictorCommandPayload {
   hyperparams?: Record<string, unknown>;
   /** Keep the new model even when its error (MAE) is higher than the current one's. */
   force?: boolean;
+  /** train-cold only: the houses to pool; every house when left out. */
+  house_ids?: string[];
 }
 
 /** GET /api/health: 200 while compute cycles keep completing, 503 (same body) when stalled. */
@@ -260,6 +262,12 @@ export type GenericModelResponse = Record<"consumption" | "production", GenericM
 
 export async function getGenericModel(): Promise<GenericModelResponse> {
   return predictorHttp<GenericModelResponse>("/api/generic-model");
+}
+
+/** The houses the generic model can be trained on. */
+export async function getGenericModelHouses(): Promise<string[]> {
+  const res = await predictorHttp<{ houses?: string[] }>("/api/generic-model/houses");
+  return res?.houses ?? [];
 }
 
 export async function setGenericModel(payload: { lane: "consumption" | "production"; model_type: GenericBackend }): Promise<{ status: string }> {

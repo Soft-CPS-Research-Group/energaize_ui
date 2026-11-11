@@ -1,9 +1,12 @@
 import { useState } from "react";
+import { InfoTip } from "../../../components/ui/InfoTip";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { usePredictorCommand, usePredictorGenericModel, useSetGenericModel } from "../../../hooks/usePredictor";
+import {
+  usePredictorCommand, usePredictorGenericModel, usePredictorGenericModelHouses, useSetGenericModel,
+} from "../../../hooks/usePredictor";
 import type { GenericBackend, GenericModelLane } from "../../../api/predictorApi";
 import { fmtTs } from "./analysisFormat";
 
@@ -77,10 +80,23 @@ export function GenericModelModal({ open, onClose, timezone }: { open: boolean; 
   const [lanes, setLanes] = useState<"both" | Lane>("both");
   const [backend, setBackend] = useState<"chosen" | GenericBackend>("chosen");
   const [force, setForce] = useState(false);
+  const [pickHouses, setPickHouses] = useState(false);
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const housesQuery = usePredictorGenericModelHouses(open);
+  const allHouses = housesQuery.data ?? [];
+  // Picking starts from every house ticked.
+  const chosen = picked ?? new Set(allHouses);
+  const chosenList = allHouses.filter((h) => chosen.has(h));
+  const someHouses = pickHouses && chosenList.length < allHouses.length;
 
   const retrain = () =>
     commandMutation.mutate(
-      { command: "train-cold", lane: lanes, ...(backend !== "chosen" && { model_type: backend }), ...(force && { force }) },
+      {
+        command: "train-cold", lane: lanes,
+        ...(backend !== "chosen" && { model_type: backend }),
+        ...(force && { force }),
+        ...(someHouses && { house_ids: chosenList }),
+      },
       {
         onSuccess: (res) => { notifySuccess("Generic model training queued", res.message); onClose(); },
         onError: (err) => notifyError("Training not started", err),
@@ -91,7 +107,7 @@ export function GenericModelModal({ open, onClose, timezone }: { open: boolean; 
     <Modal title="Generic model" open={open} onClose={onClose} width="lg">
       <div className="predictor-wizard-step">
         <p className="predictor-wizard-note-text">
-          Forecasts houses without enough history of their own, from the pooled data of every house.
+          Forecasts houses without enough history of their own, from the pooled data of other houses.
         </p>
 
         {isLoading ? (
@@ -128,17 +144,72 @@ export function GenericModelModal({ open, onClose, timezone }: { open: boolean; 
               </div>
             </fieldset>
           </div>
+          <HousePicker
+            houses={allHouses} loading={housesQuery.isLoading} pick={pickHouses} chosen={chosen}
+            onPick={setPickHouses} onChange={setPicked}
+          />
           <ForceOption force={force} onChange={setForce} />
         </section>
 
         <div className="train-modal-footer">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={retrain} disabled={commandMutation.isPending}>
+          <Button variant="primary" onClick={retrain}
+            disabled={commandMutation.isPending || (pickHouses && chosenList.length === 0)}>
             {commandMutation.isPending ? "Starting…" : "Retrain generic model"}
           </Button>
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** All houses, or a ticked subset of them. */
+function HousePicker({ houses, loading, pick, chosen, onPick, onChange }: {
+  houses: string[]; loading: boolean; pick: boolean; chosen: Set<string>;
+  onPick: (pick: boolean) => void; onChange: (chosen: Set<string>) => void;
+}) {
+  const toggle = (house: string) => {
+    const next = new Set(chosen);
+    if (next.has(house)) next.delete(house); else next.add(house);
+    onChange(next);
+  };
+  const count = houses.filter((h) => chosen.has(h)).length;
+
+  return (
+    <fieldset className="predictor-choice-group">
+      <legend>
+        Houses <InfoTip tip="Houses with an uncertain meter unit, or no solar production for the production lane, are still left out." />
+      </legend>
+      <div className="generic-houses-head">
+        <div className="predictor-lane-toggle" role="group" aria-label="Houses">
+          {([[false, "All"], [true, "Pick"]] as const).map(([id, text]) => (
+            <button key={text} type="button" className={`predictor-lane-btn${pick === id ? " is-active" : ""}`}
+              aria-pressed={pick === id} onClick={() => onPick(id)}>{text}</button>
+          ))}
+        </div>
+        {pick && (
+          <>
+            <span className="is-muted">{count} of {houses.length}</span>
+            <button type="button" className="generic-houses-link" onClick={() => onChange(new Set(houses))}>Select all</button>
+            <button type="button" className="generic-houses-link" onClick={() => onChange(new Set())}>Clear</button>
+          </>
+        )}
+      </div>
+      {pick && (loading ? (
+        <p className="is-muted">Loading…</p>
+      ) : houses.length === 0 ? (
+        <p className="is-muted">No houses found.</p>
+      ) : (
+        <div className="generic-houses" role="group" aria-label="Houses to train on">
+          {houses.map((house) => (
+            <label key={house} className="analysis-filter-check">
+              <input type="checkbox" checked={chosen.has(house)} onChange={() => toggle(house)} />
+              <span>{house}</span>
+            </label>
+          ))}
+        </div>
+      ))}
+    </fieldset>
   );
 }
 
