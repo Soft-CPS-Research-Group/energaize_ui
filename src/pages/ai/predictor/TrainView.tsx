@@ -131,7 +131,6 @@ function JobDetailModal({ initial, timezone, onClose }: {
               {fmtMae(job.prev_mae)} → <strong className={improved ? "is-improved" : undefined}>{fmtMae(job.new_mae)}</strong>
             </span>
           </div>
-          <small className="is-muted">Current model → new model. Lower is better; the new model is used only if it is lower, unless the job was started with "keep even if worse".</small>
         </div>
 
         {isActive && (

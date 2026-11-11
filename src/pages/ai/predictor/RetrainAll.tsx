@@ -92,7 +92,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
               options={[["needed", "Only those that need it"], ["all", "Every house"]] as const} />
             <small>
               {only === "needed"
-                ? "Lanes whose forecast is refused, that have no model, that predate unit detection, or whose model is old."
+                ? "Refused forecasts, missing or old models."
                 : "Every house and lane, most urgent first. Up-to-date models go last."}
             </small>
           </fieldset>
@@ -113,11 +113,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
             <legend>Model</legend>
             <Toggle label="Model" value={model} onChange={setModel}
               options={[["active", "Current type"], ["xgboost", "XGBoost"], ["lgbm", "LightGBM"], ["lstm", "LSTM"]] as const} />
-            <small>
-              {model === "active"
-                ? "Each lane retrains the model type it forecasts with now."
-                : model === "lstm" ? "LSTM jobs run one at a time, so this takes longest." : ""}
-            </small>
+            {model === "lstm" && <small>LSTM jobs run one at a time, so this takes longest.</small>}
           </fieldset>
           <fieldset className="predictor-choice-group">
             <legend>Jobs at once</legend>
@@ -130,11 +126,6 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
               <input type="checkbox" checked={includeGeneric} onChange={(e) => setIncludeGeneric(e.target.checked)} />
               <span>Also retrain the generic model</span>
             </label>
-            <small>
-              After the houses, so it learns from their latest data.
-              {community ? " It is shared by every community and learns from all their houses." : ""}
-              {model === "lstm" ? " It has no LSTM version, so it keeps its own type." : ""}
-            </small>
           </div>
           <ForceOption force={force} onChange={setForce} />
         </div>
@@ -183,12 +174,6 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
             </>
           )}
         </section>
-
-        <p className="predictor-wizard-note-text">
-          Each lane becomes a normal training job. {force
-            ? "Every new model replaces the current one."
-            : "A new model replaces the current one only if its error (MAE) is lower."} Lanes that are already training are skipped.
-        </p>
 
         <div className="train-modal-footer">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>

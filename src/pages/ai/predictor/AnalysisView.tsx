@@ -857,7 +857,7 @@ function CompareModelsTab({ initialJob }: { initialJob?: AnalysisJob }) {
       {result && (
         <>
           <div className="panel">
-            <h4>Error by model <span className="analysis-h4-note">lower is better</span></h4>
+            <h4>Error by model</h4>
             <div className="analysis-metric-grid">
               <MetricBars title="MAE (kWh)" tip={METRIC_TIPS.MAE} rows={metricRows((m) => m.mae)} format={(v) => v.toFixed(4)} markLowest />
               <MetricBars title="RMSE (kWh)" tip={METRIC_TIPS.RMSE} rows={metricRows((m) => m.rmse)} format={(v) => v.toFixed(4)} markLowest />
@@ -1010,7 +1010,7 @@ function SegmentAnalysisTab({ initialJob }: { initialJob?: AnalysisJob }) {
           </div>
           {resultSegments.length > 0 && (
             <div className="panel">
-              <h4>MAE by segment <span className="analysis-h4-note">kWh, lower is better</span></h4>
+              <h4>MAE by segment</h4>
               <div className="analysis-metric-grid">
                 {resultSegments.map((seg) => (
                   <MetricBars key={seg} title={SEGMENT_LABELS[seg] ?? seg} rows={segmentRows(seg)} format={(v) => v.toFixed(4)} />
@@ -1411,7 +1411,6 @@ function JobHistoryPanel({ onLoadJob, timezone }: { onLoadJob: (job: AnalysisJob
         <button className="analysis-collapsible-btn" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Job History
         </button>
-        {open && <span className="analysis-history-hint">Open a finished job to see its results again.</span>}
         <Button variant="secondary" size="sm" iconLeft={<RefreshCcw size={12} className={isFetching ? "is-spinning" : ""} />}
           onClick={() => refetch()} disabled={isFetching}>Refresh</Button>
       </div>

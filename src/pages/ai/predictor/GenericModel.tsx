@@ -38,7 +38,7 @@ function LaneCard({ lane, info, timezone }: { lane: Lane; info: GenericModelLane
         </div>
       </div>
       {!chosen && (
-        <small className="is-muted">No backend chosen: each house uses the generic model of its own backend, XGBoost when that one is missing.</small>
+        <small className="is-muted">No backend chosen: follows each house's own backend.</small>
       )}
       {BACKENDS.map(([id, text]) => {
         const file = available[id];
@@ -91,9 +91,7 @@ export function GenericModelModal({ open, onClose, timezone }: { open: boolean; 
     <Modal title="Generic model" open={open} onClose={onClose} width="lg">
       <div className="predictor-wizard-step">
         <p className="predictor-wizard-note-text">
-          Forecasts houses that have too little history or no model of their own. It is trained on the pooled data of
-          every house, leaving out houses whose readings would skew it: an uncertain meter unit, a level far from the
-          other houses (likely another unit), or no production at all.
+          Forecasts houses without enough history of their own, from the pooled data of every house.
         </p>
 
         {isLoading ? (
@@ -128,7 +126,6 @@ export function GenericModelModal({ open, onClose, timezone }: { open: boolean; 
                     aria-pressed={backend === id} onClick={() => setBackend(id)}>{text}</button>
                 ))}
               </div>
-              {backend === "chosen" && <small>Each lane retrains the backend chosen above, XGBoost when none is.</small>}
             </fieldset>
           </div>
           <ForceOption force={force} onChange={setForce} />

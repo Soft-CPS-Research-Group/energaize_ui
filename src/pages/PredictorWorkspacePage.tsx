@@ -17,14 +17,6 @@ import { Modal } from "../components/ui/Modal";
 import { readStorage, writeStorage, STORAGE_KEYS } from "../utils/storage";
 import { PredictorHealthStatus } from "./ai/predictor/PredictorHealthStatus";
 
-const TAB_COPY = {
-  Predict: "Forecasts for the next 24 hours, refreshed every 15 minutes.",
-  Train: "Retrain a house's models and follow the job until it finishes.",
-  Logs: "Live log stream from the forecasting service.",
-  Analysis: "Compare stored models and choose which one each house uses.",
-  Flexibility: "EV plug-in forecasts sent to the Flexibility backend, per charger.",
-} as const;
-
 /** "House 3 has no measurement source. Building B (R-H-09) is not forecast." for the sites a community workspace cannot show. */
 function hiddenSitesText(detail: CommunityHouses): string {
   const name = (site: { name?: string; id: string }) => site.name || site.id;
@@ -134,9 +126,7 @@ export function PredictorWorkspacePage(): JSX.Element {
         <div className="ai-heading-copy">
           <span className="ai-ceramic-compute predictor-ceramic-art" aria-hidden="true" />
           <div>
-            <span className="ai-eyebrow">Forecasting service{community ? ` · ${community.name}` : ""}</span>
             <h1>{heroTitle}</h1>
-            <p>{TAB_COPY[heroTitle]}</p>
             {community && detail && (
               <p className="predictor-scope-note">
                 {houses.length} {houses.length === 1 ? "house" : "houses"} of {community.name}
