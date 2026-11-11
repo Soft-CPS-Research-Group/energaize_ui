@@ -510,7 +510,7 @@ export interface FlexAsset {
   house_id: string | null;
   charger_id: string | null;
   vehicle_id: string | null;
-  /** False for a charger that left config/flex_assets.json but still has forecasts in the log. */
+  /** False for a charger the backend no longer lists (nor config/flex_assets.json) but that still has forecasts in the log. */
   mapped: boolean;
   latest: FlexForecastSummary | null;
 }
