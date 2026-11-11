@@ -87,6 +87,9 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
   try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image})});let operation=result.operation;
    for(let attempt=0;operation.status==='pending'&&attempt<45;attempt++){await new Promise(resolve=>setTimeout(resolve,1000));operation=await runtime<RuntimeOperation>('/api/runtime/operations/'+operation.id);}
    if(operation.status==='failed'){launchRequest.current=null;throw Error(operation.error||'Collection could not start.');}if(operation.status!=='succeeded')throw Error('Start has not been confirmed yet. Check the existing operation before retrying.');onChange();onClose();
+  }catch(e){
+   if((e as {status?:number}).status===409){setSnapshot(null);launchRequest.current=null;}
+   throw e;
   }finally{setLaunchPending(false);}
  });
  const steps=equipmentId?[['channels','Equipment']]:communityMode?[['connections','Sources'],['channels','Shared data']]:[['connections','Sources & equipment'],['general','General measurements'],...configurationOnly?[]:[['settings',initialSetup?'Settings & start':'Settings & review']]];

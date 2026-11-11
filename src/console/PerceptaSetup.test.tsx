@@ -116,6 +116,18 @@ it('keeps setup open when starting fails',async()=>{
  expect(await screen.findByRole('alert')).toHaveTextContent('Source unavailable');expect(screen.getByRole('dialog')).toBeInTheDocument();expect(screen.getByRole('button',{name:'Create & start'})).toBeEnabled();
 });
 
+it('offers to regenerate a collection review after a launch conflict',async()=>{
+ const fetcher=setup(true);
+ const original=fetcher.getMockImplementation()!;
+ fetcher.mockImplementation(async(input,init)=>String(input).endsWith('/launch')
+  ?new Response(JSON.stringify({detail:'Configuration changed. Generate a new review before starting.'}),{status:409})
+  :original(input,init));
+ await reviewInitial();
+ fireEvent.click(screen.getByRole('button',{name:'Create & start'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Configuration changed');
+ expect(screen.getByRole('button',{name:'Generate configuration'})).toBeEnabled();
+});
+
 it('opens the same source and measurements directly from an equipment page',async()=>{
  const fetcher=setup(false,false,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));

@@ -13,7 +13,10 @@ export async function runtimeRequest<T>(path: string, init?: RequestInit): Promi
   const response = await fetch(RUNTIME_API_URL + path, {...init, headers, signal: init?.signal || AbortSignal.timeout(30000)});
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(typeof error.detail === 'string' ? error.detail : `Runtime request failed (${response.status})`);
+    throw Object.assign(
+      new Error(typeof error.detail === 'string' ? error.detail : `Runtime request failed (${response.status})`),
+      {status: response.status},
+    );
   }
   return response.json();
 }
