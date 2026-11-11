@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,useId} from 'react';
 import {Settings2,Pencil,X,ArrowLeft,ChevronRight,PlugZap,Plus,Activity,SlidersHorizontal,Users} from 'lucide-react';
-import {runtimeRequest as runtime,type RuntimeSnapshot,type RuntimeHost,type RuntimeOperation} from '../api/runtimeApi';
+import {runtimeRequest as runtime,runtimeRequestId,type RuntimeSnapshot,type RuntimeHost,type RuntimeOperation} from '../api/runtimeApi';
 import {EVChargingLoader} from '../components/ui/EVChargingLoader';
 import {PerceptaConnectionEditor} from './PerceptaConnectionEditor';
 import {EquipmentArt} from './EquipmentArt';
@@ -83,7 +83,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const saveSource=()=>void run(async()=>{const saved=await runtime<Source>(`/api/runtime/percepta/sites/${siteId}/equipment/${owner!.id}/source`,{method:'PUT',body:JSON.stringify({connection_id:sourceConnection,device_id:needsDevice?device:null})});setSources(previous=>[...previous.filter(s=>s.asset_id!==owner!.id),saved]);setDevice(saved.device_id||'');setEquipmentSourceEditing(false);changed();setNotice('Source saved for this equipment and its measurements.');});
  const saveMeasurement=(body:unknown)=>void run(async()=>{if(conflict)return;if(owner?.scope==='recs'&&!communityMode)throw Error('Community data is edited from community Inventory only.');await api(`/community-api/api/${owner!.scope}/${owner!.id}/signals${editing?'/'+editing.capability_id:''}`,editing?.version?{...(body as object),expected_version:editing.version}:body,editing?'PUT':'POST');await reloadProfile(owner!);setEditing(undefined);changed();setNotice(actuatorEditor?'Actuator definition saved. No command was sent.':communityMode?'Shared measurement saved. Houses use this definition when their configuration is applied.':'Measurement saved.');});
  const startCollection=()=>void run(async()=>{
-  if(configurationOnly||!snapshot)return;const host=destinations.find(h=>h.id===destination),image=destinationImage(host);if(!host||!image)throw Error('Choose a deployment destination.');launchRequest.current??=crypto.randomUUID();setLaunchPending(true);
+  if(configurationOnly||!snapshot)return;const host=destinations.find(h=>h.id===destination),image=destinationImage(host);if(!host||!image)throw Error('Choose a deployment destination.');launchRequest.current??=runtimeRequestId();setLaunchPending(true);
   try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image})});let operation=result.operation;
    for(let attempt=0;operation.status==='pending'&&attempt<45;attempt++){await new Promise(resolve=>setTimeout(resolve,1000));operation=await runtime<RuntimeOperation>('/api/runtime/operations/'+operation.id);}
    if(operation.status==='failed'){launchRequest.current=null;throw Error(operation.error||'Collection could not start.');}if(operation.status!=='succeeded')throw Error('Start has not been confirmed yet. Check the existing operation before retrying.');onChange();onClose();

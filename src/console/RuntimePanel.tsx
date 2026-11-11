@@ -6,7 +6,7 @@ import { RuntimeConfiguration } from './RuntimeConfiguration';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listDeployBundles, getDeployInferenceHealth, switchDeployInferenceBundle, getDeployLogsHistoryChunk, type DeployBundleRecord, type DeployInferenceHealth } from '../api/deployApi';
 import { ArrowRight, Box, Cpu, FileJson, Plus, Radio, RefreshCw, Server, X, Play, Pause, Trash2, Pencil, RotateCw } from 'lucide-react';
-import { runtimeRequest as request, type RuntimeHost, type RuntimeInstance, type RuntimeOperation, type RuntimeSnapshot } from '../api/runtimeApi';
+import { runtimeRequest as request, runtimeRequestId, type RuntimeHost, type RuntimeInstance, type RuntimeOperation, type RuntimeSnapshot } from '../api/runtimeApi';
 
 export interface RuntimePanelProps { siteId?: string; siteName?: string; kind?: 'percepta'|'controller'; navigate: (path: string) => void }
 const label = (value: string) => value.replaceAll('_', ' ').replace(/^./, c => c.toUpperCase());
@@ -37,7 +37,7 @@ export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
   const act=async(work:()=>Promise<unknown>)=>{setBusy(true);setError('');try{await work();await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
   const operation=async(item:RuntimeInstance,action:string)=>{
     await act(async()=>{
-      const submit=(action:string)=>request<RuntimeOperation>('/api/runtime/instances/'+item.id+'/operations',{method:'POST',body:JSON.stringify({action,request_id:crypto.randomUUID()})});
+      const submit=(action:string)=>request<RuntimeOperation>('/api/runtime/instances/'+item.id+'/operations',{method:'POST',body:JSON.stringify({action,request_id:runtimeRequestId()})});
       const complete=async(action:string)=>{
         let result=await submit(action);
         for(let attempt=0;result.status==='pending'&&attempt<45;attempt++){
@@ -63,7 +63,7 @@ export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
   const active=instances.filter(i=>i.observed_state!=='retired');
   const events=operations.slice(0,3);
   const create=()=>void act(async()=>{await request('/api/runtime/instances',{method:'POST',body:JSON.stringify({name,kind,host_id:hostId,site_ids:[siteId],image,config_directory:configDirectory||null,configuration_mode:kind==='percepta'?'generated':'prepared'})});setCreating(false);});
-  const refreshAll=()=>void act(async()=>{setHealthRefresh(n=>n+1);for(const item of active.filter(i=>!i.active_operation))await request('/api/runtime/instances/'+item.id+'/operations',{method:'POST',body:JSON.stringify({action:'refresh',request_id:crypto.randomUUID()})});});
+  const refreshAll=()=>void act(async()=>{setHealthRefresh(n=>n+1);for(const item of active.filter(i=>!i.active_operation))await request('/api/runtime/instances/'+item.id+'/operations',{method:'POST',body:JSON.stringify({action:'refresh',request_id:runtimeRequestId()})});});
   const instanceActions=(item:RuntimeInstance)=>{
     const running=item.observed_state==='running';
     const canApply=running&&item.managed&&item.configuration_mode==='generated'&&!item.configuration_error&&!!item.desired_config_version&&item.desired_config_version!==item.applied_config_version&&hosts.some(h=>h.id===item.host_id&&h.percepta_collection_image===item.image);
