@@ -17,6 +17,7 @@ import {
   cancelBatch,
   getDataQuality,
   getGenericModel,
+  getGenericModelHouses,
   setGenericModel,
   getFlexWorker,
   getFlexAssets,
@@ -216,6 +217,23 @@ export function usePredictorGenericModel(enabled: boolean = true) {
     enabled,
     refetchInterval: 60000,
     // Older predictor builds have no such endpoint.
+    retry: false,
+  });
+}
+
+/** The houses the generic model can be trained on; older predictor builds fall back to the known houses. */
+export function usePredictorGenericModelHouses(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["predictor", "generic-model", "houses"],
+    queryFn: async () => {
+      try {
+        return await getGenericModelHouses();
+      } catch {
+        return getHouses();
+      }
+    },
+    enabled,
+    staleTime: 60000,
     retry: false,
   });
 }
