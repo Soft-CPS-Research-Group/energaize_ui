@@ -541,6 +541,10 @@ export function DeploymentWorkspace({
                         suppressClick.current = false;
                         return;
                       }
+                      if (!planning && node.kind === "percepta" && node.component) {
+                        setDetail("percepta");
+                        return;
+                      }
                       setEditing(planning ? node.kind : "actual:" + node.id);
                     }}
                     onPointerDown={(e) => {

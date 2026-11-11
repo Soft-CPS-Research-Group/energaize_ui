@@ -195,6 +195,9 @@ it("opens the running service by default and keeps the plan available", async ()
   await open();
   expect(screen.getByRole("button", { name: /In operation/ })).toHaveAttribute("aria-pressed", "true");
   expect(screen.queryByRole("button", { name: /Percepta · Draft/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Percepta · Running" }));
+  expect(screen.getByText("Configure percepta")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Back to deployment" }));
   fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
   expect(screen.getByRole("button", { name: /Deployment plan/ })).toHaveAttribute("aria-pressed", "true");
 });

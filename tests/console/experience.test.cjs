@@ -411,6 +411,20 @@ function managementSetup(run) {
     B.request=async(s,p,m,b)=>{writes.push({s,p,m,b});return {id:'resident-1'};};`);
 }
 function formSubmit(w){w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));}
+test('deployment navigation omits inventory completeness and inventory reviews show the Percepta decision', async () => {
+ const {dom,w,run}=workspace();try{
+  managementSetup(run);
+  run(`state.page='sites';state.site='home-1';state.tab='deployment';`);
+  assert.match(run('tree()'),/Home/);
+  assert.doesNotMatch(run('tree()'),/Inventory details missing/);
+  run(`state.tab='assets';B.request=async()=>[{id:'review',rec_id:'rec-1',site_id:'home-1',resource_name:'Home',reason:'site_created',created_at:'2026-10-16T12:00:00Z',status:'pending',resolutions:{percepta:{note:'Applied configuration verified',actor:'Reviewer',resolved_at:'2026-11-11T20:00:00Z'}}}];`);
+  assert.match(run('tree()'),/Inventory details missing/);
+  await run('showConfigurationWork()');
+  assert.match(w.document.querySelector('.configuration-work-list').textContent,/Percepta reviewed.*Applied configuration verified/s);
+  assert.equal(w.document.querySelector('[data-review-target="percepta"]'),null);
+  assert.ok(w.document.querySelector('[data-review-target="algorithm"]'));
+ }finally{dom.window.close();}
+});
 test('comparison contract wizard preserves existing components and history', async () => {
  const {dom,w,run}=workspace();try{
   managementSetup(run);
