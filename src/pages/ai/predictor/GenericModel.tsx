@@ -148,11 +148,11 @@ export function ForceOption({ force, onChange }: { force: boolean; onChange: (fo
     <div className="predictor-choice-group">
       <label className="analysis-filter-check generic-force">
         <input type="checkbox" checked={force} onChange={(e) => onChange(e.target.checked)} />
-        <span>Keep the new model even if its error is higher</span>
+        <span>Keep even if worse</span>
       </label>
       {force && (
         <p className="predictor-wizard-warning" role="status">
-          The new model replaces the current one whatever its error (MAE). The current one is archived and can be promoted back from the Analysis tab.
+          Replaces the current model whatever its MAE. The old one is archived.
         </p>
       )}
     </div>
