@@ -136,7 +136,6 @@ export function TrainWizard({ open, houseId, lstmBusy, onClose }: {
                   </button>
                 ))}
               </div>
-              <small>Both starts one job per lane.</small>
             </fieldset>
             <fieldset className="predictor-choice-group">
               <legend>Model</legend>
