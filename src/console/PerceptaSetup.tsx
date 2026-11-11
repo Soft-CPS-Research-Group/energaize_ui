@@ -8,7 +8,16 @@ import {PerceptaActuatorEditor} from './PerceptaActuatorEditor';
 import {PerceptaMeasurementEditor} from './PerceptaMeasurementEditor';
 import {api,equipmentSource,type Connection,type Connector,type Channel,type Profile,type Owner,type Source} from './perceptaSetupModel';
 
-type CollectionTarget = { host_id: string; image: string };
+type CollectionTarget = { host_id: string; image: string; recSharing?: boolean };
+type RecPeer = { site_id: string; name: string };
+type SiteCollectionSettings = {
+  environment_key: string;
+  frequency_seconds: number;
+  grace_seconds?: number;
+  timezone: string;
+  share_with_rec?: boolean;
+  rec_peers?: RecPeer[];
+};
 type Props={target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;configured?:boolean;compact?:boolean;initialSetup?:boolean;configurationOnly?:boolean;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean};
 export function PerceptaSetup({target,equipmentId,siteId,communityId,onChange,configured=false,compact=false,initialSetup=false,configurationOnly=false,open:controlledOpen,onOpenChange,hideTrigger=false}:Props){
  const [localOpen,setLocalOpen]=useState(false),open=controlledOpen??localOpen;
@@ -28,16 +37,20 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const [conflict,setConflict]=useState(false);
  const [ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [envKey,setEnvKey]=useState(''),[frequency,setFrequency]=useState(15),[timezone,setTimezone]=useState('UTC'),[snapshot,setSnapshot]=useState<RuntimeSnapshot|null>(null);
+ const [grace, setGrace] = useState(2);
+ const [shareWithRec, setShareWithRec] = useState(false);
+ const [recPeers, setRecPeers] = useState<RecPeer[]>([]);
  const [destinations,setDestinations]=useState<RuntimeHost[]>([]),[destination,setDestination]=useState(''),[launchPending,setLaunchPending]=useState(false);
  const launchRequest=useRef<string|null>(null);
  const destinationImage = (host?: RuntimeHost) =>
    host?.allowed_images?.find(image => image === host.percepta_collection_image)
    ?? host?.allowed_images?.find(image => /percepta|data-provider/i.test(image));
- const previewTarget = () => {
-   if (!initialSetup) return target;
-   const image = destinationImage(destinations.find(host => host.id === destination));
-   return image ? {host_id: destination, image} : undefined;
- };
+ const selectedHost = destinations.find(host => host.id === destination);
+ const selectedImage = destinationImage(selectedHost);
+ const selectedTarget = initialSetup && selectedImage
+   ? {host_id: destination, image: selectedImage, recSharing: selectedImage === selectedHost?.percepta_collection_image}
+   : target;
+ const supportsRecSharing = !!selectedTarget?.recSharing && !!rec;
  const owner=owners.find(o=>o.id===ownerId),profile=profiles[ownerId]||null;
  const source=owner?equipmentSource(owner,profile,sources,connections):null;
  const sourceProvider=connections.find(c=>c.id===sourceConnection)?.provider;
@@ -53,8 +66,11 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
   let items:Owner[],community=communityId||'',assignmentsForEquipment:Source[]=[];
   if(communityMode){items=[{id:community,name:'Community data',scope:'recs'}];}
   else{
-   const [site,assets,settings,assignments]=await Promise.all([api<{name:string;assigned_rec_id:string}>(`/community-api/api/sites/${siteId}`),api<Array<{id?:string;asset_id?:string;data?:{site_id?:string;site_Id?:string;name?:string};name?:string}>>('/community-api/api/assets/'),runtime<{environment_key:string;frequency_seconds:number;timezone:string}>(`/api/runtime/percepta/sites/${siteId}`),runtime<Source[]>(`/api/runtime/percepta/sites/${siteId}/equipment-sources`)]);
-   if(!live)return;community=site.assigned_rec_id;setEnvKey(settings.environment_key);setFrequency(settings.frequency_seconds);setTimezone(settings.timezone);setSources(assignments);assignmentsForEquipment=assignments;
+   const [site,assets,settings,assignments]=await Promise.all([api<{name:string;assigned_rec_id:string}>(`/community-api/api/sites/${siteId}`),api<Array<{id?:string;asset_id?:string;data?:{site_id?:string;site_Id?:string;name?:string};name?:string}>>('/community-api/api/assets/'),runtime<SiteCollectionSettings>(`/api/runtime/percepta/sites/${siteId}`),runtime<Source[]>(`/api/runtime/percepta/sites/${siteId}/equipment-sources`)]);
+   if(!live)return;community=site.assigned_rec_id;setEnvKey(settings.environment_key);setFrequency(settings.frequency_seconds);setTimezone(settings.timezone);setSources(assignments);
+   setGrace(settings.grace_seconds ?? 2);
+   setShareWithRec(settings.share_with_rec ?? false);
+   setRecPeers(settings.rec_peers ?? []);assignmentsForEquipment=assignments;
    items=[...assets.filter(a=>String(a.data?.site_id||a.data?.site_Id)===siteId).map(a=>({id:String(a.id||a.asset_id),name:a.data?.name||a.name||'Equipment',scope:'assets' as const})),{id:siteId!,name:'Calculated house measurements',scope:'sites'},...(community?[{id:community,name:'Shared community data',scope:'recs' as const}]:[])];
   }
   const [cons,types,entries]=await Promise.all([runtime<Connection[]>(`/api/runtime/connections?community_id=${community}`),runtime<Connector[]>('/api/runtime/connector-types'),Promise.all(items.map(async o=>[o.id,await readProfile(o)] as const))]);
@@ -120,10 +136,52 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  </>}
  {ready&&!configurationOnly&&tab==='settings'&&<><h3>Review collection</h3><div className="percepta-review-table"><table><thead><tr><th>Measurement / actuator</th><th>Belongs to</th><th>Source</th></tr></thead><tbody>{reviewRows.map(({owner:o,channel:c})=><tr key={c.capability_id}><td>{c.name}</td><td>{o.name}</td><td>{originName(o,c)}</td></tr>)}</tbody></table></div>
  {initialSetup&&<div className="percepta-launch-destination">{destinations.length>1?<label>Run collection on<select value={destination} onChange={e=>{setDestination(e.target.value);setSnapshot(null);launchRequest.current=null;}}>{destinations.map(h=><option key={h.id} value={h.id}>{h.name}</option>)}</select></label>:destinations.length===1?<p>Run collection on {destinations[0].name}</p>:<p role="alert">A platform administrator needs to enable a deployment destination before collection can start.</p>}</div>}
- <form id="percepta-review-form" onSubmit={e=>{e.preventDefault();void run(async()=>{await runtime(`/api/runtime/percepta/sites/${siteId}`,{method:'PUT',body:JSON.stringify({environment_key:envKey,frequency_seconds:frequency,timezone,grace_seconds:2})});const selected = previewTarget();
- const params = selected ? '?' + new URLSearchParams(selected) : '';
- setSnapshot(await runtime(`/api/runtime/percepta/sites/${siteId}/preview${params}`,{method:'POST'}));launchRequest.current=null;onChange();});}}><div className="percepta-fields"><label>Collection interval (seconds)<input type="number" min="5" value={frequency} onChange={e=>{setFrequency(Number(e.target.value));setSnapshot(null);}}/></label><label>Timezone<input value={timezone} onChange={e=>{setTimezone(e.target.value);setSnapshot(null);}}/></label></div><details><summary>Advanced settings</summary><label>House key<input required value={envKey} onChange={e=>{setEnvKey(e.target.value);setSnapshot(null);}}/></label></details></form>
- {snapshot&&<div className="percepta-review" role="status"><h4>Configuration ready</h4><p>{initialSetup?'Ready to create the instance and start collection.':'Stop the instance before applying changes from its controls.'}</p>{snapshot.warnings.map(w=><p key={w}>{w}</p>)}<details><summary>Generated configuration</summary><pre>{JSON.stringify(snapshot.payload,null,2)}</pre></details></div>}</>}
+ <form id="percepta-review-form" onSubmit={event => {
+   event.preventDefault();
+   void run(async () => {
+     await runtime(`/api/runtime/percepta/sites/${siteId}`, {
+       method: 'PUT',
+       body: JSON.stringify({
+         environment_key: envKey, frequency_seconds: frequency, timezone, grace_seconds: grace,
+         ...(supportsRecSharing ? {share_with_rec: shareWithRec} : {}),
+       }),
+     });
+     const params = selectedTarget
+       ? '?' + new URLSearchParams({host_id: selectedTarget.host_id, image: selectedTarget.image})
+       : '';
+     setSnapshot(await runtime(`/api/runtime/percepta/sites/${siteId}/preview${params}`, {method: 'POST'}));
+     if (supportsRecSharing) {
+       const settings = await runtime<SiteCollectionSettings>(`/api/runtime/percepta/sites/${siteId}`);
+       setRecPeers(settings.rec_peers ?? []);
+     }
+     launchRequest.current = null;
+     onChange();
+   });
+ }}>
+   <div className="percepta-fields">
+     <label>Collection interval (seconds)<input type="number" min="5" value={frequency} onChange={event => {setFrequency(Number(event.target.value)); setSnapshot(null);}} /></label>
+     <label>Timezone<input value={timezone} onChange={event => {setTimezone(event.target.value); setSnapshot(null);}} /></label>
+   </div>
+   {supportsRecSharing && <section aria-label="Community sharing">
+     <h4>Community sharing</h4>
+     <label className="percepta-check">
+       <input type="checkbox" checked={shareWithRec} onChange={event => {setShareWithRec(event.target.checked); setSnapshot(null);}} />
+       Share readings with this community
+     </label>
+     <p className="percepta-helper">Houses that enable sharing become peers. Choose Community in the measurement settings to share a reading. Apply the new configuration on each affected house.</p>
+     {shareWithRec && (recPeers.length > 0
+       ? <ul aria-label="Other houses sharing readings">{recPeers.map(peer => <li key={peer.site_id}>{peer.name}</li>)}</ul>
+       : <p className="percepta-helper">No other house has enabled sharing yet.</p>)}
+   </section>}
+   <details>
+     <summary>Advanced settings</summary>
+     <div className="percepta-fields">
+       <label>House key<input required value={envKey} onChange={event => {setEnvKey(event.target.value); setSnapshot(null);}} /></label>
+       <label>Grace period (seconds)<input type="number" min="0" max="30" value={grace} onChange={event => {setGrace(Number(event.target.value)); setSnapshot(null);}} /></label>
+     </div>
+   </details>
+ </form>
+ {snapshot&&<div className="percepta-review" role="status"><h4>Configuration ready</h4><p>{initialSetup?'Ready to create the instance and start collection.':supportsRecSharing?'Apply the configuration from the instance controls.':'Stop the instance before applying changes from its controls.'}</p>{snapshot.warnings.map(w=><p key={w}>{w}</p>)}<details><summary>Generated configuration</summary><pre>{JSON.stringify(snapshot.payload,null,2)}</pre></details></div>}</>}
  </fieldset></div>
  <footer className="percepta-wizard-footer"><p>{hasEditor?'Save or cancel the current edit to continue.':configurationOnly?'Save changes in each editor.':communityMode?'Shared changes take effect when each house applies its configuration.':initialSetup?'Collection starts only when you select Create & start.':'Saved changes take effect when you apply the configuration.'}</p><div><button className="btn" disabled={busy||hasEditor} onClick={()=>step?goToStep(steps[step-1][0]):onClose()}>{step?'Back':'Close'}</button>{equipmentId?<button className="btn primary" disabled={busy||hasEditor} onClick={onClose}>Done</button>:step<steps.length-1?<button className="btn primary" disabled={!ready||busy||hasEditor} onClick={()=>goToStep(steps[step+1][0])}>{communityMode?'Next: shared data':step===0?'Next: general measurements':'Next: review'}</button>:(communityMode||configurationOnly)?<button className="btn primary" disabled={busy||hasEditor} onClick={onClose}>Done</button>:snapshot?<button className="btn primary" disabled={busy||(initialSetup&&!destination)} onClick={initialSetup?startCollection:onClose}>{launchPending?'Starting…':initialSetup?'Create & start':'Done'}</button>:<button form="percepta-review-form" type="submit" className="btn primary" disabled={!ready||busy}>{busy?'Generating…':'Generate configuration'}</button>}</div></footer>
  </dialog>;
