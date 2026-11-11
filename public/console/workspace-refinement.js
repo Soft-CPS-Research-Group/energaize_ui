@@ -9,17 +9,25 @@ const technicalChecklist={
  non_shiftable_load:['consumption_unit','coverage'],appliance:['appliance_type'],generic_device:['device_category'],grid_meter:['meter_role']
 };
 const hasDefinition=v=>v!==null&&v!==undefined&&v!==''&&(!Array.isArray(v)||v.length>0);
+function eventBasedCollection(c){
+ return c.collection?.role==='input'&&!c.collection.temporal_behavior&&['session_status','electric_vehicle','flexibility'].includes(c.collection.parameter_type_id);
+}
 function channelConfiguration(c){
  const missing=[],local=!!c.simulation_binding,stored=!!c.mongo_binding;
+ const binding=c.collection?.role==='input'?c.collection.source_binding:null;
+ const collectionSource=!!binding?.connection_id;
+ const collectionReference=collectionSource&&(binding.mapping_required===false||binding.fetch_key||binding.match_key);
+ const eventBased=eventBasedCollection(c);
+ const unitless=eventBased&&['electric_vehicle','flexibility'].includes(c.collection.parameter_type_id);
  if(!local&&!stored){
-  if(!c.source)missing.push('Source');
-  if(!(c.tag||(c.external_device_id&&c.source_field)))missing.push('Tag or device reference + field');
+  if(!c.source&&!collectionSource)missing.push('Source');
+  if(!(collectionReference||c.tag||(c.external_device_id&&c.source_field)))missing.push('Tag or device reference + field');
  }
- if(!c.unit||c.unit==='unknown')missing.push('Unit');
+ if(!unitless&&(!c.unit||c.unit==='unknown'))missing.push('Unit');
  if(!c.value_semantics||c.value_semantics==='unknown')missing.push('Value meaning');
- if(c.capability_type==='sensor'&&!c.sampling_interval_seconds)missing.push('Sampling interval');
+ if(c.capability_type==='sensor'&&!c.sampling_interval_seconds&&!eventBased&&!c.collection?.temporal_behavior?.periodicity?.value)missing.push('Sampling interval');
  if(c.capability_type==='actuator'&&!c.sign_convention&&!Object.keys(c.enum_mapping||{}).length)missing.push('Command definition');
- const configured=!!(local||stored||c.source||c.tag||c.external_device_id);
+ const configured=!!(local||stored||c.source||c.tag||c.external_device_id||collectionSource);
  return {tone:!missing.length?'complete':configured?'partial':'empty',missing};
 }
 function unusedChannelTemplate(c){
@@ -64,7 +72,8 @@ channelTable=function(a){
   const table=(items,isTemplate=false)=>`<div class="tablewrap"><table><thead><tr><th>Channel</th><th>Collection reference</th><th>Unit</th><th>Interval</th><th>Status</th></tr></thead><tbody>${items.map(c=>{
    const name=c.label||c.name;
    const collection=c.collection?.role==='input'?'Percepta input':c.mongo_binding?'Stored readings':'';
-   return `<tr class="action-row" data-channel-edit="${esc(c.name)}" tabindex="0" aria-label="Configure ${esc(name)}"><td><strong>${esc(name)}</strong></td><td class="tag-value">${esc(c.tag||c.external_device_id||'—')}${collection?`<small>${collection}</small>`:''}${c.source_field?`<small>${esc(c.source_field)}</small>`:''}</td><td>${esc(c.unit||'—')}</td><td>${kind==='sensor'?intervalLabel(c.sampling_interval_seconds):'—'}</td><td>${isTemplate?'Unused':configurationDot(channelConfiguration(c),name)}</td></tr>`;
+   const interval=kind==='sensor'?(eventBasedCollection(c)?'On event':intervalLabel(c.sampling_interval_seconds)):'—';
+   return `<tr class="action-row" data-channel-edit="${esc(c.name)}" tabindex="0" aria-label="Configure ${esc(name)}"><td><strong>${esc(name)}</strong></td><td class="tag-value">${esc(c.tag||c.external_device_id||'—')}${collection?`<small>${collection}</small>`:''}${c.source_field?`<small>${esc(c.source_field)}</small>`:''}</td><td>${esc(c.unit||'—')}</td><td>${interval}</td><td>${isTemplate?'Unused':configurationDot(channelConfiguration(c),name)}</td></tr>`;
   }).join('')}</tbody></table></div>`;
   return `<section class="channels-section"><div class="sectionhead"><h2>${kind==='sensor'?'Measurement channels':'Control channels'}</h2><span class="muted">${configured.length} channels</span></div>${configured.length?table(configured):''}${templates.length?`<details><summary>Unused templates (${templates.length})</summary>${table(templates,true)}</details>`:''}</section>`;
  }).join('');

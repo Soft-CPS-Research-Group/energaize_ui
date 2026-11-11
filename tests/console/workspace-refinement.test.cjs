@@ -32,6 +32,16 @@ test('the equipment catalogue puts unused templates behind a disclosure',()=>{
   assert.match(page.querySelector('[data-channel-edit="historical phase"]').textContent,/Stored readings/);
  }finally{dom.window.close();}
 });
+test('inventory accepts a mapped Percepta event without a polling interval',()=>{
+ const {dom,run}=workspace();try{
+  run(`var channel={name:'session',capability_type:'sensor',unit:'Status',value_semantics:'state',
+   collection:{role:'input',parameter_type_id:'session_status',source_binding:{connection_id:'source',fetch_key:'session'}}};`);
+  assert.equal(run('channelConfiguration(channel).tone'),'complete');
+  assert.match(run('channelTable({channels:[channel]})'),/On event/);
+  run("channel.collection.source_binding.fetch_key='';");
+  assert.match(run('channelConfiguration(channel).missing.join()'),/device reference/);
+ }finally{dom.window.close();}
+});
 test('equipment reviews are scoped to the selected resource',()=>{
  const {dom,run}=workspace();try{
   run(fs.readFileSync('public/console/community-management.js','utf8'));
