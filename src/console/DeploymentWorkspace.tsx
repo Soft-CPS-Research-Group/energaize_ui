@@ -258,10 +258,6 @@ export function DeploymentWorkspace({
         >
           <ArrowLeft size={16} /> Back to deployment
         </button>
-        <p className="notice">
-          Current service controls. Changes here affect the existing runtime
-          configuration; they are separate from the deployment draft.
-        </p>
         <RuntimePanel
           siteId={siteId}
           siteName={siteName}
