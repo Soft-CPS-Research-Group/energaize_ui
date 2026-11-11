@@ -53,28 +53,7 @@ export function formatSocChange(window: Pick<FlexWindow, "soc_at_arrival" | "soc
   return `${formatSoc(window.soc_at_arrival)} → ${formatSoc(window.soc_at_departure)}`;
 }
 
-export interface TimelineBar {
-  /** Percent of the horizon from its start: the median plug-in session. */
-  left: number;
-  width: number;
-  /** Percent span from the early arrival (P10) to the late departure (P90). */
-  rangeLeft: number;
-  rangeWidth: number;
-}
-
 const clamp = (value: number) => Math.min(100, Math.max(0, value));
-
-/** Where a window sits on a horizontal bar spanning [fromAt, untilAt]. */
-export function timelineBar(window: FlexWindow, fromAt: string, untilAt: string): TimelineBar {
-  const start = Date.parse(fromAt);
-  const span = Math.max(1, Date.parse(untilAt) - start);
-  const at = (iso: string) => clamp(((Date.parse(iso) - start) / span) * 100);
-  const left = at(window.starts_at);
-  const rangeLeft = Math.min(at(window.arrival_range.p10), left);
-  const right = at(window.ends_at);
-  const rangeRight = Math.max(at(window.departure_range.p90), right);
-  return { left, width: Math.max(0.5, right - left), rangeLeft, rangeWidth: Math.max(0.5, rangeRight - rangeLeft) };
-}
 
 /** Day boundaries inside the horizon, in *timezone*, as percent positions with a short label. */
 export function dayTicks(fromAt: string, untilAt: string, timezone: string): { left: number; label: string }[] {
@@ -101,4 +80,47 @@ export function assetsInScope(assets: FlexAsset[], houses: string[] | null): Fle
 export function chargerName(asset: Pick<FlexAsset, "house_id" | "charger_id" | "asset_id">): string {
   if (asset.house_id && asset.charger_id) return `${asset.house_id} · ${asset.charger_id}`;
   return asset.charger_id ?? asset.house_id ?? asset.asset_id.slice(0, 8);
+}
+
+// ---- Plug-in chart -----------------------------------------------------------
+
+export interface StayLayout {
+  /** Percent positions on the chart: the usual plug-in to unplug as a bar, the early/late times as whiskers. */
+  barLeft: number;
+  barWidth: number;
+  earlyLeft: number;
+  lateRight: number;
+}
+
+/** Where one predicted stay sits on a chart spanning [from, until] (epoch ms). */
+export function stayLayout(window: FlexWindow, from: number, until: number): StayLayout {
+  const span = Math.max(1, until - from);
+  const at = (iso: string) => clamp(((Date.parse(iso) - from) / span) * 100);
+  const barLeft = at(window.starts_at);
+  const barRight = Math.max(barLeft, at(window.ends_at));
+  return {
+    barLeft,
+    barWidth: Math.max(0.4, barRight - barLeft),
+    earlyLeft: Math.min(barLeft, at(window.arrival_range.p10)),
+    lateRight: Math.max(barRight, at(window.departure_range.p90)),
+  };
+}
+
+/** A habit seen in fewer weeks than this is drawn as "only some weeks". */
+export const REGULAR_HABIT = 0.6;
+
+/** The local days of [from, until] as chart columns: percent start and width, and a short label. */
+export function dayColumns(from: number, until: number, timezone: string): { left: number; width: number; label: string }[] {
+  if (!(until > from)) return [];
+  const iso = (t: number) => new Date(t).toISOString();
+  const cuts = [0, ...dayTicks(iso(from), iso(until), timezone).map((tick) => tick.left), 100];
+  const label = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, weekday: "short", day: "numeric" });
+  const columns: { left: number; width: number; label: string }[] = [];
+  for (let i = 0; i < cuts.length - 1; i += 1) {
+    const width = cuts[i + 1] - cuts[i];
+    if (width < 0.5) continue;
+    const mid = from + ((cuts[i] + width / 2) / 100) * (until - from);
+    columns.push({ left: cuts[i], width, label: label.format(mid) });
+  }
+  return columns;
 }

@@ -3,19 +3,17 @@ import { Info, TriangleAlert } from "lucide-react";
 import { Badge } from "../../../components/ui/Badge";
 import { InfoTip } from "../../../components/ui/InfoTip";
 import { usePredictorScope } from "../../../contexts/PredictorWorkspaceContext";
-import { useFlexAssetForecasts, useFlexAssets, useFlexWorker } from "../../../hooks/usePredictor";
-import type { FlexAsset, FlexForecast, FlexWindow, FlexWorkerState } from "../../../api/predictorApi";
+import { useFlexAssetForecasts, useFlexAssets, useFlexFleetForecasts, useFlexWorker } from "../../../hooks/usePredictor";
+import type { FlexAsset, FlexForecast, FlexWorkerState } from "../../../api/predictorApi";
+import { PlugInChart } from "./PlugInChart";
 import { fmtTs } from "./analysisFormat";
 import {
   assetsInScope,
   chargerName,
-  dayTicks,
-  formatSocChange,
   jobBadge,
   jobBadgeTip,
   modelLabel,
   sourceSummary,
-  timelineBar,
 } from "./flexibilityFormat";
 
 function useTimeFormat(timezone: string) {
@@ -72,7 +70,6 @@ function ChargerTable({ assets, selected, onSelect, timezone }: {
     <div className="panel">
       <div className="flex-panel-head">
         <h2>Chargers</h2>
-        <span className="is-muted">From the predictor's asset map. Select one to see its forecast.</span>
       </div>
       <div className="analysis-table-scroll">
         <table className="table analysis-table flex-asset-table">
@@ -130,39 +127,10 @@ function ChargerTable({ assets, selected, onSelect, timezone }: {
   );
 }
 
-function WindowRow({ window, forecast, timezone }: { window: FlexWindow; forecast: FlexForecast; timezone: string }) {
-  const fmt = useTimeFormat(timezone);
-  const bar = timelineBar(window, forecast.from_at, forecast.until_at);
-  const soc = formatSocChange(window);
-  const tip = [
-    `Plug-in ${fmt.time(window.starts_at)} (P10–P90 ${fmt.time(window.arrival_range.p10)}–${fmt.time(window.arrival_range.p90)})`,
-    `Unplug ${fmt.time(window.ends_at)} (P10–P90 ${fmt.time(window.departure_range.p10)}–${fmt.time(window.departure_range.p90)})`,
-    soc ? `SoC ${soc}` : null,
-    `Seen in ${Math.round(window.probability * 100)}% of past weeks`,
-  ].filter(Boolean).join(" · ");
-  return (
-    <li className="flex-window">
-      <div className="flex-window-label">
-        <strong>{fmt.day(window.starts_at)}</strong>
-        <span>{fmt.time(window.starts_at)} → {fmt.time(window.ends_at)}</span>
-      </div>
-      <div className="flex-window-track" title={tip}>
-        <span className="flex-window-range" style={{ left: `${bar.rangeLeft}%`, width: `${bar.rangeWidth}%` }} />
-        <span className="flex-window-bar" style={{ left: `${bar.left}%`, width: `${bar.width}%` }} />
-      </div>
-      <div className="flex-window-meta">
-        {soc && <span>{soc}</span>}
-        <span className="is-muted">{Math.round(window.probability * 100)}%</span>
-      </div>
-    </li>
-  );
-}
-
 function ForecastPanel({ asset, timezone }: { asset: FlexAsset; timezone: string }) {
   const { data: forecasts, isLoading, isError } = useFlexAssetForecasts(asset.asset_id);
   const fmt = useTimeFormat(timezone);
   const latest = forecasts?.[0];
-  const ticks = latest ? dayTicks(latest.from_at, latest.until_at, timezone) : [];
   const badge = jobBadge(latest);
 
   return (
@@ -193,29 +161,6 @@ function ForecastPanel({ asset, timezone }: { asset: FlexAsset; timezone: string
             {(latest.error || latest.reason) && <p>{latest.error || latest.reason}</p>}
           </div>
         </div>
-      )}
-
-      {latest && latest.windows.length > 0 && (
-        <>
-          <div className="flex-timeline-axis" aria-hidden="true">
-            <span className="flex-window-label" />
-            <div className="flex-window-track is-axis">
-              {ticks.map((tick) => (
-                <span key={tick.left} className="flex-axis-tick" style={{ left: `${tick.left}%` }}>{tick.label}</span>
-              ))}
-            </div>
-            <span className="flex-window-meta"><span className="is-muted">SoC · weeks</span></span>
-          </div>
-          <ul className="flex-window-list" aria-label="Predicted plug-in windows">
-            {latest.windows.map((window) => (
-              <WindowRow key={window.starts_at} window={window} forecast={latest} timezone={timezone} />
-            ))}
-          </ul>
-          <p className="flex-legend is-muted">
-            <span className="flex-legend-swatch is-bar" /> Median plug-in to unplug
-            <span className="flex-legend-swatch is-range" /> Early arrival (P10) to late departure (P90)
-          </p>
-        </>
       )}
 
       {forecasts && forecasts.length > 0 && (
@@ -262,6 +207,10 @@ export function FlexibilityView({ timezone }: { timezone: string }) {
     if (selected && assets.some((a) => a.asset_id === selected)) return;
     setSelected(assets[0].asset_id);
   }, [assets, selected]);
+
+  const fleetQueries = useFlexFleetForecasts(assets.map((a) => a.asset_id));
+  const fleetForecasts: Record<string, FlexForecast | undefined> = {};
+  assets.forEach((asset, i) => { fleetForecasts[asset.asset_id] = fleetQueries[i]?.data?.[0]; });
 
   if (assetsQuery.isError && worker.isError) {
     return (
@@ -316,6 +265,7 @@ export function FlexibilityView({ timezone }: { timezone: string }) {
       ) : (
         <>
           <ChargerTable assets={assets} selected={selected} onSelect={setSelected} timezone={timezone} />
+          <PlugInChart assets={assets} forecasts={fleetForecasts} timezone={timezone} selected={selected} onSelect={setSelected} />
           {selectedAsset && <ForecastPanel asset={selectedAsset} timezone={timezone} />}
         </>
       )}

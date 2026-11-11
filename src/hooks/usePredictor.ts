@@ -261,3 +261,15 @@ export function useFlexAssetForecasts(assetId: string | null) {
     retry: false,
   });
 }
+
+/** The latest EV forecast of each charger, for the plug-in chart. */
+export function useFlexFleetForecasts(assetIds: string[]) {
+  return useQueries({
+    queries: assetIds.map((assetId) => ({
+      queryKey: ["predictor", "flex", "forecasts", assetId, "latest"],
+      queryFn: () => getFlexAssetForecasts(assetId, 1),
+      refetchInterval: 60000,
+      retry: false,
+    })),
+  });
+}
