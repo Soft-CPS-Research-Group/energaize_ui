@@ -43,7 +43,10 @@ function identityIcon(label, action, symbol='edit') {
 function configurationNotice(review, label, actionHtml = '', issuesHtml = '') {
   const complete = review.tone === 'complete';
   const status = complete?'Inventory details complete':'Inventory details missing';
-  return `<details class="configuration-notice is-${review.tone}"><summary aria-label="${esc(label)} · ${status}" title="${status}">${icon(complete?'check':'alert')}</summary><div class="configuration-popover"><h3>${status}</h3>${issuesHtml || (review.missing.length?`<ul>${review.missing.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:'')}<small>See Deployment for live readings and service status.</small>${actionHtml}</div></details>`;
+  const liveHint = person().role === 'manager'
+    ? 'See Deployment for live readings and service status.'
+    : 'See the house overview for live readings.';
+  return `<details class="configuration-notice is-${review.tone}"><summary aria-label="${esc(label)} · ${status}" title="${status}">${icon(complete?'check':'alert')}</summary><div class="configuration-popover"><h3>${status}</h3>${issuesHtml || (review.missing.length?`<ul>${review.missing.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:'')}<small>${liveHint}</small>${actionHtml}</div></details>`;
 }
 function communityNotice() {
   const reviews = scoped().map(s=>({s,r:siteConfiguration(s)}));

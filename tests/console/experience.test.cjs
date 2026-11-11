@@ -277,7 +277,7 @@ test("overview has chart first, four preview KPIs and compact actionable configu
     assert.equal((html.match(/class="kpi-trend/g)||[]).length, 4);
     assert.match(html, /is-improved/); assert.match(html, /is-worse/);
     assert.match(html, /data-action="edit-community-details"/);
-    assert.match(html, /Community notifications/);
+    assert.match(html, /Community · Inventory details missing/);
   } finally {
     dom.window.close();
   }
@@ -365,11 +365,11 @@ test('visual site choices update the API fields and clear incompatible subtypes'
 
 test('equipment technical details preserve zero and false, distinguish site phases, and report actual missing configuration',()=>{
  const {dom,run}=workspace();try{
- run(`var a={assetType:'grid_meter',name:'Meter',sourcePayload:{meter_role:'main',bidirectional:false,max_current_a:0,manufacturer:{name:'Maker',country:'PT'},electrical_connection_type:'three_phase',phase_connection:{phases:['L1','L2','L3']}},channels:[]};var s={sourcePayload:{grid_connection:{phase_type:'three_phase'}}};`);
+ run(`state.personId='manager';var a={assetType:'grid_meter',name:'Meter',sourcePayload:{meter_role:'main',bidirectional:false,max_current_a:0,manufacturer:{name:'Maker',country:'PT'},electrical_connection_type:'three_phase',phase_connection:{phases:['L1','L2','L3']}},channels:[]};var s={sourcePayload:{grid_connection:{phase_type:'three_phase'}}};`);
  const html=run('equipmentDetails(a,s)+configurationNotice(equipmentConfiguration(a),a.name)');
  assert.match(html,/Site connection phases/);assert.match(html,/three phase/);assert.match(html,/Maker · PT/);assert.match(html,/L1 · L2 · L3/);assert.doesNotMatch(html,/\[object Object\]/);assert.match(html,/>No</);assert.match(html,/>0(?:\.0)? <small>A/);
  assert.match(html,/Configure measurement or control channels/);
- assert.match(html,/Live readings and service availability are checked separately/);
+ assert.match(html,/See Deployment for live readings and service status/);
  assert.doesNotMatch(html,/No missing|Equipment online/);
  }finally{dom.window.close();}
 });
