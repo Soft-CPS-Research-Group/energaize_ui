@@ -2,9 +2,9 @@ import type { LogEntry } from "../../../api/predictorApi";
 import { normalizeTs } from "../../../utils/predictorTransforms";
 
 /**
- * The predictor writes two formats, both in container time (UTC):
- *   log file  (GET /api/logs): "2026-10-20 10:00:00,123 | INFO | env | component | message"
- *   live feed (/ws/logs):      "10:00:00 | INFO     | message"
+ * The predictor writes its lines in container time (UTC):
+ *   log file and live feed:      "2026-10-20 10:00:00,123 | INFO | env | component | message"
+ *   live feed of older builds:   "10:00:00 | INFO     | message" (no component)
  * `time` is returned as an ISO string so it can be shown in the chosen timezone.
  */
 export function parseLogLine(raw: string, now: number = Date.now()): LogEntry {

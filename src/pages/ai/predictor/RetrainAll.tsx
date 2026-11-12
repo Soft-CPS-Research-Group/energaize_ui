@@ -5,13 +5,17 @@ import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { Badge } from "../../../components/ui/Badge";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
+import { InfoTip } from "../../../components/ui/InfoTip";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
 import { useCancelBatch, usePredictorBatch, usePredictorBatches, useStartBatch } from "../../../hooks/usePredictor";
 import { planBatch, type BatchOptions, type ModelBackend } from "../../../api/predictorApi";
 import {
-  BATCH_ITEM_LABELS, BATCH_STATUS_LABELS, batchCountsText, batchPercent, countByReason, currentBatch,
+  BATCH_ITEM_LABELS, BATCH_STATUS_LABELS, batchCountsText, batchPercent, countByReason, currentBatch, houseLabel,
 } from "./batchFormat";
 import { fmtTs } from "./analysisFormat";
+import { ForceOption } from "./GenericModel";
+import { houseInScope } from "./workspaceScope";
+import { usePredictorScope } from "../../../contexts/PredictorWorkspaceContext";
 
 const MODEL_LABELS: Record<string, string> = { xgboost: "XGBoost", lgbm: "LightGBM", lstm: "LSTM" };
 const PREVIEW_ROWS = 50;
@@ -47,12 +51,17 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
   const [model, setModel] = useState<ModelChoice>("active");
   const [maxAge, setMaxAge] = useState("30");
   const [parallel, setParallel] = useState("2");
+  const [includeGeneric, setIncludeGeneric] = useState(false);
+  const [force, setForce] = useState(false);
+  // A community workspace retrains only its own houses.
+  const { houses, scope, community } = usePredictorScope();
 
   const ageDays = Number(maxAge);
   const ageValid = maxAge.trim() !== "" && Number.isFinite(ageDays) && ageDays >= 0;
   const options: BatchOptions = {
-    houses: "all", lanes, only, model_type: model,
+    houses: scope ? houses : "all", lanes, only, model_type: model,
     max_model_age_days: ageValid ? ageDays : 30, max_parallel: Number(parallel),
+    include_generic: includeGeneric, force,
   };
 
   const plan = useQuery({
@@ -75,25 +84,20 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
     });
 
   return (
-    <Modal title="Retrain all houses" open={open} onClose={onClose} width="lg">
+    <Modal title={community ? `Retrain all houses of ${community.name}` : "Retrain all houses"} open={open} onClose={onClose} width="lg">
       <div className="predictor-wizard-step">
         <div className="retrain-all-options">
           <fieldset className="predictor-choice-group">
-            <legend>Houses</legend>
+            <legend>Houses <InfoTip tip="Needed: refused forecasts, missing or old models. All: every lane, most urgent first." /></legend>
             <Toggle label="Houses" value={only} onChange={setOnly}
-              options={[["needed", "Only those that need it"], ["all", "Every house"]] as const} />
-            <small>
-              {only === "needed"
-                ? "Lanes whose forecast is refused, that have no model, that predate unit detection, or whose model is old."
-                : "Every house and lane, most urgent first. Up-to-date models go last."}
-            </small>
+              options={[["needed", "Needed"], ["all", "All"]] as const} />
           </fieldset>
           {only === "needed" && (
             <label className="predictor-choice-group retrain-all-age">
-              <span className="retrain-all-field-label">Old after (days)</span>
+              <span className="retrain-all-field-label">Max model age (days) <InfoTip tip="0 ignores age." /></span>
               <input type="number" min={0} step={1} value={maxAge} onChange={(e) => setMaxAge(e.target.value)}
                 aria-invalid={!ageValid} />
-              <small>{ageValid ? (ageDays === 0 ? "Age alone never counts." : "") : "Enter 0 or more."}</small>
+              {!ageValid && <small>0 or more.</small>}
             </label>
           )}
           <fieldset className="predictor-choice-group">
@@ -102,36 +106,36 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
               options={[["both", "Both"], ["consumption", "Consumption"], ["production", "Production"]] as const} />
           </fieldset>
           <fieldset className="predictor-choice-group">
-            <legend>Model</legend>
+            <legend>Model <InfoTip tip="Current: the type each lane uses now. LSTM jobs run one at a time." /></legend>
             <Toggle label="Model" value={model} onChange={setModel}
-              options={[["active", "Current type"], ["xgboost", "XGBoost"], ["lgbm", "LightGBM"], ["lstm", "LSTM"]] as const} />
-            <small>
-              {model === "active"
-                ? "Each lane retrains the model type it forecasts with now."
-                : model === "lstm" ? "LSTM jobs run one at a time, so this takes longest." : ""}
-            </small>
+              options={[["active", "Current"], ["xgboost", "XGBoost"], ["lgbm", "LightGBM"], ["lstm", "LSTM"]] as const} />
           </fieldset>
           <fieldset className="predictor-choice-group">
-            <legend>Jobs at once</legend>
+            <legend>Jobs at once <InfoTip tip="More is faster but uses more of the predictor's CPU and memory while forecasts run." /></legend>
             <Toggle label="Jobs at once" value={parallel} onChange={setParallel}
               options={[["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]] as const} />
-            <small>More is faster but uses more of the predictor's CPU and memory while forecasts run.</small>
           </fieldset>
+          <div className="predictor-choice-group">
+            <label className="analysis-filter-check generic-force">
+              <input type="checkbox" checked={includeGeneric} onChange={(e) => setIncludeGeneric(e.target.checked)} />
+              <span>Retrain generic model</span>
+            </label>
+          </div>
+          <ForceOption force={force} onChange={setForce} />
         </div>
 
         <section className="retrain-all-plan" aria-label="Plan">
           <h4>Plan</h4>
           {!ageValid ? null : plan.isLoading ? (
-            <p className="is-muted">Working out which houses need retraining…</p>
+            <p className="is-muted">Loading…</p>
           ) : plan.isError ? (
             <p className="predictor-wizard-warning" role="alert">
-              The plan could not be loaded ({(plan.error as Error)?.message || "unknown error"}). The predictor may be an older version without batch retraining.
+              Plan unavailable: {(plan.error as Error)?.message || "unknown error"}
             </p>
           ) : items.length === 0 ? (
-            <p className="is-muted">No house needs retraining with these options.</p>
+            <p className="is-muted">Nothing to retrain.</p>
           ) : (
             <>
-              <p className="is-muted">{items.length} {items.length === 1 ? "lane" : "lanes"} will be retrained, in this order.</p>
               <div className="retrain-all-bars">
                 {groups.map((g) => (
                   <div key={g.priority} className="retrain-all-bar-row">
@@ -150,7 +154,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
                     {items.slice(0, PREVIEW_ROWS).map((item, i) => (
                       <tr key={`${item.house_id}-${item.lane}`}>
                         <td className="is-muted">{i + 1}</td>
-                        <td>{item.house_id}</td>
+                        <td>{houseLabel(item.house_id)}</td>
                         <td className="is-capitalized">{item.lane}</td>
                         <td>{MODEL_LABELS[item.model_type] ?? item.model_type}</td>
                         <td className="is-muted">{item.reason}</td>
@@ -158,16 +162,11 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
                     ))}
                   </tbody>
                 </table>
-                {items.length > PREVIEW_ROWS && <p className="is-muted retrain-all-more">and {items.length - PREVIEW_ROWS} more</p>}
+                {items.length > PREVIEW_ROWS && <p className="is-muted retrain-all-more">+{items.length - PREVIEW_ROWS} more</p>}
               </div>
             </>
           )}
         </section>
-
-        <p className="predictor-wizard-note-text">
-          Each lane becomes a normal training job. A new model replaces the current one only if its error (MAE) is lower.
-          Lanes that are already training are skipped.
-        </p>
 
         <div className="train-modal-footer">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -184,6 +183,7 @@ export function RetrainAllModal({ open, onClose }: { open: boolean; onClose: () 
 export function BatchPanel({ timezone }: { timezone: string }) {
   const { notifySuccess, notifyError } = useApiFeedback();
   const { data: batches } = usePredictorBatches();
+  const { scope } = usePredictorScope();
   const summary = currentBatch(batches);
   const [expanded, setExpanded] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
@@ -196,18 +196,21 @@ export function BatchPanel({ timezone }: { timezone: string }) {
   const status = BATCH_STATUS_LABELS[batch.status] ?? { label: batch.status, tone: "neutral" as const };
   const pct = batchPercent(batch);
   const counts = batchCountsText(batch.counts);
-  const items = detail && detail.batch_id === summary.batch_id ? detail.items : [];
+  // The batch is the service's; a community workspace lists only its houses' lanes.
+  const items = (detail && detail.batch_id === summary.batch_id ? detail.items : []).filter((i) => houseInScope(scope, i.house_id));
+  const batchHouses = Array.isArray(batch.options?.houses) ? batch.options.houses.length : null;
+  const what = batchHouses == null ? "all houses" : `${batchHouses} ${batchHouses === 1 ? "house" : "houses"}`;
 
   const stop = () =>
     cancelMutation.mutate(batch.batch_id, {
-      onSuccess: () => { notifySuccess("Retraining stopped", "Waiting lanes were dropped and running jobs are stopping."); setConfirmStop(false); },
+      onSuccess: () => { notifySuccess("Retraining stopped", "Running jobs are stopping."); setConfirmStop(false); },
       onError: (err) => notifyError("Could not stop retraining", err),
     });
 
   return (
     <section className="panel predictor-jobs-panel" aria-label="Retrain all houses">
       <div className="predictor-panel-header">
-        <h2>{running ? "Retraining all houses" : "Last retrain of all houses"}</h2>
+        <h2>{running ? `Retraining ${what}` : `Last retrain of ${what}`}</h2>
         <Badge tone={status.tone}>{status.label}</Badge>
         <span className="is-muted retrain-all-when">
           {running ? `Started ${fmtTs(batch.created_at, timezone)}` : `Finished ${fmtTs(batch.finished_at, timezone)}`}
@@ -231,7 +234,10 @@ export function BatchPanel({ timezone }: { timezone: string }) {
           iconLeft={expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />} onClick={() => setExpanded(!expanded)}>
           {expanded ? "Hide lanes" : "Show lanes"}
         </Button>
-        {expanded && (
+        {expanded && detail && items.length === 0 && (
+          <p className="is-muted">No lanes from this workspace.</p>
+        )}
+        {expanded && items.length > 0 && (
           <div className="retrain-all-table-scroll">
             <table className="table predictor-jobs-table">
               <thead>
@@ -243,7 +249,7 @@ export function BatchPanel({ timezone }: { timezone: string }) {
                   const improved = item.new_mae != null && item.prev_mae != null && item.new_mae < item.prev_mae;
                   return (
                     <tr key={`${item.house_id}-${item.lane}`} title={item.message || undefined}>
-                      <td>{item.house_id}</td>
+                      <td>{houseLabel(item.house_id)}</td>
                       <td className="is-capitalized">{item.lane}</td>
                       <td>{MODEL_LABELS[item.model_type] ?? item.model_type}</td>
                       <td className="is-muted">{item.reason}</td>
@@ -265,7 +271,7 @@ export function BatchPanel({ timezone }: { timezone: string }) {
       <ConfirmDialog
         open={confirmStop}
         title="Stop retraining"
-        message="Lanes that have not started are dropped and the jobs running now are stopped. Models already accepted stay in use."
+        message="Waiting lanes are dropped and running jobs stop. Accepted models stay in use."
         confirmLabel="Stop retraining"
         pending={cancelMutation.isPending}
         onConfirm={stop}

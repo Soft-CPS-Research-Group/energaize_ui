@@ -37,6 +37,8 @@ export interface CommunitySite {
   name?: string;
   location?: string;
   is_community_site?: boolean;
+  /** References to the site in other systems, e.g. its measurement collection (`perceptor-site`). */
+  external_references?: Array<{ system: string; identifier: string }>;
 }
 
 export interface CommunityAsset {

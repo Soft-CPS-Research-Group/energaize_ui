@@ -575,6 +575,128 @@ describe("App integration", () => {
     expect(screen.getByDisplayValue("completed")).toBeInTheDocument();
   });
 
+  it("shows a completed job without waiting for optional results or scanning its files", async () => {
+    seedAiSession();
+    let releaseResult!: () => void;
+    const pending = new Promise<void>(resolve => { releaseResult = resolve; });
+    let resultRequests = 0;
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, async () => {
+        resultRequests++;
+        await pending;
+        return HttpResponse.json({ simulation_data_available: false });
+      }),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      })
+    );
+    try {
+      renderApp("/app/ai/jobs/job-completed-001");
+      expect(await screen.findByRole("button", { name: "Open Logs" })).toBeInTheDocument();
+      await waitFor(() => expect(resultRequests).toBe(1));
+      expect(indexRequests).toBe(0);
+      await userEvent.setup().click(screen.getByRole("button", { name: "Timeseries" }));
+      expect(await screen.findByText("Loading simulation index...")).toBeInTheDocument();
+      expect(screen.queryByText("No simulation data files")).not.toBeInTheDocument();
+    } finally {
+      await act(async () => { releaseResult(); await pending; });
+    }
+  });
+
+  it("shows known missing simulation files without requesting an index, and keeps inline KPIs", async () => {
+    seedAiSession();
+    const user = userEvent.setup();
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () =>
+        HttpResponse.json({ simulation_data_available: false, kpis: { total_cost_eur: 120.5 } })),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=timeseries");
+    expect(await screen.findByText("No simulation data files")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "KPIs" }));
+    await user.click(await screen.findByRole("button", { name: /All KPI drill-down/i }));
+    expect(await screen.findByText("120.5", { exact: false })).toBeInTheDocument();
+    expect(indexRequests).toBe(0);
+  });
+
+  it("shows missing KPIs directly without an empty scorecard or index scan", async () => {
+    seedAiSession();
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () =>
+        HttpResponse.json({ simulation_data_available: false })),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=kpis");
+    expect(await screen.findByText("No KPIs available")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Decision scorecard" })).not.toBeInTheDocument();
+    expect(indexRequests).toBe(0);
+  });
+
+  it("still loads a deployment bundle when no simulation CSVs exist", async () => {
+    seedAiSession();
+    let manifestRequests = 0;
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () =>
+        HttpResponse.json({ simulation_data_available: false })),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ files: [] });
+      }),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/file`, () => {
+        manifestRequests++;
+        return HttpResponse.text(JSON.stringify({ schema_version: "1.0", models: [] }));
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=deploy");
+    expect(await screen.findByRole("heading", { name: "Artifact Manifest" })).toBeInTheDocument();
+    expect(manifestRequests).toBe(1);
+    expect(indexRequests).toBe(0);
+  });
+
+  it.each([404, 503])("checks older result metadata and distinguishes index response %s from empty results", async status => {
+    seedAiSession();
+    let indexRequests = 0;
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/job-completed-001`, () => HttpResponse.json({})),
+      http.post(`${JOB_ORCHESTRATOR_API_URL}/simulation-data/index`, () => {
+        indexRequests++;
+        return HttpResponse.json({ detail: "Test response" }, { status });
+      })
+    );
+    renderApp("/app/ai/jobs/job-completed-001?tab=timeseries");
+    expect(await screen.findByText(status === 404 ? "No simulation data files" : "Could not load simulation files")).toBeInTheDocument();
+    expect(indexRequests).toBe(1);
+  });
+
+  it.each(["finished", "failed", "canceled"])("updates an open job detail to %s and refreshes its result", async terminal => {
+    seedAiSession();
+    let status = "running";
+    const resultStates: string[] = [];
+    server.use(
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/status/lifecycle-test`, () => HttpResponse.json({ job_id: "lifecycle-test", status })),
+      http.get(`${JOB_ORCHESTRATOR_API_URL}/result/lifecycle-test`, () => {
+        resultStates.push(status);
+        return HttpResponse.json({ status });
+      })
+    );
+    renderApp("/app/ai/jobs/lifecycle-test");
+    expect((await screen.findAllByText("running")).length).toBeGreaterThan(0);
+    status = terminal;
+    await waitFor(() => expect(screen.getAllByText(terminal).length).toBeGreaterThan(0), { timeout: 7500 });
+    await waitFor(() => expect(resultStates).toContain(terminal));
+  }, 12000);
+
   it("keeps email notification metadata out of the jobs table and shows it in job details", async () => {
     seedAiSession();
     const user = userEvent.setup();
@@ -677,8 +799,23 @@ describe("App integration", () => {
   it("opens the connected flexibility area from a direct resident route", async () => {
     useCommunityBackendFixture();seedCommunitySession('prosumer');renderApp('/app/community/flexibility');const view=await communityScreen();
     expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
-    expect(view.getByText('No plans for this day')).toBeInTheDocument();
+    expect(await view.findByText('No plans for this day')).toBeInTheDocument();
     expect(view.getByRole('region',{name:'Flexibility calendar'})).toBeInTheDocument();
+  });
+
+  it("opens an empty flexibility calendar for a resident without a community or site", async () => {
+    const fixture=useCommunityBackendFixture();
+    const resident=fixture.users.find(u=>u.id==='resident')!;
+    resident.rec_memberships=[];resident.site_accesses=[];
+    server.use(http.get('*/community-api/api/recs/',()=>HttpResponse.json([])),http.get('*/community-api/api/sites/',()=>HttpResponse.json([])));
+    seedCommunitySession('prosumer');renderApp('/app/community/flexibility');const view=await communityScreen();
+    expect(await view.findByRole('heading',{name:'Flexibility'})).toBeInTheDocument();
+    expect(await view.findByText('No plans for this day')).toBeInTheDocument();
+    expect(view.getByRole('button',{name:'All equipment 0 connected'})).toHaveAttribute('aria-pressed','true');
+    expect(view.queryByRole('button',{name:'Plan flexibility'})).not.toBeInTheDocument();
+    expect(view.queryByText('Unable to open your workspace')).not.toBeInTheDocument();
+    await userEvent.setup().click(within(view.getByRole('navigation',{name:'Primary navigation'})).getByRole('button',{name:'Overview'}));
+    expect(await view.findByText('No site assigned yet')).toBeInTheDocument();
   });
 
   it("lets a resident leave Flexibility through every primary menu destination", async () => {

@@ -40,9 +40,16 @@ function supportingIndicators(scope, days) {
 function identityIcon(label, action, symbol='edit') {
  return `<button type="button" class="identity-icon" data-action="${action}" aria-label="${label}" title="${label}">${icon(symbol)}</button>`;
 }
+function isDeploymentView() {
+  return state.page==='sites'&&state.site&&state.tab==='deployment'&&!state.equipment;
+}
 function configurationNotice(review, label, actionHtml = '', issuesHtml = '') {
   const complete = review.tone === 'complete';
-  return `<details class="configuration-notice is-${review.tone}"><summary aria-label="${esc(label)} notifications" title="${complete?'Configuration complete':'Configuration needs attention'}">${icon(complete?'check':'alert')}</summary><div class="configuration-popover"><h3>${complete?'Configuration complete':'Setup needs attention'}</h3><p>Inventory and channel checks</p>${issuesHtml || (review.missing.length?`<ul>${review.missing.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:'<p>No missing configuration details.</p>')}<small>Live readings and service availability are checked separately.</small>${actionHtml}</div></details>`;
+  const status = complete?'Inventory details complete':'Inventory details missing';
+  const liveHint = person().role === 'manager'
+    ? 'See Deployment for live readings and service status.'
+    : 'See the house overview for live readings.';
+  return `<details class="configuration-notice is-${review.tone}"><summary aria-label="${esc(label)} · ${status}" title="${status}">${icon(complete?'check':'alert')}</summary><div class="configuration-popover"><h3>${status}</h3>${issuesHtml || (review.missing.length?`<ul>${review.missing.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:'')}<small>${liveHint}</small>${actionHtml}</div></details>`;
 }
 function communityNotice() {
   const reviews = scoped().map(s=>({s,r:siteConfiguration(s)}));
@@ -74,9 +81,11 @@ siteDetailOriginal = function () {
       `<div class="energy-overview site-energy">${siteGraph(chosen())}${energyIndicators("site")}<div class="site-services-links"><button data-tab="percepta">${icon("network")}<span><strong>Data collection</strong><small>Percepta and connected sources</small></span>${icon("right")}</button><button data-tab="algorithm">${icon("cpu")}<span><strong>Energy control</strong><small>Algorithm and execution state</small></span>${icon("right")}</button></div></div></div></div>`;
   }
   const site = chosen();
-  html = html.replace(button('Edit site','edit-site','edit'), `<div class="identity-actions">${configurationNotice(siteConfiguration(site), site.name, '<button class="btn text" data-tab="assets">Review equipment</button>')}${identityIcon('Edit site','edit-site')}</div>`);
+  const inventoryNotice = isDeploymentView() ? '' : configurationNotice(siteConfiguration(site), site.name, '<button class="btn text" data-tab="assets">Review equipment</button>');
+  html = html.replace(button('Edit site','edit-site','edit'), `<div class="identity-actions">${inventoryNotice}${identityIcon('Edit site','edit-site')}</div>`);
   html = html.replace('<div class="sitehead"><div><h1>', `<div class="sitehead"><div class="site-identity"><span class="site-product-art">${productArt(siteIllustration(site.sourcePayload?.subtype||site.type))}</span><div><h1>`).replace('</p></div><div class="identity-actions">','</p></div></div><div class="identity-actions">');
   if (state.tab === 'settings') html = html.replace('<h2>Site configuration</h2>', '<div class="sectionhead"><h2>Site configuration</h2>'+button('Edit site','edit-site','edit')+'</div>');
+
   return html;
 };
 const experiencePersonal = personalSiteView;
@@ -104,10 +113,14 @@ personalSiteView = function () {
 tree = function () {
   const visibleSites=person().role==='manager'?scoped():availableSites().filter(s=>s.rec_id===comm().recId);
   const allowed=person().role==='manager'?null:new Set(availableAssets().map(a=>a.id));
+  const showInventoryStatus = !isDeploymentView();
   return `<aside class="tree" aria-label="Sites in ${esc(comm().name)}"><button class="tree-community" data-action="all-sites"><span><small>COMMUNITY</small><strong>${esc(comm().name)}</strong></span>${icon("grid")}</button><div class="tree-sites">${visibleSites
     .map(
-      (s) =>
-        `<button data-site="${esc(s.id)}" class="${state.site === s.id ? "selected" : ""}" ${state.site === s.id ? 'aria-current="page"' : ""}>${icon(s.icon)}<span>${esc(s.name)}</span><i class="dot is-${siteConfiguration(s).tone}"></i></button>${state.site === s.id ? s.assets.filter(a=>!allowed||allowed.has(a.backendId||a.id)).map((a) => `<button class="child ${state.equipment === a.id ? "selected" : ""}" data-asset="${esc(a.id)}">${icon(a.icon)}${esc(a.name)}</button>`).join("") : ""}`,
+      (s) => {
+        const tone = showInventoryStatus ? siteConfiguration(s).tone : null;
+        const status = tone === 'complete' ? 'Inventory details complete' : 'Inventory details missing';
+        return `<button data-site="${esc(s.id)}" class="${state.site === s.id ? "selected" : ""}" ${tone ? `aria-description="${status}"` : ''} ${state.site === s.id ? 'aria-current="page"' : ""}>${icon(s.icon)}<span>${esc(s.name)}</span>${tone ? `<i class="dot is-${tone}" aria-hidden="true" title="${status}"></i>` : ''}</button>${state.site === s.id ? s.assets.filter(a=>!allowed||allowed.has(a.backendId||a.id)).map((a) => `<button class="child ${state.equipment === a.id ? "selected" : ""}" data-asset="${esc(a.id)}">${icon(a.icon)}${esc(a.name)}</button>`).join("") : ""}`;
+      },
     )
     .join("")}</div></aside>`;
 };

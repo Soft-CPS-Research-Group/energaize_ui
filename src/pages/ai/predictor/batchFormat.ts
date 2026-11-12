@@ -1,4 +1,4 @@
-import type { BatchItem, BatchStatus, BatchSummary } from "../../../api/predictorApi";
+import { GENERIC_HOUSE_ID, type BatchItem, type BatchStatus, type BatchSummary } from "../../../api/predictorApi";
 
 type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -24,13 +24,14 @@ export const BATCH_ITEM_LABELS: Record<string, { label: string; tone: Tone }> = 
   SKIPPED: { label: "Skipped", tone: "neutral" },
 };
 
-/** Why lanes are in a batch, most urgent first (the predictor's priorities 0-4). */
+/** Why lanes are in a batch, most urgent first (the predictor's priorities 0-5). */
 export const REASON_GROUPS = [
   { priority: 0, label: "Forecast refused" },
   { priority: 1, label: "No model" },
   { priority: 2, label: "Before unit detection" },
   { priority: 3, label: "Old model" },
   { priority: 4, label: "Up to date" },
+  { priority: 5, label: "Generic model" },
 ] as const;
 
 export interface ReasonCount {
@@ -63,4 +64,9 @@ export function batchCountsText(counts: Record<string, number>): string {
 export function currentBatch(batches: BatchSummary[] | undefined): BatchSummary | null {
   if (!batches || batches.length === 0) return null;
   return batches.find((b) => b.status === "RUNNING") ?? batches[0];
+}
+
+/** Jobs and batch lanes of the generic model carry the house id "cold_start". */
+export function houseLabel(houseId: string): string {
+  return houseId === GENERIC_HOUSE_ID ? "Generic" : houseId;
 }

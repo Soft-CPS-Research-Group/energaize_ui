@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getStats,
   getHealth,
@@ -16,6 +16,12 @@ import {
   startBatch,
   cancelBatch,
   getDataQuality,
+  getGenericModel,
+  getGenericModelHouses,
+  setGenericModel,
+  getFlexWorker,
+  getFlexAssets,
+  getFlexAssetForecasts,
   PredictorCommandPayload,
   TrainingJob,
   BatchOptions,
@@ -62,6 +68,23 @@ export function usePredictorPredictions(houseId: string | null) {
     queryFn: () => getPredictions(houseId!),
     enabled: !!houseId,
     refetchInterval: 60000, // Every minute
+  });
+}
+
+/**
+ * The latest forecast of each house in `houses`, for counting a community's houses.
+ * Shares the cache of usePredictorPredictions; `null` while disabled.
+ */
+export function usePredictorPredictionsOf(houses: string[], enabled: boolean) {
+  return useQueries({
+    queries: houses.map((houseId) => ({
+      queryKey: ["predictor", "predictions_v2", houseId],
+      queryFn: () => getPredictions(houseId),
+      enabled,
+      refetchInterval: 60000,
+    })),
+    // undefined while a house loads, null when its forecast could not be read.
+    combine: (results) => (enabled ? results.map((r) => (r.isError ? null : r.data)) : null),
   });
 }
 
@@ -183,5 +206,88 @@ export function usePredictorDataQuality(houseId: string | null) {
     refetchInterval: 60000,
     // Older predictor builds have no such endpoint; the panel just stays hidden.
     retry: false,
+  });
+}
+
+/** The generic (cold-start) model per lane: chosen backend, trained backends and the houses they pooled. */
+export function usePredictorGenericModel(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["predictor", "generic-model"],
+    queryFn: getGenericModel,
+    enabled,
+    refetchInterval: 60000,
+    // Older predictor builds have no such endpoint.
+    retry: false,
+  });
+}
+
+/** The houses the generic model can be trained on; older predictor builds fall back to the known houses. */
+export function usePredictorGenericModelHouses(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["predictor", "generic-model", "houses"],
+    queryFn: async () => {
+      try {
+        return await getGenericModelHouses();
+      } catch {
+        return getHouses();
+      }
+    },
+    enabled,
+    staleTime: 60000,
+    retry: false,
+  });
+}
+
+export function useSetGenericModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: setGenericModel,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["predictor", "generic-model"] });
+    },
+  });
+}
+
+/** The EV flexibility worker: on/off, model, job counts and the fleet forest. */
+export function useFlexWorker() {
+  return useQuery({
+    queryKey: ["predictor", "flex", "worker"],
+    queryFn: getFlexWorker,
+    refetchInterval: 30000,
+    // Older predictor builds have no such endpoint.
+    retry: false,
+  });
+}
+
+/** Chargers the EV worker can forecast, each with its latest job. */
+export function useFlexAssets() {
+  return useQuery({
+    queryKey: ["predictor", "flex", "assets"],
+    queryFn: getFlexAssets,
+    refetchInterval: 60000,
+    retry: false,
+  });
+}
+
+/** Recent EV forecast jobs of one charger, newest first. */
+export function useFlexAssetForecasts(assetId: string | null) {
+  return useQuery({
+    queryKey: ["predictor", "flex", "forecasts", assetId],
+    queryFn: () => getFlexAssetForecasts(assetId!),
+    enabled: !!assetId,
+    refetchInterval: 60000,
+    retry: false,
+  });
+}
+
+/** The latest EV forecast of each charger, for the plug-in chart. */
+export function useFlexFleetForecasts(assetIds: string[]) {
+  return useQueries({
+    queries: assetIds.map((assetId) => ({
+      queryKey: ["predictor", "flex", "forecasts", assetId, "latest"],
+      queryFn: () => getFlexAssetForecasts(assetId, 1),
+      refetchInterval: 60000,
+      retry: false,
+    })),
   });
 }

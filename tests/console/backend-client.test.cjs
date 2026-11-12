@@ -6,3 +6,14 @@ test('does not invent source mappings from site names or Excel references',()=>{
 test('history preserves missing readings, real timestamps, and site isolation',()=>{const B=client();const points=B.historicalSeries({collections:{a:{items:[{timestamp:'invalid',observations:{}},{timestamp:'2026-10-01T00:00:00Z',observations:{grid_meters:{m:{energy_in_total:0,energy_out_total:2}},solar_generation:4}},{timestamp:'2026-10-01T00:15:00Z',observations:{}}]},b:{items:[{timestamp:'2026-10-01T00:00:00Z',observations:{solar_generation:999}}]}}},'a');assert.equal(points.length,2);assert.equal(points[0].import,0);assert.equal(points[0].solar,4);assert.equal(points[1].import,null);assert.equal(points[1].solar,null);});
 test('transport surfaces validation and connectivity failures, without mock fallback',async()=>{await assert.rejects(client(async()=>({ok:false,status:422,json:async()=>({detail:'Invalid tag'})})).request('telemetry','/api/capabilities/x','PUT',{}),/telemetry: Invalid tag/);await assert.rejects(client(async()=>{throw Error('Offline');}).request('community','/api/sites/'),/Offline/);});
 test('transport uses separate inventory, signal, access, flexibility and measurement routes',async()=>{const urls=[];const B=client(async(url)=>{urls.push(url);return {ok:true,status:200,json:async()=>[]};});for(const s of ['community','access','telemetry','flexibility','measurements'])await B.request(s,'/probe');assert.deepEqual(urls,['/community-api/probe','/access-api/probe','/telemetry-api/probe','/flexibility-api/probe','/measurement-api/probe']);});
+test('transport preserves conflict status and stable error code without retrying',async()=>{
+ let calls=0;const B=client(async()=>{calls++;return {ok:false,status:409,json:async()=>({detail:'Stale',error:{code:'resource.version_conflict',message:'Data changed'}})};});
+ await assert.rejects(B.request('community','/api/sites/s','PUT',{}),e=>e.status===409&&e.code==='resource.version_conflict'&&B.isConflict(e));assert.equal(calls,1);
+});
+test('version belongs to the read snapshot and remains absent for old servers',()=>{
+ const B=client();assert.equal(B.versioned({name:'Draft'},{version:'a'.repeat(64)}).expected_version,'a'.repeat(64));assert.equal('expected_version' in B.versioned({name:'Draft'},{}),false);
+});
+
+test('binding operations can send the original version without changing the binding body',()=>{
+ const B=client();assert.equal(B.versionQuery({version:'a'.repeat(64)}),'?expected_version='+ 'a'.repeat(64));assert.equal(B.versionQuery({}),'');
+});

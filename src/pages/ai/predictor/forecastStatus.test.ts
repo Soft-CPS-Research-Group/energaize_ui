@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentSlotKey, formatAge, forecastNotices, meterDataEnd, nowLineSlot } from './forecastStatus';
+import { currentSlotKey, forecastTimeTitle, formatAge, forecastNotices, meterDataEnd, nowLineSlot, minutesSince } from './forecastStatus';
 
 const now = Date.parse('2026-10-20T12:07:00Z');
 const formatTime = (iso: string) => iso;
@@ -50,6 +50,18 @@ describe('Now line', () => {
     const times = ['2026-10-20T11:30:00Z', '2026-10-20T11:45:00Z', '2026-10-20T12:30:00Z'];
     expect(nowLineSlot(times, '2026-10-20T12:00:00Z')).toBe('2026-10-20T11:45:00Z');
     expect(nowLineSlot(times, '2026-10-20T11:00:00Z')).toBeNull();
+  });
+});
+
+describe('Forecast time', () => {
+  it('reads the UTC target_time the predictor publishes, fractional seconds and all', () => {
+    expect(minutesSince('2026-10-20T12:03:12.512Z', now)).toBe(3);
+    expect(notices({ predictions: forecast('2026-10-20T12:03:12.512Z'), history: history('2026-10-20T11:45:00') })).toEqual([]);
+  });
+
+  it('shows the published time in UTC and in the chosen zone', () => {
+    expect(forecastTimeTitle('2026-10-20T12:03:12.512Z', 'Europe/Lisbon')).toBe('Published 12:03:12 UTC (13:03 Europe/Lisbon)');
+    expect(forecastTimeTitle('2026-10-20T13:03:12+01:00', 'UTC')).toBe('Published 12:03:12 UTC');
   });
 });
 

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Modal } from "../../../components/ui/Modal";
 import { Button } from "../../../components/ui/Button";
 import { useApiFeedback } from "../../../hooks/useApiFeedback";
-import { getArchiveSummary, pruneArchive, type PruneOptions } from "../../../api/analysisApi";
+import { getArchiveSummary, pruneArchive, pruneArchiveOf, type PruneOptions } from "../../../api/analysisApi";
 import { BACKEND_LABELS, LANE_LABELS, fmtTs } from "./analysisFormat";
 
 const PREVIEW_ROWS = 50;
@@ -26,10 +26,14 @@ export function optionalCount(value: string): number | null {
  * Delete old archived model versions. Archived versions are what training
  * replaced; the models in use are never touched. Always shows what would go
  * before anything is deleted.
+ *
+ * `scoped` (a community workspace): "All houses" means the listed houses only, and
+ * the generic models' archive, shared by every community, is left alone.
  */
-export function ArchiveCleanupModal({ open, houses, timezone, onClose }: {
+export function ArchiveCleanupModal({ open, houses, scoped = false, timezone, onClose }: {
   open: boolean;
   houses: string[];
+  scoped?: boolean;
   timezone: string;
   onClose: () => void;
 }) {
@@ -43,16 +47,19 @@ export function ArchiveCleanupModal({ open, houses, timezone, onClose }: {
   const days = optionalCount(olderThan);
   const valid = !Number.isNaN(keepN) && !Number.isNaN(days) && (keepN != null || days != null);
   const options: PruneOptions = { keep_latest: keepN, older_than_days: days, house_id: house === "all" ? null : house };
+  const everyScopedHouse = scoped && house === "all";
+  const run = (dryRun: boolean) => (everyScopedHouse ? pruneArchiveOf(options, houses, dryRun) : pruneArchive(options, dryRun));
 
-  const summary = useQuery({ queryKey: ["analysis", "archive"], queryFn: getArchiveSummary, enabled: open });
+  // The archive summary covers every house, so a community workspace leaves it out.
+  const summary = useQuery({ queryKey: ["analysis", "archive"], queryFn: getArchiveSummary, enabled: open && !scoped });
   const preview = useQuery({
-    queryKey: ["analysis", "archive", "preview", options],
-    queryFn: () => pruneArchive(options, true),
+    queryKey: ["analysis", "archive", "preview", options, everyScopedHouse ? houses : null],
+    queryFn: () => run(true),
     enabled: open && valid,
   });
 
   const prune = useMutation({
-    mutationFn: () => pruneArchive(options, false),
+    mutationFn: () => run(false),
     onSuccess: (res) => {
       notifySuccess("Archive cleaned", `Deleted ${res.count} archived ${res.count === 1 ? "model" : "models"}, freeing ${formatBytes(res.freed_bytes)}.`);
       queryClient.invalidateQueries({ queryKey: ["analysis", "archive"] });
@@ -68,7 +75,7 @@ export function ArchiveCleanupModal({ open, houses, timezone, onClose }: {
     <Modal title="Clean up archived models" open={open} onClose={onClose} width="lg">
       <div className="predictor-wizard-step">
         <p className="is-muted archive-cleanup-summary">
-          {summary.data
+          {summary.data && !scoped
             ? `${summary.data.count} archived ${summary.data.count === 1 ? "version" : "versions"} use ${formatBytes(summary.data.size_bytes)}.`
             : "Archived versions are the models training replaced."}{" "}
           Models in use are never deleted.
@@ -85,7 +92,7 @@ export function ArchiveCleanupModal({ open, houses, timezone, onClose }: {
           <label className="analysis-filter-field">
             <span>House</span>
             <select className="predictor-house-select" value={house} onChange={(e) => setHouse(e.target.value)}>
-              <option value="all">All houses</option>
+              <option value="all">{scoped ? "All houses in this workspace" : "All houses"}</option>
               {houses.map((h) => <option key={h} value={h}>{h}</option>)}
             </select>
           </label>

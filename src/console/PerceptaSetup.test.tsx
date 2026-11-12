@@ -3,14 +3,15 @@ import {afterEach,beforeAll,expect,it,vi} from 'vitest';
 import {PerceptaSetup} from './PerceptaSetup';
 beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
 afterEach(()=>vi.unstubAllGlobals());
-function setup(initialSetup=false,failLaunch=false,community=false,equipment=false){
- const channel={capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
+function setup(initialSetup=false,failLaunch=false,community=false,equipment=false,configurationOnly=false){
+ const channel={version:'a'.repeat(64),capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
  const total={...channel,capability_id:'total',name:'Community import',collection:{parameter_type_id:'energy_in_total',role:'community_output',privacy:'community',necessary:true}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);let data:unknown={};
   if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1']}];
   else if(url.endsWith('/equipment-sources'))data=[];
   else if(url.endsWith('/equipment/asset/source'))data={asset_id:'asset',...JSON.parse(String(init?.body))};
-  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}}];
+  else if(url.endsWith('/connections')&&init?.method==='POST')data={id:'omie',provider:'omie',name:'OMIE day-ahead prices'};
+  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'omie',name:'OMIE day-ahead prices',transport:'scheduled',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}}];
   else if(url.endsWith('/launch'))data={instance_id:'instance',operation:{id:'operation',status:failLaunch?'failed':'succeeded',error:failLaunch?'Source unavailable':undefined}};
   else if(url.includes('/sites/site/signals'))data={capabilities:[]};
   else if(url.includes('/recs/rec/signals'))data={capabilities:[total]};
@@ -18,12 +19,12 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   else if(url.includes('/community-api/api/sites/site'))data={id:'site',name:'My house',assigned_rec_id:'rec'};
   else if(url.includes('/community-api/api/assets/'))data=[{id:'asset',data:{site_id:'site',name:'Grid meter'}}];
   else if(url.includes('/connections'))data=[{id:'connection',name:'Meter connection',provider:'softcps'},{id:'second',name:'Second source',provider:'softcps'},{id:'prices',name:'Market prices',provider:'ren'}];
-  else if(url.endsWith('/preview'))data={version:'123abc',channel_count:1,warnings:[],payload:{},executable:true,applied:false};
+  else if(url.split('?')[0].endsWith('/preview'))data={version:'123abc',channel_count:1,warnings:[],payload:{},executable:true,applied:false};
   else if(url.includes('/percepta/sites/site'))data={environment_key:'house',frequency_seconds:15,timezone:'UTC'};
   return new Response(JSON.stringify(data));
  });
  vi.stubGlobal('fetch',fetcher);
- render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured initialSetup={initialSetup} onChange={vi.fn()}/>);
+ render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured configurationOnly={configurationOnly} initialSetup={initialSetup} onChange={vi.fn()}/>);
  return fetcher;
 }
 async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');fireEvent.click(screen.getByRole('button',{name:'View equipment for Meter connection'}));}
@@ -69,6 +70,28 @@ it('edits shared measurements from the community entry point',async()=>{
  expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/recs/rec/signals/total')&&init?.method==='PUT')).toBe(true);
  expect(within(dialog).queryByRole('button',{name:'Generate configuration'})).not.toBeInTheDocument();
 });
+it('adds a native OMIE source without credentials and saves the selected market',async()=>{
+ const fetcher=setup(false,false,true);
+ fireEvent.click(screen.getByRole('button',{name:'Community data'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Add source'}));
+ fireEvent.change(screen.getByRole('combobox',{name:/^Service$/}),{target:{value:'omie'}});
+ expect(screen.queryByLabelText('Service address')).not.toBeInTheDocument();
+ expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+ await screen.findByText('OMIE day-ahead prices');
+ fireEvent.click(screen.getByRole('button',{name:'Next: shared data'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
+ fireEvent.change(screen.getByRole('combobox',{name:/^Measurement$/}),{target:{value:'price'}});
+ const market=screen.getByRole('combobox',{name:/^Market/});
+ expect(market).toHaveValue('pt_spot_price');
+ fireEvent.change(market,{target:{value:'es_spot_price'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText(/Shared measurement saved/);
+ const source=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/connections')&&init?.method==='POST');
+ const price=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/recs/rec/signals')&&init?.method==='POST');
+ expect(JSON.parse(String(source?.[1]?.body))).toMatchObject({provider:'omie',configuration:{}});
+ expect(JSON.parse(String(price?.[1]?.body))).toMatchObject({unit:'EUR/kWh',collection:{source_binding:{connection_id:'omie',match_key:'es_spot_price'}}});
+});
 it('fills known connection defaults and asks for credentials only for the selected connector',async()=>{
  setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');
  fireEvent.click(screen.getByRole('button',{name:'Add source'}));
@@ -91,6 +114,18 @@ it('starts only after Create & start and closes after confirmation',async()=>{
 it('keeps setup open when starting fails',async()=>{
  setup(true,true);await reviewInitial();fireEvent.click(screen.getByRole('button',{name:'Create & start'}));
  expect(await screen.findByRole('alert')).toHaveTextContent('Source unavailable');expect(screen.getByRole('dialog')).toBeInTheDocument();expect(screen.getByRole('button',{name:'Create & start'})).toBeEnabled();
+});
+
+it('offers to regenerate a collection review after a launch conflict',async()=>{
+ const fetcher=setup(true);
+ const original=fetcher.getMockImplementation()!;
+ fetcher.mockImplementation(async(input,init)=>String(input).endsWith('/launch')
+  ?new Response(JSON.stringify({detail:'Configuration changed. Generate a new review before starting.'}),{status:409})
+  :original(input,init));
+ await reviewInitial();
+ fireEvent.click(screen.getByRole('button',{name:'Create & start'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Configuration changed');
+ expect(screen.getByRole('button',{name:'Generate configuration'})).toBeEnabled();
 });
 
 it('opens the same source and measurements directly from an equipment page',async()=>{
@@ -139,4 +174,40 @@ it('keeps house measurements in the general step and restores the owner when nav
  expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/sites/site/signals')&&init?.method==='POST')).toBe(true);
  expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/recs/')&&(init?.method||'GET')!=='GET')).toBe(false);
  expect(screen.getByRole('region',{name:'From your community'})).toBeInTheDocument();
+});
+
+it('keeps a channel draft after a conflict and reloads only at the user’s request',async()=>{
+ const fetcher=setup(false,false,false,true);const original=fetcher.getMockImplementation()!;
+ fetcher.mockImplementation(async(input,init)=>init?.method==='PUT'&&String(input).endsWith('/signals/channel')?new Response(JSON.stringify({detail:'Stale',error:{code:'resource.version_conflict'}}),{status:409}):original(input,init));
+ fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
+ fireEvent.click(await screen.findByRole('button',{name:/Grid import/}));
+ fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'My unsaved measurement'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Your edits have been kept');
+ expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('My unsaved measurement');
+ expect(screen.getByRole('button',{name:'Save measurement'})).toBeDisabled();
+ const writes=()=>fetcher.mock.calls.filter(([url,init])=>String(url).endsWith('/signals/channel')&&init?.method==='PUT');
+ expect(writes()).toHaveLength(1);expect(JSON.parse(String(writes()[0][1]?.body)).expected_version).toBe('a'.repeat(64));
+ fireEvent.click(screen.getByRole('button',{name:'Discard edits and reload'}));
+ await screen.findByText('Latest data loaded. Select the measurement again to review and edit.');
+ expect(screen.queryByRole('textbox',{name:'Name'})).not.toBeInTheDocument();expect(writes()).toHaveLength(1);
+});
+
+it('configures sources and measurements without offering or calling runtime launch in deployment mode',async()=>{
+ const fetcher=setup(true,false,false,false,true);
+ fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));
+ expect(screen.getByRole('status')).toHaveClass('ev-loader');
+ await screen.findByText('Meter connection');
+ expect(screen.getByText(/step 1 of 2/)).toBeInTheDocument();
+ expect(screen.queryByText(/Settings & start|Collection starts only/)).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Next: general measurements'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
+ expect(screen.getByRole('button',{name:'Done'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText('Measurement saved.');
+ expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/sites/site/signals')&&init?.method==='POST')).toBe(true);
+ expect(screen.queryByRole('button',{name:/Create & start|Generate configuration|Next: review/})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Done'}));
+ expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+ expect(fetcher.mock.calls.some(([url])=>/\/(hosts|launch|preview|operations)(\/|$)/.test(String(url)))).toBe(false);
 });

@@ -1,4 +1,4 @@
-import { jobOrchestratorHttp } from "../api/client";
+import { ApiError, jobOrchestratorHttp } from "../api/client";
 import type { SimulationDataFileEntry } from "../types";
 import { parseSimulationDataFile } from "../utils/simulationData";
 
@@ -27,6 +27,7 @@ export interface SimulationDataSource {
 interface GetSimulationDataIndexInput {
   jobId: string;
   simulationDataDir?: string | null;
+  simulationDataAvailable?: boolean | null;
   simulationDataSessionDefault?: string | null;
 }
 
@@ -105,11 +106,22 @@ function getMockFiles(jobId: string): SimulationDataFileEntry[] {
 export async function getSimulationDataIndex({
   jobId,
   simulationDataDir,
+  simulationDataAvailable,
   simulationDataSessionDefault
 }: GetSimulationDataIndexInput): Promise<SimulationDataSource> {
   const resolvedJobId = resolveJobId(jobId, simulationDataDir ?? null);
 
   if (PROVIDER_MODE === "backend" && resolvedJobId) {
+    const emptySource: SimulationDataSource = {
+      provider: "backend",
+      jobId: resolvedJobId,
+      session: simulationDataSessionDefault || "latest",
+      rootPath: simulationDataDir || "",
+      files: [],
+      availableDays: []
+    };
+    // Absence of simulation CSVs does not imply absence of a deployment bundle.
+    if (simulationDataAvailable === false) return emptySource;
     try {
       const response = await getBackendIndex(resolvedJobId, simulationDataSessionDefault || null);
       const files = response.files
@@ -124,8 +136,9 @@ export async function getSimulationDataIndex({
         files,
         availableDays: response.available_days || []
       };
-    } catch {
-      // Fall back to local mock source when backend bridge is unavailable.
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return emptySource;
+      throw error;
     }
   }
 

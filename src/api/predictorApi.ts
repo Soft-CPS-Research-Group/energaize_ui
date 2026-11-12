@@ -22,6 +22,7 @@ export interface PredictorHistoryResponse {
 
 /** The latest published forecast; every field is null until the house gets its first one. */
 export interface PredictorPredictionsResponse {
+  /** When the forecast cycle ran, in UTC ("2026-10-22T09:03:12.5Z"); values[0] is the slot it falls in. */
   target_time: string | null;
   consumption: number[] | null;
   production: number[] | null;
@@ -115,6 +116,10 @@ export interface PredictorCommandPayload {
   model_schema?: string;
   model_type?: ModelBackend;
   hyperparams?: Record<string, unknown>;
+  /** Keep the new model even when its error (MAE) is higher than the current one's. */
+  force?: boolean;
+  /** train-cold only: the houses to pool; every house when left out. */
+  house_ids?: string[];
 }
 
 /** GET /api/health: 200 while compute cycles keep completing, 503 (same body) when stalled. */
@@ -232,6 +237,46 @@ export async function executeCommand(payload: PredictorCommandPayload): Promise<
   });
 }
 
+// ─── Generic (cold-start) model ──────────────────────────────────────────────
+
+/** Training jobs and batch lanes of the generic model carry this house id. */
+export const GENERIC_HOUSE_ID = "cold_start";
+
+export type GenericBackend = "xgboost" | "lgbm";
+
+export interface GenericModelFile {
+  trained_at: string | null;
+  /** Houses whose data was pooled; missing for models trained before it was recorded. */
+  houses?: string[] | null;
+  /** Houses left out, e.g. because their meter unit did not match the others. */
+  excluded?: { house_id: string; reason: string }[] | null;
+}
+
+export interface GenericModelLane {
+  /** The chosen backend; null when each house's own backend picks it (XGBoost when that one is missing). */
+  model_type: GenericBackend | null;
+  available: Partial<Record<GenericBackend, GenericModelFile>>;
+}
+
+export type GenericModelResponse = Record<"consumption" | "production", GenericModelLane>;
+
+export async function getGenericModel(): Promise<GenericModelResponse> {
+  return predictorHttp<GenericModelResponse>("/api/generic-model");
+}
+
+/** The houses the generic model can be trained on. */
+export async function getGenericModelHouses(): Promise<string[]> {
+  const res = await predictorHttp<{ houses?: string[] }>("/api/generic-model/houses");
+  return res?.houses ?? [];
+}
+
+export async function setGenericModel(payload: { lane: "consumption" | "production"; model_type: GenericBackend }): Promise<{ status: string }> {
+  return predictorHttp<{ status: string }>("/api/generic-model", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function cancelJob(jobId: string): Promise<{ message: string }> {
   return predictorHttp<{ message: string }>(`/api/jobs/${jobId}/cancel`, {
     method: "POST"
@@ -273,6 +318,10 @@ export interface BatchOptions {
   max_model_age_days?: number;
   model_type?: "active" | ModelBackend;
   max_parallel?: number;
+  /** Also retrain the generic model of each lane, after the houses. */
+  include_generic?: boolean;
+  /** Keep every new model even when its error (MAE) is higher. */
+  force?: boolean;
 }
 
 export interface BatchItem {
@@ -281,7 +330,7 @@ export interface BatchItem {
   model_type: string;
   /** Why the lane is in the batch, e.g. "no model" or "forecast refused (scale-drift)". */
   reason: string;
-  /** 0 refused, 1 no model, 2 trained before unit detection, 3 old, 4 up to date. */
+  /** 0 refused, 1 no model, 2 trained before unit detection, 3 old, 4 up to date, 5 generic model. */
   priority: number;
   /** QUEUED, a training job status, or SKIPPED. */
   status: string;
@@ -401,4 +450,108 @@ export interface DataQualityResponse {
 
 export async function getDataQuality(houseId: string): Promise<DataQualityResponse> {
   return predictorHttp<DataQualityResponse>(`/api/houses/${encodeURIComponent(houseId)}/data-quality`);
+}
+
+// ---- EV flexibility (Flexibility backend jobs) -----------------------------
+
+/** One predicted plug-in session, as the predictor sent it to Flexibility. Instants are UTC ISO strings. */
+export interface FlexWindow {
+  starts_at: string;
+  ends_at: string;
+  arrival_range: { p10: string; p90: string };
+  departure_range: { p10: string; p90: string };
+  /** 0-1, null when the charger reports no SoC. */
+  soc_at_arrival: number | null;
+  soc_at_departure: number | null;
+  charger_id: string | null;
+  vehicle_id: string | null;
+  /** Share of past weeks with a plug-in on that weekday. */
+  probability: number;
+  sample_count: number;
+}
+
+export type FlexJobStatus = "completed" | "insufficient_data" | "failed";
+export type FlexForecastSource = "personal" | "global";
+
+/** One Flexibility job the predictor handled. */
+export interface FlexForecast {
+  job_id: string;
+  asset_id: string;
+  house_id: string | null;
+  charger_id: string | null;
+  vehicle_id: string | null;
+  finished_at: string;
+  status: FlexJobStatus;
+  /** "lost" when Flexibility never took the result (lease expired, unreachable). */
+  delivery: "delivered" | "lost";
+  reason: string | null;
+  error: string | null;
+  from_at: string;
+  until_at: string;
+  cutoff_at: string;
+  model: { name: string; version: string } | null;
+  /** Per target (arrival, duration, soc_start, soc_stop): the charger's own forest or the fleet one. */
+  sources: Record<string, FlexForecastSource> | null;
+  session_count: number | null;
+  observed_from: string | null;
+  observed_until: string | null;
+  windows: FlexWindow[];
+}
+
+export interface FlexForecastSummary {
+  job_id: string;
+  finished_at: string;
+  status: FlexJobStatus;
+  delivery: "delivered" | "lost";
+  reason: string | null;
+  from_at: string;
+  until_at: string;
+  model: { name: string; version: string } | null;
+  sources: Record<string, FlexForecastSource> | null;
+  session_count: number | null;
+  window_count: number;
+  first_window: FlexWindow | null;
+}
+
+export interface FlexAsset {
+  asset_id: string;
+  house_id: string | null;
+  charger_id: string | null;
+  vehicle_id: string | null;
+  /** False for a charger the backend no longer lists (nor config/flex_assets.json) but that still has forecasts in the log. */
+  mapped: boolean;
+  latest: FlexForecastSummary | null;
+}
+
+export interface FlexAssetsResponse {
+  enabled: boolean;
+  assets: FlexAsset[];
+}
+
+export interface FlexWorkerState {
+  enabled: boolean;
+  worker_id?: string;
+  running?: boolean;
+  last_contact_at?: string | null;
+  last_error?: string | null;
+  jobs?: { completed: number; insufficient_data: number; failed: number; lost: number };
+  current_job?: string | null;
+  model?: "qrf" | "kde";
+  global_model?: { built_at: string; cutoff_at: string; assets: number; sessions: number; targets: string[] } | null;
+  assets?: string[];
+}
+
+export async function getFlexWorker(): Promise<FlexWorkerState> {
+  return predictorHttp<FlexWorkerState>("/api/flexibility/worker");
+}
+
+export async function getFlexAssets(): Promise<FlexAssetsResponse> {
+  return predictorHttp<FlexAssetsResponse>("/api/flexibility/assets");
+}
+
+export async function getFlexAssetForecasts(assetId: string, limit: number = 10): Promise<FlexForecast[]> {
+  const res = await predictorHttp<{ asset_id: string; forecasts: FlexForecast[] }>(
+    `/api/flexibility/assets/${encodeURIComponent(assetId)}/forecasts?limit=${limit}`,
+  );
+  return res.forecasts ?? [];
 }

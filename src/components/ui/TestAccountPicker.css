@@ -1,0 +1,155 @@
+.test-account-directory {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.test-account-directory > p,
+.test-account-directory [role="alert"] p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+.test-profile-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elev-2);
+}
+.test-profile-tabs > button {
+  flex: 1;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 7px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.test-profile-tabs > button[aria-pressed="true"] {
+  background: var(--bg-elev);
+  color: var(--text);
+  box-shadow: 0 1px 5px #22362c0a;
+}
+.test-account-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text-soft);
+}
+.test-account-search:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.test-account-search input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  width: 100%;
+}
+.test-account-groups {
+  max-height: min(48vh, 450px);
+  min-height: 160px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.test-account-group + .test-account-group {
+  margin-top: 22px;
+}
+.test-account-group h4 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text-soft);
+  text-transform: capitalize;
+}
+.test-account-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 13px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.test-account-row:hover {
+  background: color-mix(in srgb, var(--brand) 8%, var(--bg-elev));
+}
+.test-account-row > svg {
+  flex-shrink: 0;
+  color: var(--text-soft);
+}
+.test-account-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.test-account-row strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.test-account-row small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-soft);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.test-account-empty {
+  padding: 30px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-soft);
+  text-align: center;
+}
+.login-test-context {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+.test-account-directory button:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+@media (max-width: 500px) {
+  .test-profile-tabs > button {
+    font-size: 11px;
+    padding: 10px 4px;
+  }
+  .test-account-groups {
+    max-height: 42vh;
+  }
+  .test-account-directory {
+    gap: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .test-account-directory * {
+    transition: none;
+  }
+}

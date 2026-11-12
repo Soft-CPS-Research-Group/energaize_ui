@@ -52,7 +52,7 @@ contractEditor=async function(scope='community'){
    rows.forEach((row,i)=>{const get=n=>row.querySelector(`[name="${n}"]`).value;const old=extra[Number(row.dataset.chargeRow)];let code=old?.code||'fixed_charge_'+i;while(components.some(c=>c.code===code))code+='_extra';components.push({...contractComponent(code,'standing',{}),...old,code,unit:get('charge_unit_'+row.dataset.chargeRow),price:{kind:'fixed',value:Number(get('charge_value_'+row.dataset.chargeRow))}});});
   }
   base.components=components;patch[key]=v?versions.map(x=>x.id===v.id?base:x):[base];
-  await B.request('community','/api/'+(community?'recs/'+c.recId:'sites/'+s.id),'PUT',patch);
+  await B.request('community','/api/'+(community?'recs/'+c.recId:'sites/'+s.id),'PUT',community?patch:B.versioned(patch,record));
  });
  const add=overlay.querySelector('[data-charge-add]');let index=extra.length;
  add?.addEventListener('click',()=>overlay.querySelector('#simple-charges').insertAdjacentHTML('beforeend',chargeRow(null,index++)));
@@ -88,20 +88,27 @@ async function refreshConfigurationWork(){
 }
 const managementLoad=loadBackend;
 loadBackend=async function(){await managementLoad();await refreshConfigurationWork();render();};
-function currentConfigurationWork(){return configurationWork.rows.filter(r=>r.rec_id===comm().recId&&(state.page!=='sites'||!state.site||r.site_id===state.site));}
+function currentConfigurationWork(){
+ const site=state.page==='sites'?state.site:null;
+ const equipment=site?state.equipment:null;
+ return configurationWork.rows.filter(r=>r.rec_id===comm().recId&&(!site||r.site_id===site)&&(!equipment||r.resource_id===equipment));
+}
+const inventoryReviewReasons={site_created:'Site registered',equipment_created:'Equipment registered',site_updated:'Site details edited',equipment_updated:'Equipment details edited'};
 const managementRender=render;
 render=function(){managementRender();if(connection.loading||connection.error||!state.loggedIn||person().role!=='manager'||state.page==='communities')return;
  const pending=currentConfigurationWork().filter(r=>r.status==='pending');
+ const perceptaPending=pending.some(r=>!r.resolutions?.percepta);
+ const label=pending.length?`Inventory reviews · ${pending.length} ${perceptaPending?'pending':'pending outside Percepta'}`:'Inventory reviews';
  const actions=document.querySelector('.community-identity .identity-actions,.sitehead .identity-actions');
- if(actions&&!actions.querySelector('[data-config-work]'))actions.insertAdjacentHTML('afterbegin',`<button class="configuration-work-button ${pending.length?'has-pending':''}" data-config-work title="${configurationWork.error||'Configuration changes'}" aria-label="Configuration changes${pending.length?' · '+pending.length+' pending':''}">${icon('settings')}${pending.length?`<span>${pending.length}</span>`:''}</button>`);
+ if(actions&&!isDeploymentView()&&!actions.querySelector('[data-config-work]'))actions.insertAdjacentHTML('afterbegin',`<button class="configuration-work-button ${perceptaPending?'has-pending':''}" data-config-work title="${configurationWork.error||label}" aria-label="${label}">${icon('settings')}${pending.length?`<span>${pending.length}</span>`:''}</button>`);
  const administration=document.querySelector('.surface.settings');
- if(administration&&!administration.querySelector('[data-config-work]'))administration.insertAdjacentHTML('beforeend',`<div class="settingsrow"><div><h3>Configuration reviews</h3><p>${configurationWork.error||`${pending.length} changes awaiting confirmation. Review the algorithm, Percepta and other integrations.`}</p></div><button class="btn" data-config-work>Review changes</button></div>`);
+ if(administration&&!administration.querySelector('[data-config-work]'))administration.insertAdjacentHTML('beforeend',`<div class="settingsrow"><div><h3>Inventory reviews</h3><p>${configurationWork.error||`${pending.length} inventory records awaiting confirmation.`}</p></div><button class="btn" data-config-work>Review inventory changes</button></div>`);
  const runtime=document.querySelector('[data-runtime-site]');
  if(runtime&&runtime.dataset.runtimeKind!=='percepta'&&pending.length)runtime.insertAdjacentHTML('beforebegin',`<div class="configuration-work-banner"><strong>Inventory review pending</strong><span>${pending.length} changes await review across the connected services.</span><button class="btn" data-config-work>Review changes</button></div>`);
 };
 async function showConfigurationWork(){
  await refreshConfigurationWork();const rows=currentConfigurationWork();
- centralDrawer('Configuration changes',`<p class="subtitle">Inventory changes require review of the algorithm, Percepta and other integrations. Each confirmation is recorded; it does not deploy anything.</p>${configurationWork.error?`<p role="alert">${esc(configurationWork.error)}</p>`:''}<div class="configuration-work-list">${rows.map(r=>`<article><header><div><h3>${esc(r.resource_name)}</h3><p>${esc(r.reason.replaceAll('_',' '))} · ${esc(new Date(r.created_at).toLocaleString('en-GB'))}</p></div><span class="badge">${r.status==='resolved'?'Resolved':'Needs review'}</span></header>${Object.entries(reviewLabels).map(([key,label])=>`<div class="configuration-task"><span><strong>${label}</strong>${r.resolutions[key]?`<small>${esc(r.resolutions[key].note)}</small><small>${esc(r.resolutions[key].actor)} · ${esc(new Date(r.resolutions[key].resolved_at).toLocaleString('en-GB'))} · Manual confirmation</small>`:'<small>Prepare and review the updated configuration.</small>'}</span>${r.resolutions[key]?icon('check'):`<button class="btn" type="button" data-resolve-review="${r.id}" data-review-target="${key}">Resolve</button>`}</div>`).join('')}</article>`).join('')||'<p>No inventory changes awaiting review.</p>'}</div>`);
+ centralDrawer('Inventory reviews',`<p class="subtitle">These records track changes to the inventory. Open Deployment for the running Percepta and its readings.</p>${configurationWork.error?`<p role="alert">${esc(configurationWork.error)}</p>`:''}<div class="configuration-work-list">${rows.map(r=>`<article><header><div><h3>${esc(r.resource_name)}</h3><p>${esc(inventoryReviewReasons[r.reason]||r.reason.replaceAll('_',' '))} · ${esc(new Date(r.created_at).toLocaleString('en-GB'))}</p></div><span class="badge">${r.status==='resolved'?'Resolved':r.resolutions.percepta?'Percepta reviewed':'Needs review'}</span></header>${Object.entries(reviewLabels).map(([key,label])=>`<div class="configuration-task"><span><strong>${label}</strong>${r.resolutions[key]?`<small>${esc(r.resolutions[key].note)}</small><small>${esc(r.resolutions[key].actor)} · ${esc(new Date(r.resolutions[key].resolved_at).toLocaleString('en-GB'))} · Manual confirmation</small>`:'<small>Awaiting confirmation.</small>'}</span>${r.resolutions[key]?icon('check'):`<button class="btn" type="button" data-resolve-review="${r.id}" data-review-target="${key}">Resolve</button>`}</div>`).join('')}</article>`).join('')||'<p>No inventory changes awaiting review.</p>'}</div>`);
 }
 function resolveConfigurationWork(id,target){
  const item=configurationWork.rows.find(r=>r.id===id);if(!item||!reviewLabels[target])return;

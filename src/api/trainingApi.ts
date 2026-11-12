@@ -1,4 +1,5 @@
 import { TRAINING_ENABLED } from './trainingContext';
+import { submissionIdentity } from './submissionIdentity';
 import { http, jobOrchestratorFileUrl, jobOrchestratorHttp } from "./client";
 import type {
   DatasetItem,
@@ -50,6 +51,7 @@ export interface DatasetCreateResponse {
 }
 
 export interface RunSimulationPayload {
+  idempotency_key?: string;
   config?: Record<string, unknown>;
   config_path?: string;
   target_host?: string;
@@ -210,6 +212,7 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
   image_tag?: string;
   image?: string;
 }> {
+  const intent = payload.idempotency_key ? undefined : submissionIdentity({ ...payload });
   const result = await jobOrchestratorHttp<{
     job_id: string;
     status: string;
@@ -219,9 +222,9 @@ export async function runSimulation(payload: RunSimulationPayload): Promise<{
     image?: string;
   }>("/run-simulation", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ ...payload, idempotency_key: payload.idempotency_key || intent?.key })
   });
-
+  intent?.acknowledge();
   return {
     ...result,
     status: normalizeJobStatus(result.status)

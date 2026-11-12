@@ -61,7 +61,14 @@ export function communityRuntime(): Plugin {
         }
         setPath(bridge.path);
         loadBackend().then(()=>refreshHistory()).catch(showConnectionError);
-        return {setPath,closeAccount(){state.userOpen=false;render();}};
+        return {setPath,closeAccount(){state.userOpen=false;render();},activityScope(){
+          if(connection.loading||connection.error||!state.loggedIn||state.page==='communities')return {};
+          const manager=person().role==='manager';
+          const site=manager?(state.page==='sites'&&state.site?chosen():null):selectedPersonalSite();
+          const resourceId=manager?state.equipment:state.personalAsset;
+          const asset=resourceId?peopleCatalog().assets.find(a=>a.id===resourceId):null;
+          return {communityId:comm()?.recId,siteId:asset?.asset_type==='ev'?undefined:site?.id,resourceId:resourceId||undefined,label:asset?.name||site?.name||comm()?.name};
+        }};
       }`;
     },
     handleHotUpdate(ctx) {

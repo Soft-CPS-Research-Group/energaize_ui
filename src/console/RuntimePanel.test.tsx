@@ -22,11 +22,13 @@ it('keeps configuration behind an explicit button and bounds history to three ev
  expect(fetcher.mock.calls.some(([url])=>String(url).includes('limit=3'))).toBe(true);
 });
 
-function deletionFixture(stopStatus='succeeded'){
- const running={...base,observed_state:'running',mode:'docker',configuration_mode:'generated',health:'not_reported'};
+function runningCollectorFixture(stopStatus='succeeded',executable?:boolean){
+ const running={...base,observed_state:'running',mode:'docker',configuration_mode:'generated',health:'not_reported',desired_config_version:'new',applied_config_version:'old'};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
   const url=String(input);let data:unknown=[];
-  if(init?.method==='POST'){
+  if(url.endsWith('/configuration'))data={executable};
+  else if(url.endsWith('/hosts')&&executable!==undefined)data=[{id:'preview',percepta_collection_image:'collector:1'}];
+  else if(init?.method==='POST'){
    const action=JSON.parse(String(init.body)).action;
    data={id:action+'-op',status:action==='stop'?stopStatus:'succeeded',error:stopStatus==='failed'?'Stop failed':undefined};
   }else if(url.endsWith('/instances/one'))data=running;
@@ -39,7 +41,7 @@ function deletionFixture(stopStatus='succeeded'){
  return fetcher;
 }
 it('requires confirmation to delete and confirms a stop before removing a running instance',async()=>{
- const fetcher=deletionFixture();
+ const fetcher=runningCollectorFixture();
  fireEvent.click(await screen.findByRole('button',{name:'Delete instance'}));
  expect(screen.getByText(/Saved readings, equipment and channel configuration are kept/)).toBeInTheDocument();
  expect(fetcher.mock.calls.some(([,init])=>init?.method==='POST')).toBe(false);
@@ -51,9 +53,19 @@ it('requires confirmation to delete and confirms a stop before removing a runnin
  expect(fetcher.mock.calls.filter(([,init])=>init?.method==='POST').map(([,init])=>JSON.parse(String(init?.body)).action)).toEqual(['stop','retire']);
 });
 it('keeps the confirmation open and does not remove the instance if stopping fails',async()=>{
- const fetcher=deletionFixture('failed');
+ const fetcher=runningCollectorFixture('failed');
  fireEvent.click(await screen.findByRole('button',{name:'Delete instance'}));
  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Delete instance'}));
  await waitFor(()=>expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent('Stop failed'));
  expect(fetcher.mock.calls.filter(([,init])=>init?.method==='POST').map(([,init])=>JSON.parse(String(init?.body)).action)).toEqual(['stop']);
+});
+
+it.each([true,false])('validates a pending configuration before restarting (executable: %s)',async executable=>{
+ const fetcher=runningCollectorFixture('succeeded',executable);
+ fireEvent.click(await screen.findByRole('button',{name:'Apply changes and restart'}));
+ fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Apply and restart'}));
+ if(executable)await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+ else expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Review the collection configuration');
+ const operations=fetcher.mock.calls.filter(([url,init])=>String(url).endsWith('/operations')&&init?.method==='POST');
+ expect(operations.map(([,init])=>JSON.parse(String(init?.body)).action)).toEqual(executable?['stop','deploy']:[]);
 });

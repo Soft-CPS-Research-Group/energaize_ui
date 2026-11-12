@@ -5,6 +5,7 @@ export const STORAGE_KEYS = {
   communities: "energaize_communities",
   predictorHouse: "energaize_predictor_house",
   predictorTimezone: "energaize_predictor_timezone",
+  predictorWorkspace: "energaize_predictor_workspace",
 } as const;
 
 export function readStorage<T>(key: string, fallback: T): T {

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import {History} from 'lucide-react';
+import {ActivityPanel,type ActivityScope} from './ActivityPanel';
 import { createPortal } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -21,15 +23,20 @@ import calendarCss from 'react-day-picker/style.css?inline';
 import telemetryCss from './telemetry.css?inline';
 import { PerceptaSetup } from './PerceptaSetup';
 import { RuntimePanel } from './RuntimePanel';
+import { DeploymentWorkspace } from './DeploymentWorkspace';
+import deploymentCss from './deployment.css?inline';
+import { FlexibilityCalendar, type CalendarEquipment } from './FlexibilityCalendar';
+import availabilityCss from './flexibility-calendar.css?inline';
 import { ResidentServices } from './ResidentServices';
 import runtimeCss from './runtime.css?inline';
 import perceptaCss from './percepta.css?inline';
+import messagesCss from './percepta-messages.css?inline';
 import presentationCss from './presentation.css?inline';
 import experienceCss from './experience.css?inline';
 import mediterraneanCss from './mediterranean.css?inline';
 import loaderCss from '../components/ui/EVChargingLoader.css?inline';
 
-const styles = [baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss].join('\n')
+const styles = [deploymentCss,baseCss,calendarCss,telemetryCss,presentationCss,runtimeCss,experienceCss,loaderCss,mediterraneanCss,profileCss,perceptaCss,messagesCss,availabilityCss].join('\n')
   .replaceAll(':root', ':host').replace(/\bbody\b(?=[\s.{:#])/g, '.console-root');
 type ChartProps = MeasurementChartProps & Partial<Pick<MeasurementWorkspaceProps,'channels'|'showChannelConfiguration'|'onLinkChannel'|'onUnlinkChannel'|'onConfigureChannel'>>;
 
@@ -47,6 +54,8 @@ export function CommunityWorkspace(): JSX.Element {
   const activePath=useRef(pathname);
   const [avatarSlot,setAvatarSlot]=useState<HTMLElement|null>(null);
   const [accountSlot,setAccountSlot]=useState<HTMLElement|null>(null);
+  const [activitySlot,setActivitySlot]=useState<HTMLElement|null>(null);
+  const [activityScope,setActivityScope]=useState<ActivityScope|null>(null);
   const [loaderSlot,setLoaderSlot]=useState<HTMLElement|null>(null);
   useEffect(()=>{
     if(!host.current || !session)return;
@@ -69,6 +78,19 @@ export function CommunityWorkspace(): JSX.Element {
     const environment=createWorkspaceEnvironment(shadow,body,bridge);
     const sync=()=>{
       roots.forEach((root,node)=>{if(!node.isConnected){root.unmount();roots.delete(node);}});
+      if(session.role==='rec_manager')shadow.querySelectorAll<HTMLElement>('[data-deployment-site]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);
+        root.render(<DeploymentWorkspace siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)}/>);
+      });
+      shadow.querySelectorAll<HTMLElement>('[data-flex-calendar]').forEach(node=>{
+        if(roots.has(node))return;
+        const root=createRoot(node);roots.set(node,root);
+        let equipment:CalendarEquipment[]=[];try{equipment=JSON.parse(node.dataset.flexEquipment||'[]');}catch{/* an empty inventory is valid */}
+        root.render(<FlexibilityCalendar equipment={equipment} actorId={node.dataset.flexActor||''} initialDay={node.dataset.flexInitialDay} initialMonth={node.dataset.flexInitialMonth} initialAsset={node.dataset.flexInitialAsset} refreshTarget={node}
+          onAction={detail=>node.dispatchEvent(new CustomEvent('flex-calendar-action',{detail,bubbles:true,composed:true}))}
+          onState={detail=>node.dispatchEvent(new CustomEvent('flex-calendar-state',{detail,bubbles:true,composed:true}))}/>);
+      });
       shadow.querySelectorAll<HTMLElement>('[data-resident-services]').forEach(node=>{
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);
@@ -93,6 +115,9 @@ export function CommunityWorkspace(): JSX.Element {
       let avatar=avatarButton?.querySelector<HTMLElement>('[data-shared-avatar]') || null;
       if(avatarButton&&!avatar){avatar=document.createElement('span');avatar.dataset.sharedAvatar='';avatarButton.replaceChildren(avatar);}
       setAvatarSlot(avatar);
+      let activity=avatarButton?.parentElement?.querySelector<HTMLElement>('[data-activity-slot]')||null;
+      if(avatarButton&&!activity){activity=document.createElement('span');activity.dataset.activitySlot='';avatarButton.before(activity);}
+      setActivitySlot(activity);
       setAccountSlot(shadow.querySelector<HTMLElement>('[data-shared-user-menu]'));
       setLoaderSlot(shadow.querySelector<HTMLElement>('[data-console-loader]'));
     };
@@ -100,11 +125,14 @@ export function CommunityWorkspace(): JSX.Element {
     runtime.current=mountWorkspace(environment,bridge);sync();
     return ()=>{environment.dispose();observer.disconnect();runtime.current=undefined;const retired=[...roots.values()];queueMicrotask(()=>retired.forEach(root=>root.unmount()));};
   },[session?.email,session?.role,logout,workspaceReady]);
+  useEffect(()=>{setActivityScope(null);},[pathname,session?.email,session?.role]);
   useEffect(()=>{if(pathname!==activePath.current){activePath.current=pathname;runtime.current?.setPath(pathname);}},[pathname]);
   useEffect(()=>{if(host.current)host.current.scrollTop=0;},[pathname]);
   return <div className="community-workspace-shell" data-theme={theme}>
     <div ref={host} data-community-workspace data-theme={theme} />
     <InstitutionalDock />
+    {activitySlot&&createPortal(<button className="icon-btn" type="button" title="Activity" aria-label="Open activity" aria-haspopup="dialog" onClick={()=>setActivityScope(runtime.current?.activityScope()||{})}><History size={19}/></button>,activitySlot)}
+    {activityScope&&<ActivityPanel scope={activityScope} theme={theme} onClose={()=>{setActivityScope(null);activitySlot?.querySelector('button')?.focus();}}/>}
     {avatarSlot&&createPortal(<ProfileAvatar session={session}/>,avatarSlot)}
     {accountSlot&&createPortal(<UserMenu open onClose={()=>runtime.current?.closeAccount()}/>,accountSlot)}
     {loaderSlot&&createPortal(<EVChargingLoader label="Loading your community, equipment and permissions…"/>,loaderSlot)}

@@ -143,8 +143,7 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
   const assets = sessionAssets().filter(
     (a) =>
       flexKinds[a.asset_type] &&
-      (person().role === "manager" ||
-        connection.permissions.get(permissionKey("asset", a.id, "control"))),
+      flexCanRequest(a.id),
   );
   if (!assets.length) {
     toast(
@@ -590,10 +589,10 @@ editSession = async function (id = null, assetId = null, vehicleId = null, occur
       }
       busy = true;
       show();
-      await checkPermission("asset", asset.id, "control");
+      await checkPermission("asset", asset.id, "request");
       let payload = editor.read();
       if (payload.vehicle_id)
-        await checkPermission("asset", payload.vehicle_id, "control");
+        await checkPermission("asset", payload.vehicle_id, "request");
       if (event) {
         payload = DomainForm.diff(originalInputs, payload);
         if (recurrenceChanged) Object.assign(payload, repetition());

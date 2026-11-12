@@ -1,13 +1,14 @@
-export type Connection={id:string;name:string;provider:string;settings?:{url?:string;host?:string;port?:number;vhost?:string;data_path?:string};has_credentials?:boolean};
+export type Connection={id:string;name:string;provider:string;settings?:{url?:string;host?:string;port?:number;vhost?:string;data_path?:string;exchange?:string;routing_key?:string;queue_prefix?:string|null};has_credentials?:boolean};
 export type Connector={id:string;name:string;transport:string;available:boolean;defaults:NonNullable<Connection['settings']>;credentials:'required'|'optional'|'none'};
 export type Source={asset_id:string;connection_id:string;device_id:string|null};
-export type Contract={parameter_type_id:string;vehicle_id?:string|null;parameter_key?:string|null;necessary:boolean;privacy:string;role:string;temporal_behavior?:{cumulative:boolean;periodicity:{value:number;unit:string};aggregation_operation:string;fill_operation:string}|null;source_binding?:{connection_id:string;fetch_key?:string|null;match_key?:string|null;topic?:string|null;shelly_accumulation?:string|null;mapping_required:boolean}|null};
-export type Channel={capability_id:string;name:string;unit:string;enabled:boolean;capability_type:string;data_type:string;quantity?:string;collection?:Contract|null};
+export type Contract={parameter_type_id:string;vehicle_id?:string|null;parameter_key?:string|null;necessary:boolean;privacy:string;role:string;temporal_behavior?:{cumulative:boolean;periodicity:{value:number;unit:string};aggregation_operation:string;fill_operation:string}|null;source_binding?:{connection_id:string;fetch_key?:string|null;match_key?:string|null;topic?:string|null;shelly_accumulation?:string|null;source_measurement_unit?:'Wh'|'kWh'|'W'|'kW'|'%'|'ratio'|'Status'|null;mapping_required:boolean}|null};
+export type Channel={version?:string|null;capability_id:string;name:string;unit:string;enabled:boolean;capability_type:string;data_type:string;quantity?:string;collection?:Contract|null};
 export type Profile={profile_id:string;asset_type:string;entity_key?:string;capabilities:Channel[]};
 export type Owner={id:string;name:string;scope:'assets'|'sites'|'recs'};
+export const isPriceSource = (provider: string) => provider === 'ren' || provider === 'omie';
 export async function api<T>(path:string,body?:unknown,method='GET'):Promise<T>{
  const response=await fetch(path,{method,headers:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
- if(!response.ok){const error=await response.json().catch(()=>({}));throw Error(typeof error.detail==='string'?error.detail:JSON.stringify(error.detail||'Unable to save configuration'));}
+ if(!response.ok){const error=await response.json().catch(()=>({}));const failure=Object.assign(new Error(error.error?.message||(typeof error.detail==='string'?error.detail:JSON.stringify(error.detail||'Unable to save configuration'))),{status:response.status,code:error.error?.code});throw failure;}
  return response.json();
 }
 export function equipmentSource(owner:Owner,profile:Profile|null|undefined,sources:Source[],connections:Connection[]):Source|null{

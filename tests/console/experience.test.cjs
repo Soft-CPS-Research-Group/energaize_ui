@@ -43,6 +43,70 @@ function workspace() {
     run(fs.readFileSync("public/console/" + f + ".js", "utf8"));
   return { dom, w, run };
 }
+test('a late Overview plan updates its cache without rebuilding a different view',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='ana';var site={id:'home'};availableAssets=()=>[{id:'charger',site_id:'home',asset_type:'ev_charger'}];connection.raw={};var resolvePlan;var requests=0;var renders=0;B.request=()=>{requests++;return new Promise(resolve=>resolvePlan=resolve);};render=()=>{renders++;};app.innerHTML=personalChargingPlan(site);`);
+  assert.match(w.document.querySelector('[data-home-plan]').textContent,/Loading your saved charging plan/);
+  run(`app.innerHTML='<section data-calendar-sentinel>Flexibility</section>';`);
+  const calendar=w.document.querySelector('[data-calendar-sentinel]');
+  await run("resolvePlan({effective:[]});Promise.resolve().then(()=>{}).then(()=>{}).then(()=>{});");
+  assert.equal(run('renders'),0);
+  assert.equal(w.document.querySelector('[data-calendar-sentinel]'),calendar);
+  run('app.innerHTML=personalChargingPlan(site)');
+  assert.equal(run('requests'),1,'Returning to Overview uses the completed cached plan');
+  assert.match(w.document.querySelector('[data-home-plan]').textContent,/No applicable charging request/);
+  run('connection.raw={};app.innerHTML=personalChargingPlan(site)');
+  await run("resolvePlan({effective:[]});Promise.resolve().then(()=>{}).then(()=>{}).then(()=>{});");
+  assert.equal(run('renders'),1,'Overview still refreshes its own visible summary');
+ }finally{dom.window.close();}
+});
+test('resident flexibility follows the selected home across calendar, filter and request choices', () => {
+ const {dom,run}=workspace();
+ try {
+  run(`state.personId='ana';var home={id:'regua'};selectedPersonalSite=()=>home;
+   var assets=[{id:'regua-evse',asset_type:'ev_charger',data:{site_id:'regua',name:'Regua charger'}},{id:'office-evse',asset_type:'ev_charger',data:{site_id:'office',name:'Office charger'}},{id:'vehicle',asset_type:'ev',data:{name:'My EV'}},{id:'private',asset_type:'appliance',data:{site_id:'regua',name:'Private washer'}},{id:'retired',asset_type:'appliance',data:{site_id:'regua',lifecycle_status:'retired'}}];
+   connection.raw={assets,events:[]};availableAssets=()=>assets.filter(a=>a.id!=='private');
+   for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);
+   FlexPlan.asset='office-evse';`);
+  assert.deepEqual(JSON.parse(run('JSON.stringify(sessionAssets().map(a=>a.id))')),['regua-evse','vehicle']);
+  let doc=new JSDOM(run('sessionsView()')).window.document;
+  assert.deepEqual(JSON.parse(doc.querySelector('[data-flex-calendar]').dataset.flexEquipment).map(a=>a.id),['regua-evse']);
+  assert.equal(run('FlexPlan.asset'),'');
+  assert.equal(run("sessionVisible({asset_id:'office-evse'})"),false);
+  assert.equal(run("sessionVisible({asset_id:'regua-evse',type_specific_data:{vehicle_id:'vehicle'}})"),true);
+  run("home={id:'office'};FlexPlan.asset='regua-evse'");
+  doc=new JSDOM(run('sessionsView()')).window.document;
+  assert.deepEqual(JSON.parse(doc.querySelector('[data-flex-calendar]').dataset.flexEquipment).map(a=>a.id),['office-evse']);
+  assert.equal(run('FlexPlan.asset'),'');
+  run("home={id:'no-charger'}");
+  doc=new JSDOM(run('sessionsView()')).window.document;
+  assert.deepEqual(JSON.parse(doc.querySelector('[data-flex-calendar]').dataset.flexEquipment),[]);
+ } finally {dom.window.close();}
+});
+test('manager flexibility retains its community scope and direct equipment remains available without an assigned home',()=>{
+ const {dom,run}=workspace();try{
+  run(`state.personId='manager';state.community=0;communities[0].recId='rec';communities[0].sites=[{id:'a'},{id:'b'}];connection.raw={assets:[{id:'a-evse',asset_type:'ev_charger',data:{site_id:'a'}},{id:'b-evse',asset_type:'ev_charger',data:{site_Id:'b'}},{id:'other',asset_type:'ev_charger',data:{site_id:'outside'}}]};`);
+  assert.deepEqual(JSON.parse(run('JSON.stringify(sessionAssets().map(a=>a.id))')),['a-evse','b-evse']);
+  run("state.personId='ana';selectedPersonalSite=()=>undefined;availableAssets=()=>[{id:'other'}]");
+  assert.deepEqual(JSON.parse(run('JSON.stringify(sessionAssets().map(a=>a.id))')),['other']);
+ }finally{dom.window.close();}
+});
+test('house overview stays focused and deployment is restricted to the manager workspace', () => {
+  const {dom, run} = workspace();
+  try {
+    run("state.community=0;state.site=communities[0].sites[0].id;state.equipment=null;");
+    for (const tab of ['summary','settings']) {
+      run(`state.tab='${tab}'`);
+      const html=run('siteDetailOriginal()');
+      assert.doesNotMatch(html,/data-site-machine=/);
+    }
+    run("state.personId='manager';state.tab='deployment'");
+    assert.match(run('siteDetailOriginal()'),/data-deployment-site=/);
+    assert.doesNotMatch(run('siteDetailOriginal()'),/data-tab="algorithm"/);
+    run("state.personId=people.find(p=>p.role!=='manager').id");
+    assert.doesNotMatch(run('siteDetailOriginal()'),/data-deployment-site=|data-tab="deployment"/);
+  } finally {dom.window.close();}
+});
 test("calendar includes cross-midnight events without including exclusive end day", () => {
   const { dom, run } = workspace();
   try {
@@ -57,27 +121,31 @@ test("calendar includes cross-midnight events without including exclusive end da
   }
 });
 
-test('calendar reads resolved occurrences and never expands a second client-side recurrence', async () => {
- const {dom,run}=workspace();try{
-  run(`render=()=>{};state.personId='manager';FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-22';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry machine'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var calls=[];window.FlexRecurrence={expand(){throw Error('Client recurrence must not be authoritative');}};B.request=async(s,p,m,b)=>{calls.push({s,p,m,b});return {occurrences:[{event_id:'request',occurrence_id:'request@date',occurrence_at:'2026-10-22T18:00:00Z',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',asset_id:'washer',title:'Laundry',session_type:'appliance',type_specific_data:{duration_minutes:80,energy_required_kwh:.6},status:'active',resolution:'eligible',latest_start:'2026-10-22T21:40:00Z'}],predictions:[]};};sessionsView();`);
-  await new Promise(setImmediate);
-  const html=run('sessionsView()');
-  assert.match(html,/Laundry machine/);assert.match(html,/80 minute cycle/);assert.doesNotMatch(html,/0.6 kWh required/);assert.match(html,/Cycle can start as late/);
-  assert.equal(run('calls.length'),1);assert.equal(run('calls[0].p'),'/api/flexibility/effective');assert.equal(run('calls[0].b.asset_ids[0]'),'washer');
+test('calendar passes scoped equipment, programmes and date context to the React workspace', () => {
+ const {dom,w,run}=workspace();try{
+  run(`state.personId='manager';FlexCalendar.month=new Date(2026,9,1);FlexCalendar.day='2026-10-22';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry machine',power_profiles:[{id:'eco',name:'Eco'}]}}];sessionAssets=()=>assets;connection.permissions.set(permissionKey('asset','washer','request'),true);connection.raw={assets,events:[]};window.FlexRecurrence={expand(){throw Error('Client recurrence must not be authoritative');}};`);
+  const html=run('sessionsView()');w.document.getElementById('app').innerHTML=html;
+  const mount=w.document.querySelector('[data-flex-calendar]');assert.ok(mount);
+  assert.deepEqual(JSON.parse(mount.dataset.flexEquipment),[{id:'washer',name:'Laundry machine',kind:'appliance',canEdit:true,cycles:[{id:'eco',name:'Eco'}]}]);
+  assert.equal(mount.dataset.flexInitialDay,'2026-10-22');assert.equal(mount.dataset.flexActor,'manager');
+  assert.doesNotMatch(html,/Request history|Rules & predictions|Prediction to review|data-flex-selection-asset/);
  }finally{dom.window.close();}
 });
 
-test('failed calendar read is visible and does not reuse another account’s requests', async () => {
- const {dom,run}=workspace();try{
-  run(`render=()=>{};state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};FlexPlan.result={occurrences:[{title:'Private old request'}]};B.request=async()=>{throw Error('Permissions unavailable');};sessionsView();`);
+test('calendar action bridge preserves the date and equipment for the existing illustrated wizard', async () => {
+ const {dom,w,run}=workspace();try{
+  run(`render=()=>{};var opened=null;editSession=async(...args)=>{opened=args;};`);
+  w.document.dispatchEvent(new w.CustomEvent('flex-calendar-state',{detail:{day:'2026-11-12',month:'2026-11-01T00:00:00Z',asset:'washer'}}));
+  assert.equal(run('FlexCalendar.day'),'2026-11-12');assert.equal(run('FlexPlan.asset'),'washer');
+  w.document.dispatchEvent(new w.CustomEvent('flex-calendar-action',{detail:{action:'create',day:'2026-11-13',assetId:'charger'}}));
   await new Promise(setImmediate);
-  const html=run('sessionsView()');assert.match(html,/Permissions unavailable/);assert.match(html,/Calendar unavailable/);assert.doesNotMatch(html,/Private old request/);
+  assert.deepEqual(JSON.parse(run('JSON.stringify(opened)')),[null,'charger']);assert.equal(run('FlexCalendar.day'),'2026-11-13');
  }finally{dom.window.close();}
 });
 
 test('appliance wizard selects a machine cycle and submits only its ID and availability', async () => {
  const {dom,w,run}=workspace();try{
-  run(`state.personId='manager';var assets=[{id:'washer-a',asset_type:'appliance',data:{name:'Kitchen washer',power_profiles:[{id:'other',name:'Other machine cycle',duration_minutes:120}]}},{id:'washer-b',asset_type:'appliance',data:{name:'Utility washer',power_profiles:[{id:'eco',name:'Eco',duration_minutes:80,energy_consumption_kwh:.6}]}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'},interruptible:{type:'boolean'}}}});`);
+  run(`state.personId='manager';var assets=[{id:'washer-a',asset_type:'appliance',data:{name:'Kitchen washer',power_profiles:[{id:'other',name:'Other machine cycle',duration_minutes:120}]}},{id:'washer-b',asset_type:'appliance',data:{name:'Utility washer',power_profiles:[{id:'eco',name:'Eco',duration_minutes:80,energy_consumption_kwh:.6}]}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.endsWith('/access'))return {can_edit:true};if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'},interruptible:{type:'boolean'}}}});`);
   await run("editSession(null,'washer-b')");
   const doc=w.document,submit=()=>doc.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   doc.querySelector('[data-field="starts_at"]').value='2026-10-22T22:00';doc.querySelector('[data-field="ends_at"]').value='2026-10-23T07:00';
@@ -91,7 +159,7 @@ test('appliance wizard selects a machine cycle and submits only its ID and avail
 
 test('editing a single recurring appliance occurrence sends an exception with both revisions', async () => {
  const {dom,w,run}=workspace();try{
-  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[{id:'eco',name:'Eco',duration_minutes:60},{id:'intensive',name:'Intensive',duration_minutes:90}]}}];sessionAssets=()=>assets;sessionVisible=()=>true;var savedEvent={event_id:'event',asset_id:'washer',session_type:'appliance',mode:'recurrent',recurrence:{freq:'DAILY',count:7},title:'Wash',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',revision:4,type_specific_data:{selected_power_profile:'eco',cycle_snapshot:{name:'Eco',duration_minutes:60},duration_minutes:60,energy_required_kwh:.6}};var occurrence={...savedEvent,occurrence_at:'2026-10-23T18:00:00Z',starts_at:'2026-10-23T18:00:00Z',ends_at:'2026-10-23T23:00:00Z',exception_revision:2};connection.raw={assets,events:[savedEvent]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionUpdate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'}}}});`);
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[{id:'eco',name:'Eco',duration_minutes:60},{id:'intensive',name:'Intensive',duration_minutes:90}]}}];sessionAssets=()=>assets;sessionVisible=()=>true;var savedEvent={event_id:'event',asset_id:'washer',session_type:'appliance',mode:'recurrent',recurrence:{freq:'DAILY',count:7},title:'Wash',starts_at:'2026-10-22T18:00:00Z',ends_at:'2026-10-22T23:00:00Z',revision:4,type_specific_data:{selected_power_profile:'eco',cycle_snapshot:{name:'Eco',duration_minutes:60},duration_minutes:60,energy_required_kwh:.6}};var occurrence={...savedEvent,occurrence_at:'2026-10-23T18:00:00Z',starts_at:'2026-10-23T18:00:00Z',ends_at:'2026-10-23T23:00:00Z',exception_revision:2};for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[savedEvent]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.endsWith('/access'))return {can_edit:true};if(p.includes('available-types'))return {session_types:['appliance']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({ApplianceSessionUpdate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'},duration_minutes:{type:'integer',minimum:1},energy_required_kwh:{type:'number'}}}});`);
   await run("editSession('event',null,null,occurrence)");
   const doc=w.document,submit=()=>doc.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
   assert.equal(doc.querySelector('.repeat-plan').hidden,true);
@@ -104,7 +172,7 @@ test("request wizard writes only after review, converts SoC and preserves fields
   const { dom, w, run } = workspace();
   try {
     run(
-      `state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Home charger'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['ev_charging']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({EVChargingSessionCreate:{type:'object',required:['soc_at_departure'],properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number',minimum:0,maximum:1},soc_at_arrival:{anyOf:[{type:'number'},{type:'null'}]},vehicle_id:{type:'string'}}}});`,
+      `state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Home charger'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.endsWith('/access'))return {can_edit:true};if(p.includes('available-types'))return {session_types:['ev_charging']};writes.push({s,p,m,b});return {};};operationSchemas=async()=>({EVChargingSessionCreate:{type:'object',required:['soc_at_departure'],properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number',minimum:0,maximum:1},soc_at_arrival:{anyOf:[{type:'number'},{type:'null'}]},vehicle_id:{type:'string'}}}});`,
     );
     await run("editSession()");
     const doc = w.document,
@@ -146,7 +214,7 @@ test("request wizard rejects reversed windows before posting", async () => {
   const { dom, w, run } = workspace();
   try {
     run(
-      `state.personId='manager';var assets=[{id:'heater',asset_type:'heater',data:{name:'Heater'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['electric_heater']};writes.push(b);};operationSchemas=async()=>({ElectricHeaterSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},setpoint:{type:'number'}}}});`,
+      `state.personId='manager';var assets=[{id:'heater',asset_type:'heater',data:{name:'Heater'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};var writes=[];B.request=async(s,p,m,b)=>{if(p.endsWith('/access'))return {can_edit:true};if(p.includes('available-types'))return {session_types:['electric_heater']};writes.push(b);};operationSchemas=async()=>({ElectricHeaterSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},setpoint:{type:'number'}}}});`,
     );
     await run("editSession(null,'heater')");
     const doc = w.document;
@@ -209,7 +277,7 @@ test("overview has chart first, four preview KPIs and compact actionable configu
     assert.equal((html.match(/class="kpi-trend/g)||[]).length, 4);
     assert.match(html, /is-improved/); assert.match(html, /is-worse/);
     assert.match(html, /data-action="edit-community-details"/);
-    assert.match(html, /Community notifications/);
+    assert.match(html, /Community · Inventory details missing/);
   } finally {
     dom.window.close();
   }
@@ -218,7 +286,7 @@ test("editing keeps the target equipment and does not rewrite recurrence or unre
   const { dom, w, run } = workspace();
   try {
     run(
-      `state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Home charger'}}];sessionAssets=()=>assets;connection.raw={assets,events:[{event_id:'existing',asset_id:'charger',session_type:'ev_charging',title:'Morning commute',mode:'recurrent',recurrence:{freq:'WEEKLY'},starts_at:'2026-10-13T08:00:00Z',ends_at:'2026-10-13T17:00:00Z',timezone:'Europe/Lisbon',type_specific_data:{soc_at_departure:.8,soc_at_arrival:.2}}]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['ev_charging']};writes.push({p,m,b});return {};};operationSchemas=async()=>({EVChargingSessionUpdate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number'},soc_at_arrival:{anyOf:[{type:'number'},{type:'null'}]},vehicle_id:{type:'string'}}}});`,
+      `state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Home charger'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[{event_id:'existing',asset_id:'charger',session_type:'ev_charging',title:'Morning commute',mode:'recurrent',recurrence:{freq:'WEEKLY'},starts_at:'2026-10-13T08:00:00Z',ends_at:'2026-10-13T17:00:00Z',timezone:'Europe/Lisbon',type_specific_data:{soc_at_departure:.8,soc_at_arrival:.2}}]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.endsWith('/access'))return {can_edit:true};if(p.includes('available-types'))return {session_types:['ev_charging']};writes.push({p,m,b});return {};};operationSchemas=async()=>({EVChargingSessionUpdate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number'},soc_at_arrival:{anyOf:[{type:'number'},{type:'null'}]},vehicle_id:{type:'string'}}}});`,
     );
     await run("editSession('existing')");
     const doc = w.document;
@@ -256,7 +324,9 @@ test("calendar requests only scoped equipment and site navigation clears the pri
     run("sessionsView()");
     await new Promise(setImmediate);
     const html = run("sessionsView()");
-    assert.match(html, /My request/);
+    w.document.getElementById('app').innerHTML=html;
+    const passed=JSON.parse(w.document.querySelector('[data-flex-calendar]').dataset.flexEquipment);
+    assert.deepEqual(passed.map(a=>a.id),['mine']);
     assert.doesNotMatch(html, /Private request/);
     run(
       `render=()=>{};state.operationsPage='sessions';state.inventory='vehicles';app.innerHTML='<table><tbody><tr data-site="mine"><td>Home</td></tr></tbody></table>';`,
@@ -271,7 +341,7 @@ test("calendar requests only scoped equipment and site navigation clears the pri
 });
 test('recurring request saves the chosen weekdays and count; predictions cannot be edited', async()=>{
  const {dom,w,run}=workspace();try{
- run(`state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Charger'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['ev_charging']};writes.push(b);return {};};operationSchemas=async()=>({EVChargingSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number',minimum:0,maximum:1}}}});`);
+ run(`state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Charger'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.endsWith('/access'))return {can_edit:true};if(p.includes('available-types'))return {session_types:['ev_charging']};writes.push(b);return {};};operationSchemas=async()=>({EVChargingSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number',minimum:0,maximum:1}}}});`);
  await run('editSession(null,"charger")');const doc=w.document;const repeat=doc.querySelector('[data-repeat]');repeat.value='WEEKLY';repeat.dispatchEvent(new w.Event('change',{bubbles:true}));doc.querySelector('[data-repeat-day="MO"]').checked=true;doc.querySelector('[data-repeat-day="WE"]').checked=true;doc.querySelector('[data-repeat-count]').value='8';const slider=doc.querySelector('[type=range]');slider.value='75';slider.dispatchEvent(new w.Event('input',{bubbles:true}));const submit=()=>doc.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));submit();submit();await new Promise(setImmediate);
  assert.equal(run('writes[0].mode'),'recurrent');assert.equal(run('writes[0].soc_at_departure'),.75);assert.deepEqual(JSON.parse(run('JSON.stringify(writes[0].recurrence)')),{freq:'WEEKLY',interval:1,count:8,by_day:'MO,WE'});
  run(`connection.raw.events=[{event_id:'forecast',asset_id:'charger',mode:'forecast'}]`);await run('editSession("forecast")');assert.equal(doc.querySelector('[role=dialog]'),null);await run('cancelSession("forecast")');assert.equal(doc.querySelector('[role=dialog]'),null);
@@ -295,11 +365,11 @@ test('visual site choices update the API fields and clear incompatible subtypes'
 
 test('equipment technical details preserve zero and false, distinguish site phases, and report actual missing configuration',()=>{
  const {dom,run}=workspace();try{
- run(`var a={assetType:'grid_meter',name:'Meter',sourcePayload:{meter_role:'main',bidirectional:false,max_current_a:0,manufacturer:{name:'Maker',country:'PT'},electrical_connection_type:'three_phase',phase_connection:{phases:['L1','L2','L3']}},channels:[]};var s={sourcePayload:{grid_connection:{phase_type:'three_phase'}}};`);
+ run(`state.personId='manager';var a={assetType:'grid_meter',name:'Meter',sourcePayload:{meter_role:'main',bidirectional:false,max_current_a:0,manufacturer:{name:'Maker',country:'PT'},electrical_connection_type:'three_phase',phase_connection:{phases:['L1','L2','L3']}},channels:[]};var s={sourcePayload:{grid_connection:{phase_type:'three_phase'}}};`);
  const html=run('equipmentDetails(a,s)+configurationNotice(equipmentConfiguration(a),a.name)');
  assert.match(html,/Site connection phases/);assert.match(html,/three phase/);assert.match(html,/Maker · PT/);assert.match(html,/L1 · L2 · L3/);assert.doesNotMatch(html,/\[object Object\]/);assert.match(html,/>No</);assert.match(html,/>0(?:\.0)? <small>A/);
  assert.match(html,/Configure measurement or control channels/);
- assert.match(html,/Live readings and service availability are checked separately/);
+ assert.match(html,/See Deployment for live readings and service status/);
  assert.doesNotMatch(html,/No missing|Equipment online/);
  }finally{dom.window.close();}
 });
@@ -341,6 +411,20 @@ function managementSetup(run) {
     B.request=async(s,p,m,b)=>{writes.push({s,p,m,b});return {id:'resident-1'};};`);
 }
 function formSubmit(w){w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));}
+test('deployment navigation omits inventory completeness and inventory reviews show the Percepta decision', async () => {
+ const {dom,w,run}=workspace();try{
+  managementSetup(run);
+  run(`state.page='sites';state.site='home-1';state.tab='deployment';`);
+  assert.match(run('tree()'),/Home/);
+  assert.doesNotMatch(run('tree()'),/Inventory details missing/);
+  run(`state.tab='assets';B.request=async()=>[{id:'review',rec_id:'rec-1',site_id:'home-1',resource_name:'Home',reason:'site_created',created_at:'2026-10-16T12:00:00Z',status:'pending',resolutions:{percepta:{note:'Applied configuration verified',actor:'Reviewer',resolved_at:'2026-11-11T20:00:00Z'}}}];`);
+  assert.match(run('tree()'),/Inventory details missing/);
+  await run('showConfigurationWork()');
+  assert.match(w.document.querySelector('.configuration-work-list').textContent,/Percepta reviewed.*Applied configuration verified/s);
+  assert.equal(w.document.querySelector('[data-review-target="percepta"]'),null);
+  assert.ok(w.document.querySelector('[data-review-target="algorithm"]'));
+ }finally{dom.window.close();}
+});
 test('comparison contract wizard preserves existing components and history', async () => {
  const {dom,w,run}=workspace();try{
   managementSetup(run);
@@ -408,7 +492,7 @@ test('community wizard keeps the chosen cadence and converts displayed kW to the
 test("departure slider is a single visible control and keeps arrival charge and vehicle independent", async () => {
  const {dom,w,run}=workspace();
  try {
- run(`state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Home charger'}},{id:'ev-one',asset_type:'ev',data:{name:'First EV'}},{id:'ev-two',asset_type:'ev',data:{name:'Second EV'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};B.request=async()=>({session_types:['ev_charging']});operationSchemas=async()=>({EVChargingSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number',minimum:0,maximum:1},soc_at_arrival:{anyOf:[{type:'number'},{type:'null'}]},vehicle_id:{type:'string'}}}});`);
+ run(`state.personId='manager';var assets=[{id:'charger',asset_type:'ev_charger',data:{name:'Home charger'}},{id:'ev-one',asset_type:'ev',data:{name:'First EV'}},{id:'ev-two',asset_type:'ev',data:{name:'Second EV'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};B.request=async()=>({session_types:['ev_charging']});operationSchemas=async()=>({EVChargingSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},soc_at_departure:{type:'number',minimum:0,maximum:1},soc_at_arrival:{anyOf:[{type:'number'},{type:'null'}]},vehicle_id:{type:'string'}}}});`);
  await run("editSession(null,'charger','ev-two')");
  const doc=w.document,slider=doc.querySelector('input[type="range"]'),arrival=doc.querySelector('[data-field="soc_at_arrival"]'),vehicle=doc.querySelector('[data-field="vehicle_id"]');
  assert.equal(vehicle.value,'ev-two','Vehicle detail preselects the requested EV even when it is not first');
@@ -420,7 +504,7 @@ test("departure slider is a single visible control and keeps arrival charge and 
 
 test('pump asks for total hours and minutes, rejects oversized windows and never sends flow',async()=>{
  const {dom,w,run}=workspace();try{
-  run(`state.personId='manager';var assets=[{id:'pump',asset_type:'water_pump',data:{name:'Pool pump'}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.includes('available-types'))return {session_types:['water_pump']};writes.push({p,b});return {};};operationSchemas=async()=>({WaterPumpSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},duration_minutes:{type:'integer',minimum:1},setpoint:{type:'number'}}}});`);
+  run(`state.personId='manager';var assets=[{id:'pump',asset_type:'water_pump',data:{name:'Pool pump'}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};var writes=[];checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};B.request=async(s,p,m,b)=>{if(p.endsWith('/access'))return {can_edit:true};if(p.includes('available-types'))return {session_types:['water_pump']};writes.push({p,b});return {};};operationSchemas=async()=>({WaterPumpSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},duration_minutes:{type:'integer',minimum:1},setpoint:{type:'number'}}}});`);
   await run("editSession(null,'pump')");const doc=w.document;
   doc.querySelector('[data-field=starts_at]').value='2026-10-22T08:00';doc.querySelector('[data-field=ends_at]').value='2026-10-22T12:00';
   const hours=doc.querySelector('[data-runtime-hours]'),mins=doc.querySelector('[data-runtime-minutes]');
@@ -434,7 +518,7 @@ test('pump asks for total hours and minutes, rejects oversized windows and never
 
 test('appliance without configured cycles cannot create a request and links to equipment setup',async()=>{
  const {dom,w,run}=workspace();try{
-  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[]}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};var writes=[];B.request=async()=>({session_types:['appliance']});operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'}}}});var configured=null;editEquipment=async id=>configured=id;`);
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[]}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};var writes=[];B.request=async()=>({session_types:['appliance']});operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'}}}});var configured=null;editEquipment=async id=>configured=id;`);
   await run("editSession(null,'washer')");formSubmit(w);assert.equal(run('writes.length'),0);assert.equal(w.document.querySelector('[data-flex-panel="2"]').hidden,true);
   const setup=[...w.document.querySelectorAll('button')].find(n=>n.textContent==='Set up equipment cycles');assert.ok(setup);setup.click();assert.equal(run('configured'),'washer');
  }finally{dom.window.close();}
@@ -442,8 +526,74 @@ test('appliance without configured cycles cannot create a request and links to e
 
 test('chosen machine cycle must fit the window before reviewing',async()=>{
  const {dom,w,run}=workspace();try{
-  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[{id:'long',name:'Long wash',duration_minutes:180}]}}];sessionAssets=()=>assets;connection.raw={assets,events:[]};B.request=async()=>({session_types:['appliance']});operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'}}}});`);
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Washer',power_profiles:[{id:'long',name:'Long wash',duration_minutes:180}]}}];sessionAssets=()=>assets;for(const a of assets)connection.permissions.set(permissionKey('asset',a.id,'request'),true);connection.raw={assets,events:[]};B.request=async()=>({session_types:['appliance']});operationSchemas=async()=>({ApplianceSessionCreate:{type:'object',properties:{starts_at:{type:'string',format:'date-time'},ends_at:{type:'string',format:'date-time'},selected_power_profile:{type:'string'}}}});`);
   await run("editSession(null,'washer')");const doc=w.document;doc.querySelector('[data-field=starts_at]').value='2026-10-22T08:00';doc.querySelector('[data-field=ends_at]').value='2026-10-22T10:00';doc.querySelector('[data-field=selected_power_profile]').value='long';formSubmit(w);
   assert.match(doc.querySelector('[role=alert]').textContent,/selected cycle needs to fit/);assert.equal(doc.querySelector('[data-flex-panel="2"]').hidden,true);
+ }finally{dom.window.close();}
+});
+
+
+test('manager sees requests but only an author with current access gets edit actions',()=>{
+ const {dom,run}=workspace();try{
+  run(`state.personId='manager';var assets=[{id:'washer',asset_type:'appliance',data:{name:'Laundry'}}];connection.raw={assets,events:[]};var request={event_id:'r',occurrence_id:'r@time',asset_id:'washer',created_by:'resident',status:'active',revision:2,title:'Laundry',starts_at:'2026-10-23T18:00:00Z',ends_at:'2026-10-23T22:00:00Z',session_type:'appliance',type_specific_data:{duration_minutes:90},resolution:'eligible'};`);
+  assert.doesNotMatch(run('flexRow(request)'),/data-flex-occ-edit/);
+  run("connection.permissions.set(permissionKey('asset','washer','request'),true)");
+  assert.doesNotMatch(run('flexRow(request)'),/data-flex-occ-edit/,'own access does not permit editing another author');
+  run("request.created_by='manager'");assert.match(run('flexRow(request)'),/data-flex-occ-edit/);
+  run('connection.permissions.clear()');assert.doesNotMatch(run('flexRow(request)'),/data-flex-occ-cancel/);
+ }finally{dom.window.close();}
+});
+
+test('request details show live sharing, revisions and pending consumer delivery without claiming execution',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`connection.raw={events:[{event_id:'r',title:'Evening charge'}]};B.request=async(s,p)=>p.endsWith('/access')?{author_name:'Ana',can_edit:false,revision:3,readers:[{name:'Ana',is_author:true},{name:'REC manager'}],sharing:'Inherited from equipment access'}:p.endsWith('/revisions')?[{revision:3,recorded_at:'2026-10-23T10:00:00Z',snapshot:{status:'cancelled'}}]:{changes:[{deliveries:[{state:'pending'}]}]};`);
+  await run("flexRequestDetails('r')");const text=w.document.querySelector('[role=dialog]').textContent;
+  assert.match(text,/Ana/);assert.match(text,/REC manager/);assert.match(text,/revision 3/);assert.match(text,/Waiting for 1 consumer/);assert.match(text,/does not confirm a physical action/);assert.match(text,/Read only/);
+ }finally{dom.window.close();}
+});
+
+test('stale permission is rechecked before opening another author request',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`connection.raw={events:[{event_id:'r',asset_id:'washer',created_by:'manager'}]};B.request=async()=>({can_edit:false});`);
+  await assert.rejects(run("editSession('r')"),/Only the author/);
+  assert.equal(w.document.querySelector('[role=dialog]'),null);
+ }finally{dom.window.close();}
+});
+
+test('cancelled request history remains accessible and respects equipment scope and filter',()=>{
+ const {dom,w,run}=workspace();try{
+  run(`sessionAssets=()=>[{id:'washer'}];equipmentRecord=()=>({data:{name:'Washer'}});connection.raw={events:[{event_id:'a',asset_id:'washer',title:'Cancelled wash',status:'cancelled',revision:3},{event_id:'b',asset_id:'other',title:'Other home',status:'active',revision:1}]};flexRequestHistory();`);
+  let text=w.document.querySelector('[role=dialog]').textContent;
+  assert.match(text,/Cancelled wash/);assert.match(text,/cancelled/);assert.match(text,/revision 3/);assert.doesNotMatch(text,/Other home/);
+  run("FlexPlan.asset='other';flexRequestHistory()");
+  assert.match(w.document.querySelector('[role=dialog]').textContent,/No saved requests/);
+ }finally{dom.window.close();}
+});
+
+test('site editor submits its opening version, hides metadata and keeps a conflicting draft',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`var original={name:'Old home',version:'a'.repeat(64)};var writes=[];var reloads=0;checkPermission=async()=>{};loadBackend=async()=>{reloads++;};toast=()=>{};operationSchemas=async()=>({SiteUpdate:{type:'object',properties:{name:{type:'string'},expected_version:{type:'string'}}}});B.request=async(s,p,m,b)=>{writes.push(b);throw Object.assign(Error('Stale'),{status:409,code:'resource.version_conflict'});};`);
+  await run(`structuredEditor({title:'Site settings',schema:'SiteUpdate',value:original,method:'PUT',path:'/api/sites/home'})`);
+  assert.equal(w.document.querySelector('[data-field="expected_version"]'),null);
+  run(`original.version='b'.repeat(64)`);
+  const form=w.document.querySelector('#overlay form'),name=form.querySelector('[data-field="name"]');name.value='My unsaved home';
+  form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(setImmediate);
+  assert.equal(run('writes[0].expected_version'),'a'.repeat(64));assert.equal(run('writes[0].name'),'My unsaved home');assert.equal(name.value,'My unsaved home');assert.equal(form.querySelector('[type="submit"]').disabled,true);
+  assert.match(form.textContent,/Your edits are still here/);form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(setImmediate);assert.equal(run('writes.length'),1);assert.equal(run('reloads'),0);
+  [...form.querySelectorAll('button')].find(b=>b.textContent==='Discard edits and reload').click();await new Promise(setImmediate);assert.equal(run('reloads'),1);assert.equal(w.document.querySelector('#overlay form'),null);
+ }finally{dom.window.close();}
+});
+test('equipment settings use the envelope version and creation sends no version',async()=>{
+ const {dom,run}=workspace();try{
+  run(`connection.raw={assets:[{id:'battery',asset_type:'battery',version:'c'.repeat(64),data:{name:'Storage'}}]};var options;structuredEditor=async o=>{options=o;};`);
+  await run(`editEquipment('battery')`);assert.equal(run('options.value.version'),'c'.repeat(64));assert.equal(run('options.path'),'/api/assets/batteries/battery');
+ }finally{dom.window.close();}
+});
+
+test('legacy channel editor forwards each channel version and reports partial conflict',async()=>{
+ const {dom,w,run}=workspace();try{
+  run(`var channels=[{backendId:'one',name:'Power',version:'a'.repeat(64),capability_type:'sensor'},{backendId:'two',name:'Charge',version:'b'.repeat(64),capability_type:'sensor'}];currentAssets=()=>[{id:'asset',backendId:'asset',name:'Battery',channels}];channelForm=()=>'';M.validation=()=>null;M.payload=c=>({name:c.name});checkPermission=async()=>{};loadBackend=async()=>{};toast=()=>{};var writes=[];B.request=async(s,p,m,b)=>{writes.push(b);if(writes.length===2)throw Object.assign(Error('Stale'),{status:409});return {};};inspectAsset('asset');`);
+  const form=w.document.querySelector('#overlay form');form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(setImmediate);
+  assert.equal(run('writes[0].expected_version'),'a'.repeat(64));assert.equal(run('writes[1].expected_version'),'b'.repeat(64));assert.match(form.textContent,/1 of 2 channels saved/);assert.equal(form.querySelector('[type="submit"]').disabled,true);
  }finally{dom.window.close();}
 });
