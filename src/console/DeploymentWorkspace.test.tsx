@@ -17,6 +17,10 @@ import {
 vi.mock("./RuntimePanel", () => ({
   RuntimePanel: ({ kind, startPerceptaSetup }: { kind: string; startPerceptaSetup?: boolean }) => <div>{startPerceptaSetup ? "First Percepta setup" : "Configure " + kind}</div>,
 }));
+vi.mock("./PerceptaSetup", () => ({
+  PerceptaSetup: ({open, launchPlan, startOnHouseData}: {open:boolean;launchPlan?:{hostId:string;revision:string};startOnHouseData?:boolean}) =>
+    open ? <div>{startOnHouseData?"House data settings":`Review Percepta on ${launchPlan?.hostId} · ${launchPlan?.revision}`}</div> : null,
+}));
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -197,7 +201,29 @@ it("opens the initial setup from operation and keeps its tools off the plan", as
   fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
   expect(screen.getByRole("dialog")).toHaveTextContent("planned destination");
   fireEvent.click(screen.getByRole("button", { name: "Set up Percepta" }));
-  expect(screen.getByText("First Percepta setup")).toBeVisible();
+  expect(await screen.findByText("Review Percepta on pi · saved")).toBeVisible();
+});
+it("saves a Percepta-only plan and opens its wizard on the reviewed host", async () => {
+  const fetcher=mock();
+  await open();
+  fireEvent.click(screen.getByRole("checkbox",{name:"Inference"}));
+  fireEvent.click(screen.getByRole("checkbox",{name:"Forecasting"}));
+  expect(screen.queryByRole("button",{name:/Inference · Draft/})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"Review plan"}));
+  fireEvent.click(screen.getByRole("button",{name:"Set up Percepta only"}));
+  expect(await screen.findByText("Review Percepta on pi · saved")).toBeVisible();
+  const write=fetcher.mock.calls.find(([,options])=>options?.method==="PUT");
+  expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({included_services:["percepta"],services:{percepta:"local"}});
+  expect(fetcher.mock.calls.some(([,options])=>options?.method==="POST")).toBe(false);
+});
+it("opens the shared forecast editor from the plan instead of saving a second address", async () => {
+  const fetcher=mock();
+  await open();
+  fireEvent.click(screen.getByRole("button",{name:"Edit forecasting connection"}));
+  expect(screen.queryByLabelText("Host or IP")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"Open forecast settings"}));
+  expect(screen.getByText("House data settings")).toBeVisible();
+  expect(fetcher.mock.calls.every(([,options])=>!options?.method)).toBe(true);
 });
 it("allows editing connection overlays with cancel and save; automatic mode clears overrides", async () => {
   mock();
@@ -469,7 +495,7 @@ it("opens plan details and retains unsaved placement when closing them", async (
   fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
   expect(
     screen.getByRole("dialog", { name: "Inference in the deployment plan" }),
-  ).toHaveTextContent("not available in this plan");
+  ).toHaveTextContent("Inference uses a prepared instance");
   expect(screen.queryByText("Configure controller")).not.toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
 });

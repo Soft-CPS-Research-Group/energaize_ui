@@ -24,9 +24,11 @@ import { runtimeRequest } from "../api/runtimeApi";
 import { PerceptaMessages } from "./PerceptaMessages";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { RuntimePanel } from "./RuntimePanel";
+import { PerceptaSetup } from "./PerceptaSetup";
 import {
   connections,
   graphLayout,
+  includedServices,
   names,
   services,
   stamp,
@@ -118,6 +120,8 @@ export function DeploymentWorkspace({
     [editing, setEditing] = useState<string | null>(null),
     [review, setReview] = useState(false),
     [detail, setDetail] = useState<Service | null>(null);
+  const [forecastSetup, setForecastSetup] = useState(false);
+  const [launchPlan, setLaunchPlan] = useState<{hostId:string;revision:string} | null>(null);
   const [dragging, setDragging] = useState<Service | null>(null),
     [hoverHost, setHoverHost] = useState<string | null>(null);
   const sequence = useRef(0),
@@ -133,8 +137,8 @@ export function DeploymentWorkspace({
   const dirty =
     !!draft &&
     !!saved &&
-    JSON.stringify([draft.services, draft.connections]) !==
-      JSON.stringify([saved.services, saved.connections]);
+    JSON.stringify([draft.services, draft.connections, [...includedServices(draft)].sort()]) !==
+      JSON.stringify([saved.services, saved.connections, [...includedServices(saved)].sort()]);
   const load = useCallback(async () => {
     const seq = ++sequence.current;
     setError("");
@@ -161,6 +165,8 @@ export function DeploymentWorkspace({
     setSaved(null);
     setEditing(null);
     setDetail(null);
+    setForecastSetup(false);
+    setLaunchPlan(null);
     setReview(false);
     setView("operation");
     setMessage("");
@@ -194,7 +200,7 @@ export function DeploymentWorkspace({
     }
   };
   const save = async () => {
-    if (!draft) return false;
+    if (!draft) return null;
     const seq = sequence.current;
     setSaving(true);
     setError("");
@@ -205,20 +211,21 @@ export function DeploymentWorkspace({
           method: "PUT",
           body: JSON.stringify({
             services: draft.services,
+            included_services: includedServices(draft),
             connections: draft.connections,
             base_revision: map?.revision ?? null,
             expected_revision: draft.revision,
           }),
         },
       );
-      if (seq !== sequence.current) return false;
+      if (seq !== sequence.current) return null;
       setDraft(result);
       setSaved(result);
       setMessage("Draft saved. Running services have not changed.");
-      return true;
+      return result;
     } catch (e) {
       if (seq === sequence.current) setError((e as Error).message);
-      return false;
+      return null;
     } finally {
       if (seq === sequence.current) setSaving(false);
     }
@@ -239,6 +246,29 @@ export function DeploymentWorkspace({
       return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
     });
   const hasRuntimePercepta = !!map?.components.some(c => c.kind === "percepta" && !c.planned);
+  const selected = draft ? includedServices(draft) : [];
+  const plannedPercepta = map?.destinations.find(d => d.placement === draft?.services.percepta);
+  const canOpenPlannedPercepta = !!plannedPercepta?.registered &&
+    (dirty || draft?.percepta_host_id === undefined || draft.percepta_host_id === plannedPercepta.id);
+  const openPlannedPercepta = async () => {
+    if (!draft || !plannedPercepta || !canOpenPlannedPercepta) return;
+    const reviewed = dirty || !draft.revision || draft.stale ? await save() : draft;
+    if (!reviewed?.revision) return;
+    if (reviewed.percepta_host_id !== undefined && reviewed.percepta_host_id !== plannedPercepta.id) {
+      setError("The reviewed plan needs a destination with an approved Percepta collection image.");
+      setReview(false);
+      setEditing(null);
+      return;
+    }
+    setReview(false);
+    setEditing(null);
+    setLaunchPlan({hostId:plannedPercepta.id,revision:reviewed.revision});
+  };
+  const openForecastSettings = () => {
+    setEditing(null);
+    setReview(false);
+    setForecastSetup(true);
+  };
   if (detail && detail !== "forecasting")
     return (
       <section className="deployment-detail">
@@ -279,6 +309,32 @@ export function DeploymentWorkspace({
     : null;
   return (
     <section className="deployment-workspace" aria-label="Deployment">
+      <PerceptaSetup
+        siteId={siteId}
+        hideTrigger
+        open={forecastSetup}
+        onOpenChange={setForecastSetup}
+        startOnHouseData
+        configurationOnly
+        onChange={() => {}}
+      />
+      {launchPlan && (
+        <PerceptaSetup
+          siteId={siteId}
+          hideTrigger
+          open
+          initialSetup
+          launchPlan={launchPlan}
+          onOpenChange={(open) => {
+            if (!open) {
+              setLaunchPlan(null);
+              setView("operation");
+              void load();
+            }
+          }}
+          onChange={() => {}}
+        />
+      )}
       <header className="deployment-heading">
         <div>
           <span className="eyebrow">{siteName}</span>
@@ -327,7 +383,17 @@ export function DeploymentWorkspace({
               the destinations below and save again.
             </p>
           )}
-          {planning ? <div className="deployment-instruction"><GripVertical size={14} /> Drag a service to change its planned destination. Select a connection to edit it.</div> : (
+          {planning ? <>
+            <fieldset className="deployment-plan-services" disabled={saving}>
+              <legend>Services in this plan</legend>
+              {services.map(kind=><label key={kind}><input type="checkbox" checked={selected.includes(kind)} onChange={event=>{
+                const checked=event.target.checked;
+                setDraft(previous=>previous?{...previous,included_services:services.filter(service=>service===kind?checked:includedServices(previous).includes(service))}:previous);
+                setMessage("");
+              }}/>{names[kind]}</label>)}
+            </fieldset>
+            <div className="deployment-instruction"><GripVertical size={14} /> Drag a service to change its planned destination. Select a connection for its settings.</div>
+          </> : (
             <div className="deployment-operation-bar">
               <div><h3>Current services</h3><p>{hasRuntimePercepta?'Select Percepta on the map for its status and readings.':'Set up Percepta to start collecting readings for this house.'}</p></div>
               <div className="actions" role="group" aria-label="Operation tools">
@@ -483,7 +549,7 @@ export function DeploymentWorkspace({
                   aria-label={"Edit " + edge.id + " connection"}
                 >
                   {connections.find((l) => l.id === edge.id)?.label}
-                  {draft.connections[edge.id]?.mode === "manual" && " · edited"}
+                  {edge.id!=="forecasting"&&draft.connections[edge.id]?.mode === "manual" && " · edited"}
                 </button>
               ))}
               {layout.nodes.map((node) => {
@@ -632,11 +698,23 @@ export function DeploymentWorkspace({
             >
               {currentService === "percepta" ? <>
                 <p>Set the planned destination on the map. Manage sources, measurements and collection under In operation.</p>
-                <button className="btn" onClick={() => {setEditing(null);setView("operation");setDetail("percepta");}}>{hasRuntimePercepta?"Open Percepta":"Set up Percepta"}</button>
-              </>:<p>{names[currentService]} settings are not available in this plan.</p>}
+                {hasRuntimePercepta?<button className="btn" onClick={() => {setEditing(null);setView("operation");setDetail("percepta");}}>Open Percepta</button>:<button className="btn" disabled={saving||!canOpenPlannedPercepta} onClick={() => void openPlannedPercepta()}>Set up Percepta</button>}
+              </>:currentService==="forecasting"?<>
+                <p>The shared Predictor publishes the forecasts. Set the feed Percepta should read for this house.</p>
+                <button className="btn" onClick={openForecastSettings}>Open forecast settings</button>
+              </>:<>
+                <p>Inference uses a prepared instance. Open its controls to manage it separately.</p>
+                <button className="btn" onClick={()=>{setEditing(null);setView("operation");setDetail("controller");}}>Open inference settings</button>
+              </>}
             </Overlay>
           )}
-          {currentLink && (
+          {currentLink?.id === "forecasting" && (
+            <Overlay title="Predictor → Percepta" onClose={()=>setEditing(null)}>
+              <p>{currentLink.description}</p>
+              <button className="btn primary" onClick={openForecastSettings}>Open forecast settings</button>
+            </Overlay>
+          )}
+          {currentLink && currentLink.id !== "forecasting" && (
             <ConnectionEditor
               key={currentLink.id}
               id={currentLink.id}
@@ -738,7 +816,7 @@ export function DeploymentWorkspace({
                     (d) => d.placement === "cloud" || d.placement === "local",
                   )
                   .map((d) => {
-                    const assigned = services.filter(
+                    const assigned = selected.filter(
                       (kind) => draft.services[kind] === d.placement,
                     );
                     return (
@@ -798,21 +876,20 @@ export function DeploymentWorkspace({
                 <summary>
                   Connections{" "}
                   <span>
-                    {Object.values(draft.connections).filter(
-                      (c) => c?.mode === "manual",
-                    ).length
+                    {connections.some(c => c.id !== "forecasting" && draft.connections[c.id]?.mode === "manual")
                       ? "Custom settings"
                       : "Automatic settings"}
                   </span>
                 </summary>
-                {connections.map((c) => (
+                {connections.filter(c=>selected.includes("percepta")&&
+                  (c.id!=="inference"||selected.includes("controller"))).map((c) => (
                   <div className="deployment-review-line" key={c.id}>
-                    <span>Percepta → {names[c.target]}</span>
-                    <small>
+                    <span>{c.id==="forecasting"?"Predictor → Percepta":`Percepta → ${names[c.target]}`}</span>
+                    {c.id==="forecasting"?<button className="btn text" onClick={openForecastSettings}>Open forecast settings</button>:<small>
                       {draft.connections[c.id]?.mode === "manual"
                         ? `${draft.connections[c.id]?.host}${draft.connections[c.id]?.port ? ":" + draft.connections[c.id]?.port : ""}`
                         : "Automatic · to validate"}
-                    </small>
+                    </small>}
                   </div>
                 ))}
               </details>
@@ -820,7 +897,7 @@ export function DeploymentWorkspace({
                 <summary>
                   Changes <span>Current → planned</span>
                 </summary>
-                {services.map((kind) => (
+                {selected.map((kind) => (
                   <div className="deployment-review-line" key={kind}>
                     <strong>{names[kind]}</strong>
                     <small>
@@ -841,21 +918,21 @@ export function DeploymentWorkspace({
                   </div>
                 ))}
               </details>
-              <details className="deployment-review-availability">
+              {draft.blockers.length>0&&(selected.length!==1||selected[0]!=="percepta"||draft.stale||!canOpenPlannedPercepta)&&<details className="deployment-review-availability">
                 <summary>
-                  Multi-service rollout requirements
+                  Deployment requirements
                 </summary>
                 <ul>
                   {draft.blockers.map((b) => (
                     <li key={b}>{b}</li>
                   ))}
                 </ul>
-              </details>
+              </details>}
               <div className="deployment-review-footer">
-                <small>Save placement and connections for later. Start or manage Percepta in In operation.</small>
+                <small>{selected.includes("percepta")&&!hasRuntimePercepta?"Percepta starts after you review its collection settings and confirm.":"Save the plan to keep your service selection and destinations."}</small>
                 <div className="deployment-dialog-actions">
                   <button
-                    className="btn primary"
+                    className="btn"
                     disabled={saving}
                     onClick={() =>
                       void save().then((ok) => {
@@ -865,6 +942,7 @@ export function DeploymentWorkspace({
                   >
                     Save reviewed draft
                   </button>
+                  {selected.includes("percepta")&&!hasRuntimePercepta&&<button className="btn primary" disabled={saving||!canOpenPlannedPercepta} onClick={()=>void openPlannedPercepta()}>Set up Percepta only</button>}
                 </div>
               </div>
             </Overlay>
@@ -897,9 +975,7 @@ function ConnectionEditor({
     map.destinations.find((d) => d.placement === draft.services.percepta)?.id;
   const existing = samePlan ? map.links.find((l) => l.id === id) : undefined;
   const sameHost =
-    (id === "inference" || id === "forecasting") &&
-    draft.services.percepta ===
-      draft.services[id === "inference" ? "controller" : "forecasting"];
+    id === "inference" && draft.services.percepta === draft.services.controller;
   return (
     <Overlay title={"Percepta → " + names[link.target]} onClose={onClose}>
       <p>{link.description}</p>

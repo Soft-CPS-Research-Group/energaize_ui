@@ -2,11 +2,13 @@ import {useEffect,useRef,useState,useId} from 'react';
 import {Settings2,Pencil,X,ArrowLeft,ChevronRight,PlugZap,Plus,Activity,SlidersHorizontal,Users} from 'lucide-react';
 import {runtimeRequest as runtime,runtimeRequestId,type RuntimeSnapshot,type RuntimeHost,type RuntimeOperation} from '../api/runtimeApi';
 import {EVChargingLoader} from '../components/ui/EVChargingLoader';
+import type {CommunitySite} from '../data/communityDomain';
+import {siteHouseId} from '../pages/ai/predictor/workspaceScope';
 import {PerceptaConnectionEditor} from './PerceptaConnectionEditor';
 import {EquipmentArt} from './EquipmentArt';
 import {PerceptaActuatorEditor} from './PerceptaActuatorEditor';
 import {equipmentMeasurements,measurementLabel,PerceptaMeasurementEditor} from './PerceptaMeasurementEditor';
-import {api,equipmentConnector,equipmentSource,isPriceSource,sourceForHouse,sourceLabel,type Connection,type Connector,type Channel,type Profile,type Owner,type Source} from './perceptaSetupModel';
+import {api,equipmentConnector,equipmentSource,forecastRoute,isPriceSource,sourceForHouse,sourceLabel,type Connection,type Connector,type Channel,type Profile,type Owner,type Source} from './perceptaSetupModel';
 
 type CollectionTarget = { host_id: string; image: string; recSharing?: boolean };
 type RecPeer = { site_id: string; name: string };
@@ -18,17 +20,17 @@ type SiteCollectionSettings = {
   share_with_rec?: boolean;
   rec_peers?: RecPeer[];
 };
-type Props={target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;configured?:boolean;compact?:boolean;initialSetup?:boolean;configurationOnly?:boolean;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean};
-export function PerceptaSetup({target,equipmentId,siteId,communityId,onChange,configured=false,compact=false,initialSetup=false,configurationOnly=false,open:controlledOpen,onOpenChange,hideTrigger=false}:Props){
+type Props={target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;configured?:boolean;compact?:boolean;initialSetup?:boolean;configurationOnly?:boolean;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean;startOnHouseData?:boolean;launchPlan?:{hostId:string;revision:string}};
+export function PerceptaSetup({target,equipmentId,siteId,communityId,onChange,configured=false,compact=false,initialSetup=false,configurationOnly=false,open:controlledOpen,onOpenChange,hideTrigger=false,startOnHouseData=false,launchPlan}:Props){
  const [localOpen,setLocalOpen]=useState(false),open=controlledOpen??localOpen;
  const setOpen=(value:boolean)=>{setLocalOpen(value);onOpenChange?.(value);};
  const label=equipmentId?'Collection settings':communityId?'Community data':configured?'Edit configuration':'Configure Percepta';
- return <>{!hideTrigger&&<button className={compact?'btn runtime-icon-button':'btn'} aria-label={label} title={label} onClick={()=>setOpen(true)}>{compact?<Pencil size={17}/>:<><Settings2 size={16}/>{label}</>}</button>}{open&&<PerceptaWizard target={target} equipmentId={equipmentId} siteId={siteId} communityId={communityId} initialSetup={initialSetup} configurationOnly={configurationOnly} onChange={onChange} onClose={()=>setOpen(false)}/>}</>;
+ return <>{!hideTrigger&&<button className={compact?'btn runtime-icon-button':'btn'} aria-label={label} title={label} onClick={()=>setOpen(true)}>{compact?<Pencil size={17}/>:<><Settings2 size={16}/>{label}</>}</button>}{open&&<PerceptaWizard target={target} equipmentId={equipmentId} siteId={siteId} communityId={communityId} initialSetup={initialSetup} configurationOnly={configurationOnly} startOnHouseData={startOnHouseData} launchPlan={launchPlan} onChange={onChange} onClose={()=>setOpen(false)}/>}</>;
 }
-function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,initialSetup,configurationOnly}:{target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;onClose:()=>void;initialSetup:boolean;configurationOnly:boolean}){
+function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,initialSetup,configurationOnly,startOnHouseData,launchPlan}:{target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;onClose:()=>void;initialSetup:boolean;configurationOnly:boolean;startOnHouseData:boolean;launchPlan?:Props['launchPlan']}){
  const communityMode=!!communityId,dialog=useRef<HTMLDialogElement>(null),titleId=useId();
  const [actuatorEditor,setActuatorEditor]=useState(false),[measurementKind,setMeasurementKind]=useState<'calculated'|'forecast'>('calculated');
- const [tab,setTab]=useState(communityMode?'connections':'channels'),[siteName,setSiteName]=useState(''),[rec,setRec]=useState(communityId||''),[owners,setOwners]=useState<Owner[]>([]),[ownerId,setOwner]=useState('');
+ const [tab,setTab]=useState(communityMode?'connections':startOnHouseData?'general':'channels'),[siteName,setSiteName]=useState(''),[rec,setRec]=useState(communityId||''),[owners,setOwners]=useState<Owner[]>([]),[ownerId,setOwner]=useState(startOnHouseData?siteId||'':'');
  const [profiles,setProfiles]=useState<Record<string,Profile|null>>({}),[sources,setSources]=useState<Source[]>([]);
  const [connections,setConnections]=useState<Connection[]>([]),[connectors,setConnectors]=useState<Connector[]>([]);
  const [sourceEditor,setSourceEditor]=useState<Connection|null|undefined>(),[editing,setEditing]=useState<Channel|null|undefined>();
@@ -38,6 +40,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const [conflict,setConflict]=useState(false);
  const [ready,setReady]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [envKey,setEnvKey]=useState(''),[frequency,setFrequency]=useState(15),[timezone,setTimezone]=useState('UTC'),[snapshot,setSnapshot]=useState<RuntimeSnapshot|null>(null);
+ const [predictorHouseId,setPredictorHouseId]=useState<string|null>(null);
  const [grace, setGrace] = useState(2);
  const [shareWithRec, setShareWithRec] = useState(false);
  const [recPeers, setRecPeers] = useState<RecPeer[]>([]);
@@ -67,8 +70,8 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
   let items:Owner[],community=communityId||'',assignmentsForEquipment:Source[]=[];
   if(communityMode){items=[{id:community,name:'Community data',scope:'recs'}];}
   else{
-   const [site,assets,settings,assignments]=await Promise.all([api<{name:string;assigned_rec_id:string}>(`/community-api/api/sites/${siteId}`),api<Array<{id?:string;asset_id?:string;data?:{site_id?:string;site_Id?:string;name?:string};name?:string}>>('/community-api/api/assets/'),runtime<SiteCollectionSettings>(`/api/runtime/percepta/sites/${siteId}`),runtime<Source[]>(`/api/runtime/percepta/sites/${siteId}/equipment-sources`)]);
-   if(!live)return;community=site.assigned_rec_id;setSiteName(site.name);setEnvKey(settings.environment_key);setFrequency(settings.frequency_seconds);setTimezone(settings.timezone);setSources(assignments);
+   const [site,assets,settings,assignments]=await Promise.all([api<Pick<CommunitySite,'name'|'external_references'>&{assigned_rec_id:string}>(`/community-api/api/sites/${siteId}`),api<Array<{id?:string;asset_id?:string;data?:{site_id?:string;site_Id?:string;name?:string};name?:string}>>('/community-api/api/assets/'),runtime<SiteCollectionSettings>(`/api/runtime/percepta/sites/${siteId}`),runtime<Source[]>(`/api/runtime/percepta/sites/${siteId}/equipment-sources`)]);
+   if(!live)return;community=site.assigned_rec_id;setSiteName(site.name||'');setPredictorHouseId(siteHouseId(site));setEnvKey(settings.environment_key);setFrequency(settings.frequency_seconds);setTimezone(settings.timezone);setSources(assignments);
    setGrace(settings.grace_seconds ?? 2);
    setShareWithRec(settings.share_with_rec ?? false);
    setRecPeers(settings.rec_peers ?? []);assignmentsForEquipment=assignments;
@@ -78,14 +81,17 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
   if(!live)return;setRec(community);setOwners(items);setProfiles(Object.fromEntries(entries));setConnections(cons);setConnectors(types);
   if(communityMode)setOwner(community);
   if(equipmentId){const item=items.find(o=>o.id===equipmentId);if(!item)throw Error('Equipment is no longer available in this house.');const assigned=equipmentSource(item,Object.fromEntries(entries)[equipmentId],assignmentsForEquipment,cons);setOwner(equipmentId);setSourceConnection(assigned?.connection_id||'');setDevice(assigned?.device_id||'');}
-  if(initialSetup&&!configurationOnly){const hosts=(await runtime<RuntimeHost[]>('/api/runtime/hosts')).filter(h=>h.mode==='docker'&&destinationImage(h));setDestinations(hosts);setDestination(hosts[0]?.id||'');}
+  if(initialSetup&&!configurationOnly){
+   const hosts=(await runtime<RuntimeHost[]>('/api/runtime/hosts')).filter(h=>h.mode==='docker'&&(launchPlan?h.id===launchPlan.hostId&&h.percepta_collection_image&&h.allowed_images?.includes(h.percepta_collection_image):destinationImage(h)));
+   setDestinations(hosts);setDestination(hosts[0]?.id||'');
+  }
   setReady(true);
- });return()=>{live=false;};},[siteId,communityId,initialSetup,configurationOnly,equipmentId]);
+ });return()=>{live=false;};},[siteId,communityId,initialSetup,configurationOnly,equipmentId,launchPlan]);
  const saveSource=()=>void run(async()=>{const saved=await runtime<Source>(`/api/runtime/percepta/sites/${siteId}/equipment/${owner!.id}/source`,{method:'PUT',body:JSON.stringify({connection_id:sourceConnection,device_id:needsDevice?device:null})});setSources(previous=>[...previous.filter(s=>s.asset_id!==owner!.id),saved]);setDevice(saved.device_id||'');setEquipmentSourceEditing(false);changed();setNotice('Source saved for this equipment and its measurements.');});
  const saveMeasurement=(body:unknown)=>void run(async()=>{if(conflict)return;if(owner?.scope==='recs'&&!communityMode)throw Error('Community data is edited from community Inventory only.');await api(`/community-api/api/${owner!.scope}/${owner!.id}/signals${editing?'/'+editing.capability_id:''}`,editing?.version?{...(body as object),expected_version:editing.version}:body,editing?'PUT':'POST');await reloadProfile(owner!);setEditing(undefined);changed();setNotice(actuatorEditor?'Actuator definition saved. No command was sent.':communityMode?'Shared measurement saved. Houses use this definition when their configuration is applied.':'Measurement saved.');});
  const startCollection=()=>void run(async()=>{
   if(configurationOnly||!snapshot)return;const host=destinations.find(h=>h.id===destination),image=destinationImage(host);if(!host||!image)throw Error('Choose a deployment destination.');launchRequest.current??=runtimeRequestId();setLaunchPending(true);
-  try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image})});let operation=result.operation;
+  try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image,...(launchPlan?{draft_revision:launchPlan.revision}:{})})});let operation=result.operation;
    for(let attempt=0;operation.status==='pending'&&attempt<45;attempt++){await new Promise(resolve=>setTimeout(resolve,1000));operation=await runtime<RuntimeOperation>('/api/runtime/operations/'+operation.id);}
    if(operation.status==='failed'){launchRequest.current=null;throw Error(operation.error||'Collection could not start.');}if(operation.status!=='succeeded')throw Error('Start has not been confirmed yet. Check the existing operation before retrying.');onChange();onClose();
   }catch(e){
@@ -125,9 +131,13 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  };
  const availableMeasurements=equipmentMeasurements(profile?.asset_type)
    .filter(kind=>!profile?.capabilities.some(c=>c.enabled&&c.capability_type==='sensor'&&channelType(c)===kind));
- const forecasts=connections.filter(c=>c.provider==='predictor'&&sourceForHouse(c,siteName,envKey));
  const houseChannels=readingChannels(siteId||'');
  const isForecast=(c:Channel)=>c.collection?.role==='input';
+ const route=forecastRoute(predictorHouseId||envKey);
+ const forecastBindings=new Set(houseChannels.filter(isForecast).map(c=>c.collection?.source_binding?.connection_id));
+ const forecasts=connections.filter(c=>c.provider==='predictor'&&(c.site_id
+   ? c.site_id===siteId
+   : forecastBindings.has(c.id)||(c.settings?.exchange===route.exchange&&c.settings?.routing_key===route.routing_key)));
  const saveConnection=(connection:Connection)=>{
   setConnections(previous=>[...previous.filter(c=>c.id!==connection.id),connection]);
   if(owner?.scope==='assets'&&sourceEditor===null){setSourceConnection(connection.id);setDevice('');setEquipmentSourceEditing(true);}
@@ -149,6 +159,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
    key={sourceEditor?.id||'new'}
    communityId={rec}
    connection={sourceEditor||undefined}
+   forecast={tab==='general'&&siteId?{siteId,name:`Predictor forecasts · ${siteName}`,...route}:undefined}
    connectors={connectors.filter(c=>communityMode?isPriceSource(c.id):tab==='general'?c.id==='predictor':equipmentConnector(c.id,profile?.asset_type)||c.id===sourceEditor?.provider)}
    onBusyChange={setBusy}
    onSave={saveConnection}
@@ -239,8 +250,8 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
          ...(supportsRecSharing ? {share_with_rec: shareWithRec} : {}),
        }),
      });
-     const params = selectedTarget
-       ? '?' + new URLSearchParams({host_id: selectedTarget.host_id, image: selectedTarget.image})
+   const params = selectedTarget
+       ? '?' + new URLSearchParams({host_id: selectedTarget.host_id, image: selectedTarget.image,...(launchPlan?{draft_revision:launchPlan.revision}:{})})
        : '';
      setSnapshot(await runtime(`/api/runtime/percepta/sites/${siteId}/preview${params}`, {method: 'POST'}));
      if (supportsRecSharing) {

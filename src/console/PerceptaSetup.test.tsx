@@ -11,14 +11,14 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   else if(url.endsWith('/equipment-sources'))data=[];
   else if(url.endsWith('/equipment/asset/source'))data={asset_id:'asset',...JSON.parse(String(init?.body))};
   else if(url.endsWith('/connections')&&init?.method==='POST'){
-   const body=JSON.parse(String(init.body));data={id:'new-source',provider:body.provider,name:body.name};
+   const body=JSON.parse(String(init.body));data={id:'new-source',provider:body.provider,name:body.name,site_id:body.site_id,settings:body.configuration};
   }
-  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'omie',name:'OMIE day-ahead prices',transport:'scheduled',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}}];
+  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'omie',name:'OMIE day-ahead prices',transport:'scheduled',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}},{id:'predictor',name:'Predictor forecasts',transport:'amqp',available:true,credentials:'optional',defaults:{host:'forecasts.example'}}];
   else if(url.endsWith('/launch'))data={instance_id:'instance',operation:{id:'operation',status:failLaunch?'failed':'succeeded',error:failLaunch?'Source unavailable':undefined}};
   else if(url.includes('/sites/site/signals'))data={capabilities:[]};
   else if(url.includes('/recs/rec/signals'))data={capabilities:[total]};
   else if(url.includes('/assets/asset/signals'))data={profile_id:'profile',asset_type:'grid_meter',capabilities:[channel,...(stored?[{...channel,capability_id:'history',name:'energy_out_l2',mongo_binding:{field:'history'},collection:null}]:[]),{...channel,capability_id:'actuator',name:'Set power',capability_type:'actuator',enabled:false,collection:null}]};
-  else if(url.includes('/community-api/api/sites/site'))data={id:'site',name:'RH03',assigned_rec_id:'rec'};
+  else if(url.includes('/community-api/api/sites/site'))data={id:'site',name:'RH03',assigned_rec_id:'rec',external_references:[{system:'percepta-mongo',identifier:'living_lab/building_R-H-03'}]};
   else if(url.includes('/community-api/api/assets/'))data=[{id:'asset',data:{site_id:'site',name:'Grid meter'}}];
   else if(url.includes('/connections'))data=[{id:'connection',name:'Meter connection',provider:'softcps'},{id:'second',name:'Second source',provider:'softcps'},{id:'prices',name:'Market prices',provider:'ren'},{id:'shared',name:'Cleanwatts RabbitMQ · RH01 and RH02',provider:'cleanwatts_2'},{id:'foreign-forecast',name:'Predictor forecasts · RH01',provider:'predictor',settings:{exchange:'pred.R-H-01'}},{id:'foreign-vehicle',name:'Pulsecharge · RH01',provider:'pulsecharge',settings:{exchange:'building_R-H-01'}}];
   else if(url.split('?')[0].endsWith('/preview'))data={version:'123abc',channel_count:1,warnings:[],payload:{},executable:true,applied:false};
@@ -91,6 +91,22 @@ it('lists built-in calculations and keeps forecasts optional for the current col
  fireEvent.click(screen.getByRole('button',{name:'Next: review'}));
  expect(screen.getByRole('button',{name:'Generate configuration'})).toBeEnabled();
  expect(fetcher.mock.calls.every(([,init])=>!init?.method||init.method==='GET')).toBe(true);
+});
+it('suggests the Predictor house route and keeps the edited route attached to that house',async()=>{
+ const fetcher=setup();await openEquipment();
+ fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add forecast source'}));
+ expect(screen.getByLabelText('Source exchange')).toHaveValue('pred.R-H-03');
+ expect(screen.getByLabelText('Routing key')).toHaveValue('q.pred.R-H-03');
+ fireEvent.change(screen.getByLabelText('Source exchange'),{target:{value:'forecast.direct'}});
+ fireEvent.change(screen.getByLabelText('Routing key'),{target:{value:'house.custom'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+ await screen.findByRole('button',{name:/^Add forecast$/});
+ const write=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/connections')&&init?.method==='POST');
+ expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({site_id:'site',provider:'predictor',configuration:{exchange:'forecast.direct',routing_key:'house.custom'}});
+ fireEvent.click(screen.getByRole('button',{name:'Edit Predictor forecasts · RH03'}));
+ expect(screen.getByLabelText('Source exchange')).toHaveValue('forecast.direct');
+ expect(screen.getByLabelText('Routing key')).toHaveValue('house.custom');
 });
 it('edits shared measurements from the community entry point',async()=>{
  const fetcher=setup(false,false,true);fireEvent.click(screen.getByRole('button',{name:'Community data'}));

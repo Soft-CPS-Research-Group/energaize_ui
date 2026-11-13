@@ -1,10 +1,10 @@
 import {useState} from 'react';
 import {runtimeRequest as runtime} from '../api/runtimeApi';
 import type {Connection,Connector} from './perceptaSetupModel';
-export function PerceptaConnectionEditor({communityId,connection,connectors,onSave,onCancel,onBusyChange}:{communityId:string;connection?:Connection;connectors:Connector[];onSave:(c:Connection)=>void;onCancel:()=>void;onBusyChange:(busy:boolean)=>void}){
+export function PerceptaConnectionEditor({communityId,connection,connectors,forecast,onSave,onCancel,onBusyChange}:{communityId:string;connection?:Connection;connectors:Connector[];forecast?:{siteId:string;name:string;exchange:string;routing_key:string};onSave:(c:Connection)=>void;onCancel:()=>void;onBusyChange:(busy:boolean)=>void}){
  const first=connectors.find(c=>c.id===connection?.provider)||connectors.find(c=>c.available);
- const [provider,setProvider]=useState(first?.id||''),[name,setName]=useState(connection?.name||'');
- const values={...first?.defaults,...connection?.settings};
+ const [provider,setProvider]=useState(first?.id||''),[name,setName]=useState(connection?.name||forecast?.name||'');
+ const values={...first?.defaults,...(first?.id==='predictor'?forecast:undefined),...connection?.settings};
  const [address,setAddress]=useState(values.url||values.host||''),[path,setPath]=useState(values.data_path||'');
  const [port,setPort]=useState(values.port||5672),[vhost,setVhost]=useState(values.vhost||'/');
  const [exchange,setExchange]=useState(values.exchange||''),[routingKey,setRoutingKey]=useState(values.routing_key||'');
@@ -17,16 +17,17 @@ export function PerceptaConnectionEditor({communityId,connection,connectors,onSa
  return <form onSubmit={async event=>{event.preventDefault();setBusy(true);onBusyChange(true);setError('');try{
   const auth={...(username?{username}:{}),...(password?{password}:{})};
   const configuration=scheduled?{}:broker?{host:address,port,vhost,ssl_conf:{enabled:port===5671},...(provider==='cleanwatts_2'?{queue_prefix:queuePrefix.trim()||null}:{}),...(eventSource?{exchange:exchange.trim(),...(provider==='predictor'?{routing_key:routingKey.trim()}: {})}:{})}:{url:address,data_path:path||connector?.defaults.data_path};
-  const saved=await runtime<Connection>('/api/runtime/connections'+(connection?'/'+connection.id:''),{method:connection?'PUT':'POST',body:JSON.stringify({name:name||connector?.name,community_id:communityId,provider,configuration:{...configuration,...(Object.keys(auth).length?{auth}:{})}})});
+  const saved=await runtime<Connection>('/api/runtime/connections'+(connection?'/'+connection.id:''),{method:connection?'PUT':'POST',body:JSON.stringify({name:name||connector?.name,community_id:communityId,provider,...(provider==='predictor'&&forecast?{site_id:forecast.siteId}:{}),configuration:{...configuration,...(Object.keys(auth).length?{auth}:{})}})});
   setUsername('');setPassword('');onSave(saved);
  }catch(e){setError((e as Error).message);}finally{setBusy(false);onBusyChange(false);}}}>
-  <h4>{connection?'Edit source':'Add a data source'}</h4>{connection&&<p className="percepta-helper">Shared source. Changes affect all equipment using it.</p>}{error&&<p role="alert">{error}</p>}
+  <h4>{connection?'Edit source':'Add a data source'}</h4>{connection&&provider!=='predictor'&&<p className="percepta-helper">Shared source. Changes affect all equipment using it.</p>}{error&&<p role="alert">{error}</p>}
   <fieldset disabled={busy} className="percepta-wizard-content"><div className="percepta-fields">
    <label>Service<select value={provider} disabled={!!connection} onChange={e=>select(e.target.value)}>{connectors.filter(c=>c.available).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
    <label>Name<input value={name} onChange={e=>setName(e.target.value)} placeholder={connector?.name}/></label>
    {!scheduled&&<label>{broker?'Server address':'Service address'}<input required value={address} onChange={e=>setAddress(e.target.value)} placeholder={broker?'broker.example.com':'https://your-service.example'}/></label>}
   </div>
-  {eventSource&&<div className="percepta-fields"><label>Source exchange<input value={exchange} onChange={event=>setExchange(event.target.value)} placeholder={provider==='predictor'?'pred.house':'building_house'}/></label>{provider==='predictor'&&<label>Routing key<input value={routingKey} onChange={event=>setRoutingKey(event.target.value)} placeholder="q.pred.house"/></label>}</div>}
+  {eventSource&&<div className="percepta-fields"><label>Source exchange<input required={provider==='predictor'} value={exchange} onChange={event=>setExchange(event.target.value)} placeholder={provider==='predictor'?'pred.house':'building_house'}/></label>{provider==='predictor'&&<label>Routing key<input required maxLength={180} value={routingKey} onChange={event=>setRoutingKey(event.target.value)} placeholder="q.pred.house"/></label>}</div>}
+  {provider==='predictor'&&<p className="percepta-helper">Use the exchange and routing key that the Predictor publishes to on this broker and virtual host.</p>}
   {connector?.credentials!=='none'&&<><div className="percepta-fields"><label>Username<input required={connector?.credentials==='required'&&!connection?.has_credentials} autoComplete="off" value={username} onChange={e=>setUsername(e.target.value)}/></label><label>Password<input required={connector?.credentials==='required'&&!connection?.has_credentials} type="password" autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)}/></label></div><p className="percepta-helper">{connection?.has_credentials?'Credentials saved. Leave blank to keep them.':'Use the credentials for this service. They are stored encrypted in the backend.'}</p></>}
   {scheduled?<p className="percepta-helper">Percepta fetches day-ahead prices from OMIE. Select the market in the price measurement.</p>:<details><summary>Advanced connection settings</summary><p className="percepta-helper">The connector supplies the standard endpoint. Change it only if your server uses a different one.</p>{broker?<div className="percepta-fields"><label>Port<input type="number" min="1" max="65535" required value={port} onChange={e=>setPort(Number(e.target.value))}/></label><label>Virtual host<input value={vhost} onChange={e=>setVhost(e.target.value)}/></label>{provider==='cleanwatts_2'&&<label>Queue prefix<input value={queuePrefix} onChange={e=>setQueuePrefix(e.target.value)} maxLength={180}/><small>Use the prefix assigned by your provider, if required.</small></label>}</div>:<label>Data endpoint<input value={path} onChange={e=>setPath(e.target.value)}/></label>}</details>}
   <footer className="percepta-editor-actions"><button type="button" className="btn" onClick={onCancel}>Cancel</button><button className="btn primary" disabled={!connector}>Save source</button></footer></fieldset>

@@ -59,11 +59,14 @@ export interface Draft {
   updated_at: string | null;
   stale: boolean;
   services: Record<Service, Placement>;
+  included_services?: Service[];
   connections: Partial<Record<ConnectionId, Connection>>;
   launch_available: boolean;
+  percepta_host_id?: string | null;
   blockers: string[];
 }
 export const services: Service[] = ["percepta", "controller", "forecasting"];
+export const includedServices = (draft: Draft) => draft.included_services ?? services;
 export const names: Record<string, string> = {
   percepta: "Percepta",
   controller: "Inference",
@@ -90,9 +93,9 @@ export const connections: {
   {
     id: "forecasting",
     target: "forecasting",
-    label: "Data · to confirm",
+    label: "RabbitMQ · forecasts",
     description:
-      "Proposed data exchange with Percepta. The current forecasting worker fetches jobs and history from the Flexibility backend and returns results there. A direct Percepta connection is not implemented.",
+      "The shared Predictor publishes this house’s forecasts to RabbitMQ. In House data, use the same broker, virtual host, exchange and routing key as the publisher.",
     twoWay: false,
   },
   {
@@ -203,7 +206,7 @@ export function graphLayout(
   if (cloud)
     add("backend", "backend", cloud.id, "Shared platform · not probed");
   if (planning) {
-    for (const kind of services) {
+    for (const kind of includedServices(draft)) {
       const host = destinations.find(
         (d) => d.placement === draft.services[kind],
       );
@@ -321,7 +324,7 @@ export function graphLayout(
           {
             id: link.id,
             internal,
-            path: `M ${sx} ${sy} H ${lane} V ${ty} H ${tx}`,
+            path: link.id === "forecasting" ? `M ${tx} ${ty} H ${lane} V ${sy} H ${sx}` : `M ${sx} ${sy} H ${lane} V ${ty} H ${tx}`,
             x: internal ? (sx + tx) / 2 : corridorCenter,
             y: ty - 12,
           },
