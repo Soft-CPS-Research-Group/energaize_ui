@@ -30,6 +30,20 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
  return fetcher;
 }
 async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByRole('button',{name:/Grid meter/});}
+it('lets the user pick a channel by equipment type and edit its defaults before saving',async()=>{
+ const fetcher=setup(false,false,false,true);
+ fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Add measurement'}));
+ const choices=screen.getByRole('region',{name:'Available measurements'});
+ expect(within(choices).queryByRole('button',{name:'Grid import'})).not.toBeInTheDocument();
+ fireEvent.click(within(choices).getByRole('button',{name:'Grid export'}));
+ expect(screen.getByRole('combobox',{name:'Measurement'})).toHaveValue('energy_out_total');
+ fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'Meter export'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText('Measurement saved.');
+ const write=fetcher.mock.calls.find(([url,request])=>String(url).endsWith('/assets/asset/signals')&&request?.method==='POST');
+ expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({name:'Meter export',unit:'kWh',collection:{parameter_type_id:'energy_out_total'}});
+});
 it('opens equipment first and saves a device assignment once for all its measurements',async()=>{
  const fetcher=setup();await openEquipment();
  expect(screen.queryByRole('combobox',{name:'Equipment or scope'})).not.toBeInTheDocument();

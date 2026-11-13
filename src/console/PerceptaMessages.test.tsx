@@ -21,6 +21,15 @@ it('inspects real payload sections and JSON without requiring an inference', asy
   expect(back).toHaveBeenCalledOnce();
 });
 
+it('shows the charging deduction outside the original Percepta JSON', async () => {
+  const response=batch();
+  api.mockResolvedValue({...response,messages:[{...response.messages[0],calculations:{non_shiftable_load:{value:0.03,unit:'kWh',ev_charging_energy:0.02,missing_chargers:[],status:'estimated'}}}]});
+  render(<PerceptaMessages siteId="house" siteName="RH01" onBack={()=>{}}/>);
+  expect(await screen.findByRole('region',{name:'Platform calculation'})).toHaveTextContent('estimated from average power');
+  fireEvent.click(screen.getByRole('button',{name:'JSON'}));
+  expect(screen.queryByText(/"ev_charging_energy"/)).not.toBeInTheDocument();
+});
+
 it('pauses polling and resumes while preserving an inspected message', async () => {
   vi.useFakeTimers(); api.mockResolvedValue(batch());
   render(<PerceptaMessages siteId="house" siteName="RH01" onBack={() => {}}/>);

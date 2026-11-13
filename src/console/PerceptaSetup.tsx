@@ -5,7 +5,7 @@ import {EVChargingLoader} from '../components/ui/EVChargingLoader';
 import {PerceptaConnectionEditor} from './PerceptaConnectionEditor';
 import {EquipmentArt} from './EquipmentArt';
 import {PerceptaActuatorEditor} from './PerceptaActuatorEditor';
-import {PerceptaMeasurementEditor} from './PerceptaMeasurementEditor';
+import {equipmentMeasurements,measurementLabel,PerceptaMeasurementEditor} from './PerceptaMeasurementEditor';
 import {api,equipmentConnector,equipmentSource,isPriceSource,sourceForHouse,sourceLabel,type Connection,type Connector,type Channel,type Profile,type Owner,type Source} from './perceptaSetupModel';
 
 type CollectionTarget = { host_id: string; image: string; recSharing?: boolean };
@@ -32,6 +32,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const [profiles,setProfiles]=useState<Record<string,Profile|null>>({}),[sources,setSources]=useState<Source[]>([]);
  const [connections,setConnections]=useState<Connection[]>([]),[connectors,setConnectors]=useState<Connector[]>([]);
  const [sourceEditor,setSourceEditor]=useState<Connection|null|undefined>(),[editing,setEditing]=useState<Channel|null|undefined>();
+ const [measurementPicker,setMeasurementPicker]=useState(false),[initialMeasurement,setInitialMeasurement]=useState<string>();
  const [equipmentSourceEditing,setEquipmentSourceEditing]=useState(false);
  const [sourceConnection,setSourceConnection]=useState(''),[device,setDevice]=useState('');
  const [conflict,setConflict]=useState(false);
@@ -59,7 +60,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const run=async(work:()=>Promise<void>)=>{setBusy(true);setError('');setNotice('');try{await work();}catch(e){const stale=editing!==undefined&&(e as {status?:number}).status===409;if(stale)setConflict(true);setError(stale?'This change conflicts with the current data. Your edits have been kept. Copy anything you need before discarding and reloading.':(e as Error).message);}finally{setBusy(false);}};
  const readProfile=async(o:Owner)=>{const r=await fetch(`/community-api/api/${o.scope}/${o.id}/signals`);if(r.status===404)return null;if(!r.ok)throw Error('Unable to load measurements');const p=await r.json();if(!Array.isArray(p.capabilities))throw Error('Invalid measurement catalogue');return p as Profile;};
  const reloadProfile=async(o:Owner)=>{const p=await readProfile(o);setProfiles(previous=>({...previous,[o.id]:p}));};
- const selectOwner=(o:Owner)=>{const s=equipmentSource(o,profiles[o.id],sources,connections);setOwner(o.id);setSourceConnection(s?.connection_id||'');setDevice(s?.device_id||'');setEditing(undefined);setConflict(false);setActuatorEditor(false);setEquipmentSourceEditing(false);setNotice('');setError('');};
+ const selectOwner=(o:Owner)=>{const s=equipmentSource(o,profiles[o.id],sources,connections);setOwner(o.id);setSourceConnection(s?.connection_id||'');setDevice(s?.device_id||'');setEditing(undefined);setMeasurementPicker(false);setInitialMeasurement(undefined);setConflict(false);setActuatorEditor(false);setEquipmentSourceEditing(false);setNotice('');setError('');};
  const changed=()=>{setSnapshot(null);onChange();};
  useEffect(()=>{const node=dialog.current!,root=document.documentElement,overflow=root.style.overflow;root.style.overflow='hidden';node.showModal();return()=>{node.close();root.style.overflow=overflow;};},[]);
  useEffect(()=>{let live=true;void run(async()=>{
@@ -93,7 +94,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
   }finally{setLaunchPending(false);}
  });
  const steps=equipmentId?[['channels','Equipment']]:communityMode?[['connections','Sources'],['channels','Shared data']]:[['channels','Equipment'],['general','House data'],...configurationOnly?[]:[['settings',initialSetup?'Review & start':'Review changes']]];
- const step=steps.findIndex(([id])=>id===tab),hasEditor=sourceEditor!==undefined||editing!==undefined||!!sourceDirty;
+ const step=steps.findIndex(([id])=>id===tab),hasEditor=sourceEditor!==undefined||editing!==undefined||measurementPicker||!!sourceDirty;
  const goToStep=(id:string)=>{setNotice('');setError('');if(id==='general')selectOwner(owners.find(o=>o.scope==='sites')!);else if(communityMode&&id==='channels')selectOwner(owners.find(o=>o.scope==='recs')!);else setOwner('');setTab(id);};
  const equipment=owners.filter(o=>o.scope==='assets');
  const readingChannels=(id:string)=>(profiles[id]?.capabilities||[]).filter(c=>c.enabled&&c.capability_type!=='actuator');
@@ -110,6 +111,20 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  };
  const equipmentSources=connections.filter(c=>c.id===source?.connection_id||(equipmentConnector(c.provider,profile?.asset_type)&&sourceForHouse(c,siteName,envKey)));
  const selectedSource=connections.find(c=>c.id===source?.connection_id);
+ const channelType=(c:Channel)=>{
+   const type=c.collection?.parameter_type_id||c.name;
+   if(['ev','electric_vehicle'].includes(profile?.asset_type||'')&&type==='state_of_charge')return 'soc';
+   if(c.collection)return c.collection.parameter_type_id;
+   if(c.enabled||c.mongo_binding)return c.name;
+   const aliases:Record<string,Record<string,string>>={
+     grid_meter:{energy_in:'energy_in_total',energy_out:'energy_out_total'},
+     pv_system:{solar_generation:'energy'},
+     ev_charger:{charging_power:'power',session_energy:'energy_in'},
+   };
+   return aliases[profile?.asset_type||'']?.[c.name]||c.name;
+ };
+ const availableMeasurements=equipmentMeasurements(profile?.asset_type)
+   .filter(kind=>!profile?.capabilities.some(c=>c.enabled&&c.capability_type==='sensor'&&channelType(c)===kind));
  const forecasts=connections.filter(c=>c.provider==='predictor'&&sourceForHouse(c,siteName,envKey));
  const houseChannels=readingChannels(siteId||'');
  const isForecast=(c:Channel)=>c.collection?.role==='input';
@@ -124,7 +139,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
   return <button key={o.id} className="percepta-equipment-row" onClick={()=>selectOwner(o)}><EquipmentArt type={profiles[o.id]?.asset_type}/><span className="percepta-equipment-copy"><strong>{o.name}</strong><small>{current?connectionName(current):'No source connected'}</small></span>{channels>0&&<small>{channels} {channels===1?'measurement':'measurements'}</small>}<ChevronRight size={17}/></button>;
  };
  const sharedData=rec&&<section className="percepta-shared-summary" aria-label="From your community"><div className="percepta-section-heading"><h3><Users size={18}/>From your community</h3></div><p>Included automatically. Edit these in community Inventory → Community data.</p>{readingChannels(rec).length?<ul>{readingChannels(rec).map(c=><li key={c.capability_id}><strong>{c.name}</strong><span>{originName(owners.find(o=>o.id===rec)!,c)}</span></li>)}</ul>:<p>No shared data configured.</p>}</section>;
- const measurementCard=(c:Channel,stored=false)=><button key={c.capability_id} className="percepta-measurement-card" disabled={!!sourceDirty||(stored&&!source)} onClick={()=>{setActuatorEditor(false);setMeasurementKind(isForecast(c)?'forecast':'calculated');setEditing(c);}}><Activity size={18}/><strong>{c.name}</strong><span>{c.unit||'State'}{stored?' · Stored readings':''}<ChevronRight size={14}/></span></button>;
+ const measurementCard=(c:Channel,stored=false)=><button key={c.capability_id} className="percepta-measurement-card" disabled={!!sourceDirty||(stored&&!source)} onClick={()=>{setMeasurementPicker(false);setInitialMeasurement(undefined);setActuatorEditor(false);setMeasurementKind(isForecast(c)?'forecast':'calculated');setEditing(c);}}><Activity size={18}/><strong>{c.name}</strong><span>{c.unit||'State'}{stored?' · Stored readings':''}<ChevronRight size={14}/></span></button>;
  return <dialog ref={dialog} className="percepta-dialog runtime-modal" aria-labelledby={titleId} onCancel={e=>{e.preventDefault();if(!busy)onClose();}}>
  <header className="percepta-dialog-header"><div><span className="eyebrow">{equipmentId?'Equipment settings':<>{communityMode?'Community setup':'Collection setup'} · step {step+1} of {steps.length}</>}</span><h2 id={titleId}>{equipmentId?'Equipment collection':communityMode?'Community data':'Configure Percepta'}</h2></div><button className="btn" aria-label="Close configuration" disabled={busy} onClick={onClose}><X size={18}/></button></header>
  {!equipmentId&&<ol className="wizard-steps" aria-label="Collection setup steps">{steps.map(([id,title],i)=><li key={id}><button disabled={busy||!ready||hasEditor||i>step} aria-current={i===step?'step':undefined} onClick={()=>goToStep(id)}><span>{i+1}</span>{title}</button></li>)}</ol>}
@@ -156,7 +171,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
    {editing!==undefined?actuatorEditor?<PerceptaActuatorEditor channel={editing||undefined} onSave={saveMeasurement} onCancel={()=>{setEditing(undefined);setConflict(false);setError('');}} busy={busy||conflict}/>:
      <PerceptaMeasurementEditor
        key={editing?.capability_id||'new'}
-       channel={editing||undefined}
+       channel={editing||undefined} initialMeasurement={initialMeasurement}
        owner={owner} profile={profile} source={source}
        connections={connections.map(c=>({...c,name:connectionName(c)}))}
        forecastSourceIds={forecasts.map(c=>c.id)}
@@ -164,14 +179,14 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
        frequency={frequency}
        vehicles={equipment.filter(o=>['ev','electric_vehicle'].includes(profiles[o.id]?.asset_type||''))}
        onSave={saveMeasurement}
-       onCancel={()=>{setEditing(undefined);setConflict(false);setError('');}}
+       onCancel={()=>{setEditing(undefined);setInitialMeasurement(undefined);setConflict(false);setError('');}}
        busy={busy||conflict}
      />:tab==='general'?<>
        <section aria-label="Calculated measurements">
          <div className="percepta-section-heading"><div><h3>Calculated measurements</h3><p>{selectedTarget?.recSharing?'Included automatically in Percepta messages.':'Percepta calculates these from the house readings.'}</p></div>{!selectedTarget?.recSharing&&<button className="btn" onClick={()=>{setMeasurementKind('calculated');setEditing(null);}}><Plus size={16}/>Add calculation</button>}</div>
          {selectedTarget?.recSharing?<dl className="percepta-derived-list">
            <div><dt>Solar generation</dt><dd>Sum of the configured solar readings.</dd></div>
-           <div><dt>Non-shiftable consumption</dt><dd>Energy balance from grid, solar and battery readings. This calculation does not subtract EV charging separately.</dd></div>
+           <div><dt>Non-shiftable consumption</dt><dd>The platform deducts EV charging from Percepta's energy balance when the configured chargers supply valid readings.</dd></div>
          </dl>:houseChannels.some(c=>!isForecast(c))&&<div className="percepta-measurement-grid">{houseChannels.filter(c=>!isForecast(c)).map(c=>measurementCard(c))}</div>}
        </section>
        <section className="percepta-shared-summary" aria-label="Forecasts">
@@ -189,7 +204,15 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
          {selectedSource&&<button className="btn text" aria-label="Edit source settings" title="Edit source settings" onClick={()=>setSourceEditor(selectedSource)}><Pencil size={16}/></button>}
        </div>)}
        {communityMode&&<p className="percepta-step-description">Shared prices and totals are included when houses apply their configuration.</p>}
-       <div className="percepta-section-heading"><div><h4>Measurements</h4>{owner.scope==='assets'&&!source&&<p>Connect a source to set up live readings.</p>}</div><button className="btn" disabled={!!sourceDirty||(owner.scope==='assets'&&!source)} onClick={()=>{setActuatorEditor(false);setEditing(null);}}><Plus size={15}/>Add measurement</button></div>
+       <div className="percepta-section-heading"><div><h4>Measurements</h4>{owner.scope==='assets'&&!source&&<p>Connect a source to set up live readings.</p>}</div>{!measurementPicker&&<button className="btn" disabled={!!sourceDirty||(owner.scope==='assets'&&!source)} onClick={()=>{setActuatorEditor(false);setInitialMeasurement(undefined);if(owner.scope==='assets')setMeasurementPicker(true);else setEditing(null);}}><Plus size={15}/>Add measurement</button>}</div>
+       {measurementPicker&&<section aria-label="Available measurements">
+         <p className="percepta-helper">Choose a channel for this equipment. You can edit the defaults before saving.</p>
+         {availableMeasurements.length?<div className="percepta-measurement-grid">{availableMeasurements.map(kind=><button className="percepta-measurement-card" key={kind} onClick={()=>{
+           const existing=profile?.capabilities.find(c=>!c.enabled&&c.capability_type==='sensor'&&channelType(c)===kind);
+           setMeasurementPicker(false);setInitialMeasurement(kind);setEditing(existing||null);
+         }}><Activity size={16}/><strong>{measurementLabel(kind,profile?.asset_type)}</strong></button>)}</div>:<p className="percepta-helper">All available measurements are already listed for this equipment.</p>}
+         <button className="btn text" onClick={()=>setMeasurementPicker(false)}>Cancel</button>
+       </section>}
        {readingChannels(owner.id).some(collected)&&<div className="percepta-measurement-grid">{readingChannels(owner.id).filter(collected).map(c=>measurementCard(c))}</div>}
        {readingChannels(owner.id).some(c=>!collected(c))&&<details>
          <summary>Stored readings ({readingChannels(owner.id).filter(c=>!collected(c)).length})</summary>

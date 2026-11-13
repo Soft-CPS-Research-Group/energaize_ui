@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, Pause, Play, Radio, RefreshCw, Search } from 'lucide-react';
 import { runtimeRequest } from '../api/runtimeApi';
 
-export type PerceptaMessage = { id: string; timestamp: string; payload: Record<string, unknown>; truncated: boolean };
+type Consumption = { value: number | null; unit: string; ev_charging_energy: number | null; missing_chargers: string[]; status: 'measured' | 'estimated' | 'incomplete' };
+export type PerceptaMessage = { id: string; timestamp: string; payload: Record<string, unknown>; truncated: boolean; calculations?: {non_shiftable_load?: Consumption} };
 type MessageBatch = { site_id: string; checked_at: string; available: boolean; source: string | null; messages: PerceptaMessage[]; notice: string | null };
 const time = (value: string) => new Date(value).toLocaleString('en-GB');
 const sections = ['observations', 'forecasts', 'community', 'decisions'];
@@ -51,6 +52,8 @@ export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string;
   const age = latest ? Math.max(0, Math.floor((clock - new Date(latest.timestamp).getTime()) / 1000)) : null;
   const status = error ? 'Update failed' : paused ? 'Paused' : !batch ? 'Connecting…' : !batch.available ? 'Source not linked' : age === null ? 'Waiting for messages' : age > 60 ? 'No recent messages' : 'Receiving recent messages';
   const text = selected ? JSON.stringify(selected.payload, null, 2) : '';
+  const consumption = selected?.calculations?.non_shiftable_load;
+  const energy = (value: number) => value.toLocaleString(undefined, {maximumFractionDigits: 6}) + ' ' + consumption?.unit;
   async function copy() {
     try { await navigator.clipboard.writeText(text); setNotice('Message copied.'); }
     catch { setNotice('Copy is unavailable. Use Download JSON instead.'); }
@@ -73,6 +76,11 @@ export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string;
     <div className="percepta-message-workspace">
       <div className="percepta-message-list" aria-label="Recent messages">{items.map(m => <button key={m.id} aria-pressed={selected?.id === m.id} onClick={() => { setSelected(m); setFollow(false); setNotice(''); }}><time>{time(m.timestamp)}</time><strong>Percepta output</strong><small>{m.truncated ? 'Payload exceeds preview limit' : sections.filter(s => hasValues(m.payload[s])).map(title).join(' · ') || 'Empty payload'}</small></button>)}{!items.length && <p>{busy && !batch ? 'Loading messages…' : query ? 'No recent messages match your search.' : batch?.available ? 'No stored messages found. Waiting for Percepta output.' : 'Messages will appear when a source is linked.'}</p>}</div>
       <section className="percepta-message-inspector" aria-label="Selected message">{selected ? <><header><div><span className="eyebrow">Selected message</span><h3>{time(selected.timestamp)}</h3></div><div className="actions"><button className="btn text" disabled={selected.truncated} onClick={() => void copy()} title="Copy JSON" aria-label="Copy JSON"><Copy size={16}/></button><button className="btn text" disabled={selected.truncated} onClick={download} title="Download JSON" aria-label="Download JSON"><Download size={16}/></button></div></header>
+        {consumption && <section className="percepta-calculated-consumption" aria-label="Platform calculation"><h4>Non-shiftable consumption excluding EV charging</h4>
+          <strong>{consumption.value===null?'Incomplete readings':energy(consumption.value)}</strong>
+          {consumption.ev_charging_energy!==null&&<p>EV charging deducted: {energy(consumption.ev_charging_energy)}{consumption.status==='estimated'?' · estimated from average power':''}</p>}
+          {!!consumption.missing_chargers.length&&<p>Missing charger readings: {consumption.missing_chargers.join(', ')}</p>}
+        </section>}
         <div className="percepta-message-mode"><button aria-pressed={mode === 'sections'} onClick={() => setMode('sections')}>Sections</button><button aria-pressed={mode === 'json'} onClick={() => setMode('json')}>JSON</button></div>
         {selected.truncated ? <p className="notice">This message exceeds the preview size limit. Its payload has been omitted.</p> : mode === 'json' ? <pre>{text}</pre> : sections.map(s => <details key={s} open><summary>{title(s)}<small>{hasValues(selected.payload[s]) ? `${Object.keys(selected.payload[s] as object).length} entries` : 'No entries'}</small></summary><pre>{JSON.stringify(selected.payload[s] ?? {}, null, 2)}</pre></details>)}
         {notice && <p role="status">{notice}</p>}
