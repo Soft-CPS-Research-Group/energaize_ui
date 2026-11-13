@@ -168,11 +168,14 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
        busy={busy||conflict}
      />:tab==='general'?<>
        <section aria-label="Calculated measurements">
-         <div className="percepta-section-heading"><div><h3>Calculated measurements</h3><p>Percepta calculates these from the house readings.</p></div><button className="btn" onClick={()=>{setMeasurementKind('calculated');setEditing(null);}}><Plus size={16}/>Add calculation</button></div>
-         {houseChannels.some(c=>!isForecast(c))&&<div className="percepta-measurement-grid">{houseChannels.filter(c=>!isForecast(c)).map(c=>measurementCard(c))}</div>}
+         <div className="percepta-section-heading"><div><h3>Calculated measurements</h3><p>{selectedTarget?.recSharing?'Included automatically in Percepta messages.':'Percepta calculates these from the house readings.'}</p></div>{!selectedTarget?.recSharing&&<button className="btn" onClick={()=>{setMeasurementKind('calculated');setEditing(null);}}><Plus size={16}/>Add calculation</button>}</div>
+         {selectedTarget?.recSharing?<dl className="percepta-derived-list">
+           <div><dt>Solar generation</dt><dd>Sum of the configured solar readings.</dd></div>
+           <div><dt>Non-shiftable consumption</dt><dd>Energy balance from grid, solar and battery readings. This calculation does not subtract EV charging separately.</dd></div>
+         </dl>:houseChannels.some(c=>!isForecast(c))&&<div className="percepta-measurement-grid">{houseChannels.filter(c=>!isForecast(c)).map(c=>measurementCard(c))}</div>}
        </section>
        <section className="percepta-shared-summary" aria-label="Forecasts">
-         <div className="percepta-section-heading"><div><h3>Forecasts</h3>{!forecasts.length&&<p>Connect a Predictor feed for this house to add forecasts.</p>}</div><div className="percepta-source-form-actions">{forecasts.map(c=><button className="btn text" key={c.id} onClick={()=>setSourceEditor(c)}>Edit {c.name}</button>)}{forecasts.length>0?<button className="btn" onClick={()=>{setMeasurementKind('forecast');setEditing(null);}}><Plus size={16}/>Add forecast</button>:<button className="btn" disabled={!connectors.some(c=>c.id==='predictor'&&c.available)} onClick={()=>setSourceEditor(null)}><Plus size={16}/>Add forecast source</button>}</div></div>
+         <div className="percepta-section-heading"><div><h3>Forecasts <span className="percepta-readonly">Optional</span></h3><p>Percepta reads predictions from this house’s Predictor feed once it is publishing.</p></div><div className="percepta-source-form-actions">{forecasts.map(c=><button className="btn text" key={c.id} onClick={()=>setSourceEditor(c)}>Edit {c.name}</button>)}{forecasts.length>0?<button className="btn" onClick={()=>{setMeasurementKind('forecast');setEditing(null);}}><Plus size={16}/>Add forecast</button>:<button className="btn" disabled={!connectors.some(c=>c.id==='predictor'&&c.available)} onClick={()=>setSourceEditor(null)}><Plus size={16}/>Add forecast source</button>}</div></div>
          {houseChannels.some(isForecast)&&<div className="percepta-measurement-grid">{houseChannels.filter(isForecast).map(c=>measurementCard(c))}</div>}
        </section>
        {sharedData}

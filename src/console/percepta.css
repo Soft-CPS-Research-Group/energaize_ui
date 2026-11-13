@@ -71,6 +71,10 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 .percepta-source-form-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .percepta-equipment-source .percepta-source-form-actions .primary{margin-left:auto}
 .percepta-source-summary{flex-wrap:wrap}
+.percepta-derived-list{display:grid;gap:10px;margin:14px 0 0;font-size:12px}
+.percepta-derived-list>div{display:grid;grid-template-columns:minmax(130px,1fr) 2fr;gap:12px}
+.percepta-derived-list dt{font-weight:600}
+.percepta-derived-list dd{margin:0;color:var(--muted)}
 @media(max-width:600px){.percepta-source-grid,.percepta-equipment-grid{grid-template-columns:1fr}.percepta-section-heading{flex-wrap:wrap}.percepta-shared-summary li{flex-direction:column;gap:4px}}
 @media(prefers-reduced-motion:reduce){.percepta-source-card,.percepta-equipment-card,.percepta-measurement-card{transition:none}}
 

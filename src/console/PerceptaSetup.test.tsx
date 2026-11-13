@@ -3,7 +3,7 @@ import {afterEach,beforeAll,expect,it,vi} from 'vitest';
 import {PerceptaSetup} from './PerceptaSetup';
 beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
 afterEach(()=>vi.unstubAllGlobals());
-function setup(initialSetup=false,failLaunch=false,community=false,equipment=false,configurationOnly=false,stored=false){
+function setup(initialSetup=false,failLaunch=false,community=false,equipment=false,configurationOnly=false,stored=false,currentCollector=false){
  const channel={version:'a'.repeat(64),capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
  const total={...channel,capability_id:'total',name:'Community import',collection:{parameter_type_id:'energy_in_total',role:'community_output',privacy:'community',necessary:true}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);let data:unknown={};
@@ -26,7 +26,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   return new Response(JSON.stringify(data));
  });
  vi.stubGlobal('fetch',fetcher);
- render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured configurationOnly={configurationOnly} initialSetup={initialSetup} onChange={vi.fn()}/>);
+ render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured configurationOnly={configurationOnly} initialSetup={initialSetup} target={currentCollector?{host_id:'local',image:'energaize/percepta:1',recSharing:true}:undefined} onChange={vi.fn()}/>);
  return fetcher;
 }
 async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByRole('button',{name:/Grid meter/});}
@@ -66,6 +66,17 @@ it('inherits community definitions read-only and offers no community or price so
  expect(screen.queryByRole('option',{name:'Pulsecharge · RH01'})).not.toBeInTheDocument();
  expect(screen.getByRole('option',{name:'Cleanwatts RabbitMQ · community connection'})).toBeInTheDocument();
  expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/recs/')&&(init?.method||'GET')!=='GET')).toBe(false);
+});
+it('lists built-in calculations and keeps forecasts optional for the current collector',async()=>{
+ const fetcher=setup(false,false,false,false,false,false,true);await openEquipment();
+ fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
+ expect(screen.getByText('Solar generation')).toBeInTheDocument();
+ expect(screen.getByText('Non-shiftable consumption')).toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Add calculation'})).not.toBeInTheDocument();
+ expect(screen.getByText('Optional')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Next: review'}));
+ expect(screen.getByRole('button',{name:'Generate configuration'})).toBeEnabled();
+ expect(fetcher.mock.calls.every(([,init])=>!init?.method||init.method==='GET')).toBe(true);
 });
 it('edits shared measurements from the community entry point',async()=>{
  const fetcher=setup(false,false,true);fireEvent.click(screen.getByRole('button',{name:'Community data'}));
