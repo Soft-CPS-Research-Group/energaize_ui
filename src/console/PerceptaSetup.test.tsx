@@ -3,11 +3,11 @@ import {afterEach,beforeAll,expect,it,vi} from 'vitest';
 import {PerceptaSetup} from './PerceptaSetup';
 beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
 afterEach(()=>vi.unstubAllGlobals());
-function setup(initialSetup=false,failLaunch=false,community=false,equipment=false,configurationOnly=false,stored=false,currentCollector=false){
+function setup(initialSetup=false,failLaunch=false,community=false,equipment=false,configurationOnly=false,stored=false,currentCollector=false, planned=false){
  const channel={version:'a'.repeat(64),capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
  const total={...channel,capability_id:'total',name:'Community import',collection:{parameter_type_id:'energy_in_total',role:'community_output',privacy:'community',necessary:true}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);let data:unknown={};
-  if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1']}];
+  if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1'],...(planned?{percepta_collection_image:'energaize/percepta:1'}:{})}];
   else if(url.endsWith('/equipment-sources'))data=[];
   else if(url.endsWith('/equipment/asset/source'))data={asset_id:'asset',...JSON.parse(String(init?.body))};
   else if(url.endsWith('/connections')&&init?.method==='POST'){
@@ -26,7 +26,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   return new Response(JSON.stringify(data));
  });
  vi.stubGlobal('fetch',fetcher);
- render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured configurationOnly={configurationOnly} initialSetup={initialSetup} target={currentCollector?{host_id:'local',image:'energaize/percepta:1',recSharing:true}:undefined} onChange={vi.fn()}/>);
+ render(<PerceptaSetup {...(community?{communityId:'rec'}:{siteId:'site'})} equipmentId={equipment?'asset':undefined} configured configurationOnly={configurationOnly} initialSetup={initialSetup} launchPlan={planned?{hostId:'local',revision:'revision',replace:{instanceId:'instance',containerId:'a'.repeat(64)}}:undefined} target={currentCollector?{host_id:'local',image:'energaize/percepta:1',recSharing:true}:undefined} onChange={vi.fn()}/>);
  return fetcher;
 }
 async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByRole('button',{name:/Grid meter/});}
@@ -43,6 +43,21 @@ it('lets the user pick a channel by equipment type and edit its defaults before 
  await screen.findByText('Measurement saved.');
  const write=fetcher.mock.calls.find(([url,request])=>String(url).endsWith('/assets/asset/signals')&&request?.method==='POST');
  expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({name:'Meter export',unit:'kWh',collection:{parameter_type_id:'energy_out_total'}});
+});
+it('asks for a second confirmation before submitting a replacement',async()=>{
+ const fetcher=setup(true,false,false,false,false,false,false,true);
+ await openEquipment();
+ fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
+ fireEvent.click(screen.getByRole('button',{name:'Next: review'}));
+ fireEvent.click(screen.getByRole('button',{name:'Generate configuration'}));
+ await screen.findByText('Configuration ready');
+ fireEvent.click(screen.getByRole('button',{name:/^Replace Percepta$/}));
+ expect(screen.getByRole('region',{name:'Confirm replacement'})).toBeVisible();
+ expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/launch'))).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:'Confirm replacement'}));
+ await waitFor(()=>expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/launch'))).toBe(true));
+ const launch=fetcher.mock.calls.find(([url])=>String(url).endsWith('/launch'));
+ expect(JSON.parse(String(launch?.[1]?.body))).toMatchObject({draft_revision:'revision',replace_instance_id:'instance',replace_container_id:'a'.repeat(64)});
 });
 it('opens equipment first and saves a device assignment once for all its measurements',async()=>{
  const fetcher=setup();await openEquipment();

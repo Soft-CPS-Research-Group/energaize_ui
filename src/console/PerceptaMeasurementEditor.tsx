@@ -113,7 +113,7 @@ export function PerceptaMeasurementEditor({channel,initialMeasurement,owner,prof
   {contract.temporal_behavior&&!nativePrice&&!forecast&&<label className="percepta-check"><input type="checkbox" checked={contract.temporal_behavior.cumulative} onChange={e=>setContract({...contract,temporal_behavior:{...contract.temporal_behavior!,cumulative:e.target.checked}})}/>Accumulated quantity over the period</label>}
   {contract.role==='input'&&!nativePrice&&!forecast&&<label className="percepta-check"><input type="checkbox" checked={binding?.mapping_required??true} onChange={e=>setBinding('mapping_required',e.target.checked)}/>External mapping required</label>}
   <label className="percepta-check"><input type="checkbox" checked={contract.necessary} onChange={e=>setContract({...contract,necessary:e.target.checked})}/>Required measurement</label></details>
-  {channel?.enabled&&<label className="percepta-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Collect this measurement</label>}
+  <label className="percepta-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Collect this measurement</label>
   <footer className="percepta-editor-actions"><button type="button" className="btn" onClick={onCancel}>Cancel</button><button className="btn primary" disabled={contract.role==='input'&&!binding?.connection_id}>Save measurement</button></footer></fieldset>
  </form>;
 }

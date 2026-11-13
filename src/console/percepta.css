@@ -79,3 +79,41 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 @media(prefers-reduced-motion:reduce){.percepta-source-card,.percepta-equipment-card,.percepta-measurement-card{transition:none}}
 
 .percepta-configuration-loading{display:grid;place-items:center;min-height:280px}
+
+.percepta-house-data {
+  display: grid;
+  gap: 0;
+}
+.percepta-house-data > section + section {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+.percepta-house-data .percepta-section-heading h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.percepta-house-data .percepta-shared-summary {
+  background: transparent;
+  border-radius: 0;
+  border-inline: 0;
+  border-bottom: 0;
+  padding-inline: 0;
+}
+.percepta-forecast-feed,
+.percepta-review-overview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg);
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.percepta-forecast-feed span, .percepta-review-overview div { flex: 1; min-width: 0; }
+.percepta-forecast-feed small, .percepta-review-overview p { display: block; margin: 3px 0 0; color: var(--muted); }
+.percepta-review-overview h3 { margin: 0; }
+.percepta-review-overview b { font-size: .82rem; color: var(--muted); white-space: nowrap; }
+.percepta-review-settings { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+.percepta-replace { padding: 14px 0; border-top: 1px solid var(--line); }

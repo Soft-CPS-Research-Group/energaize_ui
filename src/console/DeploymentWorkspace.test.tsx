@@ -190,31 +190,52 @@ it("opens the running service by default and keeps the plan available", async ()
   fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
   expect(screen.getByRole("button", { name: /Deployment plan/ })).toHaveAttribute("aria-pressed", "true");
 });
-it("opens the initial setup from operation and keeps its tools off the plan", async () => {
+it("directs an empty operation view to the deployment plan", async () => {
   mock();
   await open(false);
   expect(screen.getByRole("button", { name: "Check machines" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Percepta messages" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Deployment plan" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open deployment plan" }));
   expect(screen.queryByRole("button", { name: "Check machines" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Percepta messages" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
-  expect(screen.getByRole("dialog")).toHaveTextContent("planned destination");
-  fireEvent.click(screen.getByRole("button", { name: "Set up Percepta" }));
-  expect(await screen.findByText("Review Percepta on pi · saved")).toBeVisible();
+  expect(screen.getByRole("combobox",{name:"Destination"})).toHaveValue("local");
+  fireEvent.click(screen.getByRole("button", { name: "Configure collection" }));
 });
 it("saves a Percepta-only plan and opens its wizard on the reviewed host", async () => {
   const fetcher=mock();
   await open();
-  fireEvent.click(screen.getByRole("checkbox",{name:"Inference"}));
-  fireEvent.click(screen.getByRole("checkbox",{name:"Forecasting"}));
+  const shelf = screen.getByRole("complementary", { name: "Available services" });
+  for (const name of ["Inference", "Forecasting"]) {
+    fireEvent.click(within(shelf).getByRole("button", { name: new RegExp(name) }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Destination" }), { target: { value: "" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+  }
   expect(screen.queryByRole("button",{name:/Inference · Draft/})).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button",{name:"Review plan"}));
-  fireEvent.click(screen.getByRole("button",{name:"Set up Percepta only"}));
+  fireEvent.click(screen.getByRole("button",{name:"Set up Percepta"}));
   expect(await screen.findByText("Review Percepta on pi · saved")).toBeVisible();
   const write=fetcher.mock.calls.find(([,options])=>options?.method==="PUT");
   expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({included_services:["percepta"],services:{percepta:"local"}});
   expect(fetcher.mock.calls.some(([,options])=>options?.method==="POST")).toBe(false);
+});
+it("drags a service from the sidebar to a machine and back", async () => {
+  mock(data, {...initial, included_services: []});
+  vi.stubGlobal("PointerEvent", MouseEvent);
+  await open();
+  const shelf = screen.getByRole("complementary", { name: "Available services" });
+  const host = screen.getByRole("region", { name: "Raspberry · Leça" });
+  vi.spyOn(shelf, "getBoundingClientRect").mockReturnValue({left: 0, right: 200, top: 0, bottom: 400} as DOMRect);
+  vi.spyOn(host, "getBoundingClientRect").mockReturnValue({left: 500, right: 900, top: 0, bottom: 500} as DOMRect);
+  function dragCard(card: HTMLElement, from: number, to: number) {
+    fireEvent.pointerDown(card, {button: 0, clientX: from, clientY: 50});
+    fireEvent.pointerMove(card, {clientX: to, clientY: 50});
+    fireEvent.pointerUp(card, {clientX: to, clientY: 50});
+  }
+  dragCard(within(shelf).getByRole("button", { name: /Percepta/ }), 100, 650);
+  dragCard(screen.getByRole("button", { name: /Percepta · Draft/ }), 650, 100);
+  expect(screen.queryByRole("button", { name: /Percepta · Draft/ })).not.toBeInTheDocument();
+  expect(within(shelf).getByRole("button", { name: /Percepta Unassigned/ })).toBeVisible();
 });
 it("opens the shared forecast editor from the plan instead of saving a second address", async () => {
   const fetcher=mock();
@@ -475,7 +496,7 @@ it("opens plan details and retains unsaved placement when closing them", async (
   fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
   expect(
     screen.getByRole("dialog", { name: "Percepta in the deployment plan" }),
-  ).toHaveTextContent("Manage sources, measurements and collection under In operation");
+  ).toHaveTextContent("Configure collection");
   expect(
     screen.queryByLabelText("Planned destination"),
   ).not.toBeInTheDocument();
@@ -490,12 +511,12 @@ it("opens plan details and retains unsaved placement when closing them", async (
   fireEvent.click(screen.getByRole("button", { name: "Configure Percepta" }));
   expect(
     screen.getByRole("dialog", { name: "Percepta in the deployment plan" }),
-  ).toHaveTextContent("Manage sources, measurements and collection under In operation");
+  ).toHaveTextContent("Configure collection");
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
   expect(
     screen.getByRole("dialog", { name: "Inference in the deployment plan" }),
-  ).toHaveTextContent("Inference uses a prepared instance");
+  ).toHaveTextContent("Inference uses a prepared instance.");
   expect(screen.queryByText("Configure controller")).not.toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
 });

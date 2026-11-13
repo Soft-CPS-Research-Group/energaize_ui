@@ -24,6 +24,8 @@ export interface Component {
   state: string;
   health?: string | null;
   instance_id?: string | null;
+  container_id?: string | null;
+  managed?: boolean;
   image?: string | null;
   planned: boolean;
   supported: boolean;
