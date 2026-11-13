@@ -8,13 +8,14 @@ import { listDeployBundles, getDeployInferenceHealth, switchDeployInferenceBundl
 import { ArrowRight, Box, Cpu, FileJson, Plus, Radio, RefreshCw, Server, X, Play, Pause, Trash2, Pencil, RotateCw } from 'lucide-react';
 import { runtimeRequest as request, runtimeRequestId, type RuntimeHost, type RuntimeInstance, type RuntimeOperation, type RuntimeSnapshot } from '../api/runtimeApi';
 
-export interface RuntimePanelProps { siteId?: string; siteName?: string; kind?: 'percepta'|'controller'; navigate: (path: string) => void }
+export interface RuntimePanelProps { siteId?: string; siteName?: string; kind?: 'percepta'|'controller'; navigate: (path: string) => void; startPerceptaSetup?: boolean }
 const label = (value: string) => value.replaceAll('_', ' ').replace(/^./, c => c.toUpperCase());
 const time = (value: string | null) => value ? new Date(value).toLocaleString('en-GB') : 'Not checked';
 
-export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
+export function RuntimePanel({siteId, siteName, kind, startPerceptaSetup=false}: RuntimePanelProps) {
   const [instances,setInstances]=useState<RuntimeInstance[]>([]), [hosts,setHosts]=useState<RuntimeHost[]>([]), [operations,setOperations]=useState<RuntimeOperation[]>([]);
   const loadSequence=useRef(0);
+  const openInitialSetup=useRef(startPerceptaSetup);
   const [monitoringError,setMonitoringError]=useState('');
   const [setupOpen,setSetupOpen]=useState(false),[initialSetup,setInitialSetup]=useState(false);
   const [healthRefresh,setHealthRefresh]=useState(0);
@@ -30,7 +31,12 @@ export function RuntimePanel({siteId, siteName, kind}: RuntimePanelProps) {
         request<RuntimeInstance[]>('/api/runtime/instances'+(siteId?'?site_id='+encodeURIComponent(siteId):'')),
         request<RuntimeHost[]>('/api/runtime/hosts'), request<RuntimeOperation[]>('/api/runtime/operations?'+new URLSearchParams({limit:'3',...(siteId?{site_id:siteId}:{}),...(kind?{kind}:{})}))]);
       if(sequence!==loadSequence.current)return;
-      setMonitoringError('');setInstances(items.filter(i=>!kind||i.kind===kind));setHosts(machines);setOperations(events);setError('');
+      const matching=items.filter(i=>!kind||i.kind===kind);
+      setMonitoringError('');setInstances(matching);setHosts(machines);setOperations(events);setError('');
+      if(openInitialSetup.current){
+        openInitialSetup.current=false;
+        if(!matching.some(i=>i.observed_state!=='retired')){setInitialSetup(true);setSetupOpen(true);}
+      }
     } catch(e){if(sequence===loadSequence.current){setError((e as Error).message);setMonitoringError((e as Error).message);}}finally{if(sequence===loadSequence.current)setLoading(false);}
   },[siteId,kind]);
   useEffect(()=>{void load();const timer=setInterval(()=>void load(),10000);return()=>clearInterval(timer);},[load]);

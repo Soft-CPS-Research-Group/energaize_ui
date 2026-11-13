@@ -5,10 +5,10 @@ const available:Record<string,string[]>={grid_meter:['energy_in_total','energy_o
 const forecasts:Record<string,string>={energy_consumption_prediction:'consumption',solar_energy_prediction:'production'};
 const valueType=(p:string)=>p==='flexibility'?'object':['session_status','electric_vehicle'].includes(p)?'string':'float';
 const shelly:Record<string,string>={energy_in_total:'total_act',energy_out_total:'total_act_ret',energy_in_l1:'a_total_act_energy',energy_in_l2:'b_total_act_energy',energy_in_l3:'c_total_act_energy',energy_out_l1:'a_total_act_ret_energy',energy_out_l2:'b_total_act_ret_energy',energy_out_l3:'c_total_act_ret_energy'};
-export function PerceptaMeasurementEditor({channel,owner,profile,source,connections,frequency,vehicles,onSave,onCancel,busy}:{channel?:Channel;owner:Owner;profile:Profile|null;source:Source|null;connections:Connection[];frequency:number;vehicles:Array<{id:string;name:string}>;onSave:(body:unknown)=>void;onCancel:()=>void;busy:boolean}){
- const choices=owner.scope==='recs'?['energy_in_total','energy_out_total','price']:owner.scope==='sites'?['solar_generation','non_shiftable_load',...Object.keys(forecasts)]:available[profile?.asset_type||'']||['energy_in_total'];
+export function PerceptaMeasurementEditor({channel,owner,profile,source,connections,forecastSourceIds,houseMeasurementKind,frequency,vehicles,onSave,onCancel,busy}:{channel?:Channel;owner:Owner;profile:Profile|null;source:Source|null;connections:Connection[];forecastSourceIds?:string[];houseMeasurementKind?:'calculated'|'forecast';frequency:number;vehicles:Array<{id:string;name:string}>;onSave:(body:unknown)=>void;onCancel:()=>void;busy:boolean}){
+ const choices=owner.scope==='recs'?['energy_in_total','energy_out_total','price']:owner.scope==='sites'?houseMeasurementKind==='forecast'?Object.keys(forecasts):['solar_generation','non_shiftable_load']:available[profile?.asset_type||'']||['energy_in_total'];
  const provider=connections.find(c=>c.id===source?.connection_id)?.provider;
- const forecastSources = connections.filter(c=>c.provider==='predictor');
+ const forecastSources = connections.filter(c=>c.provider==='predictor'&&(!forecastSourceIds||forecastSourceIds.includes(c.id)||c.id===channel?.collection?.source_binding?.connection_id));
  const priceSources = connections.filter(c => isPriceSource(c.provider));
  const defaultPriceSource = priceSources.find(c => c.provider === 'omie') ?? priceSources[0];
  const priceBinding = (id: string, market = 'pt_spot_price') => {
@@ -61,7 +61,7 @@ export function PerceptaMeasurementEditor({channel,owner,profile,source,connecti
     }),
   };
  };
- const parameter=channel?.collection?.parameter_type_id||choices[0];
+ const parameter=channel?.collection?.parameter_type_id||(channel&&choices.includes(channel.name)?channel.name:choices[0]);
  const [contract,setContract]=useState<Contract>(()=>{const c=channel?.collection?structuredClone(channel.collection):make(parameter);if(source&&c.source_binding&&c.source_binding.connection_id!==source.connection_id&&!source.device_id){c.source_binding.fetch_key=null;c.source_binding.match_key=null;}if(source&&c.role==='input')c.source_binding={mapping_required:true,...c.source_binding,connection_id:source.connection_id,...(source.device_id?{fetch_key:source.device_id}:{})};return c;});
  const defaultUnit=(parameter:string)=>parameter==='price'||parameter==='energy_price'?(defaultPriceSource?.provider==='omie'?'EUR/kWh':'EUR/MWh'):parameter.includes('charge')||parameter==='soc'?(provider==='cleanwatts'||provider==='pulsecharge'?'ratio':'%'):parameter==='power'?'kW':parameter==='session_status'?'Status':['electric_vehicle','flexibility'].includes(parameter)?'':'kWh';
  const [name,setName]=useState(channel?.name||labels[parameter]||parameter),[unit,setUnit]=useState(channel?.unit||defaultUnit(parameter));

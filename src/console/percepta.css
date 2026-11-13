@@ -64,6 +64,13 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 .percepta-source-summary{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;background:var(--soft,#f3f6f3);margin-bottom:22px}
 .percepta-source-summary>span{flex:1;font-size:12px;font-weight:600}
 .percepta-source-summary small{display:block;color:var(--muted);font-size:11px;font-weight:400;margin-top:3px}
+.percepta-device-list{margin:6px 0 18px}
+.percepta-device-list .percepta-equipment-row{justify-content:flex-start;gap:14px;padding:12px 4px}
+.percepta-device-list .percepta-equipment-art{width:44px;height:44px;flex-basis:44px}
+.percepta-device-list .percepta-equipment-row>small{margin:0;text-align:right}
+.percepta-source-form-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.percepta-equipment-source .percepta-source-form-actions .primary{margin-left:auto}
+.percepta-source-summary{flex-wrap:wrap}
 @media(max-width:600px){.percepta-source-grid,.percepta-equipment-grid{grid-template-columns:1fr}.percepta-section-heading{flex-wrap:wrap}.percepta-shared-summary li{flex-direction:column;gap:4px}}
 @media(prefers-reduced-motion:reduce){.percepta-source-card,.percepta-equipment-card,.percepta-measurement-card{transition:none}}
 

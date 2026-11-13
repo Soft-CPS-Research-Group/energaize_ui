@@ -21,7 +21,6 @@ import {
   X,
 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
-import { PerceptaSetup } from "./PerceptaSetup";
 import { PerceptaMessages } from "./PerceptaMessages";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { RuntimePanel } from "./RuntimePanel";
@@ -111,7 +110,7 @@ export function DeploymentWorkspace({
   const [map, setMap] = useState<DeploymentMap | null>(null),
     [draft, setDraft] = useState<Draft | null>(null),
     [saved, setSaved] = useState<Draft | null>(null);
-  const [view, setView] = useState<"plan" | "operation" | null>(null),
+  const [view, setView] = useState<"plan" | "operation">("operation"),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
   const [checking, setChecking] = useState(false),
@@ -163,7 +162,7 @@ export function DeploymentWorkspace({
     setEditing(null);
     setDetail(null);
     setReview(false);
-    setView(null);
+    setView("operation");
     setMessage("");
     setChecking(false);
     setSaving(false);
@@ -239,6 +238,7 @@ export function DeploymentWorkspace({
       const r = el.getBoundingClientRect();
       return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
     });
+  const hasRuntimePercepta = !!map?.components.some(c => c.kind === "percepta" && !c.planned);
   if (detail && detail !== "forecasting")
     return (
       <section className="deployment-detail">
@@ -262,14 +262,13 @@ export function DeploymentWorkspace({
           siteId={siteId}
           siteName={siteName}
           kind={detail}
+          startPerceptaSetup={detail === "percepta" && !hasRuntimePercepta}
           navigate={navigate}
         />
       </section>
     );
   if (messagesOpen) return <PerceptaMessages key={siteId} siteId={siteId} siteName={siteName} onBack={() => setMessagesOpen(false)} />;
-  const planning = view === null
-      ? !map?.components.some((component) => !component.planned && component.state === "running")
-      : view === "plan",
+  const planning = view === "plan",
     layout = map && draft ? graphLayout(map, draft, planning) : null;
   const currentService =
     editing && services.includes(editing as Service)
@@ -284,22 +283,6 @@ export function DeploymentWorkspace({
         <div>
           <span className="eyebrow">{siteName}</span>
           <h2>Deployment</h2>
-          <p>
-            Place the services. Review the connections. Keep track of what is
-            running.
-          </p>
-        </div>
-        <div className="actions"><button className="btn" onClick={() => setMessagesOpen(true)}><Radio size={15}/>Percepta messages</button><button
-          className="btn"
-          disabled={checking}
-          onClick={() => void check()}
-        >
-          <RefreshCw
-            size={15}
-            className={checking ? "deployment-spinning" : ""}
-          />
-          {checking ? "Checking machines…" : "Check machines"}
-        </button>
         </div>
       </header>
       {error && (
@@ -329,21 +312,14 @@ export function DeploymentWorkspace({
                 aria-pressed={!planning}
                 onClick={() => setView("operation")}
               >
-                In operation{" "}
-                <span>{map.components.filter((c) => !c.planned).length}</span>
+                In operation
               </button>
               <button aria-pressed={planning} onClick={() => setView("plan")}>
-                Deployment plan{" "}
-                <span>
-                  {dirty ? "Edited" : draft.revision ? "Saved" : "Suggested"}
-                </span>
+                Deployment plan
+                {dirty && <span>Edited</span>}
               </button>
             </div>
-            <span className="deployment-caption">
-              {planning
-                ? "Draft · nothing is applied by editing this map"
-                : "Observed runtime · read only"}
-            </span>
+            {planning && <span className="deployment-caption">Draft placement and connections</span>}
           </div>
           {draft.stale && planning && (
             <p className="notice">
@@ -351,21 +327,19 @@ export function DeploymentWorkspace({
               the destinations below and save again.
             </p>
           )}
-          <div className="deployment-instruction">
-            {planning ? (
-              <>
-                <GripVertical size={14} /> Drag a service to a machine. Click a
-                service to configure it, or an arrow label to edit its
-                connection.
-              </>
-            ) : (
-              <>
-                <Check size={14} /> Only registered runtime instances appear
-                here. Shared platform health and application connections have
-                not been verified.
-              </>
-            )}
-          </div>
+          {planning ? <div className="deployment-instruction"><GripVertical size={14} /> Drag a service to change its planned destination. Select a connection to edit it.</div> : (
+            <div className="deployment-operation-bar">
+              <div><h3>Current services</h3><p>{hasRuntimePercepta?'Select Percepta on the map for its status and readings.':'Set up Percepta to start collecting readings for this house.'}</p></div>
+              <div className="actions" role="group" aria-label="Operation tools">
+                <button className="btn" onClick={() => setMessagesOpen(true)}><Radio size={15}/>Percepta messages</button>
+                <button className="btn" disabled={checking} onClick={() => void check()}>
+                  <RefreshCw size={15} className={checking ? "deployment-spinning" : ""} />
+                  {checking ? "Checking machines…" : "Check machines"}
+                </button>
+                {!hasRuntimePercepta && <button className="btn primary" onClick={() => setDetail("percepta")}>Set up Percepta</button>}
+              </div>
+            </div>
+          )}
           <div className="deployment-scroll">
             <div
               ref={canvas}
@@ -402,15 +376,15 @@ export function DeploymentWorkspace({
                           : "HOUSE MACHINE"}
                       </span>
                       <h3>{h.destination.name}</h3>
-                      <small className="deployment-hardware">
+                      {!planning && <small className="deployment-hardware">
                         {h.destination.check.architecture ||
                           "Architecture not checked"}
                         {h.destination.check.memory_bytes
                           ? ` · ${(h.destination.check.memory_bytes / 1024 ** 3).toFixed(1)} GiB`
                           : ""}
-                      </small>
+                      </small>}
                     </div>
-                    <div className="deployment-host-status">
+                    {!planning && <div className="deployment-host-status">
                       <span
                         className={
                           "deployment-state state-" + h.destination.check.state
@@ -436,7 +410,7 @@ export function DeploymentWorkspace({
                           "Never checked"
                         )}
                       </time>
-                    </div>
+                    </div>}
                   </header>
                   {!layout.nodes.some(
                     (n) =>
@@ -644,44 +618,22 @@ export function DeploymentWorkspace({
               </button>
             </footer>
           )}
-          {!planning && (
-            <div className="deployment-existing-controls">
-              <span>Existing service configuration</span>
-              <button className="btn" onClick={() => setDetail("percepta")}>
-                Percepta
-              </button>
-              <button className="btn" onClick={() => setDetail("controller")}>
-                Inference
-              </button>
-            </div>
-          )}
           {message && (
             <p className="deployment-feedback" role="status">
               <Check size={15} />
               {message}
             </p>
           )}
-          {currentService === "percepta" && (
-            <PerceptaSetup
-              siteId={siteId}
-              configurationOnly
-              open
-              hideTrigger
-              onOpenChange={(open) => {
-                if (!open) setEditing(null);
-              }}
-              onChange={() => {}}
-            />
-          )}
-          {currentService && currentService !== "percepta" && (
+          {!planning && !map.components.some(c => c.kind === "controller" && !c.planned) && <button className="btn text deployment-inference-link" onClick={() => setDetail("controller")}>Inference settings</button>}
+          {currentService && (
             <Overlay
-              title={"Configure " + names[currentService]}
+              title={names[currentService] + " in the deployment plan"}
               onClose={() => setEditing(null)}
             >
-              <p>
-                {names[currentService]} configuration for the deployment plan is
-                not available yet.
-              </p>
+              {currentService === "percepta" ? <>
+                <p>Set the planned destination on the map. Manage sources, measurements and collection under In operation.</p>
+                <button className="btn" onClick={() => {setEditing(null);setView("operation");setDetail("percepta");}}>{hasRuntimePercepta?"Open Percepta":"Set up Percepta"}</button>
+              </>:<p>{names[currentService]} settings are not available in this plan.</p>}
             </Overlay>
           )}
           {currentLink && (

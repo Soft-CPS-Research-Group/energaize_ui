@@ -15,23 +15,7 @@ import {
   type Placement,
 } from "./deploymentModel";
 vi.mock("./RuntimePanel", () => ({
-  RuntimePanel: ({ kind }: { kind: string }) => <div>Configure {kind}</div>,
-}));
-vi.mock("./PerceptaSetup", () => ({
-  PerceptaSetup: ({
-    configurationOnly,
-    onOpenChange,
-  }: {
-    configurationOnly: boolean;
-    onOpenChange: (open: boolean) => void;
-  }) => (
-    <div role="dialog" aria-label="Configure Percepta">
-      <span>
-        {configurationOnly ? "Sources and measurements only" : "Runtime setup"}
-      </span>
-      <button onClick={() => onOpenChange(false)}>Close configuration</button>
-    </div>
-  ),
+  RuntimePanel: ({ kind, startPerceptaSetup }: { kind: string; startPerceptaSetup?: boolean }) => <div>{startPerceptaSetup ? "First Percepta setup" : "Configure " + kind}</div>,
 }));
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -132,11 +116,12 @@ function mock(map = data, draft = initial) {
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
-const open = async () => {
+const open = async (planning = true) => {
   render(
     <DeploymentWorkspace siteId="house" siteName="House" navigate={() => {}} />,
   );
   await screen.findByRole("heading", { name: "SoftCPS server" });
+  if (planning) fireEvent.click(screen.getByRole("button", { name: /^Deployment plan/ }));
 };
 function moveInference() {
   vi.stubGlobal("PointerEvent", MouseEvent);
@@ -192,7 +177,7 @@ it("opens the running service by default and keeps the plan available", async ()
       ...data.components.slice(1),
     ],
   });
-  await open();
+  await open(false);
   expect(screen.getByRole("button", { name: /In operation/ })).toHaveAttribute("aria-pressed", "true");
   expect(screen.queryByRole("button", { name: /Percepta · Draft/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Percepta · Running" }));
@@ -200,6 +185,19 @@ it("opens the running service by default and keeps the plan available", async ()
   fireEvent.click(screen.getByRole("button", { name: "Back to deployment" }));
   fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
   expect(screen.getByRole("button", { name: /Deployment plan/ })).toHaveAttribute("aria-pressed", "true");
+});
+it("opens the initial setup from operation and keeps its tools off the plan", async () => {
+  mock();
+  await open(false);
+  expect(screen.getByRole("button", { name: "Check machines" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Percepta messages" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Deployment plan" }));
+  expect(screen.queryByRole("button", { name: "Check machines" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Percepta messages" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("planned destination");
+  fireEvent.click(screen.getByRole("button", { name: "Set up Percepta" }));
+  expect(screen.getByText("First Percepta setup")).toBeVisible();
 });
 it("allows editing connection overlays with cancel and save; automatic mode clears overrides", async () => {
   mock();
@@ -284,7 +282,7 @@ it("checks only on request and retains the last observation with its timestamp",
       data.destinations[1],
     ],
   });
-  await open();
+  await open(false);
   const online = screen.getByText("Online");
   expect(online).toBeInTheDocument();
   const header = online.closest("header")!;
@@ -444,18 +442,18 @@ it("keeps all internal connection paths inside their host for all service placem
   expect(operation.nodes.map((n) => n.kind)).toEqual(["backend"]);
 });
 
-it("opens configuration directly and retains unsaved placement when closing it", async () => {
+it("opens plan details and retains unsaved placement when closing them", async () => {
   const fetcher = mock();
   await open();
   moveInference();
   fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
   expect(
-    screen.getByRole("dialog", { name: "Configure Percepta" }),
-  ).toHaveTextContent("Sources and measurements only");
+    screen.getByRole("dialog", { name: "Percepta in the deployment plan" }),
+  ).toHaveTextContent("Manage sources, measurements and collection under In operation");
   expect(
     screen.queryByLabelText("Planned destination"),
   ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Close configuration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
   expect(
@@ -465,13 +463,13 @@ it("opens configuration directly and retains unsaved placement when closing it",
   ).toHaveTextContent("Inference");
   fireEvent.click(screen.getByRole("button", { name: "Configure Percepta" }));
   expect(
-    screen.getByRole("dialog", { name: "Configure Percepta" }),
-  ).toHaveTextContent("Sources and measurements only");
-  fireEvent.click(screen.getByRole("button", { name: "Close configuration" }));
+    screen.getByRole("dialog", { name: "Percepta in the deployment plan" }),
+  ).toHaveTextContent("Manage sources, measurements and collection under In operation");
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
   expect(
-    screen.getByRole("dialog", { name: "Configure Inference" }),
-  ).toHaveTextContent("not available yet");
+    screen.getByRole("dialog", { name: "Inference in the deployment plan" }),
+  ).toHaveTextContent("not available in this plan");
   expect(screen.queryByText("Configure controller")).not.toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
 });
