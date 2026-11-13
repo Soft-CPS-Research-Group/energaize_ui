@@ -24,13 +24,15 @@ export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checki
  const [showAllChannels,setShowAllChannels]=useState(false);
  const fallback=!!status?.generated_entities?.length;
  const running=item.observed_state==='running';
- const confirmedConfiguration=!!item.applied_config_version&&item.applied_config_version===item.desired_config_version&&!item.configuration_error;
+ const confirmedConfiguration=!!item.applied_config_version;
+ const changesPending=confirmedConfiguration&&!!item.desired_config_version&&item.applied_config_version!==item.desired_config_version;
+ const configMessage=item.configuration_error?'Saved configuration needs review. Open Edit configuration.':!confirmedConfiguration?'No applied configuration has been confirmed.':changesPending?'Running the applied version. Saved changes are pending.':null;
  const issues:string[]=[];
  if(monitoringError)issues.push('The service status could not be refreshed.');
  if(error)issues.push('Readings could not be checked.');
  if(item.error||item.health==='unhealthy')issues.push('The service reports a problem. Check the service details.');
  else if(!running)issues.push('Collection is not running.');
- if(!confirmedConfiguration)issues.push(item.configuration_error?'The configuration needs review.':'The latest configuration has not been confirmed as applied.');
+ if(configMessage&&(item.configuration_error||!confirmedConfiguration))issues.push(configMessage);
  if(status?.state==='stale')issues.push('Readings have stopped arriving within the expected interval. Check the source connections.');
  if(status?.state==='waiting')issues.push('No readings have arrived yet. Check the connections if collection has already started.');
  if(fallback)issues.push(`${status!.generated_entities!.length} equipment readings use fallback values. Check the source connections.`);
@@ -51,7 +53,7 @@ export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checki
   <span className="percepta-status-announcement" role={issues.length?'alert':'status'} aria-atomic="true">{headline}. {description}</span>
   <section className="percepta-health" aria-label="Percepta health check">
   <header><div><Activity size={17}/><h4>Health check</h4></div>{actions||<button className="btn" disabled={checking||!!item.active_operation} onClick={onCheck}><RefreshCw size={14}/>Check now</button>}</header>
-  {(!confirmedConfiguration)&&<p className="percepta-configuration-warning"><TriangleAlert size={15}/>{item.configuration_error?'Configuration needs review. Open Edit configuration.':'Configuration changes have not been applied yet.'}</p>}
+  {configMessage&&<p className="percepta-configuration-warning"><TriangleAlert size={15}/>{configMessage}</p>}
   <div className="percepta-reading-summary"><span>{error?'Unable to check readings':status?.last_received_at?'Last data received '+new Date(status.last_received_at).toLocaleString('en-GB'):readings}</span>{!!status?.channel_summary?.total&&<button className="btn text" aria-expanded={showAllChannels} onClick={()=>setShowAllChannels(!showAllChannels)}>{status.channel_summary.receiving}/{status.channel_summary.total} channels healthy</button>}</div>
   {(channelIssues.length>0||showAllChannels)&&<div className="percepta-channel-health" aria-label="Channel status"><ul>{(showAllChannels?status?.channels||[]:channelIssues).map(channel=><li key={channel.channel_id}><div><strong>{channel.name}</strong><small>{channel.owner}</small></div><div className={'channel-health-'+channel.state}><span>{({receiving:'Receiving',missing:'No data',stale:'Delayed',invalid:'Invalid value',fallback:'Substitute value',unverified:'Not verified'})[channel.state]}</span><small>{channel.message}{channel.state!=='receiving'&&channel.last_received_at?' Last seen '+new Date(channel.last_received_at).toLocaleString('en-GB'):''}</small></div></li>)}</ul></div>}
 

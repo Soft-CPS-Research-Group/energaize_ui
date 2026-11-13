@@ -43,12 +43,13 @@ it('does not keep a healthy indication when service monitoring fails',async()=>{
  expect(screen.getByRole('alert')).toHaveTextContent('The service status could not be refreshed.');
  expect(screen.queryByRole('button',{name:'Working normally'})).not.toBeInTheDocument();
 });
-it('explains an unapplied configuration even with recent readings',async()=>{
+it('shows a healthy applied version alongside saved changes pending after a restore',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...healthyChannels,state:'receiving',generated_entities:[]}))));
  render(<PerceptaTelemetryStatus siteId="site" item={{...item,desired_config_version:'new'}} onCheck={vi.fn()}/>);
  expect(await screen.findByText('Receiving data')).toBeInTheDocument();
- expect(screen.getByRole('alert')).toHaveTextContent('The latest configuration has not been confirmed as applied.');
- expect(screen.queryByRole('button',{name:'Working normally'})).not.toBeInTheDocument();
+ expect(screen.getByText('Running the applied version. Saved changes are pending.')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Working normally'})).toBeInTheDocument();
+ expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
 it('keeps the details behind hover or keyboard focus and dismisses them with Escape',async()=>{
