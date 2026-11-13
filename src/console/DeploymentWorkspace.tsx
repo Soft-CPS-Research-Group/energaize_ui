@@ -777,9 +777,7 @@ export function DeploymentWorkspace({
                               </span>
                               <strong>{names[kind]}</strong>
                               <small>
-                                {kind === "percepta"
-                                  ? "Configure"
-                                  : "Setup pending"}
+                                View placement
                               </small>
                             </button>
                           ))}
@@ -845,7 +843,7 @@ export function DeploymentWorkspace({
               </details>
               <details className="deployment-review-availability">
                 <summary>
-                  Deployment not available yet <span>View requirements</span>
+                  Multi-service rollout requirements
                 </summary>
                 <ul>
                   {draft.blockers.map((b) => (
@@ -854,13 +852,10 @@ export function DeploymentWorkspace({
                 </ul>
               </details>
               <div className="deployment-review-footer">
-                <small>
-                  Saving keeps this plan for later. Running services stay as
-                  they are.
-                </small>
+                <small>Save placement and connections for later. Start or manage Percepta in In operation.</small>
                 <div className="deployment-dialog-actions">
                   <button
-                    className="btn"
+                    className="btn primary"
                     disabled={saving}
                     onClick={() =>
                       void save().then((ok) => {
@@ -869,13 +864,6 @@ export function DeploymentWorkspace({
                     }
                   >
                     Save reviewed draft
-                  </button>
-                  <button
-                    className="btn primary"
-                    disabled
-                    title="Final service contracts and bundle launcher are pending"
-                  >
-                    Deploy
                   </button>
                 </div>
               </div>

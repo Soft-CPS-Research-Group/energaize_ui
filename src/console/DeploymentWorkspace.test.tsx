@@ -164,7 +164,7 @@ it("keeps a saved draft separate from runtime and blocks unsupported bundle laun
   ).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
-  expect(screen.getByRole("button", { name: "Deploy" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument();
   expect(screen.getByRole("dialog")).toHaveTextContent(
     "Final service contracts are pending.",
   );
