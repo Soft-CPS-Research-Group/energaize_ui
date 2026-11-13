@@ -20,7 +20,12 @@ type SiteCollectionSettings = {
   share_with_rec?: boolean;
   rec_peers?: RecPeer[];
 };
-type Props={target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;configured?:boolean;compact?:boolean;initialSetup?:boolean;configurationOnly?:boolean;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean;startOnHouseData?:boolean;launchPlan?:{hostId:string;revision:string;replace?:{instanceId:string;containerId:string}}};
+export type PerceptaLaunchPlan = {
+  hostId: string;
+  revision: string;
+  replace?: { instanceId: string; containerId: string; from?: string };
+};
+type Props={target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;configured?:boolean;compact?:boolean;initialSetup?:boolean;configurationOnly?:boolean;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean;startOnHouseData?:boolean;launchPlan?:PerceptaLaunchPlan};
 export function PerceptaSetup({target,equipmentId,siteId,communityId,onChange,configured=false,compact=false,initialSetup=false,configurationOnly=false,open:controlledOpen,onOpenChange,hideTrigger=false,startOnHouseData=false,launchPlan}:Props){
  const [localOpen,setLocalOpen]=useState(false),open=controlledOpen??localOpen;
  const setOpen=(value:boolean)=>{setLocalOpen(value);onOpenChange?.(value);};
@@ -51,6 +56,8 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
    host?.allowed_images?.find(image => image === host.percepta_collection_image)
    ?? host?.allowed_images?.find(image => /percepta|data-provider/i.test(image));
  const selectedHost = destinations.find(host => host.id === destination);
+ const replacement = launchPlan?.replace;
+ const sourceMachine = replacement?.from;
  const selectedImage = destinationImage(selectedHost);
  const selectedTarget = initialSetup && selectedImage
    ? {host_id: destination, image: selectedImage, recSharing: selectedImage === selectedHost?.percepta_collection_image}
@@ -93,7 +100,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const saveMeasurement=(body:unknown)=>void run(async()=>{if(conflict)return;if(owner?.scope==='recs'&&!communityMode)throw Error('Community data is edited from community Inventory only.');await api(`/community-api/api/${owner!.scope}/${owner!.id}/signals${editing?'/'+editing.capability_id:''}`,editing?.version?{...(body as object),expected_version:editing.version}:body,editing?'PUT':'POST');await reloadProfile(owner!);setEditing(undefined);changed();setNotice(actuatorEditor?'Actuator definition saved. No command was sent.':communityMode?'Shared measurement saved. Houses use this definition when their configuration is applied.':'Measurement saved.');});
  const startCollection=()=>void run(async()=>{
   if(configurationOnly||!snapshot)return;const host=destinations.find(h=>h.id===destination),image=destinationImage(host);if(!host||!image)throw Error('Choose a deployment destination.');launchRequest.current??=runtimeRequestId();setLaunchPending(true);
-  try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image,...(launchPlan?{draft_revision:launchPlan.revision}:{}),...(launchPlan?.replace?{replace_instance_id:launchPlan.replace.instanceId,replace_container_id:launchPlan.replace.containerId}:{})})});let operation=result.operation;
+  try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image,...(launchPlan?{draft_revision:launchPlan.revision}:{}),...(replacement?{replace_instance_id:replacement.instanceId,replace_container_id:replacement.containerId}:{})})});let operation=result.operation;
    for(let attempt=0;operation.status==='pending'&&attempt<45;attempt++){await new Promise(resolve=>setTimeout(resolve,1000));operation=await runtime<RuntimeOperation>('/api/runtime/operations/'+operation.id);}
    if(operation.status==='failed'){launchRequest.current=null;throw Error(operation.error||'Collection could not start.');}if(operation.status!=='succeeded')throw Error('Start has not been confirmed yet. Check the existing operation before retrying.');onChange();onClose();
   }catch(e){
@@ -104,6 +111,16 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const steps=equipmentId?[['channels','Equipment']]:communityMode?[['connections','Sources'],['channels','Shared data']]:[['channels','Equipment'],['general','House data'],...configurationOnly?[]:[['settings',initialSetup?'Review & start':'Review changes']]];
  const step=steps.findIndex(([id])=>id===tab),hasEditor=sourceEditor!==undefined||editing!==undefined||measurementPicker||!!sourceDirty;
  const goToStep=(id:string)=>{setNotice('');setError('');if(id==='general')selectOwner(owners.find(o=>o.scope==='sites')!);else if(communityMode&&id==='channels')selectOwner(owners.find(o=>o.scope==='recs')!);else setOwner('');setTab(id);};
+ const reviewAction = () => {
+  if (!initialSetup) return onClose();
+  if (replacement && !confirmReplace) return setConfirmReplace(true);
+  startCollection();
+ };
+ let reviewLabel = 'Done';
+ if (launchPending) reviewLabel = 'Starting…';
+ else if (initialSetup && !replacement) reviewLabel = 'Create & start';
+ else if (initialSetup && sourceMachine) reviewLabel = confirmReplace ? 'Confirm move' : 'Move Percepta';
+ else if (initialSetup) reviewLabel = confirmReplace ? 'Confirm replacement' : 'Replace Percepta';
  const equipment=owners.filter(o=>o.scope==='assets');
  const readingChannels=(id:string)=>(profiles[id]?.capabilities||[]).filter(c=>c.enabled&&c.capability_type!=='actuator');
  const collected=(c:Channel)=>!!c.collection||!c.mongo_binding;
@@ -296,9 +313,35 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
    </details>
  </form>
  {snapshot&&<div className="percepta-review" role="status"><h4>Configuration ready</h4>{snapshot.warnings.map(w=><p key={w}>{w}</p>)}<details><summary>Generated configuration</summary><pre>{JSON.stringify(snapshot.payload,null,2)}</pre></details></div>}
- {snapshot&&confirmReplace&&<section className="percepta-replace" aria-label="Confirm replacement"><h4>Replace Percepta for {siteName}?</h4><p>Collection will pause while the reviewed configuration starts on {selectedHost?.name}.</p><button className="btn text" onClick={()=>setConfirmReplace(false)}>Keep current instance</button></section>}</>}
+ {snapshot && confirmReplace && <section className="percepta-replace" aria-label={sourceMachine ? 'Confirm move' : 'Confirm replacement'}>
+  <h4>{sourceMachine ? 'Move' : 'Replace'} Percepta for {siteName}?</h4>
+  <p>{sourceMachine
+    ? `Collection on ${sourceMachine} will stop before it starts on ${selectedHost?.name}.`
+    : `Collection will pause while the reviewed configuration starts on ${selectedHost?.name}.`}</p>
+  <button className="btn text" onClick={() => setConfirmReplace(false)}>Keep current instance</button>
+ </section>}</>}
  </>}
  </fieldset></div>
- <footer className="percepta-wizard-footer"><p>{hasEditor?'Save or cancel the current edit to continue.':communityMode?'Shared changes take effect when each house applies its configuration.':!initialSetup&&!configurationOnly?'Saved changes take effect when you apply the configuration.':''}</p><div><button className="btn" disabled={busy||hasEditor} onClick={()=>step?goToStep(steps[step-1][0]):onClose()}>{step?'Back':'Close'}</button>{equipmentId?<button className="btn primary" disabled={busy||hasEditor} onClick={onClose}>Done</button>:step<steps.length-1?<button className="btn primary" disabled={!ready||busy||hasEditor} onClick={()=>goToStep(steps[step+1][0])}>{communityMode?'Next: shared data':step===0?'Next: house data':'Next: review'}</button>:(communityMode||configurationOnly)?<button className="btn primary" disabled={busy||hasEditor} onClick={onClose}>Done</button>:snapshot?<button className="btn primary" disabled={busy||(initialSetup&&!destination)} onClick={initialSetup?launchPlan?.replace&&!confirmReplace?()=>setConfirmReplace(true):startCollection:onClose}>{launchPending?'Starting…':initialSetup?launchPlan?.replace?confirmReplace?'Confirm replacement':'Replace Percepta':'Create & start':'Done'}</button>:<button form="percepta-review-form" type="submit" className="btn primary" disabled={!ready||busy}>{busy?'Generating…':'Generate configuration'}</button>}</div></footer>
+ <footer className="percepta-wizard-footer">
+  <p>{hasEditor ? 'Save or cancel the current edit to continue.'
+    : communityMode ? 'Shared changes take effect when each house applies its configuration.'
+    : !initialSetup && !configurationOnly ? 'Saved changes take effect when you apply the configuration.' : ''}</p>
+  <div>
+   <button className="btn" disabled={busy || hasEditor} onClick={() => step ? goToStep(steps[step-1][0]) : onClose()}>
+    {step ? 'Back' : 'Close'}
+   </button>
+   {equipmentId || (step === steps.length - 1 && (communityMode || configurationOnly))
+    ? <button className="btn primary" disabled={busy || hasEditor} onClick={onClose}>Done</button>
+    : step < steps.length - 1
+      ? <button className="btn primary" disabled={!ready || busy || hasEditor} onClick={() => goToStep(steps[step+1][0])}>
+         {communityMode ? 'Next: shared data' : step === 0 ? 'Next: house data' : 'Next: review'}
+        </button>
+      : snapshot
+        ? <button className="btn primary" disabled={busy || (initialSetup && !destination)} onClick={reviewAction}>{reviewLabel}</button>
+        : <button form="percepta-review-form" type="submit" className="btn primary" disabled={!ready || busy}>
+           {busy ? 'Generating…' : 'Generate configuration'}
+          </button>}
+  </div>
+ </footer>
  </dialog>;
 }

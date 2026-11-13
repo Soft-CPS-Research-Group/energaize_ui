@@ -24,7 +24,7 @@ import { runtimeRequest } from "../api/runtimeApi";
 import { PerceptaMessages } from "./PerceptaMessages";
 import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { RuntimePanel } from "./RuntimePanel";
-import { PerceptaSetup } from "./PerceptaSetup";
+import { PerceptaSetup, type PerceptaLaunchPlan } from "./PerceptaSetup";
 import {
   connections,
   graphLayout,
@@ -122,7 +122,7 @@ export function DeploymentWorkspace({
     [detail, setDetail] = useState<Service | null>(null);
   const [forecastSetup, setForecastSetup] = useState(false);
   const [collectionSetup, setCollectionSetup] = useState(false);
-  const [launchPlan, setLaunchPlan] = useState<{hostId:string;revision:string;replace?:{instanceId:string;containerId:string}} | null>(null);
+  const [launchPlan, setLaunchPlan] = useState<PerceptaLaunchPlan | null>(null);
   const [dragging, setDragging] = useState<Service | null>(null),
     [hoverHost, setHoverHost] = useState<string | null>(null);
   const shelf = useRef<HTMLElement>(null);
@@ -289,9 +289,15 @@ export function DeploymentWorkspace({
   const hasRuntime = !!map?.components.some(c => !c.planned);
   const selected = draft ? includedServices(draft) : [];
   const plannedPercepta = map?.destinations.find(d => d.placement === draft?.services.percepta);
-  const replace = activePercepta?.managed && activePercepta.destination_id === plannedPercepta?.id && activePercepta.instance_id && activePercepta.container_id
+  const replace = activePercepta?.managed && activePercepta.instance_id && activePercepta.container_id
     && ["running", "exited", "created"].includes(activePercepta.state)
-    ? { instanceId: activePercepta.instance_id, containerId: activePercepta.container_id } : undefined;
+    ? {
+      instanceId: activePercepta.instance_id,
+      containerId: activePercepta.container_id,
+      from: activePercepta.destination_id !== plannedPercepta?.id
+        ? map?.destinations.find(d => d.id === activePercepta.destination_id)?.name || activePercepta.destination_id
+        : undefined,
+    } : undefined;
   const canOpenPlannedPercepta = !!plannedPercepta?.registered && (!activePercepta || !!replace) &&
     (dirty || draft?.percepta_host_id === undefined || draft.percepta_host_id === plannedPercepta.id);
   const openPlannedPercepta = async () => {
@@ -893,9 +899,7 @@ export function DeploymentWorkspace({
               </details>}
               <div className="deployment-review-footer">
                 <small>{selected.includes("percepta") && activePercepta && !replace
-                  ? activePercepta.destination_id !== plannedPercepta?.id
-                    ? "The collector is on another machine. Moving it requires a separate migration."
-                    : "Open In operation to check the existing Percepta instance."
+                  ? "Open In operation to check the existing Percepta instance."
                   : selected.includes("percepta")
                     ? "Review the collection settings to start Percepta."
                     : "Save the selected services and destinations."}</small>
@@ -911,7 +915,10 @@ export function DeploymentWorkspace({
                   >
                     Save reviewed draft
                   </button>
-                  {selected.includes("percepta") && (!activePercepta || replace) && <button className="btn primary" disabled={saving||!canOpenPlannedPercepta} onClick={()=>void openPlannedPercepta()}>Set up Percepta</button>}
+                  {selected.includes("percepta") && (!activePercepta || replace) &&
+                    <button className="btn primary" disabled={saving || !canOpenPlannedPercepta} onClick={() => void openPlannedPercepta()}>
+                      {replace?.from ? "Move Percepta" : "Set up Percepta"}
+                    </button>}
                   {selected.includes("controller") && <button className="btn" onClick={()=>{setReview(false);setDetail("controller");}}>Open inference settings</button>}
                   {selected.includes("forecasting") && <button className="btn" onClick={openForecastSettings}>Open forecast settings</button>}
                 </div>
