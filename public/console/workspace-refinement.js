@@ -8,6 +8,10 @@ const technicalChecklist={
  micro_wind_turbine:['rated_power_kw','power_curve'],thermal_storage:['capacity_kwh','loss_per_hour'],
  non_shiftable_load:['consumption_unit','coverage'],appliance:['appliance_type'],generic_device:['device_category'],grid_meter:['meter_role']
 };
+const importedMeasurementTypes={
+ grid_meter:{grid_import_energy:'energy_in_total',grid_export_energy:'energy_out_total'},
+ battery:{charge_energy:'energy_in',discharge_energy:'energy_out',state_of_charge:'state_of_charge'}
+};
 const hasDefinition=v=>v!==null&&v!==undefined&&v!==''&&(!Array.isArray(v)||v.length>0);
 function eventBasedCollection(c){
  return c.collection?.role==='input'&&!c.collection.temporal_behavior&&['session_status','electric_vehicle','flexibility'].includes(c.collection.parameter_type_id);
@@ -34,10 +38,19 @@ function unusedChannelTemplate(c){
  return c.configuration_status==='template'&&!c.enabled&&!c.tag&&!c.external_device_id&&!c.mongo_binding&&!c.simulation_binding&&!c.collection;
 }
 function equipmentConfiguration(a){
- const data=a.sourcePayload||a.specification||{},fields=technicalChecklist[a.assetType||a.asset_type]||[];
+ const type=a.assetType||a.asset_type,data=a.sourcePayload||a.specification||{},fields=technicalChecklist[type]||[];
  const missing=fields.filter(k=>!hasDefinition(data[k])).map(k=>DomainForm.label(k));
  const channels=(a.channels||[]).filter(c=>!unusedChannelTemplate(c));
- for(const c of channels){const review=channelConfiguration(c);if(review.missing.length)missing.push((c.label||c.description||c.name)+': '+review.missing.join(', '));}
+ const reviews=channels.map(channel=>({channel,review:channelConfiguration(channel)}));
+ const collecting=new Set(reviews.filter(({channel,review})=>
+  channel.enabled&&channel.capability_type==='sensor'&&channel.collection?.role==='input'&&!review.missing.length
+ ).map(({channel})=>channel.collection.parameter_type_id));
+ for(const {channel,review} of reviews){
+  const role=channel.collection?.role;
+  const measurement=channel.collection?.parameter_type_id??importedMeasurementTypes[type]?.[channel.name];
+  if(!channel.enabled&&channel.capability_type==='sensor'&&(!role||role==='input')&&measurement&&collecting.has(measurement))continue;
+  if(review.missing.length)missing.push((channel.label||channel.description||channel.name)+': '+review.missing.join(', '));
+ }
  if(!channels.length)missing.push('Configure measurement or control channels');
  const populated=fields.some(k=>hasDefinition(data[k]))||(a.channels||[]).some(c=>channelConfiguration(c).tone!=='empty');
  return {tone:!missing.length?'complete':populated?'partial':'empty',missing};

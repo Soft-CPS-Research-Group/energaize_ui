@@ -402,6 +402,21 @@ test('configuration completeness never asserts live readings or working control'
  assert.match(html,/Complete/);assert.match(html,/Simulated source/);assert.match(html,/Physical collection not confirmed/);assert.match(html,/Control<\/span><strong>Not confirmed/);
  }finally{dom.window.close();}
 });
+test('inventory keeps warnings for measurements without an enabled replacement',()=>{
+ const {dom,run}=workspace();try{
+ const result=JSON.parse(run(`JSON.stringify(equipmentConfiguration({
+  assetType:'grid_meter',specification:{meter_role:'main'},channels:[
+   {name:'grid_import_energy',capability_type:'sensor',enabled:false,tag:'100'},
+   {name:'grid_export_energy',capability_type:'sensor',enabled:false,tag:'101'},
+   {name:'Total grid import',enabled:true,capability_type:'sensor',unit:'kWh',value_semantics:'interval',
+    collection:{role:'input',parameter_type_id:'energy_in_total',source_binding:{connection_id:'broker',match_key:'total'},
+      temporal_behavior:{periodicity:{value:60,unit:'seconds'}}}}
+  ]
+ }))`));
+ assert.equal(result.tone,'partial');
+ assert.deepEqual(result.missing.map(message=>message.split(':')[0]),['grid_export_energy']);
+ }finally{dom.window.close();}
+});
 
 function managementSetup(run) {
   run(`state.personId='manager'; state.community=0; state.site=null;
