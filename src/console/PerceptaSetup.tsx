@@ -196,7 +196,8 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const availableMeasurements=equipmentMeasurements(profile?.asset_type)
    .filter(kind=>!profile?.capabilities.some(c=>c.enabled&&c.capability_type==='sensor'&&channelType(c)===kind));
  const chooseEquipmentMeasurement=(kind:string)=>{
-   const template=profile?.capabilities.find(c=>!c.enabled&&c.capability_type==='sensor'&&channelType(c)===kind);
+   const templates=profile?.capabilities.filter(c=>!c.enabled&&c.capability_type==='sensor'&&channelType(c)===kind);
+   const template=templates?.find(c=>c.collection?.parameter_type_id===kind)??templates?.[0];
    setActuatorEditor(false);
    setInitialMeasurement(kind);
    setEditing(template||null);

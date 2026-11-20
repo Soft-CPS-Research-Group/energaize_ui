@@ -87,7 +87,22 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
   };
  };
  const parameter=channel?.collection?.parameter_type_id||initialMeasurement||(channel&&choices.includes(channel.name)?channel.name:choices[0]);
- const [contract,setContract]=useState<Contract>(()=>{const c=channel?.collection?structuredClone(channel.collection):make(parameter);if(source&&c.source_binding&&c.source_binding.connection_id!==source.connection_id&&!source.device_id){c.source_binding.fetch_key=null;c.source_binding.match_key=null;}if(source&&c.role==='input')c.source_binding={mapping_required:true,...c.source_binding,connection_id:source.connection_id,...(source.device_id?{fetch_key:source.device_id}:{})};return c;});
+ const [contract,setContract]=useState<Contract>(()=>{
+  const current=channel?.collection?structuredClone(channel.collection):make(parameter);
+  if(!source||current.role!=='input')return current;
+  const prior=current.source_binding;
+  const existingTag=provider==='cleanwatts'&&channel?.source==='cleanwatts'&&!channel.collection?.source_binding
+    ? channel.tag : undefined;
+  const sameConnection=prior?.connection_id===source.connection_id;
+  current.source_binding={
+    mapping_required:true,
+    ...prior,
+    connection_id:source.connection_id,
+    fetch_key:source.device_id||((sameConnection?prior?.fetch_key:undefined)??existingTag),
+    match_key:prior&&!sameConnection&&!source.device_id?null:prior?.match_key,
+  };
+  return current;
+ });
  const defaultUnit=(parameter:string)=>parameter==='price'||parameter==='energy_price'?(defaultPriceSource?.provider==='omie'?'EUR/kWh':'EUR/MWh'):parameter.includes('charge')||parameter==='soc'?(provider==='cleanwatts'||provider==='pulsecharge'?'ratio':'%'):parameter==='power'?'kW':parameter==='session_status'?'Status':['electric_vehicle','flexibility'].includes(parameter)?'':'kWh';
  const [name,setName]=useState(channel?.name||measurementLabel(parameter,profile?.asset_type)),[unit,setUnit]=useState(channel?.unit||defaultUnit(parameter));
  const [dataType,setDataType]=useState(channel?.data_type||valueType(parameter)),[enabled,setEnabled]=useState(true);
@@ -108,7 +123,12 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
     ? {...contract,source_binding:{...binding,match_key:shellyField('em',contract.parameter_type_id),topic:shellyTopics.em,source_measurement_unit:'Wh',shelly_accumulation:'lifetime'}}
     : shellySource&&binding&&!binding.shelly_accumulation
      ? {...contract,source_binding:{...binding,shelly_accumulation:'lifetime'}} : contract;
-   onSave({name,unit,data_type:dataType,enabled,collection,capability_type:contract.role==='actuator'?'actuator':'sensor',...(!channel?{source_kind:contract.role.includes('output')?'derived':'physical'}:{})});}} className="percepta-channel-editor">
+   const cleanwattsTag=chosenProvider==='cleanwatts'&&collection.role==='input'&&collection.parameter_type_id!=='electric_vehicle'
+    ? collection.source_binding?.fetch_key : undefined;
+   onSave({name,unit,data_type:dataType,enabled,collection,capability_type:contract.role==='actuator'?'actuator':'sensor',
+    ...(cleanwattsTag?{source:'cleanwatts',tag:cleanwattsTag}:{}),
+    ...(!channel?{source_kind:contract.role.includes('output')?'derived':'physical'}:{}),
+   });}} className="percepta-channel-editor">
   <h4>{channel?.enabled?'Edit measurement':'Add measurement'}</h4><fieldset className="percepta-wizard-content" disabled={busy}><div className="percepta-fields">
   <label>Measurement<select autoFocus={!!equipmentOptions} value={initialMeasurement||contract.parameter_type_id} onChange={e=>{
     const kind=e.target.value;

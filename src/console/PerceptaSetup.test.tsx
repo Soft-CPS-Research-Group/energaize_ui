@@ -171,6 +171,31 @@ it('fills connector defaults and shows only equipment-compatible connectors',asy
  expect(screen.getByLabelText('Data endpoint')).toHaveValue('/assets/{entity_id}/observations?window_seconds={time_interval}');
  expect(screen.getByRole('option',{name:'Cleanwatts HTTP'})).toBeInTheDocument();
 });
+
+it('reuses the imported Cleanwatts reference and saves it consistently with the source mapping',async()=>{
+ const fetcher=setup(false,false,false,true);
+ const original=fetcher.getMockImplementation()!;
+ const legacy={capability_id:'legacy',name:'energy_out',unit:'kWh',enabled:false,capability_type:'sensor',data_type:'float',source:'cleanwatts',tag:'31000'};
+ const imported={...legacy,capability_id:'imported',name:'Total grid export',tag:'31001',collection:{parameter_type_id:'energy_out_total',role:'input',privacy:'private',necessary:true,source_binding:null}};
+ fetcher.mockImplementation(async(input,init)=>{
+  const url=String(input);
+  if(url.endsWith('/equipment-sources'))return Response.json([{asset_id:'asset',connection_id:'http',device_id:null}]);
+  if(url.endsWith('/assets/asset/signals'))return Response.json({profile_id:'profile',asset_type:'grid_meter',capabilities:[legacy,imported]});
+  if(url.includes('/connections'))return Response.json([{id:'http',name:'Cleanwatts HTTP',provider:'cleanwatts'}]);
+  return original(input,init);
+ });
+ fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Add measurement'}));
+ fireEvent.change(screen.getByRole('combobox',{name:'Measurement'}),{target:{value:'energy_out_total'}});
+ const reference=screen.getByRole('textbox',{name:/^Measurement reference/});
+ expect(reference).toHaveValue('31001');
+ fireEvent.change(reference,{target:{value:'31002'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText('Measurement saved.');
+ const write=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/signals/imported')&&init?.method==='PUT');
+ expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({source:'cleanwatts',tag:'31002',collection:{source_binding:{connection_id:'http',fetch_key:'31002'}}});
+});
+
 async function reviewInitial(){await openEquipment();fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));fireEvent.click(screen.getByRole('button',{name:'Next: review'}));fireEvent.click(screen.getByRole('button',{name:'Generate configuration'}));await screen.findByText('Configuration ready');}
 it('starts only after Create & start and closes after confirmation',async()=>{
  const fetcher=setup(true);await reviewInitial();

@@ -2,7 +2,7 @@ export type Connection={id:string;name:string;provider:string;site_id?:string|nu
 export type Connector={id:string;name:string;transport:string;available:boolean;defaults:NonNullable<Connection['settings']>;credentials:'required'|'optional'|'none'};
 export type Source={asset_id:string;connection_id:string;device_id:string|null};
 export type Contract={parameter_type_id:string;vehicle_id?:string|null;parameter_key?:string|null;necessary:boolean;privacy:string;role:string;temporal_behavior?:{cumulative:boolean;periodicity:{value:number;unit:string};aggregation_operation:string;fill_operation:string}|null;source_binding?:{connection_id:string;fetch_key?:string|null;match_key?:string|null;topic?:string|null;shelly_accumulation?:string|null;source_measurement_unit?:'Wh'|'kWh'|'W'|'kW'|'%'|'ratio'|'Status'|null;mapping_required:boolean}|null};
-export type Channel={version?:string|null;capability_id:string;name:string;unit:string;enabled:boolean;capability_type:string;data_type:string;quantity?:string;collection?:Contract|null;mongo_binding?:unknown};
+export type Channel={version?:string|null;capability_id:string;name:string;unit:string;enabled:boolean;capability_type:string;data_type:string;quantity?:string;source?:string|null;tag?:string|null;collection?:Contract|null;mongo_binding?:unknown};
 export type Profile={profile_id:string;asset_type:string;entity_key?:string;capabilities:Channel[]};
 export type Owner={id:string;name:string;scope:'assets'|'sites'|'recs';simulated?:boolean};
 export const isPriceSource = (provider: string) => provider === 'ren' || provider === 'omie';
