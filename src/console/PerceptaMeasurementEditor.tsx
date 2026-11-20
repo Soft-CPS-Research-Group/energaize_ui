@@ -19,7 +19,9 @@ const shellyField=(format:ShellyFormat,parameter:string)=>{
  if(/^energy_out_(total|l1)$/.test(parameter))return 'total_act_ret_energy';
 };
 export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equipmentOptions,onSelectEquipmentMeasurement,owner,profile,source,connections,forecastSourceIds,houseMeasurementKind,frequency,vehicles,onSave,busy}:{formId:string;channel?:Channel;initialMeasurement?:string;equipmentOptions?:string[];onSelectEquipmentMeasurement:(kind:string)=>void;owner:Owner;profile:Profile|null;source:Source|null;connections:Connection[];forecastSourceIds?:string[];houseMeasurementKind?:'calculated'|'forecast';frequency:number;vehicles:Array<{id:string;name:string}>;onSave:(body:unknown)=>void;busy:boolean}){
- const provider=connections.find(c=>c.id===source?.connection_id)?.provider;
+ const connection=connections.find(c=>c.id===source?.connection_id);
+ const provider=connection?.provider;
+ const legacyGen1=provider==='cleanwatts_2'&&connection?.settings?.shelly_format==='gen1_3em';
  const choices=owner.scope==='recs'?['energy_in_total','energy_out_total','price']:owner.scope==='sites'?houseMeasurementKind==='forecast'?Object.keys(forecasts):['solar_generation','non_shiftable_load']:equipmentMeasurements(profile?.asset_type);
  const forecastSources = connections.filter(c=>c.provider==='predictor'&&(!forecastSourceIds||forecastSourceIds.includes(c.id)||c.id===channel?.collection?.source_binding?.connection_id));
  const priceSources = connections.filter(c => isPriceSource(c.provider));
@@ -60,8 +62,8 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
    .map(c=>c.collection?.source_binding)
    .find(binding=>binding?.connection_id===source?.connection_id&&
      (binding?.topic===shellyTopics.em||binding?.topic===shellyTopics.em1)):undefined;
-  const format=existingShellyBinding?.topic===shellyTopics.em1?'em1':'em';
-  const exampleField=existingShellyBinding&&shellyField(format,parameter);
+  const format=!legacyGen1&&existingShellyBinding?.topic===shellyTopics.em1?'em1':'em';
+  const exampleField=(legacyGen1||existingShellyBinding)&&shellyField(format,parameter);
   return {
     parameter_type_id: parameter,
     role: output ? (owner.scope === 'recs' ? 'community_output' : 'site_output') : 'input',
@@ -76,7 +78,7 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
         mapping_required: parameter !== 'electric_vehicle',
         ...(provider === 'cleanwatts_2' ? {
           shelly_accumulation:'lifetime',
-          ...(exampleField?{topic:shellyTopics[format],source_measurement_unit:existingShellyBinding?.source_measurement_unit||'Wh'}:{}),
+          ...(exampleField?{topic:shellyTopics[format],source_measurement_unit:legacyGen1?'Wh':existingShellyBinding?.source_measurement_unit||'Wh'}:{}),
         } : {}),
         ...((provider === 'cleanwatts' || provider === 'pulsecharge') &&
           !['electric_vehicle','flexibility'].includes(parameter) ? {source_measurement_unit: sourceUnit as 'kWh'|'kW'|'%'|'Status'} : {}),
@@ -102,8 +104,10 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
    e.preventDefault();
    if(busy)return;
    if(contract.role==='input'&&!binding?.connection_id){setMissingSource(true);return;}
-   const collection=shellySource&&binding&&!binding.shelly_accumulation
-    ? {...contract,source_binding:{...binding,shelly_accumulation:'lifetime'}} : contract;
+   const collection=legacyGen1&&binding
+    ? {...contract,source_binding:{...binding,match_key:shellyField('em',contract.parameter_type_id),topic:shellyTopics.em,source_measurement_unit:'Wh',shelly_accumulation:'lifetime'}}
+    : shellySource&&binding&&!binding.shelly_accumulation
+     ? {...contract,source_binding:{...binding,shelly_accumulation:'lifetime'}} : contract;
    onSave({name,unit,data_type:dataType,enabled,collection,capability_type:contract.role==='actuator'?'actuator':'sensor',...(!channel?{source_kind:contract.role.includes('output')?'derived':'physical'}:{})});}} className="percepta-channel-editor">
   <h4>{channel?.enabled?'Edit measurement':'Add measurement'}</h4><fieldset className="percepta-wizard-content" disabled={busy}><div className="percepta-fields">
   <label>Measurement<select autoFocus={!!equipmentOptions} value={initialMeasurement||contract.parameter_type_id} onChange={e=>{
@@ -134,7 +138,8 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
   {contract.parameter_type_id==='electric_vehicle'&&<label>Linked vehicle<select value={contract.vehicle_id||''} onChange={e=>setContract({...contract,vehicle_id:e.target.value||null})}><option value="">No fixed vehicle</option>{vehicles.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>}
   {contract.role.includes('output')&&<p className="percepta-helper">Calculated by Percepta{owner.scope==='recs'?' for the whole community':''}. No source connection is needed.</p>}
   {owner.scope==='sites'&&contract.parameter_type_id==='non_shiftable_load'&&<p role="note" className="percepta-helper">This Percepta calculation currently omits solar generation. Its output needs validation before use.</p>}
-  {shellySource&&<fieldset className="percepta-source-fields">
+  {legacyGen1&&<p className="percepta-helper">This Shelly 3EM reports lifetime counters in Wh for all three phases. Percepta uses two reports to calculate the energy for each interval.</p>}
+  {shellySource&&!legacyGen1&&<fieldset className="percepta-source-fields">
     <legend>Shelly readings</legend>
     {formats.length>0&&<label>Shelly message format
       <select value={shellyFormat} onChange={event=>{

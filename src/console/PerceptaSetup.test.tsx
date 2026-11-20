@@ -213,37 +213,45 @@ it('opens the same source and measurements directly from an equipment page',asyn
  expect(fetcher.mock.calls.some(([url])=>/launch|operations|commands/.test(String(url)))).toBe(false);
 });
 
-it('creates a Cleanwatts source with broker defaults and exposes the Shelly counter mode',async()=>{
+it.each(['native','gen1_3em'])('creates a Cleanwatts source and saves %s counter mappings',async format=>{
  const fetcher=setup(false,false,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
  fireEvent.click(await screen.findByRole('button',{name:'Source settings'}));
  fireEvent.click(screen.getByRole('button',{name:'Add data source'}));
  fireEvent.change(screen.getByRole('combobox',{name:'Service'}),{target:{value:'cleanwatts_2'}});
+ fireEvent.change(screen.getByLabelText('Meter format'),{target:{value:format}});
  expect(screen.getByText(/rabbit.example:5671/)).toBeVisible();
  fireEvent.click(screen.getByRole('button',{name:'Save source'}));
  expect(await screen.findByRole('combobox',{name:'Data source'})).toHaveValue('new-source');
  const write=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/connections')&&init?.method==='POST');
  expect(JSON.parse(String(write?.[1]?.body)).configuration).toMatchObject({
-   host:'rabbit.example',port:5671,vhost:'iEnergy',queue_prefix:'isep_consumer_',ssl_conf:{enabled:true},
+   host:'rabbit.example',port:5671,vhost:'iEnergy',queue_prefix:'isep_consumer_',ssl_conf:{enabled:true},shelly_format:format,
  });
  fireEvent.change(screen.getByLabelText('RabbitMQ exchange'),{target:{value:'Shelly-meter'}});
  fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
  await screen.findByText('Equipment source saved. Review the existing measurement mappings for this source.');
  fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
  expect(screen.getByRole('combobox',{name:'Measurement'})).toHaveValue('energy_out_total');
- expect(screen.getByLabelText('Counter reports')).toHaveValue('lifetime');
- fireEvent.change(screen.getByLabelText('Shelly message format'),{target:{value:'em'}});
- expect(screen.getByLabelText('Payload field')).toHaveValue('total_act_ret');
- expect(screen.getByLabelText('Topic suffix')).toHaveValue('/status/emdata:0');
- fireEvent.change(screen.getByLabelText('Shelly message format'),{target:{value:'em1'}});
- expect(screen.getByLabelText('Payload field')).toHaveValue('total_act_ret_energy');
- fireEvent.change(screen.getByLabelText('Counter reports'),{target:{value:'interval'}});
- expect(screen.getByLabelText('Unit reported by the device')).toHaveValue('Wh');
+ if(format==='native'){
+   expect(screen.getByLabelText('Counter reports')).toHaveValue('lifetime');
+   fireEvent.change(screen.getByLabelText('Shelly message format'),{target:{value:'em'}});
+   expect(screen.getByLabelText('Payload field')).toHaveValue('total_act_ret');
+   expect(screen.getByLabelText('Topic suffix')).toHaveValue('/status/emdata:0');
+   fireEvent.change(screen.getByLabelText('Shelly message format'),{target:{value:'em1'}});
+   expect(screen.getByLabelText('Payload field')).toHaveValue('total_act_ret_energy');
+   fireEvent.change(screen.getByLabelText('Counter reports'),{target:{value:'interval'}});
+   expect(screen.getByLabelText('Unit reported by the device')).toHaveValue('Wh');
+ }else{
+   expect(screen.getByText(/lifetime counters in Wh for all three phases/)).toBeVisible();
+   expect(screen.queryByLabelText('Counter reports')).not.toBeInTheDocument();
+ }
  fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
  await screen.findByText('Measurement saved.');
  const measurement=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/assets/asset/signals')&&init?.method==='POST');
  expect(JSON.parse(String(measurement?.[1]?.body)).collection.source_binding).toMatchObject({
-   shelly_accumulation:'interval',topic:'/status/em1data:0',source_measurement_unit:'Wh',
+   shelly_accumulation:format==='native'?'interval':'lifetime',
+   topic:format==='native'?'/status/em1data:0':'/status/emdata:0',
+   match_key:format==='native'?'total_act_ret_energy':'total_act_ret',source_measurement_unit:'Wh',
  });
 });
 
