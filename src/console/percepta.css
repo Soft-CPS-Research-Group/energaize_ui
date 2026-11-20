@@ -150,7 +150,6 @@ dialog.percepta-dialog{position:fixed;inset:0;width:min(880px,calc(100vw - 40px)
 .percepta-review-settings { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
 .percepta-replace { padding: 14px 0; border-top: 1px solid var(--line); }
 
-.percepta-step-body { display: flex; min-height: 0; flex: 1; }
 .percepta-source-fields { min-width: 0; margin: 16px 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
 .percepta-source-fields legend { padding: 0 5px; font-weight: 700; }
 .percepta-source-fields > label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; }

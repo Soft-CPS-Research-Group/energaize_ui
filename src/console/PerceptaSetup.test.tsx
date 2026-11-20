@@ -32,16 +32,21 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
  return fetcher;
 }
 async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByRole('button',{name:/Grid meter/});}
-it('lets the user pick a channel by equipment type and edit its defaults before saving',async()=>{
+it('opens an editable form immediately with a save button in the wizard footer',async()=>{
  const fetcher=setup(false,false,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
  fireEvent.click(await screen.findByRole('button',{name:'Add measurement'}));
- const choices=screen.getByRole('region',{name:'Available measurements'});
- expect(within(choices).queryByRole('button',{name:'Total grid import'})).not.toBeInTheDocument();
- fireEvent.click(within(choices).getByRole('button',{name:'Total grid export'}));
- expect(screen.getByRole('combobox',{name:'Measurement'})).toHaveValue('energy_out_total');
+ const choices=screen.getByRole('combobox',{name:'Measurement'});
+ expect(within(choices).queryByRole('option',{name:'Total grid import'})).not.toBeInTheDocument();
+ expect(choices).toHaveValue('energy_out_total');
+ const save=screen.getByRole<HTMLButtonElement>('button',{name:'Save measurement'});
+ expect(save.closest('footer')).toHaveClass('percepta-wizard-footer');
+ expect(save.form).toContainElement(choices);
+ fireEvent.change(choices,{target:{value:'energy_in_l1'}});
+ expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('Grid import · L1');
+ fireEvent.change(screen.getByRole('combobox',{name:'Measurement'}),{target:{value:'energy_out_total'}});
  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'Meter export'}});
- fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ fireEvent.click(save);
  await screen.findByText('Measurement saved.');
  const write=fetcher.mock.calls.find(([url,request])=>String(url).endsWith('/assets/asset/signals')&&request?.method==='POST');
  expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({name:'Meter export',unit:'kWh',collection:{parameter_type_id:'energy_out_total'}});
@@ -224,7 +229,7 @@ it('creates a Cleanwatts source with broker defaults and exposes the Shelly coun
  fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
  await screen.findByText('Equipment source saved. Review the existing measurement mappings for this source.');
  fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
- fireEvent.click(screen.getByRole('button',{name:'Total grid export'}));
+ expect(screen.getByRole('combobox',{name:'Measurement'})).toHaveValue('energy_out_total');
  expect(screen.getByLabelText('Counter reports')).toHaveValue('lifetime');
  fireEvent.change(screen.getByLabelText('Shelly message format'),{target:{value:'em'}});
  expect(screen.getByLabelText('Payload field')).toHaveValue('total_act_ret');
@@ -298,7 +303,7 @@ it('keeps house measurements in the general step and restores the owner when nav
  fireEvent.click(screen.getByRole('button',{name:'Back'}));
  expect(screen.getByRole('heading',{name:'Calculated measurements'})).toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Add calculation'}));
- expect(screen.getByRole('button',{name:'Next: review'})).toBeDisabled();
+ expect(screen.queryByRole('button',{name:'Next: review'})).not.toBeInTheDocument();
  expect(screen.queryByRole('region',{name:'From your community'})).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
  await screen.findByText('Measurement saved.');
@@ -333,7 +338,7 @@ it('configures sources and measurements without offering or calling runtime laun
  expect(screen.queryByText(/Review & start|Collection starts only/)).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
  fireEvent.click(screen.getByRole('button',{name:'Add calculation'}));
- expect(screen.getByRole('button',{name:'Done'})).toBeDisabled();
+ expect(screen.queryByRole('button',{name:'Done'})).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
  await screen.findByText('Measurement saved.');
  expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/sites/site/signals')&&init?.method==='POST')).toBe(true);

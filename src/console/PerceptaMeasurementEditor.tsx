@@ -18,7 +18,7 @@ const shellyField=(format:ShellyFormat,parameter:string)=>{
  if(/^energy_in_(total|l1)$/.test(parameter))return 'total_act_energy';
  if(/^energy_out_(total|l1)$/.test(parameter))return 'total_act_ret_energy';
 };
-export function PerceptaMeasurementEditor({channel,initialMeasurement,owner,profile,source,connections,forecastSourceIds,houseMeasurementKind,frequency,vehicles,onSave,onCancel,busy}:{channel?:Channel;initialMeasurement?:string;owner:Owner;profile:Profile|null;source:Source|null;connections:Connection[];forecastSourceIds?:string[];houseMeasurementKind?:'calculated'|'forecast';frequency:number;vehicles:Array<{id:string;name:string}>;onSave:(body:unknown)=>void;onCancel:()=>void;busy:boolean}){
+export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equipmentOptions,onSelectEquipmentMeasurement,owner,profile,source,connections,forecastSourceIds,houseMeasurementKind,frequency,vehicles,onSave,busy}:{formId:string;channel?:Channel;initialMeasurement?:string;equipmentOptions?:string[];onSelectEquipmentMeasurement:(kind:string)=>void;owner:Owner;profile:Profile|null;source:Source|null;connections:Connection[];forecastSourceIds?:string[];houseMeasurementKind?:'calculated'|'forecast';frequency:number;vehicles:Array<{id:string;name:string}>;onSave:(body:unknown)=>void;busy:boolean}){
  const provider=connections.find(c=>c.id===source?.connection_id)?.provider;
  const choices=owner.scope==='recs'?['energy_in_total','energy_out_total','price']:owner.scope==='sites'?houseMeasurementKind==='forecast'?Object.keys(forecasts):['solar_generation','non_shiftable_load']:equipmentMeasurements(profile?.asset_type);
  const forecastSources = connections.filter(c=>c.provider==='predictor'&&(!forecastSourceIds||forecastSourceIds.includes(c.id)||c.id===channel?.collection?.source_binding?.connection_id));
@@ -89,6 +89,7 @@ export function PerceptaMeasurementEditor({channel,initialMeasurement,owner,prof
  const defaultUnit=(parameter:string)=>parameter==='price'||parameter==='energy_price'?(defaultPriceSource?.provider==='omie'?'EUR/kWh':'EUR/MWh'):parameter.includes('charge')||parameter==='soc'?(provider==='cleanwatts'||provider==='pulsecharge'?'ratio':'%'):parameter==='power'?'kW':parameter==='session_status'?'Status':['electric_vehicle','flexibility'].includes(parameter)?'':'kWh';
  const [name,setName]=useState(channel?.name||measurementLabel(parameter,profile?.asset_type)),[unit,setUnit]=useState(channel?.unit||defaultUnit(parameter));
  const [dataType,setDataType]=useState(channel?.data_type||valueType(parameter)),[enabled,setEnabled]=useState(true);
+ const [missingSource,setMissingSource]=useState(false);
  const binding=contract.source_binding,chosenProvider=connections.find(c=>c.id===binding?.connection_id)?.provider;
  const shellySource = chosenProvider === 'cleanwatts_2';
  const formats=(['em','em1'] as const).filter(format=>shellyField(format,contract.parameter_type_id));
@@ -97,13 +98,25 @@ export function PerceptaMeasurementEditor({channel,initialMeasurement,owner,prof
  const forecast = !!forecasts[contract.parameter_type_id];
  const nativePrice=chosenProvider==='omie';
  const setBinding=(key:string,value:unknown)=>setContract({...contract,source_binding:{connection_id:binding?.connection_id||'',mapping_required:true,...binding,[key]:value}});
- return <form onSubmit={e=>{e.preventDefault();const collection=shellySource&&binding&&!binding.shelly_accumulation
+ return <form id={formId} onSubmit={e=>{
+   e.preventDefault();
+   if(busy)return;
+   if(contract.role==='input'&&!binding?.connection_id){setMissingSource(true);return;}
+   const collection=shellySource&&binding&&!binding.shelly_accumulation
     ? {...contract,source_binding:{...binding,shelly_accumulation:'lifetime'}} : contract;
    onSave({name,unit,data_type:dataType,enabled,collection,capability_type:contract.role==='actuator'?'actuator':'sensor',...(!channel?{source_kind:contract.role.includes('output')?'derived':'physical'}:{})});}} className="percepta-channel-editor">
   <h4>{channel?.enabled?'Edit measurement':'Add measurement'}</h4><fieldset className="percepta-wizard-content" disabled={busy}><div className="percepta-fields">
-  <label>Measurement<select disabled={!!initialMeasurement} value={contract.parameter_type_id} onChange={e=>{const p=e.target.value;setContract(make(p));setName(measurementLabel(p,profile?.asset_type));setUnit(defaultUnit(p));setDataType(valueType(p));}}>{[...new Set([...choices,contract.parameter_type_id])].map(p=><option key={p} value={p}>{measurementLabel(p,profile?.asset_type)}</option>)}</select></label>
+  <label>Measurement<select autoFocus={!!equipmentOptions} value={initialMeasurement||contract.parameter_type_id} onChange={e=>{
+    const kind=e.target.value;
+    if(equipmentOptions){onSelectEquipmentMeasurement(kind);return;}
+    setContract(make(kind));
+    setName(measurementLabel(kind,profile?.asset_type));
+    setUnit(defaultUnit(kind));
+    setDataType(valueType(kind));
+  }}>{(equipmentOptions||[...new Set([...choices,contract.parameter_type_id])]).map(kind=><option key={kind} value={kind}>{measurementLabel(kind,profile?.asset_type)}</option>)}</select></label>
   <label>Name<input required value={name} onChange={e=>setName(e.target.value)}/></label>
   </div>
+  {missingSource&&contract.role==='input'&&!binding?.connection_id&&<p role="alert">Connect a source before saving this measurement.</p>}
   {contract.role==='input'&&(forecast?<label>Forecast source<select required value={binding?.connection_id||''} onChange={event=>setBinding('connection_id',event.target.value)}><option value="">Choose a forecast source</option>{forecastSources.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><small>Includes the forecast horizon in 15-minute intervals.</small></label>:owner.scope!=='assets'?<label>Price source<select required value={binding?.connection_id||''} onChange={event=>{
     const id = event.target.value;
     const next = priceBinding(id);
@@ -171,6 +184,6 @@ export function PerceptaMeasurementEditor({channel,initialMeasurement,owner,prof
   {contract.role==='input'&&!nativePrice&&!forecast&&<label className="percepta-check"><input type="checkbox" checked={binding?.mapping_required??true} onChange={e=>setBinding('mapping_required',e.target.checked)}/>External mapping required</label>}
   <label className="percepta-check"><input type="checkbox" checked={contract.necessary} onChange={e=>setContract({...contract,necessary:e.target.checked})}/>Required measurement</label></details>
   <label className="percepta-check"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Collect this measurement</label>
-  <footer className="percepta-editor-actions"><button type="button" className="btn" onClick={onCancel}>Cancel</button><button className="btn primary" disabled={contract.role==='input'&&!binding?.connection_id}>Save measurement</button></footer></fieldset>
+  </fieldset>
  </form>;
 }
