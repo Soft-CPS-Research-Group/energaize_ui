@@ -103,10 +103,12 @@ export function DeploymentWorkspace({
   siteId,
   siteName,
   navigate,
+  onCollectionChange,
 }: {
   siteId: string;
   siteName: string;
   navigate: (path: string) => void;
+  onCollectionChange?: () => void;
 }) {
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [map, setMap] = useState<DeploymentMap | null>(null),
@@ -346,6 +348,7 @@ export function DeploymentWorkspace({
           kind={detail}
           startPerceptaSetup={detail === "percepta" && !hasRuntimePercepta}
           navigate={navigate}
+          onCollectionChange={onCollectionChange}
         />
       </section>
     );
@@ -368,9 +371,9 @@ export function DeploymentWorkspace({
         onOpenChange={setForecastSetup}
         startOnHouseData
         configurationOnly
-        onChange={() => {}}
+        onChange={() => onCollectionChange?.()}
       />
-      {collectionSetup && <PerceptaSetup siteId={siteId} navigate={navigate} hideTrigger open configurationOnly nativeCollection onOpenChange={setCollectionSetup} onChange={() => {}} />}
+      {collectionSetup && <PerceptaSetup siteId={siteId} navigate={navigate} hideTrigger open configurationOnly nativeCollection onOpenChange={setCollectionSetup} onChange={() => onCollectionChange?.()} />}
       {launchPlan && (
         <PerceptaSetup
           siteId={siteId}
@@ -381,7 +384,7 @@ export function DeploymentWorkspace({
           launchPlan={launchPlan}
           onOpenChange={(open) => { if (!open) setLaunchPlan(null); }}
           onLaunched={() => { setView("operation"); void load(); }}
-          onChange={() => {}}
+          onChange={() => onCollectionChange?.()}
         />
       )}
       <header className="deployment-heading">

@@ -77,12 +77,18 @@ export function CommunityWorkspace(): JSX.Element {
       onRoute:(path:string|null)=>{if(path&&path!==activePath.current){activePath.current=path;navigation.current(path);}}
     };
     const environment=createWorkspaceEnvironment(shadow,body,bridge);
+    let refreshInventory=false;
     const sync=()=>{
       roots.forEach((root,node)=>{if(!node.isConnected){root.unmount();roots.delete(node);}});
-      if(session.role==='rec_manager')shadow.querySelectorAll<HTMLElement>('[data-deployment-site]').forEach(node=>{
+      const deploymentSlots=shadow.querySelectorAll<HTMLElement>('[data-deployment-site]');
+      if(refreshInventory&&!deploymentSlots.length){
+        refreshInventory=false;
+        body.dispatchEvent(new CustomEvent('collection-settings-saved',{bubbles:true,composed:true}));
+      }
+      if(session.role==='rec_manager')deploymentSlots.forEach(node=>{
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);
-        root.render(<DeploymentWorkspace siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)}/>);
+        root.render(<DeploymentWorkspace siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)} onCollectionChange={()=>{refreshInventory=true;}}/>);
       });
       shadow.querySelectorAll<HTMLElement>('[data-flex-calendar]').forEach(node=>{
         if(roots.has(node))return;
