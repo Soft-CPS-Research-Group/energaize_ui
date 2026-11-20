@@ -167,6 +167,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const readingChannels=(id:string)=>(profiles[id]?.capabilities||[]).filter(c=>c.enabled&&c.capability_type!=='actuator');
  const collected=(c:Channel)=>!!c.collection||!c.mongo_binding;
  const reviewRows=owners.flatMap(o=>(profiles[o.id]?.capabilities||[]).filter(c=>c.enabled&&collected(c)).map(channel=>({owner:o,channel})));
+ const reviewedChannelCount=snapshot?.channel_count??reviewRows.length;
  const connectionName=(c:Connection)=>sourceLabel(c,connections.filter(v=>v.provider===c.provider).length>1);
  const inEquipmentDetail=tab==='channels'&&owner?.scope==='assets';
  const backToEquipmentList=inEquipmentDetail&&!equipmentId&&!hasEditor;
@@ -354,7 +355,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  </>}
  {!configurationOnly&&tab==='settings'&&<><div className="percepta-review-overview">
    <div><h3>Review collection</h3><p>{siteName}</p></div>
-   <b>{reviewRows.length} {reviewRows.length===1?'channel':'channels'}</b>
+   <b>{reviewedChannelCount} {reviewedChannelCount===1?'channel':'channels'}</b>
  </div>
  {reviewRows.length>0&&<details className="percepta-review-table"><summary>Review channels and sources</summary><table><thead><tr><th>Channel</th><th>Equipment or scope</th><th>Source</th></tr></thead><tbody>{reviewRows.map(({owner:o,channel:c})=><tr key={c.capability_id}><td>{displayMeasurementName(c.name)}</td><td>{o.name}</td><td>{originName(o,c)}</td></tr>)}</tbody></table></details>}
  {initialSetup&&launchPlan&&!selectedHost&&<p role="alert">The planned machine is no longer available. Return to deployment setup to choose another.</p>}

@@ -23,7 +23,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   else if(url.includes('/community-api/api/sites/site'))data={id:'site',name:'RH03',assigned_rec_id:'rec',external_references:[{system:'percepta-mongo',identifier:'living_lab/building_R-H-03'}]};
   else if(url.includes('/community-api/api/assets/'))data=[{id:'asset',data:{site_id:'site',name:'Grid meter'}}];
   else if(url.includes('/connections'))data=[{id:'connection',name:'Meter connection',provider:'softcps'},{id:'second',name:'Second source',provider:'softcps'},{id:'prices',name:'Market prices',provider:'ren'},{id:'shared',name:'Cleanwatts RabbitMQ · RH01 and RH02',provider:'cleanwatts_2'},{id:'foreign-forecast',name:'Predictor forecasts · RH01',provider:'predictor',settings:{exchange:'pred.R-H-01'}},{id:'foreign-vehicle',name:'Pulsecharge · RH01',provider:'pulsecharge',settings:{exchange:'building_R-H-01'}}];
-  else if(url.split('?')[0].endsWith('/preview'))data={version:'123abc',channel_count:1,warnings:[],payload:{},executable:true,applied:false};
+  else if(url.split('?')[0].endsWith('/preview'))data={version:'123abc',channel_count:3,warnings:[],payload:{},executable:true,applied:false};
   else if(url.includes('/percepta/sites/site'))data={environment_key:'house',frequency_seconds:15,timezone:'UTC'};
   return new Response(JSON.stringify(data));
  });
@@ -174,6 +174,7 @@ it('fills connector defaults and shows only equipment-compatible connectors',asy
 async function reviewInitial(){await openEquipment();fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));fireEvent.click(screen.getByRole('button',{name:'Next: review'}));fireEvent.click(screen.getByRole('button',{name:'Generate configuration'}));await screen.findByText('Configuration ready');}
 it('starts only after Create & start and closes after confirmation',async()=>{
  const fetcher=setup(true);await reviewInitial();
+ expect(screen.getByText('3 channels')).toBeInTheDocument();
  expect(fetcher.mock.calls.some(([url])=>String(url).endsWith('/launch'))).toBe(false);
  fireEvent.click(screen.getByRole('button',{name:'Create & start'}));
  await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
