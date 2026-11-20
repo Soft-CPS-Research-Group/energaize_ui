@@ -32,7 +32,7 @@ export function equipmentConnector(provider: string, assetType?: string) {
  if (!assetType) return true;
  if (provider === 'cleanwatts_2') return assetType === 'grid_meter';
  if (provider === 'pulsecharge') return ['ev','electric_vehicle'].includes(assetType);
- if (provider === 'cleanwatts') return ['pv_panel','pv_system','solar_pv','solar_panel','battery','ev_charger'].includes(assetType);
+ if (provider === 'cleanwatts') return ['grid_meter','pv_panel','pv_system','solar_pv','solar_panel','battery','ev_charger'].includes(assetType);
  return true;
 }
 export async function api<T>(path:string,body?:unknown,method='GET'):Promise<T>{

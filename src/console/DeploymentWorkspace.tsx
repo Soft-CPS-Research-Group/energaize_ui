@@ -383,7 +383,7 @@ export function DeploymentWorkspace({
           initialSetup
           launchPlan={launchPlan}
           onOpenChange={(open) => { if (!open) setLaunchPlan(null); }}
-          onLaunched={() => { setView("operation"); void load(); }}
+          onLaunched={() => { setMessage(""); setView("operation"); void load(); }}
           onChange={() => onCollectionChange?.()}
         />
       )}

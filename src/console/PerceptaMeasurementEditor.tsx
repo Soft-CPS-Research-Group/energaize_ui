@@ -48,7 +48,7 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
     cumulative: parameter.startsWith('energy'),
     periodicity: {
       value: provider === 'cleanwatts_2' ? Math.max(60, Math.ceil(frequency / 60) * 60)
-        : provider === 'cleanwatts' ? (state ? 60 : 300) : frequency,
+        : provider === 'cleanwatts' ? (profile?.asset_type === 'grid_meter' ? 900 : state ? 60 : 300) : frequency,
       unit: 'seconds',
     },
     aggregation_operation: state ? 'last' : parameter === 'power' ? 'mean' : 'sum',

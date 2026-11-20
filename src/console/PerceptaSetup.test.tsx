@@ -169,7 +169,7 @@ it('fills connector defaults and shows only equipment-compatible connectors',asy
  if (screen.queryByRole('option',{name:'SoftCPS'})) fireEvent.change(screen.getByRole('combobox',{name:'Service'}),{target:{value:'softcps'}});
  expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
  expect(screen.getByLabelText('Data endpoint')).toHaveValue('/assets/{entity_id}/observations?window_seconds={time_interval}');
- expect(screen.queryByRole('option',{name:'Cleanwatts HTTP'})).not.toBeInTheDocument();
+ expect(screen.getByRole('option',{name:'Cleanwatts HTTP'})).toBeInTheDocument();
 });
 async function reviewInitial(){await openEquipment();fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));fireEvent.click(screen.getByRole('button',{name:'Next: review'}));fireEvent.click(screen.getByRole('button',{name:'Generate configuration'}));await screen.findByText('Configuration ready');}
 it('starts only after Create & start and closes after confirmation',async()=>{
