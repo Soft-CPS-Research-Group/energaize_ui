@@ -2,7 +2,7 @@ import {useEffect,useState,useId,type ReactNode} from 'react';
 import {Activity, RefreshCw, CircleCheck, TriangleAlert, CircleAlert} from 'lucide-react';
 import {runtimeRequest, type RuntimeInstance} from '../api/runtimeApi';
 
-export type ChannelHealth={channel_id:string;name:string;owner:string;scope:string;state:'receiving'|'missing'|'stale'|'invalid'|'fallback'|'unverified';message:string;last_received_at:string|null};
+export type ChannelHealth={channel_id:string;name:string;owner:string;scope:string;state:'receiving'|'missing'|'stale'|'invalid'|'fallback'|'unverified'|'partial';message:string;last_received_at:string|null};
 type ReadingStatus={state:'waiting'|'stale'|'receiving';last_received_at:string|null;generated_entities:string[]|null;channels?:ChannelHealth[];channel_summary?:{total:number;receiving:number;issues:number}};
 export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checking=false,actions,monitoringError='',heading}:{siteId:string;item:RuntimeInstance;refreshKey?:number;onCheck:()=>void;checking?:boolean;actions?:ReactNode;monitoringError?:string;heading?:ReactNode}){
  const [detailsOpen,setDetailsOpen]=useState(false);
@@ -55,7 +55,7 @@ export function PerceptaTelemetryStatus({siteId,item,refreshKey=0,onCheck,checki
   <header><div><Activity size={17}/><h4>Health check</h4></div>{actions||<button className="btn" disabled={checking||!!item.active_operation} onClick={onCheck}><RefreshCw size={14}/>Check now</button>}</header>
   {configMessage&&<p className="percepta-configuration-warning"><TriangleAlert size={15}/>{configMessage}</p>}
   <div className="percepta-reading-summary"><span>{error?'Unable to check readings':status?.last_received_at?'Last data received '+new Date(status.last_received_at).toLocaleString('en-GB'):readings}</span>{!!status?.channel_summary?.total&&<button className="btn text" aria-expanded={showAllChannels} onClick={()=>setShowAllChannels(!showAllChannels)}>{status.channel_summary.receiving}/{status.channel_summary.total} channels healthy</button>}</div>
-  {(channelIssues.length>0||showAllChannels)&&<div className="percepta-channel-health" aria-label="Channel status"><ul>{(showAllChannels?status?.channels||[]:channelIssues).map(channel=><li key={channel.channel_id}><div><strong>{channel.name}</strong><small>{channel.owner}</small></div><div className={'channel-health-'+channel.state}><span>{({receiving:'Receiving',missing:'No data',stale:'Delayed',invalid:'Invalid value',fallback:'Substitute value',unverified:'Not verified'})[channel.state]}</span><small>{channel.message}{channel.state!=='receiving'&&channel.last_received_at?' Last seen '+new Date(channel.last_received_at).toLocaleString('en-GB'):''}</small></div></li>)}</ul></div>}
+  {(channelIssues.length>0||showAllChannels)&&<div className="percepta-channel-health" aria-label="Channel status"><ul>{(showAllChannels?status?.channels||[]:channelIssues).map(channel=><li key={channel.channel_id}><div><strong>{channel.name}</strong><small>{channel.owner}</small></div><div className={'channel-health-'+channel.state}><span>{({receiving:'Receiving',missing:'No data',stale:'Delayed',invalid:'Invalid value',fallback:'Substitute value',unverified:'Not verified',partial:'Incomplete interval'})[channel.state]}</span><small>{channel.message}{channel.state!=='receiving'&&channel.last_received_at?' Last seen '+new Date(channel.last_received_at).toLocaleString('en-GB'):''}</small></div></li>)}</ul></div>}
 
   {error&&<p role="alert">{error}</p>}
  </section></>;

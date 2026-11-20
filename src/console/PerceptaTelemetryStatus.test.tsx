@@ -85,3 +85,11 @@ it('never shows green when channel verification is unavailable',async()=>{
  expect(await screen.findByRole('alert')).toHaveTextContent('Channel verification is not available yet');
  expect(screen.queryByRole('button',{name:'Working normally'})).not.toBeInTheDocument();
 });
+it('warns when recent interval energy used fewer readings than expected',async()=>{
+ const channels=[{...healthyChannels.channels[0],state:'partial',message:'This interval used 2 of 3 expected readings.'}];
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({state:'receiving',generated_entities:[],channels,channel_summary:{total:1,receiving:0,issues:1}}))));
+ render(<PerceptaTelemetryStatus siteId="site" item={item} onCheck={vi.fn()}/>);
+ expect(await screen.findByText('Incomplete interval')).toBeInTheDocument();
+ expect(screen.getByText('This interval used 2 of 3 expected readings.')).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'0/1 channels healthy'})).toBeInTheDocument();
+});
