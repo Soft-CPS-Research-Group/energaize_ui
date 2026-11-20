@@ -21,13 +21,31 @@ it('inspects real payload sections and JSON without requiring an inference', asy
   expect(back).toHaveBeenCalledOnce();
 });
 
-it('shows the charging deduction outside the original Percepta JSON', async () => {
+it('shows meter exclusions and the charging deduction outside the original Percepta JSON', async () => {
   const response=batch();
-  api.mockResolvedValue({...response,messages:[{...response.messages[0],calculations:{non_shiftable_load:{value:0.03,unit:'kWh',ev_charging_energy:0.02,missing_chargers:[],status:'estimated'}}}]});
+  api.mockResolvedValue({...response,messages:[{...response.messages[0],calculations:{non_shiftable_load:{value:0.03,unit:'kWh',ev_charging_energy:0.02,missing_chargers:[],status:'estimated',grid_meter_status:'main_meters_only'}}}]});
   render(<PerceptaMessages siteId="house" siteName="RH01" onBack={()=>{}}/>);
   expect(await screen.findByRole('region',{name:'Platform calculation'})).toHaveTextContent('estimated from average power');
+  expect(screen.getByRole('region',{name:'Platform calculation'})).toHaveTextContent('Submeters and logical meters are excluded.');
   fireEvent.click(screen.getByRole('button',{name:'JSON'}));
   expect(screen.queryByText(/"ev_charging_energy"/)).not.toBeInTheDocument();
+});
+
+it('shows configured names in the message inspector and keeps the original keys in JSON', async () => {
+  const response = batch();
+  api.mockResolvedValue({
+    ...response,
+    measurement_names: { 'reading-uuid': { equipment: 'RH03 grid meter', measurement: 'energy_in_total' } },
+    messages: [{ ...response.messages[0], payload: { entities: {
+      'equipment-uuid': { parameters: { 'reading-uuid': { measurement_unit: 'kWh', final_values: [{ value: 2 }] } } },
+    } } }],
+  });
+  render(<PerceptaMessages siteId="house" siteName="RH03" onBack={() => {}}/>);
+  expect(await screen.findByRole('heading', {name: 'RH03 grid meter'})).toBeVisible();
+  expect(screen.getByText('Total grid import')).toBeVisible();
+  expect(screen.getByText('2 kWh')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', {name: 'JSON'}));
+  expect(screen.getByText(/"equipment-uuid"/)).toBeVisible();
 });
 
 it('pauses polling and resumes while preserving an inspected message', async () => {

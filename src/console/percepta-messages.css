@@ -38,3 +38,7 @@
 .percepta-message-footnote { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; margin-top: 16px; line-height: 1.6; }
 .percepta-messages button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 @media(max-width: 740px) { .percepta-messages-heading { align-items: flex-start; flex-direction: column; } .percepta-messages-status small { margin-left: 0; } .percepta-message-workspace { grid-template-columns: 1fr; height: auto; } .percepta-message-list { max-height: 230px; border-right: 0; border-bottom: 1px solid var(--line); } .percepta-message-inspector { padding: 18px 12px; max-height: 65vh; } .percepta-message-inspector h3 { font-size: 16px; } }
+.percepta-message-equipment { padding: 8px 12px; border-block-start: 1px solid var(--line); }
+.percepta-message-equipment h4, .percepta-message-equipment dl { margin: 4px 0; }
+.percepta-message-equipment dl > div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.percepta-message-equipment dd { margin: 0; text-align: end; color: var(--muted); }

@@ -4,7 +4,7 @@ import {PerceptaSetup} from './PerceptaSetup';
 beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
 afterEach(()=>vi.unstubAllGlobals());
 function setup(initialSetup=false,failLaunch=false,community=false,equipment=false,configurationOnly=false,stored=false,currentCollector=false, planned=false){
- const channel={version:'a'.repeat(64),capability_id:'channel',name:'Grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
+ const channel={version:'a'.repeat(64),capability_id:'channel',name:'Total grid import',unit:'kWh',enabled:true,capability_type:'sensor',data_type:'float',collection:{parameter_type_id:'energy_in_total',role:'input',privacy:'private',necessary:true,source_binding:{connection_id:'connection',fetch_key:'meter',mapping_required:true}}};
  const total={...channel,capability_id:'total',name:'Community import',collection:{parameter_type_id:'energy_in_total',role:'community_output',privacy:'community',necessary:true}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);let data:unknown={};
   if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1'],...(planned?{percepta_collection_image:'energaize/percepta:1'}:{})}];
@@ -13,7 +13,9 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
   else if(url.endsWith('/connections')&&init?.method==='POST'){
    const body=JSON.parse(String(init.body));data={id:'new-source',provider:body.provider,name:body.name,site_id:body.site_id,settings:body.configuration};
   }
-  else if(url.endsWith('/connector-types'))data=[{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'omie',name:'OMIE day-ahead prices',transport:'scheduled',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}},{id:'predictor',name:'Predictor forecasts',transport:'amqp',available:true,credentials:'optional',defaults:{host:'forecasts.example'}}];
+  else if(url.endsWith('/connector-types'))data=[
+   {id:'cleanwatts_2',name:'Cleanwatts RabbitMQ',transport:'amqp',available:true,credentials:'optional',
+     defaults:{host:'rabbit.example',port:5671,vhost:'iEnergy',queue_prefix:'isep_consumer_'}},{id:'softcps',name:'SoftCPS',transport:'http',available:true,credentials:'none',defaults:{data_path:'/assets/{entity_id}/observations?window_seconds={time_interval}'}},{id:'ren',name:'REN prices',transport:'http',available:true,credentials:'none',defaults:{}},{id:'omie',name:'OMIE day-ahead prices',transport:'scheduled',available:true,credentials:'none',defaults:{}},{id:'cleanwatts',name:'Cleanwatts HTTP',transport:'http',available:true,credentials:'required',defaults:{url:'https://operator-default.example',data_path:'/data/request/Instant?instantType=avg&tags='}},{id:'predictor',name:'Predictor forecasts',transport:'amqp',available:true,credentials:'optional',defaults:{host:'forecasts.example'}}];
   else if(url.endsWith('/launch'))data={instance_id:'instance',operation:{id:'operation',status:failLaunch?'failed':'succeeded',error:failLaunch?'Source unavailable':undefined}};
   else if(url.includes('/sites/site/signals'))data={capabilities:[]};
   else if(url.includes('/recs/rec/signals'))data={capabilities:[total]};
@@ -35,8 +37,8 @@ it('lets the user pick a channel by equipment type and edit its defaults before 
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
  fireEvent.click(await screen.findByRole('button',{name:'Add measurement'}));
  const choices=screen.getByRole('region',{name:'Available measurements'});
- expect(within(choices).queryByRole('button',{name:'Grid import'})).not.toBeInTheDocument();
- fireEvent.click(within(choices).getByRole('button',{name:'Grid export'}));
+ expect(within(choices).queryByRole('button',{name:'Total grid import'})).not.toBeInTheDocument();
+ fireEvent.click(within(choices).getByRole('button',{name:'Total grid export'}));
  expect(screen.getByRole('combobox',{name:'Measurement'})).toHaveValue('energy_out_total');
  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'Meter export'}});
  fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
@@ -63,21 +65,21 @@ it('opens equipment first and saves a device assignment once for all its measure
  const fetcher=setup();await openEquipment();
  expect(screen.queryByRole('combobox',{name:'Equipment or scope'})).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:/Grid meter.*1 measurement/}));
- fireEvent.click(screen.getByRole('button',{name:'Change source'}));
+ fireEvent.click(screen.getByRole('button',{name:'Source settings'}));
  expect(screen.getByRole('combobox',{name:'Data source'})).toHaveValue('connection');
  fireEvent.change(screen.getByRole('textbox',{name:'Device identifier'}),{target:{value:'new-meter'}});
  expect(screen.getByRole('button',{name:'Next: house data'})).toBeDisabled();
- fireEvent.click(screen.getByRole('button',{name:'Save connection'}));
+ fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
  await screen.findByText('Source saved for this equipment and its measurements.');
  const save=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/equipment/asset/source')&&init?.method==='PUT');
  expect(JSON.parse(String(save?.[1]?.body))).toEqual({connection_id:'connection',device_id:'new-meter'});
  expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/signals/')&&init?.method==='PUT')).toBe(false);
- fireEvent.click(screen.getByRole('button',{name:/Grid import/}));
+ fireEvent.click(screen.getByRole('button',{name:/Total grid import/}));
  expect(screen.queryByRole('combobox',{name:'Connection'})).not.toBeInTheDocument();
  expect(screen.getByText('Source: Meter connection · new-meter')).toBeInTheDocument();
 });
 it('inherits community definitions read-only and offers no community or price source editor in a house',async()=>{
- const fetcher=setup();fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByText('Meter connection');
+ const fetcher=setup();await openEquipment();
  expect(screen.queryByText('From your community')).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
  expect(screen.queryByRole('button',{name:'Add source'})).not.toBeInTheDocument();
@@ -90,7 +92,7 @@ it('inherits community definitions read-only and offers no community or price so
  expect(screen.queryByRole('button',{name:/Community import|Market prices/})).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Back'}));
  fireEvent.click(screen.getByRole('button',{name:/Grid meter/}));
- fireEvent.click(screen.getByRole('button',{name:'Change source'}));
+ fireEvent.click(screen.getByRole('button',{name:'Source settings'}));
  expect(screen.queryByRole('option',{name:'Market prices'})).not.toBeInTheDocument();
  expect(screen.queryByRole('option',{name:'Pulsecharge · RH01'})).not.toBeInTheDocument();
  expect(screen.getByRole('option',{name:'Cleanwatts RabbitMQ · community connection'})).toBeInTheDocument();
@@ -100,7 +102,7 @@ it('lists built-in calculations and keeps forecasts optional for the current col
  const fetcher=setup(false,false,false,false,false,false,true);await openEquipment();
  fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
  expect(screen.getByText('Solar generation')).toBeInTheDocument();
- expect(screen.getByText('Non-shiftable consumption')).toBeInTheDocument();
+ expect(screen.getByText('Base household consumption')).toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Add calculation'})).not.toBeInTheDocument();
  expect(screen.getByText('Optional')).toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Next: review'}));
@@ -157,8 +159,9 @@ it('adds a native OMIE source without credentials and saves the selected market'
 });
 it('fills connector defaults and shows only equipment-compatible connectors',async()=>{
  setup(false,false,false,true);fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
- fireEvent.click(await screen.findByRole('button',{name:'Change source'}));
- fireEvent.click(screen.getByRole('button',{name:'Create source'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Source settings'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add data source'}));
+ if (screen.queryByRole('option',{name:'SoftCPS'})) fireEvent.change(screen.getByRole('combobox',{name:'Service'}),{target:{value:'softcps'}});
  expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
  expect(screen.getByLabelText('Data endpoint')).toHaveValue('/assets/{entity_id}/observations?window_seconds={time_interval}');
  expect(screen.queryByRole('option',{name:'Cleanwatts HTTP'})).not.toBeInTheDocument();
@@ -192,9 +195,10 @@ it('offers to regenerate a collection review after a launch conflict',async()=>{
 it('opens the same source and measurements directly from an equipment page',async()=>{
  const fetcher=setup(false,false,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
- fireEvent.click(await screen.findByRole('button',{name:'Change source'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Source settings'}));
  expect(screen.getByRole('combobox',{name:'Data source'})).toHaveValue('connection');
  expect(screen.queryByRole('button',{name:'Next: review'})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Cancel'}));
  fireEvent.click(screen.getByRole('button',{name:/Set power/}));
  fireEvent.click(screen.getByRole('button',{name:'Save actuator'}));
  await screen.findByText('Actuator definition saved. No command was sent.');
@@ -203,26 +207,76 @@ it('opens the same source and measurements directly from an equipment page',asyn
  expect(fetcher.mock.calls.some(([url])=>/launch|operations|commands/.test(String(url)))).toBe(false);
 });
 
+it('creates a Cleanwatts source with broker defaults and exposes the Shelly counter mode',async()=>{
+ const fetcher=setup(false,false,false,true);
+ fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Source settings'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add data source'}));
+ fireEvent.change(screen.getByRole('combobox',{name:'Service'}),{target:{value:'cleanwatts_2'}});
+ expect(screen.getByText(/rabbit.example:5671/)).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'Save source'}));
+ expect(await screen.findByRole('combobox',{name:'Data source'})).toHaveValue('new-source');
+ const write=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/connections')&&init?.method==='POST');
+ expect(JSON.parse(String(write?.[1]?.body)).configuration).toMatchObject({
+   host:'rabbit.example',port:5671,vhost:'iEnergy',queue_prefix:'isep_consumer_',ssl_conf:{enabled:true},
+ });
+ fireEvent.change(screen.getByLabelText('RabbitMQ exchange'),{target:{value:'Shelly-meter'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
+ await screen.findByText('Equipment source saved. Review the existing measurement mappings for this source.');
+ fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
+ fireEvent.click(screen.getByRole('button',{name:'Total grid export'}));
+ expect(screen.getByLabelText('Counter reports')).toHaveValue('lifetime');
+ fireEvent.change(screen.getByLabelText('Shelly message format'),{target:{value:'em'}});
+ expect(screen.getByLabelText('Payload field')).toHaveValue('total_act_ret');
+ expect(screen.getByLabelText('Topic suffix')).toHaveValue('/status/emdata:0');
+ fireEvent.change(screen.getByLabelText('Shelly message format'),{target:{value:'em1'}});
+ expect(screen.getByLabelText('Payload field')).toHaveValue('total_act_ret_energy');
+ fireEvent.change(screen.getByLabelText('Counter reports'),{target:{value:'interval'}});
+ expect(screen.getByLabelText('Unit reported by the device')).toHaveValue('Wh');
+ fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
+ await screen.findByText('Measurement saved.');
+ const measurement=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/assets/asset/signals')&&init?.method==='POST');
+ expect(JSON.parse(String(measurement?.[1]?.body)).collection.source_binding).toMatchObject({
+   shelly_accumulation:'interval',topic:'/status/em1data:0',source_measurement_unit:'Wh',
+ });
+});
+
+it('returns to the last equipment from house data before going to the equipment list',async()=>{
+ setup();
+ await openEquipment();
+ expect(screen.queryByText('Meter connection')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:/Grid meter.*1 measurement/}));
+ expect(screen.getAllByText('Grid meter')).toHaveLength(1);
+ expect(within(screen.getByRole('region',{name:'Data source'})).getByText('Meter connection')).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
+ fireEvent.click(screen.getByRole('button',{name:'Back'}));
+ expect(screen.getByRole('heading',{name:'Grid meter'})).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'All equipment'}));
+ expect(screen.getByRole('heading',{name:'Equipment in RH03'})).toBeVisible();
+});
+
 it('creates a source inline and asks before assigning it to an equipment item',async()=>{
  const fetcher=setup(false,false,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
- fireEvent.click(await screen.findByRole('button',{name:'Change source'}));
- fireEvent.click(screen.getByRole('button',{name:'Create source'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Source settings'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add data source'}));
+ if (screen.queryByRole('option',{name:'SoftCPS'})) fireEvent.change(screen.getByRole('combobox',{name:'Service'}),{target:{value:'softcps'}});
  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'New meter source'}});
  fireEvent.change(screen.getByRole('textbox',{name:'Service address'}),{target:{value:'https://meters.example'}});
  fireEvent.click(screen.getByRole('button',{name:'Save source'}));
  expect(await screen.findByRole('combobox',{name:'Data source'})).toHaveValue('new-source');
  expect(screen.getByRole('textbox',{name:'Device identifier'})).toHaveValue('');
- expect(screen.getByRole('button',{name:'Save connection'})).toBeDisabled();
+ expect(screen.getByRole('button',{name:'Save equipment source'})).toBeDisabled();
  expect(fetcher.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
  fireEvent.change(screen.getByRole('textbox',{name:'Device identifier'}),{target:{value:'new-meter'}});
- fireEvent.click(screen.getByRole('button',{name:'Save connection'}));
- await screen.findByText('Source saved for this equipment and its measurements.');
+ fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
+ await screen.findByText('Equipment source saved. Review the existing measurement mappings for this source.');
  expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/equipment/asset/source')&&init?.method==='PUT')).toBe(true);
 });
 it('edits source settings in place and preserves the existing assignment',async()=>{
  const fetcher=setup(false,false,false,true);fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
- fireEvent.click(await screen.findByRole('button',{name:'Edit source settings'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Source settings'}));
+ fireEvent.click(screen.getByRole('button',{name:'Edit shared source'}));
  expect(screen.getByLabelText('Name')).toHaveValue('Meter connection');
  expect(fetcher.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
 });
@@ -230,7 +284,7 @@ it('keeps the correct phase and direction when adding collection to an existing 
  const fetcher=setup(false,false,false,true,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
  fireEvent.click(await screen.findByText('Stored readings (1)'));
- fireEvent.click(screen.getByRole('button',{name:/energy_out_l2/}));
+ fireEvent.click(screen.getByRole('button',{name:/Grid export · L2/}));
  expect(screen.getByRole('combobox',{name:'Measurement'})).toHaveValue('energy_out_l2');
  fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
  await screen.findByText('Measurement saved.');
@@ -257,7 +311,7 @@ it('keeps a channel draft after a conflict and reloads only at the user’s requ
  const fetcher=setup(false,false,false,true);const original=fetcher.getMockImplementation()!;
  fetcher.mockImplementation(async(input,init)=>init?.method==='PUT'&&String(input).endsWith('/signals/channel')?new Response(JSON.stringify({detail:'Stale',error:{code:'resource.version_conflict'}}),{status:409}):original(input,init));
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));
- fireEvent.click(await screen.findByRole('button',{name:/Grid import/}));
+ fireEvent.click(await screen.findByRole('button',{name:/Total grid import/}));
  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'My unsaved measurement'}});
  fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
  expect(await screen.findByRole('alert')).toHaveTextContent('Your edits have been kept');
@@ -274,7 +328,7 @@ it('configures sources and measurements without offering or calling runtime laun
  const fetcher=setup(true,false,false,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));
  expect(screen.getByRole('status')).toHaveClass('ev-loader');
- await screen.findByText('Meter connection');
+ await screen.findByRole('button',{name:/Grid meter/});
  expect(screen.getByText(/step 1 of 2/)).toBeInTheDocument();
  expect(screen.queryByText(/Review & start|Collection starts only/)).not.toBeInTheDocument();
  fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));

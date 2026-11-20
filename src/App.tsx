@@ -99,6 +99,7 @@ function AppRoutes(): JSX.Element {
                         <Route path="community">
                             <Route index element={<Navigate to="dashboard" replace />} />
                             <Route path="dashboard" element={<></>} />
+                            <Route path="inventory" element={<></>} />
                             <Route path="topology" element={<MapBuildings community={isRecManager ? communityData : null} />} />
                             <Route path="logs" element={<CommunityLogsPage />} />
                             <Route element={<RoleGuard allowed={["prosumer"]} />}>

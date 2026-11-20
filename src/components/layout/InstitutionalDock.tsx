@@ -1,3 +1,5 @@
+import { useId, useState } from "react";
+
 type DockLogo = {
   id: string;
   href: string;
@@ -62,10 +64,15 @@ const DOCK_LOGOS: DockLogo[] = [
   }
 ];
 
-export function InstitutionalDock(): JSX.Element {
+export function InstitutionalDock({ collapsible = false }: { collapsible?: boolean }): JSX.Element {
+  const [expanded, setExpanded] = useState(true);
+  const contentId = "institutional-" + useId().replace(/[^a-zA-Z0-9_-]/g, "");
   return (
-    <footer className="institutional-dock" aria-label="Institutional partners">
-      <div className="institutional-inner">
+    <footer className={`institutional-dock${collapsible ? " institutional-dock-collapsible" : ""}`} aria-label="Institutional partners">
+      {collapsible && <button className="institutional-toggle" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(!expanded)}>
+        {expanded ? "Minimise footer" : "Show partners and funding"}
+      </button>}
+      <div className="institutional-inner" id={collapsible ? contentId : undefined} hidden={!expanded}>
         <div className="institutional-note-wrap">
           <p className="institutional-note institutional-note-compact">
             Funded by DEMFLEX, OPEVA, MATISSE and FCT - Fundacao para a Ciencia e a Tecnologia under

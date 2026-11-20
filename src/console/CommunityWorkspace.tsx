@@ -46,12 +46,13 @@ export function CommunityWorkspace(): JSX.Element {
   const {session,logout}=useAuth();
   const {ready:workspaceReady}=useAuthTransition();
   const {theme}=useUI();
-  const {pathname}=useLocation();
+  const {pathname,search}=useLocation();
+  const route=pathname+search;
   const navigate=useNavigate();
   const navigation=useRef(navigate);navigation.current=navigate;
   const host=useRef<HTMLDivElement>(null);
   const runtime=useRef<ReturnType<typeof mountWorkspace>>();
-  const activePath=useRef(pathname);
+  const activePath=useRef(route);
   const [avatarSlot,setAvatarSlot]=useState<HTMLElement|null>(null);
   const [accountSlot,setAccountSlot]=useState<HTMLElement|null>(null);
   const [activitySlot,setActivitySlot]=useState<HTMLElement|null>(null);
@@ -126,11 +127,11 @@ export function CommunityWorkspace(): JSX.Element {
     return ()=>{environment.dispose();observer.disconnect();runtime.current=undefined;const retired=[...roots.values()];queueMicrotask(()=>retired.forEach(root=>root.unmount()));};
   },[session?.email,session?.role,logout,workspaceReady]);
   useEffect(()=>{setActivityScope(null);},[pathname,session?.email,session?.role]);
-  useEffect(()=>{if(pathname!==activePath.current){activePath.current=pathname;runtime.current?.setPath(pathname);}},[pathname]);
+  useEffect(()=>{if(route!==activePath.current){activePath.current=route;runtime.current?.setPath(route);}},[route]);
   useEffect(()=>{if(host.current)host.current.scrollTop=0;},[pathname]);
   return <div className="community-workspace-shell" data-theme={theme}>
     <div ref={host} data-community-workspace data-theme={theme} />
-    <InstitutionalDock />
+    <InstitutionalDock collapsible />
     {activitySlot&&createPortal(<button className="icon-btn" type="button" title="Activity" aria-label="Open activity" aria-haspopup="dialog" onClick={()=>setActivityScope(runtime.current?.activityScope()||{})}><History size={19}/></button>,activitySlot)}
     {activityScope&&<ActivityPanel scope={activityScope} theme={theme} onClose={()=>{setActivityScope(null);activitySlot?.querySelector('button')?.focus();}}/>}
     {avatarSlot&&createPortal(<ProfileAvatar session={session}/>,avatarSlot)}

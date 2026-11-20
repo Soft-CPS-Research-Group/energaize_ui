@@ -1,14 +1,44 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, Pause, Play, Radio, RefreshCw, Search } from 'lucide-react';
 import { runtimeRequest } from '../api/runtimeApi';
+import { displayMeasurementName } from './PerceptaMeasurementEditor';
 
-type Consumption = { value: number | null; unit: string; ev_charging_energy: number | null; missing_chargers: string[]; status: 'measured' | 'estimated' | 'incomplete' };
+type Consumption = {
+  value: number | null; unit: string; ev_charging_energy: number | null; missing_chargers: string[];
+  status: 'measured' | 'estimated' | 'incomplete';
+  grid_meter_status?: 'main_meters_only' | 'roles_required' | 'readings_missing' | 'inventory_unavailable';
+  excluded_grid_meters?: number;
+};
 export type PerceptaMessage = { id: string; timestamp: string; payload: Record<string, unknown>; truncated: boolean; calculations?: {non_shiftable_load?: Consumption} };
-type MessageBatch = { site_id: string; checked_at: string; available: boolean; source: string | null; messages: PerceptaMessage[]; notice: string | null };
+type MeasurementNames = Record<string, { equipment: string; measurement: string }>;
+type MessageBatch = { site_id: string; checked_at: string; available: boolean; source: string | null; messages: PerceptaMessage[]; notice: string | null; measurement_names?: MeasurementNames | null };
 const time = (value: string) => new Date(value).toLocaleString('en-GB');
-const sections = ['observations', 'forecasts', 'community', 'decisions'];
-const title = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const sections = ['observations', 'derived_data', 'forecasts', 'community', 'decisions'];
+const title = (s: string) => s === 'derived_data' ? 'Calculated readings' : s.charAt(0).toUpperCase() + s.slice(1);
 const hasValues = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v).length > 0;
+const record = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+function MessageEquipment({ entities, names }: { entities: unknown; names: MeasurementNames }) {
+  return <details open><summary>Equipment readings</summary>
+    {Object.entries(record(entities)).map(([key, entity]) => {
+      const parameters = Object.entries(record(record(entity).parameters));
+      const equipment = parameters.find(([id]) => names[id]?.equipment);
+      return <section className="percepta-message-equipment" key={key}>
+        <h4>{equipment ? names[equipment[0]].equipment : displayMeasurementName(String(record(entity).entity_type_id || key))}</h4>
+        <dl>{parameters.map(([id, data]) => {
+          const measurement = record(data);
+          const values = Array.isArray(measurement.final_values) ? measurement.final_values : [];
+          const first = record(values[0]).value;
+          const unit = typeof measurement.measurement_unit === 'string' ? measurement.measurement_unit : '';
+          return <div key={id}><dt>{displayMeasurementName(names[id]?.measurement || String(measurement.parameter_type_id || id))}</dt>
+            <dd>{typeof first === 'number' || typeof first === 'string' ? `${first} ${unit}`.trim() : 'No reading'}{measurement.generated === true ? ' · Generated' : ''}</dd>
+          </div>;
+        })}</dl>
+      </section>;
+    })}
+  </details>;
+}
 
 /** Inspect persisted output, independently of inference and without consuming broker messages. */
 export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string; siteName: string; onBack: () => void }) {
@@ -47,12 +77,27 @@ export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string;
     return () => window.clearInterval(timer);
   }, [load, paused, busy]);
   useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 5000); return () => window.clearInterval(timer); }, []);
-  const items = (batch?.messages || []).filter(m => !query || `${m.timestamp} ${JSON.stringify(m.payload)}`.toLowerCase().includes(query.toLowerCase()));
+  const names = batch?.measurement_names || {};
+  const search = query.trim().toLowerCase();
+  const items = (batch?.messages || []).filter(m => {
+    if (!search || `${m.timestamp} ${JSON.stringify(m.payload)}`.toLowerCase().includes(search)) return true;
+    return Object.values(record(m.payload.entities)).some(entity =>
+      Object.keys(record(record(entity).parameters)).some(id =>
+        names[id] && `${names[id].equipment} ${displayMeasurementName(names[id].measurement)}`.toLowerCase().includes(search)
+      )
+    );
+  });
   const latest = batch?.messages[0];
   const age = latest ? Math.max(0, Math.floor((clock - new Date(latest.timestamp).getTime()) / 1000)) : null;
   const status = error ? 'Update failed' : paused ? 'Paused' : !batch ? 'Connecting…' : !batch.available ? 'Source not linked' : age === null ? 'Waiting for messages' : age > 60 ? 'No recent messages' : 'Receiving recent messages';
   const text = selected ? JSON.stringify(selected.payload, null, 2) : '';
   const consumption = selected?.calculations?.non_shiftable_load;
+  const meterNote = {
+    main_meters_only: 'Uses main grid meters only. Submeters and logical meters are excluded.',
+    roles_required: 'Set the meter roles in Equipment so the house’s main meters can be identified.',
+    readings_missing: 'Waiting for complete readings from main meters, solar or batteries.',
+    inventory_unavailable: 'Meter roles are temporarily unavailable.',
+  };
   const energy = (value: number) => value.toLocaleString(undefined, {maximumFractionDigits: 6}) + ' ' + consumption?.unit;
   async function copy() {
     try { await navigator.clipboard.writeText(text); setNotice('Message copied.'); }
@@ -74,15 +119,17 @@ export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string;
     {batch?.notice && <p className="notice">{batch.notice}</p>}
     <div className="percepta-message-toolbar"><label className="percepta-message-search"><Search size={16}/><input aria-label="Search messages" placeholder="Search recent messages…" value={query} onChange={e => setQuery(e.target.value)}/></label><button className="btn text" aria-pressed={follow} onClick={() => { setFollow(!follow); if (!follow) setSelected(latest || null); }}>{follow ? 'Following latest' : 'Follow latest'}</button><span>{items.length} / {batch?.messages.length || 0} recent messages</span></div>
     <div className="percepta-message-workspace">
-      <div className="percepta-message-list" aria-label="Recent messages">{items.map(m => <button key={m.id} aria-pressed={selected?.id === m.id} onClick={() => { setSelected(m); setFollow(false); setNotice(''); }}><time>{time(m.timestamp)}</time><strong>Percepta output</strong><small>{m.truncated ? 'Payload exceeds preview limit' : sections.filter(s => hasValues(m.payload[s])).map(title).join(' · ') || 'Empty payload'}</small></button>)}{!items.length && <p>{busy && !batch ? 'Loading messages…' : query ? 'No recent messages match your search.' : batch?.available ? 'No stored messages found. Waiting for Percepta output.' : 'Messages will appear when a source is linked.'}</p>}</div>
+      <div className="percepta-message-list" aria-label="Recent messages">{items.map(m => <button key={m.id} aria-pressed={selected?.id === m.id} onClick={() => { setSelected(m); setFollow(false); setNotice(''); }}><time>{time(m.timestamp)}</time><strong>Percepta output</strong><small>{m.truncated ? 'Payload exceeds preview limit' : [...(hasValues(m.payload.entities) ? ['Equipment readings'] : []), ...sections.filter(s => hasValues(m.payload[s])).map(title)].join(' · ') || 'Empty payload'}</small></button>)}{!items.length && <p>{busy && !batch ? 'Loading messages…' : query ? 'No recent messages match your search.' : batch?.available ? 'No stored messages found. Waiting for Percepta output.' : 'Messages will appear when a source is linked.'}</p>}</div>
       <section className="percepta-message-inspector" aria-label="Selected message">{selected ? <><header><div><span className="eyebrow">Selected message</span><h3>{time(selected.timestamp)}</h3></div><div className="actions"><button className="btn text" disabled={selected.truncated} onClick={() => void copy()} title="Copy JSON" aria-label="Copy JSON"><Copy size={16}/></button><button className="btn text" disabled={selected.truncated} onClick={download} title="Download JSON" aria-label="Download JSON"><Download size={16}/></button></div></header>
-        {consumption && <section className="percepta-calculated-consumption" aria-label="Platform calculation"><h4>Non-shiftable consumption excluding EV charging</h4>
+        {consumption && <section className="percepta-calculated-consumption" aria-label="Platform calculation"><h4>Base household consumption excluding EV charging</h4>
           <strong>{consumption.value===null?'Incomplete readings':energy(consumption.value)}</strong>
+          {consumption.grid_meter_status&&<p>{meterNote[consumption.grid_meter_status]}</p>}
           {consumption.ev_charging_energy!==null&&<p>EV charging deducted: {energy(consumption.ev_charging_energy)}{consumption.status==='estimated'?' · estimated from average power':''}</p>}
           {!!consumption.missing_chargers.length&&<p>Missing charger readings: {consumption.missing_chargers.join(', ')}</p>}
         </section>}
         <div className="percepta-message-mode"><button aria-pressed={mode === 'sections'} onClick={() => setMode('sections')}>Sections</button><button aria-pressed={mode === 'json'} onClick={() => setMode('json')}>JSON</button></div>
-        {selected.truncated ? <p className="notice">This message exceeds the preview size limit. Its payload has been omitted.</p> : mode === 'json' ? <pre>{text}</pre> : sections.map(s => <details key={s} open><summary>{title(s)}<small>{hasValues(selected.payload[s]) ? `${Object.keys(selected.payload[s] as object).length} entries` : 'No entries'}</small></summary><pre>{JSON.stringify(selected.payload[s] ?? {}, null, 2)}</pre></details>)}
+        {selected.truncated ? <p className="notice">This message exceeds the preview size limit. Its payload has been omitted.</p> : mode === 'json' ? <pre>{text}</pre> : <>{hasValues(selected.payload.entities)&&<MessageEquipment entities={selected.payload.entities} names={names}/>}
+          {sections.filter(s => hasValues(selected.payload[s])).map(s => <details key={s} open><summary>{title(s)}<small>{hasValues(selected.payload[s]) ? `${Object.keys(selected.payload[s] as object).length} entries` : 'No entries'}</small></summary><pre>{JSON.stringify(selected.payload[s] ?? {}, null, 2)}</pre></details>)}</>}
         {notice && <p role="status">{notice}</p>}
       </> : <div className="percepta-message-empty"><Radio size={28}/><p>Select a message to inspect its contents.</p></div>}</section>
     </div>

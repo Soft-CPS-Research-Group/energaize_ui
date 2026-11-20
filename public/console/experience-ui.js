@@ -114,7 +114,7 @@ tree = function () {
   const visibleSites=person().role==='manager'?scoped():availableSites().filter(s=>s.rec_id===comm().recId);
   const allowed=person().role==='manager'?null:new Set(availableAssets().map(a=>a.id));
   const showInventoryStatus = !isDeploymentView();
-  return `<aside class="tree" aria-label="Sites in ${esc(comm().name)}"><button class="tree-community" data-action="all-sites"><span><small>COMMUNITY</small><strong>${esc(comm().name)}</strong></span>${icon("grid")}</button><div class="tree-sites">${visibleSites
+  return `<aside class="tree" aria-label="Sites in ${esc(comm().name)}"><button class="tree-community" data-action="all-sites"><span><small>COMMUNITY</small><strong>${esc(comm().name)}</strong></span>${icon("grid")}</button>${visibleSites.length>6?'<input class="tree-search" type="search" aria-label="Find a house" placeholder="Find a house">':''}<div class="tree-sites">${visibleSites
     .map(
       (s) => {
         const tone = showInventoryStatus ? siteConfiguration(s).tone : null;
@@ -124,6 +124,17 @@ tree = function () {
     )
     .join("")}</div></aside>`;
 };
+document.addEventListener("input", event => {
+  const search=event.target.closest(".tree-search");
+  if(!search)return;
+  const normalize=value=>value.normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase();
+  const query=normalize(search.value.trim());
+  let visible=true;
+  for (const button of search.closest(".tree").querySelectorAll(".tree-sites > button")) {
+    if(button.hasAttribute("data-site"))visible=normalize(button.textContent).includes(query);
+    button.hidden=!visible;
+  }
+});
 const experienceInventory = siteList;
 siteList = function () {
   let html = experienceInventory();
@@ -636,7 +647,14 @@ equipmentContent = function () {
   if(!a) return '<p class="muted">Equipment is not available.</p>';
   const canManage=person().role==='manager'||P.assetPermission(person(),availableAssets().find(x=>x.id===(a.backendId||a.id))||a,'manage');
   const flex=['ev_charger','appliance','heat_pump','heater','water_pump'].includes(a.assetType||a.asset_type);
-  return `<div class="workspace">${tree()}<div class="detail equipment-detail"><div class="equipment-breadcrumb"><button data-action="site-overview">${esc(s.name)}</button>${icon('right')}<span>${esc(a.name)}</span></div><div class="sitehead"><div class="equipment-heading"><span class="equipment-product-art">${equipmentArt(a)}</span><div><h1>${esc(a.name)}</h1><p class="subtitle">${esc(DomainForm.label(a.assetType||a.asset_type||a.kind))} · ${esc(s.name)}</p></div></div><div class="identity-actions">${configurationNotice(equipmentConfiguration(a),a.name)}${person().role==='manager'?`<span data-equipment-collection="${esc(a.backendId||a.id)}" data-collection-site="${esc(s.id)}"></span>`:''}${canManage?identityIcon('Equipment settings','edit-equipment','gear'):''}</div></div><nav class="tabs" aria-label="Equipment sections">${[['overview','Overview'],['sensors','Channels']].map(([key,label])=>`<button data-device-tab="${key}" class="${state.deviceTab===key?'active':''}">${label}</button>`).join('')}</nav>${state.deviceTab==='sensors'?`<div class="sectionhead"><p class="subtitle">Measurements and commands for this equipment.</p>${canManage?'<button class="btn" data-new-channel>'+icon('plus')+' Add channel</button>':''}</div>${channelTable(a)}`:tPanel(a.channels.filter(c=>c.capability_type==='sensor'),'asset:'+a.id)+`<div class="equipment-information">${equipmentDetails(a,s)}</div>${canManage&&flex?`<div class="equipment-flex-action"><button class="btn" data-equipment-session="${esc(a.id)}">${icon('calendar')} Create flexibility request</button></div>`:''}`}</div></div>`;
+  return `<div class="workspace">${tree()}<div class="detail equipment-detail"><div class="equipment-breadcrumb"><button data-action="back-to-equipment-list">${icon('left')} ${esc(s.name)} · Equipment</button>${icon('right')}<span>${esc(a.name)}</span></div><div class="sitehead"><div class="equipment-heading"><span class="equipment-product-art">${equipmentArt(a)}</span><div><h1>${esc(a.name)}</h1><p class="subtitle">${esc(DomainForm.label(a.assetType||a.asset_type||a.kind))}${a.sourcePayload?.is_simulated?' · Simulated':''} · ${esc(s.name)}</p></div></div><div class="identity-actions">${configurationNotice(equipmentConfiguration(a),a.name)}${person().role==='manager'?`<span data-equipment-collection="${esc(a.backendId||a.id)}" data-collection-site="${esc(s.id)}"></span>`:''}${canManage?identityIcon('Equipment settings','edit-equipment','gear'):''}</div></div><nav class="tabs" aria-label="Equipment sections">${[['overview','Overview'],['sensors','Channels']].map(([key,label])=>`<button data-device-tab="${key}" class="${state.deviceTab===key?'active':''}">${label}</button>`).join('')}</nav>${state.deviceTab==='sensors'?`<div class="sectionhead"><p class="subtitle">Measurements and commands for this equipment.</p>${canManage?'<button class="btn" data-new-channel>'+icon('plus')+' Add channel</button>':''}</div>${channelTable(a)}`:tPanel(a.channels.filter(c=>c.capability_type==='sensor'),'asset:'+a.id)+`<div class="equipment-information">${equipmentDetails(a,s)}</div>${canManage&&flex?`<div class="equipment-flex-action"><button class="btn" data-equipment-session="${esc(a.id)}">${icon('calendar')} Create flexibility request</button></div>`:''}`}</div></div>`;
+};
+const returnFromEquipment = action;
+action = function (key) {
+  if (key !== 'back-to-equipment-list') return returnFromEquipment(key);
+  state.equipment=null;
+  state.tab='assets';
+  render();
 };
 const illustratedEquipmentEditor=editEquipment;
 editEquipment=async function(id){

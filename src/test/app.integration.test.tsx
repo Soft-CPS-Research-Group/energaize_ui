@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { JOB_ORCHESTRATOR_API_URL } from "../api/client";
@@ -13,7 +13,12 @@ import { UIProvider } from "../contexts/UIContext";
 import { setMockJobStatus } from "./handlers";
 import { server } from "./server";
 
-function renderApp(initialRoute: string) {
+function HistoryBack() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>Browser back</button>;
+}
+
+function renderApp(initialRoute: string, withHistoryBack = false) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -29,6 +34,7 @@ function renderApp(initialRoute: string) {
         <UIProvider>
           <MemoryRouter initialEntries={[initialRoute]}>
             <App />
+            {withHistoryBack && <HistoryBack />}
           </MemoryRouter>
         </UIProvider>
       </AuthProvider>
@@ -760,6 +766,9 @@ describe("App integration", () => {
     expect(await view.findByRole('heading',{name:'Choose a community'})).toBeInTheDocument();
     expect(screen.getAllByRole('contentinfo',{name:'Institutional partners'})).toHaveLength(1);
     expect(screen.getByRole('link',{name:'MATISSE'})).toHaveAttribute('href','https://matisse-kdt.eu/');
+    await user.click(screen.getByRole('button',{name:'Minimise footer'}));
+    expect(screen.queryByRole('link',{name:'MATISSE'})).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button',{name:'Show partners and funding'}));
     expect(await view.findByRole('img',{name:'REC Manager'})).toHaveAttribute('src','data:image/jpeg;base64,community-photo');
     await user.click(view.getByRole('button',{name:'View'}));
     expect(await view.findByRole('heading',{name:'Connected community'})).toBeInTheDocument();
@@ -785,6 +794,26 @@ describe("App integration", () => {
     await user.click(view.getByRole('button',{name:'Save changes'}));
     expect(await view.findByRole('heading',{name:'Pilot REC'})).toBeInTheDocument();
     expect(fixture.recs.find(rec=>rec.id==='new-rec')?.name).toBe('Pilot REC');
+  });
+
+  it("restores a house from the inventory URL and keeps the house navigator available", async () => {
+    useCommunityBackendFixture();
+    seedCommunitySession('rec_manager');
+    renderApp('/app/community/inventory?site=other-site&tab=settings', true);
+    await communityScreen();
+    const workspace=document.querySelector('[data-community-workspace]')!.shadowRoot!;
+    const houseName=()=>[...workspace.querySelectorAll('#app h1')].map(h=>h.textContent).join('/');
+    const houseSettings=()=>workspace.querySelector('button[data-tab="settings"]');
+    await waitFor(()=>expect(houseName()).toBe('Another member’s home'));
+    expect(houseSettings()).toHaveClass('active');
+    const tree=workspace.querySelector<HTMLElement>('aside.tree')!;
+    expect(tree).toBeInTheDocument();
+    await userEvent.click(within(tree).getByRole('button',{name:'My connected home'}));
+    await waitFor(()=>expect(houseName()).toBe('My connected home'));
+    expect(houseSettings()).toHaveClass('active');
+    await userEvent.click(screen.getByRole('button',{name:'Browser back'}));
+    await waitFor(()=>expect(houseName()).toBe('Another member’s home'));
+    expect(houseSettings()).toHaveClass('active');
   });
 
   it("opens only the resident's owned site through the common session", async () => {

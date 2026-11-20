@@ -115,6 +115,8 @@
 .tree-sites {
   padding-left: 4px;
 }
+.tree .tree-search { width: 100%; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--surface); }
+.tree .tree-sites > button[hidden] { display: none; }
 .tree-sites > button:not(.child) {
   font-weight: 500;
 }

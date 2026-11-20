@@ -37,21 +37,55 @@ export function communityRuntime(): Plugin {
         ${modules}
         userMenu=()=>state.userOpen?'<div data-shared-user-menu></div>':'';
         const workspaceRender=render;
-        render=function(){if(environment.disposed())return;workspaceRender();bridge.onRoute(workspacePath());if(!connection.loading)bridge.onReady?.();};
+        let requestedSite=null;
+        const siteTabs=['summary','topology','assets','deployment','settings'];
+        render=function(){
+          if(environment.disposed())return;
+          if(requestedSite&&!connection.loading&&!connection.error){
+            const {site,tab,equipment,deviceTab}=requestedSite;
+            requestedSite=null;
+            const index=communities.findIndex(c=>c.sites.some(s=>s.id===site));
+            if(index!==-1){
+              state.community=index;
+              state.site=site;
+              state.tab=siteTabs.includes(tab)?tab:'summary';
+              state.equipment=chosen().assets.some(asset=>asset.id===equipment)?equipment:null;
+              state.deviceTab=deviceTab==='sensors'?'sensors':'overview';
+            }
+          }
+          workspaceRender();
+          bridge.onRoute(workspacePath());
+          if(!connection.loading)bridge.onReady?.();
+        };
         function workspacePath(){
           if(!state.loggedIn||connection.loading||connection.error)return null;
           if(person().role!=='manager')return '/app/community/'+(state.personalAsset?(availableAssets().find(a=>a.id===state.personalAsset)?.asset_type==='ev'?'vehicles':'equipment'):state.operationsPage==='sessions'?'flexibility':({sites:'equipment',vehicles:'vehicles'}[state.personalPage]||'dashboard'));
           if(state.operationsPage)return '/app/community/'+(state.operationsPage==='sessions'?'flexibility':'contracts');
+          if(state.page==='sites'&&state.site){
+            const query=new URLSearchParams({site:state.site,tab:state.tab});
+            if(state.equipment){
+              query.set('equipment',state.equipment);
+              if(state.deviceTab==='sensors')query.set('deviceTab',state.deviceTab);
+            }
+            return '/app/community/inventory?'+query;
+          }
           return state.page==='communities'?'/communities':'/app/community/'+({overview:'dashboard',sites:'inventory',admin:'administration'}[state.page]||state.page);
         }
         function setPath(path){
           state.operationsPage=null;state.site=null;state.equipment=null;state.personalAsset=null;
-          const part=path.split('/').filter(Boolean).at(-1);
+          requestedSite=null;
+          const [pathname,query]=path.split('?');
+          const part=pathname.split('/').filter(Boolean).at(-1);
           if(bridge.session.role==='prosumer'){
             state.personalPage=({equipment:'sites',vehicles:'vehicles'}[part]||'overview');
             if(part==='flexibility')state.operationsPage='sessions';
           }else{
-            state.page=path==='/communities'?'communities':({dashboard:'overview',inventory:'sites',topology:'sites',administration:'admin'}[part]||'overview');
+            state.page=pathname==='/communities'?'communities':({dashboard:'overview',inventory:'sites',topology:'sites',administration:'admin'}[part]||'overview');
+            if(part==='inventory'&&query){
+              const params=new URLSearchParams(query);
+              const site=params.get('site');
+              if(site)requestedSite={site,tab:params.get('tab'),equipment:params.get('equipment'),deviceTab:params.get('deviceTab')};
+            }
             if(part==='flexibility')state.operationsPage='sessions';
             if(part==='contracts'||part==='settings')state.page='settings';
             if(part==='insights')state.page='overview';

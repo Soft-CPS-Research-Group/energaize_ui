@@ -43,3 +43,23 @@ body:has(.community-workspace-shell) { overflow: hidden; }
   .community-workspace-shell .institutional-inner { grid-template-columns: minmax(0,1fr); }
   .community-workspace-shell .institutional-logos { justify-content: flex-start; margin-left: 0; }
 }
+
+.community-workspace-shell > .institutional-dock-collapsible {
+  padding: 2px 14px;
+}
+.institutional-dock-collapsible .institutional-inner {
+  min-height: 0;
+  padding: 3px 0;
+}
+.institutional-dock-collapsible .institutional-inner[hidden] {
+  display: none;
+}
+.institutional-toggle {
+  display: block;
+  margin-inline-start: auto;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+}

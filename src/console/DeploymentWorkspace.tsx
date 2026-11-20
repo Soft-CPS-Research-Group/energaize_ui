@@ -300,6 +300,8 @@ export function DeploymentWorkspace({
     } : undefined;
   const canOpenPlannedPercepta = !!plannedPercepta?.registered && (!activePercepta || !!replace) &&
     (dirty || draft?.percepta_host_id === undefined || draft.percepta_host_id === plannedPercepta.id);
+  const perceptaOnly = selected.length === 1 && selected[0] === "percepta";
+  const setupLabel = replace?.from ? "Move Percepta" : "Set up Percepta";
   const openPlannedPercepta = async () => {
     if (!draft || !plannedPercepta || !canOpenPlannedPercepta) return;
     const reviewed = dirty || !draft.revision || draft.stale ? await save() : draft;
@@ -368,21 +370,17 @@ export function DeploymentWorkspace({
         configurationOnly
         onChange={() => {}}
       />
-      {collectionSetup && <PerceptaSetup siteId={siteId} hideTrigger open configurationOnly onOpenChange={setCollectionSetup} onChange={() => {}} />}
+      {collectionSetup && <PerceptaSetup siteId={siteId} navigate={navigate} hideTrigger open configurationOnly nativeCollection onOpenChange={setCollectionSetup} onChange={() => {}} />}
       {launchPlan && (
         <PerceptaSetup
           siteId={siteId}
+          navigate={navigate}
           hideTrigger
           open
           initialSetup
           launchPlan={launchPlan}
-          onOpenChange={(open) => {
-            if (!open) {
-              setLaunchPlan(null);
-              setView("operation");
-              void load();
-            }
-          }}
+          onOpenChange={(open) => { if (!open) setLaunchPlan(null); }}
+          onLaunched={() => { setView("operation"); void load(); }}
           onChange={() => {}}
         />
       )}
@@ -414,19 +412,13 @@ export function DeploymentWorkspace({
       ) : (
         <>
           <div className="deployment-toolbar">
-            <div className="deployment-tabs" aria-label="Deployment view">
-              <button
-                aria-pressed={!planning}
-                onClick={() => setView("operation")}
-              >
-                In operation
-              </button>
-              <button aria-pressed={planning} onClick={() => setView("plan")}>
-                Deployment plan
-                {dirty && <span>Edited</span>}
-              </button>
+            <div>
+              <h3>{planning ? "Configure deployment" : "Live services"}</h3>
+              {planning && <small>Place each service on the machine that will run it.</small>}
             </div>
-            {planning && <span className="deployment-caption">Draft placement and connections</span>}
+            <button className="btn" onClick={() => setView(planning ? "operation" : "plan")}>
+              {planning ? "Back to live services" : map.components.some(component => !component.planned) ? "Edit deployment setup" : "Set up deployment"}
+            </button>
           </div>
           {draft.stale && planning && (
             <p className="notice">
@@ -436,14 +428,13 @@ export function DeploymentWorkspace({
           )}
           {!planning && (
             <div className="deployment-operation-bar">
-              <div><h3>Current services</h3><p>{!hasRuntime?'Choose the services and machines for this house in the deployment plan.':hasRuntimePercepta?'Select Percepta to view its status and readings.':'Add Percepta from the deployment plan.'}</p></div>
+              <p>{hasRuntime ? 'Select a running service to inspect it.' : 'No services are running for this house.'}</p>
               <div className="actions" role="group" aria-label="Operation tools">
                 <button className="btn" onClick={() => setMessagesOpen(true)}><Radio size={15}/>Percepta messages</button>
                 <button className="btn" disabled={checking} onClick={() => void check()}>
                   <RefreshCw size={15} className={checking ? "deployment-spinning" : ""} />
                   {checking ? "Checking machines…" : "Check machines"}
                 </button>
-                {!hasRuntime && <button className="btn primary" onClick={() => setView("plan")}>Open deployment plan</button>}
               </div>
             </div>
           )}
@@ -457,7 +448,11 @@ export function DeploymentWorkspace({
               {services.map(kind => (
                 <button key={kind} className="deployment-shelf-service" disabled={saving}
                   {...moveHandlers(kind)}
-                  onClick={() => { if (!suppressClick.current) setEditing(kind); }}>
+                  onClick={() => {
+                    if (suppressClick.current) return;
+                    if (kind === "percepta" && selected.includes(kind)) setCollectionSetup(true);
+                    else setEditing(kind);
+                  }}>
                   {icon(kind)}<span><strong>{names[kind]}</strong><small>{selected.includes(kind)
                     ? map.destinations.find(d => d.placement === draft.services[kind])?.name || "Assigned"
                     : "Unassigned"}</small></span><GripVertical size={15} />
@@ -640,8 +635,9 @@ export function DeploymentWorkspace({
                         suppressClick.current = false;
                         return;
                       }
-                      if (!planning && node.kind === "percepta" && node.component) {
-                        setDetail("percepta");
+                      if (node.kind === "percepta") {
+                        if (planning) setCollectionSetup(true);
+                        else if (node.component) setDetail("percepta");
                         return;
                       }
                       setEditing(planning ? node.kind : "actual:" + node.id);
@@ -692,12 +688,19 @@ export function DeploymentWorkspace({
                 {saving ? "Saving…" : "Save draft"}
               </button>
               <button
-                className="btn primary"
+                className={perceptaOnly && canOpenPlannedPercepta ? "btn" : "btn primary"}
                 disabled={saving}
                 onClick={() => setReview(true)}
               >
                 Review plan <ChevronRight size={15} />
               </button>
+              {!review && perceptaOnly && canOpenPlannedPercepta && <button
+                className="btn primary"
+                disabled={saving}
+                onClick={() => void openPlannedPercepta()}
+              >
+                {setupLabel} <ChevronRight size={15} />
+              </button>}
             </footer>
           )}
           {message && (
@@ -854,7 +857,8 @@ export function DeploymentWorkspace({
                         {assigned.map(kind => (
                           <button key={kind} aria-label={"Configure " + names[kind]} onClick={() => {
                             setReview(false);
-                            setEditing(kind);
+                            if (kind === "percepta") setCollectionSetup(true);
+                            else setEditing(kind);
                           }}>
                             {icon(kind)}<strong>{names[kind]}</strong>
                             <small>{map.components.some(c => c.kind === kind && !c.planned) ? "Instance exists" : "Not deployed"}</small>
@@ -899,7 +903,7 @@ export function DeploymentWorkspace({
               </details>}
               <div className="deployment-review-footer">
                 <small>{selected.includes("percepta") && activePercepta && !replace
-                  ? "Open In operation to check the existing Percepta instance."
+                  ? "Check the existing Percepta instance in Live services."
                   : selected.includes("percepta")
                     ? "Review the collection settings to start Percepta."
                     : "Save the selected services and destinations."}</small>
@@ -917,7 +921,7 @@ export function DeploymentWorkspace({
                   </button>
                   {selected.includes("percepta") && (!activePercepta || replace) &&
                     <button className="btn primary" disabled={saving || !canOpenPlannedPercepta} onClick={() => void openPlannedPercepta()}>
-                      {replace?.from ? "Move Percepta" : "Set up Percepta"}
+                      {setupLabel}
                     </button>}
                   {selected.includes("controller") && <button className="btn" onClick={()=>{setReview(false);setDetail("controller");}}>Open inference settings</button>}
                   {selected.includes("forecasting") && <button className="btn" onClick={openForecastSettings}>Open forecast settings</button>}

@@ -18,8 +18,10 @@ vi.mock("./RuntimePanel", () => ({
   RuntimePanel: ({ kind, startPerceptaSetup }: { kind: string; startPerceptaSetup?: boolean }) => <div>{startPerceptaSetup ? "First Percepta setup" : "Configure " + kind}</div>,
 }));
 vi.mock("./PerceptaSetup", () => ({
-  PerceptaSetup: ({open, launchPlan, startOnHouseData}: {open:boolean;launchPlan?:{hostId:string;revision:string};startOnHouseData?:boolean}) =>
-    open ? <div>{startOnHouseData?"House data settings":`Review Percepta on ${launchPlan?.hostId} · ${launchPlan?.revision}`}</div> : null,
+  PerceptaSetup: ({open, launchPlan, startOnHouseData, configurationOnly, onOpenChange}: {open:boolean;launchPlan?:{hostId:string;revision:string};startOnHouseData?:boolean;configurationOnly?:boolean;onOpenChange:(open:boolean)=>void}) =>
+    open ? <div>{startOnHouseData ? "House data settings" : configurationOnly
+      ? <section aria-label="Collection setup"><button onClick={() => onOpenChange(false)}>Close collection setup</button></section>
+      : `Review Percepta on ${launchPlan?.hostId} · ${launchPlan?.revision}`}</div> : null,
 }));
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -125,7 +127,7 @@ const open = async (planning = true) => {
     <DeploymentWorkspace siteId="house" siteName="House" navigate={() => {}} />,
   );
   await screen.findByRole("heading", { name: "SoftCPS server" });
-  if (planning) fireEvent.click(screen.getByRole("button", { name: /^Deployment plan/ }));
+  if (planning) fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
 };
 function moveInference() {
   vi.stubGlobal("PointerEvent", MouseEvent);
@@ -159,14 +161,14 @@ it("keeps a saved draft separate from runtime and blocks unsupported bundle laun
   expect(
     fetcher.mock.calls.filter(([, o]) => o?.method === "POST"),
   ).toHaveLength(0);
-  fireEvent.click(screen.getByRole("button", { name: /In operation/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to live services" }));
   expect(
     screen.queryByRole("button", { name: /Percepta · Draft/ }),
   ).not.toBeInTheDocument();
   expect(
     screen.getAllByText("No services deployed for this house"),
   ).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
   expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument();
   expect(screen.getByRole("dialog")).toHaveTextContent(
@@ -182,25 +184,24 @@ it("opens the running service by default and keeps the plan available", async ()
     ],
   });
   await open(false);
-  expect(screen.getByRole("button", { name: /In operation/ })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("heading", { name: "Live services" })).toBeVisible();
   expect(screen.queryByRole("button", { name: /Percepta · Draft/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Percepta · Running" }));
   expect(screen.getByText("Configure percepta")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Back to deployment" }));
-  fireEvent.click(screen.getByRole("button", { name: /Deployment plan/ }));
-  expect(screen.getByRole("button", { name: /Deployment plan/ })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
+  expect(screen.getByRole("heading", { name: "Configure deployment" })).toBeVisible();
 });
 it("directs an empty operation view to the deployment plan", async () => {
   mock();
   await open(false);
   expect(screen.getByRole("button", { name: "Check machines" })).toBeVisible();
   expect(screen.getByRole("button", { name: "Percepta messages" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Open deployment plan" }));
+  fireEvent.click(screen.getByRole("button", { name: "Set up deployment" }));
   expect(screen.queryByRole("button", { name: "Check machines" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Percepta messages" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
-  expect(screen.getByRole("combobox",{name:"Destination"})).toHaveValue("local");
-  fireEvent.click(screen.getByRole("button", { name: "Configure collection" }));
+  expect(screen.queryByRole("combobox",{name:"Destination"})).not.toBeInTheDocument();
 });
 it("saves a Percepta-only plan and opens its wizard on the reviewed host", async () => {
   const fetcher=mock();
@@ -212,7 +213,6 @@ it("saves a Percepta-only plan and opens its wizard on the reviewed host", async
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
   }
   expect(screen.queryByRole("button",{name:/Inference · Draft/})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button",{name:"Review plan"}));
   fireEvent.click(screen.getByRole("button",{name:"Set up Percepta"}));
   expect(await screen.findByText("Review Percepta on pi · saved")).toBeVisible();
   const write=fetcher.mock.calls.find(([,options])=>options?.method==="PUT");
@@ -494,13 +494,9 @@ it("opens plan details and retains unsaved placement when closing them", async (
   await open();
   moveInference();
   fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
-  expect(
-    screen.getByRole("dialog", { name: "Percepta in the deployment plan" }),
-  ).toHaveTextContent("Configure collection");
-  expect(
-    screen.queryByLabelText("Planned destination"),
-  ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.getByRole("region", { name: "Collection setup" })).toBeVisible();
+  expect(screen.queryByLabelText("Destination")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Close collection setup" }));
   expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
   expect(
@@ -509,10 +505,8 @@ it("opens plan details and retains unsaved placement when closing them", async (
     }),
   ).toHaveTextContent("Inference");
   fireEvent.click(screen.getByRole("button", { name: "Configure Percepta" }));
-  expect(
-    screen.getByRole("dialog", { name: "Percepta in the deployment plan" }),
-  ).toHaveTextContent("Configure collection");
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.getByRole("region", { name: "Collection setup" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Close collection setup" }));
   fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
   expect(
     screen.getByRole("dialog", { name: "Inference in the deployment plan" }),
