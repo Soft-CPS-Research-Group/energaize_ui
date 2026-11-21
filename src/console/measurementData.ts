@@ -1,7 +1,19 @@
-export interface MeasurementPoint { channelId?: string; id: string; timestamp: string; value: number | string | boolean | null; quality?: string; generated?: boolean | null }
+export interface MeasurementPoint {
+  channelId?: string;
+  id: string;
+  timestamp: string;
+  value: number | string | boolean | null;
+  quality?: string;
+  generated?: boolean | null;
+  source_samples?: number | null;
+  expected_source_samples?: number | null;
+  contributors?: number | null;
+  expected_contributors?: number | null;
+}
 export interface MeasurementSeries {
   points: MeasurementPoint[]; next_cursor?: string | null; truncated?: boolean; unit?: string | null;
   errors?: string[]; resolution?: string; bucket_seconds?: number; sample_count?: number; generated_count?: number;
+  partial_count?: number;
   sampling_interval_seconds?: number | null; from?: string; until?: string;
 }
 export type MeasurementRequest = (path: string, signal: AbortSignal) => Promise<MeasurementSeries & { point?: MeasurementPoint }>;
@@ -12,31 +24,46 @@ export function mergeWindow(previous: MeasurementPoint[], next: MeasurementPoint
   return [...points.values()].filter(p => { const t = Date.parse(p.timestamp); return t >= range.start && t < range.end; })
     .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp) || a.id.localeCompare(b.id));
 }
-/** Keep actual extrema and a missing observation in each bucket, never average energy counters. */
+export function incomplete(point: Pick<MeasurementPoint, 'quality'>) {
+  return point.quality === 'partial' || point.quality === 'partial_coverage' || point.quality === 'unverified';
+}
+
+export function qualityLabel(point: Pick<MeasurementPoint, 'quality' | 'source_samples' | 'expected_source_samples' | 'contributors' | 'expected_contributors'>) {
+  if (point.quality === 'unverified') return 'Source sample count unavailable';
+  if (point.quality === 'partial' && point.source_samples != null && point.expected_source_samples != null) {
+    return `${point.source_samples} of ${point.expected_source_samples} source samples`;
+  }
+  if (point.quality === 'partial_coverage' && point.contributors != null && point.expected_contributors != null) {
+    return `${point.contributors} of ${point.expected_contributors} contributors`;
+  }
+  return incomplete(point) ? 'Incomplete reading' : null;
+}
+
+/** Keep actual extrema and evidence of missing or incomplete readings in each bucket. */
 export function compactPoints(points: MeasurementPoint[], range: TimeWindow, budget = 1200): MeasurementPoint[] {
   if (points.length <= budget) return points;
   const channels = [...new Set(points.map(p => p.channelId))];
   if (channels.length > 1) return mergeWindow([], channels.flatMap(id => compactPoints(points.filter(p => p.channelId === id), range, Math.max(100, Math.floor(budget / channels.length)))), range);
   const buckets = new Map<number, MeasurementPoint[]>();
-  const width = (range.end - range.start) / Math.floor(budget / 5);
+  const width = (range.end - range.start) / Math.max(1, Math.floor(budget / 6));
   points.forEach(p => { const key = Math.floor((Date.parse(p.timestamp) - range.start) / width); const bucket = buckets.get(key) || []; bucket.push(p); buckets.set(key, bucket); });
   const kept: MeasurementPoint[] = [];
   buckets.forEach(bucket => {
     const numeric = bucket.filter(p => typeof p.value === 'number' && Number.isFinite(p.value));
     const min = numeric.reduce<MeasurementPoint | undefined>((a, b) => !a || Number(b.value) < Number(a.value) ? b : a, undefined);
     const max = numeric.reduce<MeasurementPoint | undefined>((a, b) => !a || Number(b.value) > Number(a.value) ? b : a, undefined);
-    kept.push(...[bucket[0], min, max, bucket.find(p => typeof p.value !== 'number'), bucket[bucket.length - 1]].filter((p): p is MeasurementPoint => !!p));
+    kept.push(...[bucket[0], min, max, bucket.find(p => typeof p.value !== 'number'), bucket.find(incomplete), bucket[bucket.length - 1]].filter((p): p is MeasurementPoint => !!p));
   });
   return mergeWindow([], kept, range);
 }
 export function plotRows(data: MeasurementSeries, expectedSeconds?: number | null) {
-  const rows: { epochMs: number; value: number | null; generated?: boolean | null }[] = [];
+  const rows: { epochMs: number; value: number | null; qualityLabel?: string | null; generated?: boolean | null }[] = [];
   // Envelope points are intentionally separated within buckets; only larger gaps imply missing time.
   const gapMs = Math.max((expectedSeconds || 0) * 3, (data.bucket_seconds || 0) * 2) * 1000;
   data.points.forEach(p => {
     const epochMs = Date.parse(p.timestamp), previous = rows[rows.length - 1];
     if (gapMs && previous && epochMs - previous.epochMs > gapMs) rows.push({ epochMs: previous.epochMs + 1, value: null });
-    rows.push({ epochMs, value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : null, generated: p.generated });
+    rows.push({ epochMs, value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : null, generated: p.generated, qualityLabel: qualityLabel(p) });
   });
   return rows;
 }

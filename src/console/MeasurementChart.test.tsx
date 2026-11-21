@@ -8,6 +8,18 @@ const now = Date.parse('2026-10-11T12:00:00Z');
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 afterEach(() => vi.useRealTimers());
 describe('Live chart lifecycle', () => {
+  it('flags an incomplete archived interval and keeps its sample evidence', async () => {
+    const request = vi.fn(async () => ({
+      points: [{
+        id: 'partial', timestamp: new Date(now - 900000).toISOString(), value: 0.3864,
+        quality: 'partial', source_samples: 2, expected_source_samples: 3,
+      }],
+    }));
+    render(<MeasurementChart title="Grid import" endpoint="/a/series" initialEnd={now} request={request} expectedSeconds={900} />);
+    await flush();
+    expect(screen.getByText('Some readings in this window are incomplete or unverified.')).toBeInTheDocument();
+    expect(screen.getByTestId('chart-series')).toHaveAttribute('data-points', expect.stringContaining('2 of 3 source samples'));
+  });
   it('retains source quality in chart data without adding a provenance banner', async () => {
     vi.useFakeTimers(); vi.setSystemTime(now);
     let generated = true;

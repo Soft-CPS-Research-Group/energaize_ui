@@ -44,6 +44,7 @@ export function channelRequest(channels: MeasurementChannel[], request: Measurem
     return {
       points: successful.flatMap(({ channel, data }) => data!.points.map(p => ({ ...p, value: typeof p.value === 'number' ? p.value * (channel.displayScale ?? 1) : p.value, id: `${channel.id}:${p.id}`, channelId: channel.id }))).sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp) || a.id.localeCompare(b.id)),
       sample_count: successful.reduce((n, r) => n + (r.data!.sample_count ?? r.data!.points.length), 0),
+      partial_count: successful.reduce((n, r) => n + (r.data!.partial_count ?? 0), 0),
       generated_count: successful.reduce((n, r) => n + (r.data!.generated_count ?? r.data!.points.filter(p => p.generated).length), 0),
       bucket_seconds: Math.max(...successful.map(r => r.data!.bucket_seconds || 0)),
       resolution: successful.some(r => r.data!.resolution === 'aligned_mean_sum') ? 'aligned_mean_sum' : successful.some(r => r.data!.resolution === 'extrema_envelope') ? 'extrema_envelope' : 'raw',

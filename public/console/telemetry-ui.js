@@ -23,7 +23,7 @@ function tLoad(panel){
  const key=panel.dataset.telemetryPanel,channels=T.panels.get(key)||[];
  window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{
   request:tRequest,title:'Measurements',showChannelConfiguration:false,channels:channels.map(c=>({
-   id:c.backendId,assetId:c.assetId,assetName:c.assetName,tag:c.tag,source:c.source,valueSemantics:c.value_semantics,enabled:c.enabled,sourceKind:c.source_kind,externalDeviceId:c.external_device_id,sourceField:c.source_field,simulated:!!c.simulation_binding,name:c.name,title:c.label||c.name,unit:c.canonical_unit||c.unit,
+   id:c.backendId,assetId:c.assetId,assetName:c.assetName,tag:c.tag,source:c.source,valueSemantics:c.value_semantics,enabled:c.enabled,sourceKind:c.source_kind,externalDeviceId:c.external_device_id,sourceField:c.source_field,simulated:!!c.simulation_binding,name:c.name,title:c.label||c.name,unit:c.mongo_binding?.value_unit||c.canonical_unit||c.unit,
    endpoint:(c.mongo_binding||c.simulation_binding)?'/capabilities/'+c.backendId+'/series':undefined,
    latestEndpoint:(c.mongo_binding||c.simulation_binding)?'/capabilities/'+c.backendId+'/latest':undefined,
    note:c.simulation_binding?'Simulated signal generated locally; not a physical measurement.':c.mongo_binding?.note,expectedSeconds:c.sampling_interval_seconds
@@ -51,7 +51,16 @@ function tPreview(){
  window.TelemetryCharts.mount(node,{request:tRequest,endpoint:sourcePath(T.source)+'/series?field='+encodeURIComponent(T.field),initialEnd:Date.parse(T.latest)+1,title:T.field.split('.').slice(-2).join(' · '),note:'Unmapped source preview · source units are not inferred. Link a field to a sensor only after confirming its meaning and unit.'},sourcePath(T.source)+':'+T.field);
 }
 // Replace legacy source fetches; both manager and resident graph components use Telemetry.
-siteGraph=function(s){const channels=s.assets.filter(a=>a.assetType==='grid_meter').flatMap(a=>a.channels.filter(c=>c.capability_type==='sensor'&&(/total|active_power_(import|export)/.test(c.name))));return channels.length?tPanel(channels,'site:'+s.id):'<div class="percepta-grid-unavailable"><h3>Site grid measurements unavailable</h3><p>Open an equipment item to see its own readings.</p></div>';};
+function siteGridChannels(site){
+ const meters=site.assets.filter(a=>a.assetType==='grid_meter');
+ const primary=meters.filter(a=>a.sourcePayload?.meter_role==='main');
+ const selected=primary.length?primary:meters.filter(a=>!a.sourcePayload?.meter_role);
+ return selected.length===1?selected[0].channels.filter(c=>{
+  const type=c.collection?.parameter_type_id||c.quantity||c.name;
+  return c.capability_type==='sensor'&&(/^(energy_(in|out)_total|active_power_(import|export))$/.test(type)||(!c.collection&&/total|active_power_(import|export)/.test(c.name)));
+ }):[];
+}
+siteGraph=function(site){const channels=siteGridChannels(site);return channels.length?tPanel(channels,'site:'+site.id):'<div class="percepta-grid-unavailable"><h3>Site grid measurements unavailable</h3><p>Open an equipment item to see its own readings.</p></div>';};
 refreshHistory=async function(){};
 const tOldEquipment=equipmentContent;
 equipmentContent=function(){let html=tOldEquipment().replace(/<label class="metric-select">Measurement<select id="channel-series">[\s\S]*?<\/select><\/label>/,'');const a=currentAssets().find(a=>a.id===state.equipment);if(a&&state.deviceTab!=='sensors'){html=html.replace(/<div class="device-readout">[\s\S]*?<\/div><\/div>/,'');html=html.replace(/<section class="measurement-empty">[\s\S]*?<\/section>/,tPanel(a.channels.filter(c=>c.capability_type==='sensor'),'asset:'+a.id));}return html;};

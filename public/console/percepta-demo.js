@@ -10,7 +10,7 @@ function perceptaSource(site) {
 }
 function perceptaChartChannels(channels){
  const linked=channels.filter(c=>c.enabled&&(c.mongo_binding||c.simulation_binding));
- const meters=linked.filter(c=>/^observations\.grid_meters\.[^.]+\.energy_(in|out)_total$/.test(c.mongo_binding?.field||''));
+ const meters=linked.filter(c=>/^energy_(in|out)_total$/.test(c.collection?.parameter_type_id||'')||/^observations\.grid_meters\.[^.]+\.energy_(in|out)_total$/.test(c.mongo_binding?.field||''));
  const defaults=new Set((meters.length?meters:linked.filter(c=>c.name==='state_of_charge')).map(c=>c.backendId));
  return linked.map(c=>{
   const result={...channelForChart(c),defaultVisible:defaults.has(c.backendId)};
@@ -49,14 +49,20 @@ const perceptaSiteGraph=siteGraph;
 siteGraph=function(site){
  if(!perceptaSource(site))return perceptaSiteGraph(site);
  const key='site:'+site.id;perceptaOpenOnce(key);
- const meters=ceramicAssets(site).filter(a=>a.assetType==='grid_meter');
- const channels=meters.flatMap(a=>a.channels).filter(c=>/^observations\.grid_meters\.[^.]+\.energy_(in|out)_total$/.test(c.mongo_binding?.field||'')&&c.unit==='kWh');
- return ceramicSiteScene(site)+ceramicChartToggle(key,'Site grid exchange')+(ceramicCharts.has(key)?(channels.length?tPanel(channels,key):'<div class="percepta-grid-unavailable"><h3>Site grid measurements unavailable</h3><p>The HQ meter needs its unit verified. Open an equipment item to see its own readings.</p></div>'):'');
+ const channels=siteGridChannels(site).filter(c=>c.mongo_binding?.field?.startsWith('payload.')||(/^observations\.grid_meters\.[^.]+\.energy_(in|out)_total$/.test(c.mongo_binding?.field||'')&&c.unit==='kWh'));
+ return ceramicSiteScene(site)+ceramicChartToggle(key,'Site grid exchange')+(ceramicCharts.has(key)?(channels.length?tPanel(channels,key):'<div class="percepta-grid-unavailable"><h3>Site grid measurements unavailable</h3><p>Open an equipment item to see its own readings.</p></div>'):'');
 };
 function perceptaChargerActivity(asset){
  if(!asset||asset.assetType!=='ev_charger')return undefined;
- const c=asset.channels.find(c=>c.enabled&&c.mongo_binding?.field?.startsWith('observations.charging_sessions.')&&c.mongo_binding.field.endsWith('.power'));
- if(!c)return undefined;const parts=c.mongo_binding.field.split('.');
+ const c=asset.channels.find(c=>{
+  const field=c.mongo_binding?.field||'';
+  return c.enabled&&(/^observations\.charging_sessions\.[^.]+\.power$/.test(field)||(
+   /^(payload|model_inputs)\.entities\.[^.]+\.parameters\./.test(field)
+   &&(c.collection?.parameter_type_id||c.quantity)==='power'));
+ });
+ if(!c)return undefined;
+ if(asset.backendId)return '/assets/'+encodeURIComponent(asset.backendId)+'/charger-activity';
+ const parts=c.mongo_binding.field.split('.');
  return perceptaPath(c.mongo_binding)+'/chargers/'+encodeURIComponent(parts[2])+'/activity';
 }
 // Attach activity to the same chart time controls used for charging power.

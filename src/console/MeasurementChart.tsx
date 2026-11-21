@@ -5,7 +5,7 @@ import { Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from 'recha
 import { resolveAxisTickStepMs } from '../utils/timeseriesGranularity';
 import { TimeseriesPlot } from '../components/charts/TimeseriesPlot';
 import type { MeasurementChannel } from './measurementChannels';
-import { compactPoints, loadWindow, mergeWindow, plotRows, type MeasurementRequest, type MeasurementSeries, type TimeWindow } from './measurementData';
+import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, type MeasurementRequest, type MeasurementSeries, type TimeWindow } from './measurementData';
 
 export interface MeasurementChartProps {
   forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
@@ -68,7 +68,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
         const merged = mergeWindow(previous.data.points, data.points, range);
         data = { ...data, points: compactPoints(merged, range), sample_count: undefined,
           resolution: previous.data.resolution, bucket_seconds: Math.max(previous.data.bucket_seconds || 0, merged.length > 1200 ? (range.end - range.start) / 240000 : 0),
-          generated_count: undefined };
+          generated_count: undefined, partial_count: undefined };
       }
       cache.current = { range, data, queryKey: props.queryKey }; setResult(data);
     }).catch(e => { if (mounted && !controller.signal.aborted) setError((e as Error).message); }).finally(() => { if (mounted) setLoading(false); });
@@ -146,6 +146,8 @@ export function MeasurementChart(props: MeasurementChartProps) {
     </div>
     {live && showingRetained && <div className="telemetry-live-context" role="status">{showingRetained ? `No recent readings. Showing stored history from ${date(displayRange!.start)} to ${date(displayRange!.end)}. Live is checking the current time every 15 s.` : `Historical readings + live updates · live started ${date(liveStarted || Date.now())}.`}</div>}
     {displayResult.errors?.length ? <p className="telemetry-series-errors" role="status">{displayResult.errors.join(' · ')}</p> : null}
+    {((displayResult.partial_count ?? 0) > 0 || displayResult.points.some(incomplete)) &&
+      <p className="telemetry-live-context" role="status">Some readings in this window are incomplete or unverified.</p>}
     {props.series && !props.series.length ? <div className="telemetry-empty"><h3>Select a measurement below</h3><p>Use the pills to show or hide readings. Additional channels are available under Measurement channels.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length ? <div className="telemetry-empty"><Radio size={26} /><h3>{loading ? 'Loading measurements' : 'No readings in this window'}</h3><p>{loading ? 'Reading the selected sensor through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
       {unitGroups.map((group) => <div className="telemetry-unit-plot" key={group[0].id}>
 
@@ -160,7 +162,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
             const tolerance = Math.max(pool===c.forecastRows ? 900000 : 0, (c.expectedSeconds || 0) * 1500, (displayResult.bucket_seconds || 0) * 2000);
             return { c, row: nearest && Math.abs(nearest.epochMs - Number(label)) <= tolerance ? nearest : null };
           });
-          return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong></div>)}</div>;
+          return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
         {group.map(c => <Line key={c.id} data={c.rows} name={c.title} type={c.curve || "linear"} dataKey={c.id} stroke={c.color} strokeWidth={2.2} dot={c.rows.filter(r => r.value !== null).length === 1} activeDot={false} connectNulls={false} isAnimationActive={false} />)}
         {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name="Published prices" type="stepAfter" dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
