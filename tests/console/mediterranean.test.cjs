@@ -215,7 +215,7 @@ test('garage bays are whole buttons and EV details separate channels and vehicle
  const {dom,w,run}=workspace();
  try {
   run(`state.personId='ana';state.loggedIn=true;connection.loading=false;
-  var cars=[{id:'ev-a',name:'Family EV',asset_type:'ev',capacity:60,sourcePayload:{battery_capacity_kwh:60}},{id:'ev-b',name:'City EV',asset_type:'ev',capacity:40,sourcePayload:{battery_capacity_kwh:40}}];
+  var cars=[{id:'ev-a',name:'Family EV',asset_type:'ev',capacity:60,sourcePayload:{battery_capacity_kwh:60,max_ac_charging_current_a:32}},{id:'ev-b',name:'City EV',asset_type:'ev',capacity:40,sourcePayload:{battery_capacity_kwh:40}}];
   demoVehicles.splice(0,demoVehicles.length,...cars);availableAssets=()=>cars;
   connection.raw={profiles:[],assets:cars.map(a=>({...a,data:{name:a.name}})),events:[{event_id:'ea',asset_id:'charger',title:'Family plan',starts_at:'2026-10-14T18:00:00Z',ends_at:'2026-10-14T20:00:00Z',session_type:'ev_charging',type_specific_data:{vehicle_id:'ev-a',soc_at_departure:.8}},{event_id:'eb',asset_id:'charger',title:'City plan',type_specific_data:{vehicle_id:'ev-b'}}]};
   sessionAssets=()=>[...connection.raw.assets,{id:'charger',asset_type:'ev_charger',data:{name:'Charger'}}];
@@ -224,6 +224,7 @@ test('garage bays are whole buttons and EV details separate channels and vehicle
   run(`state.personalAsset='ev-a';state.vehicleTab='overview';app.innerHTML=vehicleView('ev-a');`);
   assert.equal(run('state.personalPage'),'vehicles');
   assert.equal(w.document.querySelector('table'),null);
+  assert.match(w.document.querySelector('.ceramic-vehicle-detail').textContent,/Maximum AC charging current\s*32(?:\.0)? A/);
   assert.ok(w.document.querySelector('[data-med-vehicle-tab="channels"]'));
   assert.equal(w.document.querySelector('[data-med-vehicle-plan]'),null,'read access does not show control actions');
   run(`state.vehicleTab='sessions';app.innerHTML=vehicleView('ev-a');`);

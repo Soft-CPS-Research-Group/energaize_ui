@@ -49,6 +49,7 @@ function ceramicSpecs(asset) {
   const type = ceramicAssetType(asset);
   if (type === 'pv_system') { add('Installed solar', ['dc_peak_power_kwp'], ' kWp'); add('Inverter power', ['inverter_capacity_kw'], ' kW'); add('Panels', ['number_of_panels']); }
   if (type === 'battery' || type === 'ev') { add('Battery capacity', ['capacity_kwh', 'battery_capacity_kwh'], ' kWh'); add('Usable capacity', ['usable_capacity_kwh'], ' kWh'); add('Charge power', ['max_charge_kw'], ' kW'); add('Discharge power', ['max_discharge_kw'], ' kW'); }
+  if (type === 'ev') add('Maximum AC charging current', ['max_ac_charging_current_a'], ' A');
   if (type === 'ev_charger') { add('Charging power', ['max_charging_power_kw', 'max_charging_power'], ' kW'); add('Maximum current', ['max_current_a'], ' A'); add('Connection', ['electrical_connection_type']); if (source.plugs?.length) values.push(['Connectors', String(source.plugs.length)]); add('Vehicle to grid', ['vehicle_to_grid_capable']); }
   if (type === 'appliance') { add('Appliance', ['appliance_type']); add('Rated power', ['rated_power_kw', 'nominal_power_kw'], ' kW'); add('Load capacity', ['capacity_kg'], ' kg'); add('Can pause a cycle', ['interruptible']); }
   if (type === 'heat_pump') { add('Heating power', ['heating_capacity_kw', 'nominal_power_kw'], ' kW'); add('Efficiency (COP)', ['cop']); }
