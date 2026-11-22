@@ -131,6 +131,52 @@ const open = async (planning = true) => {
   await screen.findByRole("heading", { name: "SoftCPS server" });
   if (planning) fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
 };
+it("reviews a house Predictor destination and saves it without starting a service", async () => {
+  const fetcher = mock(data, { ...initial, included_services: [] });
+  await open(false);
+  const summary = within(screen.getByRole("region", { name: "House forecast plan" }));
+  expect(summary.getByText("Unassigned · Suggested plan")).toBeVisible();
+  fireEvent.click(summary.getByRole("button", { name: "Plan destination" }));
+  const editor = within(screen.getByRole("dialog"));
+  const select = editor.getByRole("combobox", { name: "Destination" });
+  fireEvent.change(select, { target: { value: "cloud" } });
+  expect(editor.getByText(/shared cloud Predictor can serve multiple houses/)).toBeVisible();
+  fireEvent.change(select, { target: { value: "local" } });
+  expect(editor.getByText(/Local execution needs a compatible image/)).toBeVisible();
+  fireEvent.click(editor.getByRole("button", { name: "Review plan" }));
+  const review = within(screen.getByRole("dialog"));
+  expect(review.getByText("Planned destination")).toBeVisible();
+  expect(summary.getByText("Raspberry · Leça · Unsaved change")).toBeInTheDocument();
+  fireEvent.click(review.getByRole("button", { name: "Save reviewed draft" }));
+  expect(await summary.findByText("Raspberry · Leça · Saved plan")).toBeVisible();
+  const writes = fetcher.mock.calls.filter(([, init]) => init?.method && init.method !== "GET");
+  expect(writes).toHaveLength(1);
+  const [[url, init]] = writes;
+  expect(url).toMatch(/\/api\/runtime\/sites\/house\/deployment-draft$/);
+  expect(init?.method).toBe("PUT");
+  expect(JSON.parse(String(init?.body))).toMatchObject({ included_services: ["forecasting"], services: { forecasting: "local" } });
+});
+
+it("presents only cloud for a house without a machine, including after an old local assignment", async () => {
+  mock({ ...data, destinations: [data.destinations[0]] }, {
+    ...initial, revision: "old", stale: true, included_services: ["forecasting"],
+    services: { ...initial.services, forecasting: "local" },
+  });
+  await open(false);
+  expect(screen.getByText("Destination unavailable · Review required")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Plan destination" }));
+  const editor = within(screen.getByRole("dialog"));
+  expect(editor.getByRole("option", { name: "Previous destination unavailable" })).toBeDisabled();
+  expect(editor.getAllByRole("option").filter(o => !(o as HTMLOptionElement).disabled).map(o => o.textContent)).toEqual(["Unassigned", "SoftCPS server"]);
+  expect(editor.getByText(/a machine is assigned in Inventory/)).toBeVisible();
+});
+it("identifies an assigned machine that still needs Runtime registration", async () => {
+  mock({ ...data, destinations: [data.destinations[0], { ...data.destinations[1], registered: false }] });
+  await open(false);
+  fireEvent.click(screen.getByRole("button", { name: "Plan destination" }));
+  expect(screen.getByRole("option", { name: "Raspberry · Leça · registration pending" })).toBeDisabled();
+  expect(screen.getByRole("option", { name: "SoftCPS server" })).toBeEnabled();
+});
 function moveInference() {
   vi.stubGlobal("PointerEvent", MouseEvent);
   const host = screen.getByRole("region", { name: "Raspberry · Leça" });

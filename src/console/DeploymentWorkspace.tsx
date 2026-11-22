@@ -237,7 +237,7 @@ export function DeploymentWorkspace({
     }
   };
   const place = (kind: Service, placement: Placement) => {
-    if (saving) return;
+    if (saving || (placement === "local" && !localDestination?.registered)) return;
     setDraft((d) =>
       d ? { ...d, included_services: [...new Set([...includedServices(d), kind])], services: { ...d.services, [kind]: placement } } : d,
     );
@@ -259,7 +259,8 @@ export function DeploymentWorkspace({
       if (Math.hypot(event.clientX - current.x, event.clientY - current.y) > 8) current.moved = true;
       if (current.moved) {
         setDragging(kind);
-        setHoverHost(dropTarget(event.clientX, event.clientY)?.dataset.deploymentHost || null);
+        const target = dropTarget(event.clientX, event.clientY)?.dataset;
+        setHoverHost(target?.placement === "local" && !localDestination?.registered ? null : target?.deploymentHost || null);
       }
     },
     onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -291,6 +292,10 @@ export function DeploymentWorkspace({
   const hasRuntimePercepta = !!activePercepta;
   const hasRuntime = !!map?.components.some(c => !c.planned);
   const selected = draft ? includedServices(draft) : [];
+  const predictorPlacement = draft && selected.includes("forecasting") ? draft.services.forecasting : null;
+  const savedPlacement = saved && includedServices(saved).includes("forecasting") ? saved.services.forecasting : null;
+  const predictorDestination = map?.destinations.find(d => d.placement === predictorPlacement);
+  const localDestination = map?.destinations.find(d => d.placement === "local");
   const plannedPercepta = map?.destinations.find(d => d.placement === draft?.services.percepta);
   const replace = activePercepta?.managed && activePercepta.instance_id && activePercepta.container_id
     && ["running", "exited", "created"].includes(activePercepta.state)
@@ -415,7 +420,18 @@ export function DeploymentWorkspace({
         <EVChargingLoader label="Loading deployment…" />
       ) : (
         <>
-          {!collectionSetup && !forecastSetup && !launchPlan && <HouseForecastPlan key={siteId} siteId={siteId} onConfigure={planning ? undefined : () => setCollectionSetup(true)} />}
+          {!collectionSetup && !forecastSetup && !launchPlan && (
+            <HouseForecastPlan key={siteId} siteId={siteId} onConfigure={planning ? undefined : () => setCollectionSetup(true)}>
+              <footer className="predictor-destination">
+                <div>
+                  <strong>Predictor destination</strong>
+                  <small>{predictorDestination?.name ?? (predictorPlacement ? "Destination unavailable" : "Unassigned")}
+                    {" · "}{predictorPlacement !== savedPlacement ? "Unsaved change" : draft.stale ? "Review required" : draft.revision ? "Saved plan" : "Suggested plan"}</small>
+                </div>
+                <button className="btn" onClick={() => { setView("plan"); setEditing("forecasting"); }}>Plan destination</button>
+              </footer>
+            </HouseForecastPlan>
+          )}
           <div className="deployment-toolbar">
             <div>
               <h3>{planning ? "Configure deployment" : "Live services"}</h3>
@@ -433,7 +449,7 @@ export function DeploymentWorkspace({
           )}
           {!planning && (
             <div className="deployment-operation-bar">
-              <p>{hasRuntime ? 'Select a running service to inspect it.' : 'No services are running for this house.'}</p>
+              <p>{hasRuntime ? 'Select a managed service to inspect it.' : 'No managed instances are listed for this house.'}</p>
               <div className="actions" role="group" aria-label="Operation tools">
                 <button className="btn" onClick={() => setMessagesOpen(true)}><Radio size={15}/>Percepta messages</button>
                 <button className="btn" disabled={checking} onClick={() => void check()}>
@@ -729,8 +745,12 @@ export function DeploymentWorkspace({
                     else unplace(currentService);
                   }}>
                   <option value="">Unassigned</option>
+                  {currentService === "forecasting" && predictorPlacement && !predictorDestination &&
+                    <option value={predictorPlacement} disabled>Previous destination unavailable</option>}
                   {map.destinations.filter(d => d.placement === "cloud" || d.placement === "local").map(d =>
-                    <option key={d.id} value={d.placement}>{d.name}</option>
+                    <option key={d.id} value={d.placement} disabled={d.placement === "local" && !d.registered}>
+                      {d.name}{d.placement === "local" && !d.registered ? " · registration pending" : ""}
+                    </option>
                   )}
                 </select>
               </label>
@@ -738,7 +758,21 @@ export function DeploymentWorkspace({
                 setEditing(null);
                 setCollectionSetup(true);
               }}>Configure collection</button>}
-              {currentService === "forecasting" && <button className="btn" onClick={openForecastSettings}>Open forecast settings</button>}
+              {currentService === "forecasting" && <>
+                {predictorPlacement === "local" && localDestination ? (
+                  <p>{localDestination.registered
+                    ? [stateName(localDestination.check.state), localDestination.check.architecture].filter(Boolean).join(" · ")
+                    : "Machine registration pending"}. Local execution needs {["aarch64", "arm64"].includes(localDestination.check.architecture ?? "") ? "a linux/arm64 image" : "a compatible image"}, model files and access to Community, Telemetry and RabbitMQ. Exclude this house from the cloud Predictor before it publishes locally.</p>
+                ) : predictorPlacement === "cloud" ? (
+                  <p>The shared cloud Predictor can serve multiple houses. Its community configuration must include this house.</p>
+                ) : null}
+                {!localDestination && <p>A house destination becomes available when a machine is assigned in Inventory.</p>}
+                <p>Saving records the destination for this house. Starting or moving the Predictor is a separate operation.</p>
+                <div className="actions">
+                  <button className="btn primary" onClick={() => { setEditing(null); setReview(true); }}>Review plan</button>
+                  <button className="btn" onClick={openForecastSettings}>Open forecast settings</button>
+                </div>
+              </>}
               {currentService === "controller" && <>
                 <p>Inference uses a prepared instance.</p>
                 <button className="btn" onClick={() => {setEditing(null);setDetail("controller");}}>Open inference settings</button>
@@ -866,7 +900,7 @@ export function DeploymentWorkspace({
                             else setEditing(kind);
                           }}>
                             {icon(kind)}<strong>{names[kind]}</strong>
-                            <small>{map.components.some(c => c.kind === kind && !c.planned) ? "Instance exists" : "Not deployed"}</small>
+                            <small>{map.components.some(c => c.kind === kind && !c.planned) ? "Instance exists" : kind === "forecasting" ? "Planned destination" : "Not deployed"}</small>
                             <ChevronRight size={14} />
                           </button>
                         ))}

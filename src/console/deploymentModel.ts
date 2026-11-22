@@ -97,7 +97,7 @@ export const connections: {
     target: "forecasting",
     label: "RabbitMQ · forecasts",
     description:
-      "The shared Predictor publishes this house’s forecasts to RabbitMQ. In House data, use the same broker, virtual host, exchange and routing key as the publisher.",
+      "The Predictor publishes this house’s forecasts to RabbitMQ. In House data, use the same broker, virtual host, exchange and routing key as the publisher.",
     twoWay: false,
   },
   {

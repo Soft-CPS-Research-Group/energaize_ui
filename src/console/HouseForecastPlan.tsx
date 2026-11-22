@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Activity, Settings2 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
 
@@ -26,11 +26,12 @@ function inputDescription(lane: Lane) {
   }
 }
 
-export function HouseForecastPlan({ siteId, onConfigure, onPrepared, revision = 0 }: {
+export function HouseForecastPlan({ siteId, onConfigure, onPrepared, revision = 0, children }: {
   siteId: string;
   onConfigure?: () => void;
   onPrepared?: () => void;
   revision?: number;
+  children?: ReactNode;
 }) {
   const [preparation, setPreparation] = useState<{ site: string; busy?: boolean; error?: string; prepared?: boolean }>();
   const [attempt, setAttempt] = useState(0);
@@ -85,9 +86,12 @@ export function HouseForecastPlan({ siteId, onConfigure, onPrepared, revision = 
           <button type="button" className="btn" disabled={state?.busy || plan.lanes.some(lane => lane.input_state !== "mapped")} onClick={prepareReturn}>
             {state?.busy ? "Configuring forecast return…" : "Configure forecast return"}
           </button>}
+        {plan.return_available === false && plan.lanes.some(lane => !lane.forecast_channel_configured) &&
+          <p>Automatic forecast return is unavailable for this house. Check its Predictor identifier and community return configuration.</p>}
         {state?.error && <p role="alert">{state.error}</p>}
         {state?.prepared && <p role="status">Return configured. Apply the Percepta configuration to receive forecasts.</p>}
-        <p>One shared Predictor serves the energy forecasts. Check received forecasts in Percepta messages.</p>
+        <p>Check received forecasts in Percepta messages.</p>
       </>}
+    {children}
   </section>;
 }
