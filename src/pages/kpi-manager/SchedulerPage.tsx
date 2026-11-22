@@ -26,7 +26,7 @@ interface JobStatus {
   buildings: string[];
   cron: string;
   lookback: string;
-  source: "yaml" | "ui";
+  source: "yaml" | "ui" | "system";
   next_run_time: string | null;
   last_run_time: string | null;
   last_run_status: "success" | "error" | "running" | "never" | null;
@@ -62,10 +62,11 @@ function StatusBadge({ status }: { status: JobStatus["last_run_status"] }) {
   return <Badge tone={c.tone}>{c.icon} {c.label}</Badge>;
 }
 
-function SourceBadge({ source }: { source: "yaml" | "ui" }) {
-  return source === "yaml"
-    ? <Badge tone="warning"><Lock size={10} /> YAML</Badge>
-    : <Badge tone="info">UI</Badge>;
+function SourceBadge({ source }: { source: JobStatus["source"] }) {
+  if (source === "yaml") return <Badge tone="warning"><Lock size={10} /> YAML</Badge>;
+  // The module's own jobs (e.g. the daily BAU requests): locked like YAML jobs
+  if (source === "system") return <Badge tone="neutral"><Lock size={10} /> System</Badge>;
+  return <Badge tone="info">UI</Badge>;
 }
 
 // ── Job form ──────────────────────────────────────────────────────────────────
