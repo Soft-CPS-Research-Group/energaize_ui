@@ -1,3 +1,4 @@
+import { HouseForecastPlan } from "./HouseForecastPlan";
 import {
   useCallback,
   useEffect,
@@ -414,6 +415,7 @@ export function DeploymentWorkspace({
         <EVChargingLoader label="Loading deployment…" />
       ) : (
         <>
+          {!collectionSetup && !forecastSetup && !launchPlan && <HouseForecastPlan key={siteId} siteId={siteId} onConfigure={planning ? undefined : () => setCollectionSetup(true)} />}
           <div className="deployment-toolbar">
             <div>
               <h3>{planning ? "Configure deployment" : "Live services"}</h3>

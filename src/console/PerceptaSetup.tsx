@@ -1,3 +1,4 @@
+import {HouseForecastPlan} from "./HouseForecastPlan";
 import {useEffect,useRef,useState,useId} from 'react';
 import {Settings2,Pencil,X,ArrowLeft,ChevronRight,PlugZap,Plus,Activity,SlidersHorizontal,Users} from 'lucide-react';
 import {runtimeRequest as runtime,runtimeRequestId,type RuntimeSnapshot,type RuntimeHost,type RuntimeOperation} from '../api/runtimeApi';
@@ -90,7 +91,8 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const readProfile=async(o:Owner)=>{const r=await fetch(`/community-api/api/${o.scope}/${o.id}/signals`);if(r.status===404)return null;if(!r.ok)throw Error('Unable to load measurements');const p=await r.json();if(!Array.isArray(p.capabilities))throw Error('Invalid measurement catalogue');return p as Profile;};
  const reloadProfile=async(o:Owner)=>{const p=await readProfile(o);setProfiles(previous=>({...previous,[o.id]:p}));};
  const selectOwner=(o:Owner)=>{const s=equipmentSource(o,profiles[o.id],sources,connections);setOwner(o.id);setSourceConnection(s?.connection_id||'');setDevice(s?.device_id||'');setEditing(undefined);setInitialMeasurement(undefined);setConflict(false);setActuatorEditor(false);setEquipmentSourceEditing(false);setNotice('');setError('');};
- const changed=()=>{setSnapshot(null);onChange();};
+ const [planRevision,setPlanRevision]=useState(0);
+ const changed=()=>{setSnapshot(null);setPlanRevision(revision=>revision+1);onChange();};
  useEffect(()=>{const node=dialog.current!,root=document.documentElement,overflow=root.style.overflow;root.style.overflow='hidden';node.showModal();return()=>{node.close();root.style.overflow=overflow;};},[]);
  useEffect(()=>{let live=true;void run(async()=>{
   let items:Owner[],community=communityId||'',assignmentsForEquipment:Source[]=[];
@@ -204,11 +206,12 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  };
  const houseChannels=readingChannels(siteId||'');
  const isForecast=(c:Channel)=>c.collection?.role==='input';
- const route=forecastRoute(predictorHouseId||envKey);
+ const route=forecastRoute(predictorHouseId||(/^[A-Za-z0-9_.:-]+$/.test(siteName)?siteName:envKey));
+ const previousRoute=forecastRoute(envKey);
  const forecastBindings=new Set(houseChannels.filter(isForecast).map(c=>c.collection?.source_binding?.connection_id));
  const forecasts=connections.filter(c=>c.provider==='predictor'&&(c.site_id
    ? c.site_id===siteId
-   : forecastBindings.has(c.id)||(c.settings?.exchange===route.exchange&&c.settings?.routing_key===route.routing_key)));
+   : forecastBindings.has(c.id)||(c.settings?.exchange===route.exchange&&c.settings?.routing_key===route.routing_key)||(c.settings?.exchange===previousRoute.exchange&&c.settings?.routing_key===previousRoute.routing_key)));
  const saveConnection=(connection:Connection)=>{
   const existing=connections.some(c=>c.id===connection.id);
   setConnections(previous=>[...previous.filter(c=>c.id!==connection.id),connection]);
@@ -251,6 +254,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
    onSave={saveConnection}
    onCancel={()=>setSourceEditor(undefined)}
  />:ready&&<>
+ {siteId&&!equipmentId&&!communityMode&&!hasEditor&&<HouseForecastPlan siteId={siteId} revision={planRevision}/>}
  {tab==='connections'&&<>
    <div className="percepta-section-heading"><div><h3>Community sources</h3><p>Connect the services that supply shared data.</p></div><button className="btn" onClick={()=>setSourceEditor(null)}><Plus size={16}/>Add source</button></div>
    <div className="percepta-source-grid">{connections.filter(c=>isPriceSource(c.provider)).map(c=><article className="percepta-source-card" key={c.id}>

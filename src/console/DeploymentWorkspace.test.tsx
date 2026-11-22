@@ -113,6 +113,8 @@ function mock(map = data, draft = initial) {
                 revision: "saved",
                 updated_at: "2026-10-28T12:00:00Z",
               }
+            : url.endsWith("/forecast-plan")
+              ? {site_id: "house", lanes: [], ev_chargers: []}
             : url.endsWith("deployment-draft")
               ? draft
               : map,
@@ -356,7 +358,7 @@ it("checks only on request and retains the last observation with its timestamp",
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Machine check unavailable",
   );
-  expect(fetcher.mock.calls[2][0]).toContain("/sites/house/deployment-check");
+  expect(fetcher.mock.calls.find(([, options]) => options?.method === "POST")?.[0]).toContain("/sites/house/deployment-check");
 });
 it("preserves edits when a save fails", async () => {
   const fetcher = mock();
@@ -513,4 +515,24 @@ it("opens plan details and retains unsaved placement when closing them", async (
   ).toHaveTextContent("Inference uses a prepared instance.");
   expect(screen.queryByText("Configure controller")).not.toBeInTheDocument();
   expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
+});
+
+it("shows the grid-only plan and fetches the saved configuration when the editor closes", async () => {
+  const fetcher = mock();
+  const fallback = fetcher.getMockImplementation()!;
+  const grid = { series: "consumption", metric: "non_shiftable_load", equipment: ["Main meter"],
+    input_state: "mapped", missing_inputs: [], forecast_channel_configured: false };
+  let lanes = [grid];
+  fetcher.mockImplementation(async (url, options) => url.endsWith("/forecast-plan")
+    ? new Response(JSON.stringify({ site_id: "house", lanes, ev_chargers: [] }))
+    : fallback(url, options));
+  await open(false);
+  const plan = () => screen.getByRole("region", { name: "House forecast plan" });
+  expect(await within(plan()).findByText("Base consumption")).toBeVisible();
+  expect(within(plan()).queryByText("Solar production")).not.toBeInTheDocument();
+  fireEvent.click(within(plan()).getByRole("button", { name: "Configure Percepta" }));
+  lanes = [grid, { ...grid, series: "production", metric: "solar_generation", equipment: ["Solar meter"] }];
+  fireEvent.click(screen.getByRole("button", { name: "Close collection setup" }));
+  expect(await within(plan()).findByText("Solar production")).toBeVisible();
+  expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });

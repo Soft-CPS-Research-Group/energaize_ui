@@ -607,3 +607,15 @@
   .deployment-shelf-service > svg:first-child { display: none; }
   .deployment-shelf-service strong { font-size: .76rem; }
 }
+
+.house-forecast-plan{padding:16px 18px;margin-bottom:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--text)}
+.house-forecast-plan>header,.house-forecast-plan li{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.house-forecast-plan h3{display:flex;align-items:center;gap:8px;margin:0;font-size:16px}
+.house-forecast-plan p,.house-forecast-plan small,.house-forecast-plan li>span{font-size:12px;color:var(--muted)}
+.house-forecast-plan p{margin:5px 0 0}
+.house-forecast-plan ul{padding:0;margin:12px 0;list-style:none;border-top:1px solid var(--line)}
+.house-forecast-plan li{padding:9px 0;border-bottom:1px solid var(--line)}
+.house-forecast-plan li strong,.house-forecast-plan small{display:block}
+.house-forecast-plan li strong{font-size:14px}
+.house-forecast-plan li>span{flex-shrink:0}
+@media(max-width:600px){.house-forecast-plan>header,.house-forecast-plan li{flex-wrap:wrap;gap:5px}.house-forecast-plan>header .btn{margin-top:4px}}

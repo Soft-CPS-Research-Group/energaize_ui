@@ -8,6 +8,7 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
  const total={...channel,capability_id:'total',name:'Community import',collection:{parameter_type_id:'energy_in_total',role:'community_output',privacy:'community',necessary:true}};
  const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{const url=String(input);let data:unknown={};
   if(url.endsWith('/hosts'))data=[{id:'local',name:'Local collector',mode:'docker',allowed_images:['energaize/percepta:1'],...(planned?{percepta_collection_image:'energaize/percepta:1'}:{})}];
+  else if(url.endsWith('/forecast-plan'))data={site_id:'site',lanes:[],ev_chargers:[]};
   else if(url.endsWith('/equipment-sources'))data=[];
   else if(url.endsWith('/equipment/asset/source'))data={asset_id:'asset',...JSON.parse(String(init?.body))};
   else if(url.endsWith('/connections')&&init?.method==='POST'){
@@ -380,4 +381,17 @@ it('configures sources and measurements without offering or calling runtime laun
  fireEvent.click(screen.getByRole('button',{name:'Done'}));
  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
  expect(fetcher.mock.calls.some(([url])=>/\/(hosts|launch|preview|operations)(\/|$)/.test(String(url)))).toBe(false);
+});
+it('uses the Telemetry site code for a new forecast source without a legacy reference',async()=>{
+ const fetcher=setup();
+ const reply=fetcher.getMockImplementation()!;
+ fetcher.mockImplementation(async(input,init)=>{
+  if(String(input).endsWith('/community-api/api/sites/site'))return new Response(JSON.stringify({id:'site',name:'RH24',assigned_rec_id:'rec'}));
+  return reply(input,init);
+ });
+ await openEquipment();
+ fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
+ fireEvent.click(screen.getByRole('button',{name:'Add forecast source'}));
+ expect(screen.getByLabelText('Source exchange')).toHaveValue('pred.RH24');
+ expect(screen.getByLabelText('Routing key')).toHaveValue('q.pred.RH24');
 });
