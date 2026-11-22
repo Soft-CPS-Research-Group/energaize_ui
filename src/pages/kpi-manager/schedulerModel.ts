@@ -7,6 +7,8 @@ export interface JobForm {
   kpis: string[];
   cron: string;
   lookback: string;
+  /** Also request AI Training's BAU simulation of the job's window (needs whole days). */
+  bau: boolean;
 }
 
 export type Frequency = "hourly" | "daily" | "weekly";
@@ -18,6 +20,7 @@ export const EMPTY_JOB_FORM: JobForm = {
   kpis: [],
   cron: "5 * * * *",
   lookback: "1h",
+  bau: false,
 };
 
 export const CRON_PRESETS: Array<{ label: string; cron: string; freq: Frequency; min: number; hr: number; day: number }> = [
@@ -39,6 +42,11 @@ const LOOKBACK = /^\d+(m|h|d|w|mo|y)$/;
 
 export function isValidLookback(lookback: string): boolean {
   return LOOKBACK.test(lookback.trim().toLowerCase());
+}
+
+/** A lookback of whole days or longer (1d, 1w, 1mo, 1y): the BAU is simulated for whole UTC days. */
+export function isWholeDaysLookback(lookback: string): boolean {
+  return /^\d+(d|w|mo|y)$/.test(lookback.trim().toLowerCase());
 }
 
 /**
@@ -65,5 +73,6 @@ export function jobPayload(form: JobForm) {
     kpis: form.kpis,
     cron: form.cron,
     ...lookbackPayload(form.lookback),
+    ...(form.bau ? { bau: true } : {}),
   };
 }
