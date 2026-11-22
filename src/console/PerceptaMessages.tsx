@@ -24,13 +24,24 @@ function MessageEquipment({ entities, names }: { entities: unknown; names: Measu
     {Object.entries(record(entities)).map(([key, entity]) => {
       const parameters = Object.entries(record(record(entity).parameters));
       const equipment = parameters.find(([id]) => names[id]?.equipment);
-      return <section className="percepta-message-equipment" key={key}>
-        <h4>{equipment ? names[equipment[0]].equipment : displayMeasurementName(String(record(entity).entity_type_id || key))}</h4>
+      const forecast = record(entity).entity_type_id === 'forecast_service';
+      return <section className="percepta-message-equipment" key={key} aria-label={forecast ? 'Predictor forecasts' : undefined}>
+        <h4>{forecast ? 'Predictor forecasts' : equipment ? names[equipment[0]].equipment : displayMeasurementName(String(record(entity).entity_type_id || key))}</h4>
         <dl>{parameters.map(([id, data]) => {
           const measurement = record(data);
           const values = Array.isArray(measurement.final_values) ? measurement.final_values : [];
           const first = record(values[0]).value;
           const unit = typeof measurement.measurement_unit === 'string' ? measurement.measurement_unit : '';
+          if (forecast) {
+            const intervals = measurement.generated === false ? values.map(record).filter(v =>
+              typeof v.value === 'number' && Number.isFinite(v.value) &&
+              typeof v.period_start === 'string' && typeof v.period_end === 'string') : [];
+            const label = displayMeasurementName(names[id]?.measurement || String(measurement.parameter_type_id || id));
+            return <div key={id}><dt>{label}</dt><dd>{intervals.length ? <>
+              {intervals.length} {intervals.length === 1 ? 'interval' : 'intervals'} · {String(intervals[0].value)} {unit} in the first interval
+              <br/><small>{time(String(intervals[0].period_start))} – {time(String(intervals[intervals.length - 1].period_end))}</small>
+            </> : 'No received forecast'}</dd></div>;
+          }
           return <div key={id}><dt>{displayMeasurementName(names[id]?.measurement || String(measurement.parameter_type_id || id))}</dt>
             <dd>{typeof first === 'number' || typeof first === 'string' ? `${first} ${unit}`.trim() : 'No reading'}{measurement.generated === true ? ' · Generated' : ''}</dd>
           </div>;

@@ -95,3 +95,18 @@ it('rejects a response for a different house', async () => {
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('does not match this house'));
   expect(screen.queryByText(/living_lab/)).not.toBeInTheDocument();
 });
+
+it('shows the received forecast horizons and distinguishes zero solar from a missing forecast', async () => {
+  const sample = batch();
+  const interval = { period_start: '2026-11-22T03:30:00Z', period_end: '2026-11-22T03:45:00Z', value: 0 };
+  const solar = { parameter_type_id: 'solar_energy_prediction', measurement_unit: 'kWh',
+    generated: false, final_values: [interval] };
+  api.mockResolvedValue({ ...sample, messages: [{ ...sample.messages[0], payload: { entities: { PR01: {
+    entity_type_id: 'forecast_service', parameters: { solar, load: { ...solar,
+      parameter_type_id: 'energy_consumption_prediction', generated: true } },
+  } } } }] });
+  render(<PerceptaMessages siteId="house" siteName="RH01" onBack={() => {}}/>);
+  const forecasts = await screen.findByRole('region', { name: 'Predictor forecasts' });
+  expect(forecasts).toHaveTextContent('Solar forecast1 interval · 0 kWh');
+  expect(forecasts).toHaveTextContent('Consumption forecastNo received forecast');
+});
