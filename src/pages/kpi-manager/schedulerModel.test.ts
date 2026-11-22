@@ -30,3 +30,14 @@ describe("scheduler model", () => {
     });
   });
 });
+
+describe("BAU jobs", () => {
+  it("send bau only when it is on, and need a lookback of whole days", async () => {
+    const { isWholeDaysLookback } = await import("./schedulerModel");
+    const base = { ...EMPTY_JOB_FORM, id: "daily_bau", kpis: ["EnergyCostKPI"], cron: "0 4 * * *", lookback: "1d" };
+    expect(jobPayload({ ...base, bau: true })).toMatchObject({ bau: true, lookback_days: 1 });
+    expect(jobPayload(base)).not.toHaveProperty("bau");
+    expect(["1d", "7d", "1w", "1mo", "1y"].every(isWholeDaysLookback)).toBe(true);
+    expect(["1h", "15m", "2h"].some(isWholeDaysLookback)).toBe(false);
+  });
+});

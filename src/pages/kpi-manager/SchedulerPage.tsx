@@ -12,9 +12,9 @@ import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
 import { KpiSegmented } from "../../components/kpi/KpiSegmented";
 import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
-import { KpiField, KpiSelectField, communityLabel } from "../../components/kpi/KpiFilters";
+import { KpiField, KpiSelectField, KpiSwitch, communityLabel } from "../../components/kpi/KpiFilters";
 import {
-  CRON_PRESETS, EMPTY_JOB_FORM, buildCron, isValidLookback, jobPayload, type Frequency, type JobForm,
+  CRON_PRESETS, EMPTY_JOB_FORM, buildCron, isValidLookback, isWholeDaysLookback, jobPayload, type Frequency, type JobForm,
 } from "./schedulerModel";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -26,7 +26,8 @@ interface JobStatus {
   buildings: string[];
   cron: string;
   lookback: string;
-  source: "yaml" | "ui";
+  source: "yaml" | "ui" | "system";
+  bau?: boolean;
   next_run_time: string | null;
   last_run_time: string | null;
   last_run_status: "success" | "error" | "running" | "never" | null;
@@ -62,10 +63,11 @@ function StatusBadge({ status }: { status: JobStatus["last_run_status"] }) {
   return <Badge tone={c.tone}>{c.icon} {c.label}</Badge>;
 }
 
-function SourceBadge({ source }: { source: "yaml" | "ui" }) {
-  return source === "yaml"
-    ? <Badge tone="warning"><Lock size={10} /> YAML</Badge>
-    : <Badge tone="info">UI</Badge>;
+function SourceBadge({ source }: { source: JobStatus["source"] }) {
+  if (source === "yaml") return <Badge tone="warning"><Lock size={10} /> YAML</Badge>;
+  // The module's own jobs (e.g. the daily BAU requests): locked like YAML jobs
+  if (source === "system") return <Badge tone="neutral"><Lock size={10} /> System</Badge>;
+  return <Badge tone="info">UI</Badge>;
 }
 
 // ── Job form ──────────────────────────────────────────────────────────────────
@@ -111,6 +113,9 @@ function JobFormModal({ open, initial, onClose, onSave, isEdit }: {
     if (!form.id.trim()) { setErr("Job ID is required."); return; }
     if (form.kpis.length === 0) { setErr("Select at least one KPI."); return; }
     if (!isValidLookback(form.lookback)) { setErr("Lookback must look like 15m, 1h, 2d, 1w, 1mo or 1y."); return; }
+    if (form.bau && !isWholeDaysLookback(form.lookback)) {
+      setErr("The BAU is simulated for whole days: use a lookback such as 1d, 7d, 1w or 1mo."); return;
+    }
     setSaving(true);
     try { await onSave(form); onClose(); }
     catch (e: any) { setErr(e?.response?.data?.detail || e?.message || "Save failed"); }
@@ -212,6 +217,13 @@ function JobFormModal({ open, initial, onClose, onSave, isEdit }: {
           onChange={(kpis) => setForm(f => ({ ...f, kpis }))}
         />
 
+        <KpiSwitch
+          checked={form.bau}
+          onChange={(bau) => setForm(f => ({ ...f, bau }))}
+          label="Also request the BAU simulation of this window"
+          hint="Each run asks AI Training to simulate business as usual for the same days, to compare with the real KPIs. Needs a lookback of whole days."
+        />
+
         {err && <KpiError message={err} />}
 
         <div className="kpi-form-actions">
@@ -246,7 +258,10 @@ function JobCard({ job, triggering, triggerResult, deleting, onEdit, onDelete, o
     <article className="kpi-job">
       <header className="kpi-job-head">
         <div>
-          <h3>{job.id} <SourceBadge source={job.source} /> <StatusBadge status={job.last_run_status} /></h3>
+          <h3>
+            {job.id} <SourceBadge source={job.source} /> <StatusBadge status={job.last_run_status} />
+            {job.bau && <> <Badge tone="info">BAU</Badge></>}
+          </h3>
           <code className="kpi-text-soft">{job.cron}</code>
           {triggerResult === "ok" && <span className="kpi-text-ok" role="status"> · Triggered</span>}
           {triggerResult === "error" && <span className="kpi-text-danger" role="status"> · Trigger failed</span>}
@@ -432,6 +447,7 @@ export function SchedulerPage() {
           kpis: editJob.kpis,
           cron: editJob.cron,
           lookback: editJob.lookback ?? "1h",
+          bau: !!editJob.bau,
         } : EMPTY_JOB_FORM}
         isEdit={!!editJob}
         onClose={() => setModalOpen(false)}
