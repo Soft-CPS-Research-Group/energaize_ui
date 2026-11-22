@@ -536,3 +536,21 @@ it("shows the grid-only plan and fetches the saved configuration when the editor
   expect(await within(plan()).findByText("Solar production")).toBeVisible();
   expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });
+
+it("prepares both solar-house forecast inputs through one explicit action", async () => {
+  const fetcher = mock();
+  const fallback = fetcher.getMockImplementation()!;
+  let prepared = false;
+  fetcher.mockImplementation(async (url, init) => {
+    if (!url.endsWith("/forecast-plan")) return fallback(url, init);
+    if (init?.method === "POST") prepared = true;
+    return new Response(JSON.stringify({ site_id: "house", ev_chargers: [], return_available: true,
+      lanes: ["consumption", "production"].map(series => ({ series, equipment: ["Mapped meter"],
+        input_state: "mapped", missing_inputs: [], forecast_channel_configured: prepared })) }));
+  });
+  await open(false);
+  const plan = within(screen.getByRole("region", { name: "House forecast plan" }));
+  fireEvent.click(await plan.findByRole("button", { name: "Configure forecast return" }));
+  expect(await plan.findAllByText("Forecast input configured")).toHaveLength(2);
+  expect(fetcher.mock.calls.filter(([url, init]) => url.endsWith("/forecast-plan") && init?.method === "POST")).toHaveLength(1);
+});

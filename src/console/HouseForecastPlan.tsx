@@ -11,7 +11,7 @@ type Lane = {
   forecast_channel_configured: boolean;
 };
 
-type ForecastPlan = { site_id: string; lanes: Lane[]; ev_chargers: string[] };
+type ForecastPlan = { site_id: string; lanes: Lane[]; ev_chargers: string[]; return_available?: boolean };
 
 function inputDescription(lane: Lane) {
   switch (lane.input_state) {
@@ -26,11 +26,13 @@ function inputDescription(lane: Lane) {
   }
 }
 
-export function HouseForecastPlan({ siteId, onConfigure, revision = 0 }: {
+export function HouseForecastPlan({ siteId, onConfigure, onPrepared, revision = 0 }: {
   siteId: string;
   onConfigure?: () => void;
+  onPrepared?: () => void;
   revision?: number;
 }) {
+  const [preparation, setPreparation] = useState<{ site: string; busy?: boolean; error?: string; prepared?: boolean }>();
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ key: string; plan?: ForecastPlan; error?: string }>();
   const key = JSON.stringify([siteId, revision, attempt]);
@@ -50,6 +52,18 @@ export function HouseForecastPlan({ siteId, onConfigure, revision = 0 }: {
 
   const current = result?.key === key ? result : undefined;
   const plan = current?.plan;
+  async function prepareReturn() {
+    setPreparation({ site: siteId, busy: true });
+    try {
+      await runtimeRequest<ForecastPlan>(`/api/runtime/sites/${siteId}/forecast-plan`, { method: "POST" });
+      setPreparation({ site: siteId, prepared: true });
+      setAttempt(value => value + 1);
+      onPrepared?.();
+    } catch (error) {
+      setPreparation({ site: siteId, error: (error as Error).message });
+    }
+  }
+  const state = preparation?.site === siteId ? preparation : undefined;
   return <section className="house-forecast-plan" aria-label="House forecast plan">
     <header>
       <div><h3><Activity size={17} aria-hidden="true" />House forecast plan</h3>
@@ -67,6 +81,12 @@ export function HouseForecastPlan({ siteId, onConfigure, revision = 0 }: {
           <div><strong>EV availability</strong><small>{name}</small></div>
           <span>Separate Flexibility policy</span>
         </li>)}</ul>
+        {plan.return_available && plan.lanes.some(lane => !lane.forecast_channel_configured) &&
+          <button type="button" className="btn" disabled={state?.busy || plan.lanes.some(lane => lane.input_state !== "mapped")} onClick={prepareReturn}>
+            {state?.busy ? "Configuring forecast return…" : "Configure forecast return"}
+          </button>}
+        {state?.error && <p role="alert">{state.error}</p>}
+        {state?.prepared && <p role="status">Return configured. Apply the Percepta configuration to receive forecasts.</p>}
         <p>One shared Predictor serves the energy forecasts. Check received forecasts in Percepta messages.</p>
       </>}
   </section>;

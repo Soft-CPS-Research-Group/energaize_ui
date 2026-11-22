@@ -254,7 +254,12 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
    onSave={saveConnection}
    onCancel={()=>setSourceEditor(undefined)}
  />:ready&&<>
- {siteId&&!equipmentId&&!communityMode&&!hasEditor&&<HouseForecastPlan siteId={siteId} revision={planRevision}/>}
+ {siteId&&!equipmentId&&!communityMode&&!hasEditor&&<HouseForecastPlan siteId={siteId} revision={planRevision} onPrepared={()=>void run(async()=>{
+  changed();
+  const house=owners.find(o=>o.scope==='sites'&&o.id===siteId);
+  if(house)await reloadProfile(house);
+  setConnections(await runtime<Connection[]>('/api/runtime/connections?community_id='+rec));
+ })}/>}
  {tab==='connections'&&<>
    <div className="percepta-section-heading"><div><h3>Community sources</h3><p>Connect the services that supply shared data.</p></div><button className="btn" onClick={()=>setSourceEditor(null)}><Plus size={16}/>Add source</button></div>
    <div className="percepta-source-grid">{connections.filter(c=>isPriceSource(c.provider)).map(c=><article className="percepta-source-card" key={c.id}>
@@ -299,7 +304,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
            <div className="percepta-section-heading"><h3><Activity size={17}/>Forecasts <span className="percepta-readonly">Optional</span></h3>
              {forecasts.length>0?<button className="btn" onClick={()=>{setMeasurementKind('forecast');setEditing(null);}}><Plus size={16}/>Add forecast</button>:<button className="btn" disabled={!connectors.some(c=>c.id==='predictor'&&c.available)} onClick={()=>setSourceEditor(null)}><Plus size={16}/>Add forecast source</button>}
            </div>
-           {forecasts.length?forecasts.map(c=><div className="percepta-forecast-feed" key={c.id}><PlugZap size={17}/><span><strong>{c.name}</strong><small>{c.settings?.exchange}</small></span><button className="btn text" aria-label={'Edit '+c.name} onClick={()=>setSourceEditor(c)}><Pencil size={16}/></button></div>):<p className="percepta-helper">Connect the Predictor feed to collect solar and consumption forecasts.</p>}
+           {forecasts.length?forecasts.map(c=><div className="percepta-forecast-feed" key={c.id}><PlugZap size={17}/><span><strong>{c.name}</strong><small>{c.settings?.exchange}</small></span>{!c.managed_forecast_return&&<button className="btn text" aria-label={'Edit '+c.name} onClick={()=>setSourceEditor(c)}><Pencil size={16}/></button>}</div>):<p className="percepta-helper">Connect the Predictor feed to collect solar and consumption forecasts.</p>}
            {houseChannels.some(isForecast)&&<div className="percepta-measurement-grid">{houseChannels.filter(isForecast).map(c=>measurementCard(c))}</div>}
          </section>
          {sharedData}
