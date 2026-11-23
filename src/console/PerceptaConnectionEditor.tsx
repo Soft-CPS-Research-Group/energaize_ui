@@ -9,16 +9,15 @@ export function PerceptaConnectionEditor({communityId,connection,connectors,fore
  const [port,setPort]=useState(values.port||5672),[vhost,setVhost]=useState(values.vhost||'/');
  const [exchange,setExchange]=useState(values.exchange||''),[routingKey,setRoutingKey]=useState(values.routing_key||'');
  const [queuePrefix,setQueuePrefix]=useState(values.queue_prefix||'');
- const [shellyFormat,setShellyFormat]=useState(values.shelly_format||'native');
  const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const connector=connectors.find(c=>c.id===provider),broker=connector?.transport==='amqp';
  const eventSource = provider === 'pulsecharge' || provider === 'predictor';
  const usesCleanwattsDefaults = provider === 'cleanwatts_2' && !!connector?.defaults.host;
  const scheduled = connector?.transport === 'scheduled';
- const select=(id:string)=>{const c=connectors.find(c=>c.id===id)!;setProvider(id);setAddress(c.defaults.url||c.defaults.host||'');setPath(c.defaults.data_path||'');setPort(c.defaults.port||5672);setVhost(c.defaults.vhost||'/');setQueuePrefix(c.defaults.queue_prefix||'');setShellyFormat(c.defaults.shelly_format||'native');setExchange(c.defaults.exchange||'');setRoutingKey(c.defaults.routing_key||'');setUsername('');setPassword('');};
+ const select=(id:string)=>{const c=connectors.find(c=>c.id===id)!;setProvider(id);setAddress(c.defaults.url||c.defaults.host||'');setPath(c.defaults.data_path||'');setPort(c.defaults.port||5672);setVhost(c.defaults.vhost||'/');setQueuePrefix(c.defaults.queue_prefix||'');setExchange(c.defaults.exchange||'');setRoutingKey(c.defaults.routing_key||'');setUsername('');setPassword('');};
  return <form onSubmit={async event=>{event.preventDefault();setBusy(true);onBusyChange(true);setError('');try{
   const auth={...(username?{username}:{}),...(password?{password}:{})};
-  const configuration=scheduled?{}:broker?{host:address,port,vhost,ssl_conf:{enabled:port===5671},...(provider==='cleanwatts_2'?{queue_prefix:queuePrefix.trim()||null,shelly_format:shellyFormat}:{}),...(eventSource?{exchange:exchange.trim(),...(provider==='predictor'?{routing_key:routingKey.trim()}: {})}:{})}:{url:address,data_path:path||connector?.defaults.data_path};
+  const configuration=scheduled?{}:broker?{host:address,port,vhost,ssl_conf:{enabled:port===5671},...(provider==='cleanwatts_2'?{queue_prefix:queuePrefix.trim()||null}:{}),...(eventSource?{exchange:exchange.trim(),...(provider==='predictor'?{routing_key:routingKey.trim()}: {})}:{})}:{url:address,data_path:path||connector?.defaults.data_path};
   const saved=await runtime<Connection>('/api/runtime/connections'+(connection?'/'+connection.id:''),{method:connection?'PUT':'POST',body:JSON.stringify({name:name||connector?.name,community_id:communityId,provider,...(provider==='predictor'&&forecast?{site_id:forecast.siteId}:{}),configuration:{...configuration,...(Object.keys(auth).length?{auth}:{})}})});
   setUsername('');setPassword('');onSave(saved);
  }catch(e){setError((e as Error).message);}finally{setBusy(false);onBusyChange(false);}}}>
@@ -26,7 +25,6 @@ export function PerceptaConnectionEditor({communityId,connection,connectors,fore
   <fieldset disabled={busy} className="percepta-wizard-content"><div className="percepta-fields">
    <label>Service<select value={provider} disabled={!!connection} onChange={e=>select(e.target.value)}>{connectors.filter(c=>c.available).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
    <label>Name<input value={name} onChange={e=>setName(e.target.value)} placeholder={connector?.name}/></label>
-   {provider==='cleanwatts_2'&&<label>Meter format<select value={shellyFormat} onChange={e=>setShellyFormat(e.target.value==='gen1_3em'?'gen1_3em':'native')}><option value="native">Shelly EM / EM1</option><option value="gen1_3em">Shelly 3EM · first generation</option></select></label>}
    {!scheduled&&!usesCleanwattsDefaults&&<label>{broker?'Server address':'Service address'}<input required value={address} onChange={e=>setAddress(e.target.value)} placeholder={broker?'broker.example.com':'https://your-service.example'}/></label>}
   </div>
   {usesCleanwattsDefaults&&<p className="percepta-helper">Cleanwatts broker · {address}:{port} · {vhost}</p>}

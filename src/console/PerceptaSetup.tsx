@@ -180,7 +180,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
   const connection=connections.find(v=>v.id===id);
   return connection?connectionName(connection):'Source missing';
  };
- const equipmentSources=connections.filter(c=>c.id===source?.connection_id||(equipmentConnector(c.provider,profile?.asset_type)&&sourceForHouse(c,siteName,envKey)));
+ const equipmentSources=connections.filter(c=>c.id===source?.connection_id||(c.settings?.shelly_format!=='gen1_3em'&&equipmentConnector(c.provider,profile?.asset_type)&&sourceForHouse(c,siteName,envKey)));
  const selectedSource=connections.find(c=>c.id===source?.connection_id);
  const channelType=(c:Channel)=>{
    const type=c.collection?.parameter_type_id||c.name;
@@ -283,7 +283,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
        equipmentOptions={initialMeasurement?availableMeasurements:undefined}
        onSelectEquipmentMeasurement={chooseEquipmentMeasurement}
        owner={owner} profile={profile} source={source}
-       connections={(owner.scope==='assets'?connections.filter(c=>equipmentSources.includes(c)||c.id===editing?.collection?.source_binding?.connection_id||c.provider==='cleanwatts_2'&&!c.site_id):connections).map(c=>({...c,name:connectionName(c)}))}
+       connections={(owner.scope==='assets'?connections.filter(c=>equipmentSources.includes(c)||c.id===editing?.collection?.source_binding?.connection_id||c.provider==='cleanwatts_2'&&!c.site_id&&c.settings?.shelly_format!=='gen1_3em'):connections).map(c=>({...c,name:connectionName(c)}))}
        forecastSourceIds={forecasts.map(c=>c.id)}
        houseMeasurementKind={owner.scope==='sites'?measurementKind:undefined}
        frequency={frequency}

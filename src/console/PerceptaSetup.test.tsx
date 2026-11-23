@@ -273,15 +273,15 @@ it.each(['native','gen1_3em'])('creates a Cleanwatts source and saves %s counter
  fireEvent.click(await screen.findByRole('button',{name:'Source settings'}));
  fireEvent.click(screen.getByRole('button',{name:'Add data source'}));
  fireEvent.change(screen.getByRole('combobox',{name:'Service'}),{target:{value:'cleanwatts_2'}});
- fireEvent.change(screen.getByLabelText('Meter format'),{target:{value:format}});
+ expect(screen.queryByLabelText('Meter format')).not.toBeInTheDocument();
  expect(screen.getByText(/rabbit.example:5671/)).toBeVisible();
  fireEvent.click(screen.getByRole('button',{name:'Save source'}));
  expect(await screen.findByRole('combobox',{name:'Data source'})).toHaveValue('new-source');
  const write=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/connections')&&init?.method==='POST');
  expect(JSON.parse(String(write?.[1]?.body)).configuration).toMatchObject({
-   host:'rabbit.example',port:5671,vhost:'iEnergy',queue_prefix:'isep_consumer_',ssl_conf:{enabled:true},shelly_format:format,
+   host:'rabbit.example',port:5671,vhost:'iEnergy',queue_prefix:'isep_consumer_',ssl_conf:{enabled:true},
  });
- fireEvent.change(screen.getByLabelText('RabbitMQ exchange'),{target:{value:'Shelly-meter'}});
+ fireEvent.change(screen.getByLabelText('RabbitMQ exchange'),{target:{value:format==='native'?'Shelly-meter':'Shelly-shellyem3-AABBCCDDEEFF'}});
  fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
  await screen.findByText('Equipment default saved.');
  fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
