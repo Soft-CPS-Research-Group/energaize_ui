@@ -14,7 +14,7 @@ import {
   Cpu,
   Database,
   GripVertical,
-  BatteryCharging,
+  PlugZap,
   Gauge,
   BrainCircuit,
   KeyRound,
@@ -38,6 +38,7 @@ import {
   placements,
   services,
   sharedServices,
+  supportingKinds,
   stamp,
   stateName,
   type DeploymentMap,
@@ -51,6 +52,8 @@ import {
   feed,
   readJson,
   receivedForecasts,
+  hasDeviceSamples,
+  type Feed,
   recent,
   useObservation,
 } from "./DeploymentFlow";
@@ -59,6 +62,7 @@ import {
   FlexibilityForecasts,
   type Charger,
 } from "./DeploymentFlexibility";
+import { cycleRefreshSeconds } from "./CycleReadings";
 import { applyCollector, bindModel } from "./deploymentActions";
 export type { DeploymentMap } from "./deploymentModel";
 
@@ -109,12 +113,12 @@ function Overlay({
 }
 const noChargers: Charger[] = [];
 const icon = (kind: string) =>
-  kind === "kpi" ? (
+  kind === "sensors" ? (
     <Gauge size={19} />
   ) : kind === "flexibility" ? (
     <CalendarClock size={19} />
-  ) : kind === "evPredictor" ? (
-    <BatteryCharging size={19} />
+  ) : kind === "actuators" ? (
+    <PlugZap size={19} />
   ) : kind === "training" ? (
     <BrainCircuit size={19} />
   ) : kind === "access" ? (
@@ -203,13 +207,13 @@ function SiteDeployment({
   useEffect(() => {
     live.current = true;
     const refresh = () => {
-      if (!lock.current)
+      if (!lock.current && !document.hidden)
         void reload().catch((e) => {
           if (live.current) setError(e.message);
         });
     };
     refresh();
-    const timer = setInterval(refresh, 30000);
+    const timer = setInterval(refresh, 60000);
     return () => {
       live.current = false;
       ++epoch.current;
@@ -228,17 +232,34 @@ function SiteDeployment({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const flexView = [
-    "flow:ev-jobs",
-    "flow:flex-history",
-    "flexibility",
-    "evPredictor",
-  ].includes(selected || "");
+  const flexView =
+    selected === "flexibility" || selected === "flow:flex-history";
   const flex = useObservation(
     siteId + "/flex",
     useCallback((s) => chargerForecasts(chargers, s), [chargers]),
-    flexView ? 5000 : 60000,
+    60000,
   );
+  const platformHealth = useObservation(
+    "platform-health",
+    useCallback(async (signal) => {
+      async function available(url: string) {
+        try {
+          return (
+            (await readJson<{ status: string }>(url, signal)).status === "ok"
+          );
+        } catch {
+          return false;
+        }
+      }
+      const [access, training] = await Promise.all([
+        available("/access-api/api/health"),
+        available("/ai-training-api/health"),
+      ]);
+      return { access, training };
+    }, []),
+    120000,
+  );
+  const [period, setPeriod] = useState<number>();
   const archival = [
     "flow:archive",
     "flow:write",
@@ -246,6 +267,8 @@ function SiteDeployment({
     "mongo",
   ].includes(selected || "");
   const detailed = [
+    "flow:request",
+    "flow:observations",
     "flow:decision",
     "flow:delivery",
     "flow:publish",
@@ -253,13 +276,20 @@ function SiteDeployment({
   ].includes(selected || "");
   const archive = useObservation(
     siteId + "/archive/" + archival,
-    useCallback((s) => feed(siteId, true, !archival, s), [siteId, archival]),
-    archival ? 5000 : 20000,
+    useCallback(
+      async (s) => {
+        const data = await feed(siteId, true, !archival, s);
+        if (!s.aborted && data.period_seconds) setPeriod(data.period_seconds);
+        return data;
+      },
+      [siteId, archival],
+    ),
+    (data?: Feed) => cycleRefreshSeconds(data?.period_seconds ?? period) * 1000,
   );
   const output = useObservation(
     siteId + "/messages/" + detailed,
     useCallback((s) => feed(siteId, false, !detailed, s), [siteId, detailed]),
-    detailed ? 5000 : 20000,
+    cycleRefreshSeconds(period) * 1000,
   );
   const history = useObservation(
     siteId + "/energy",
@@ -281,7 +311,7 @@ function SiteDeployment({
       },
       [siteId],
     ),
-    30000,
+    60000,
   );
   const layout =
     map && draft ? graphLayout(map, draft, archive?.value?.owner, width) : null;
@@ -290,14 +320,8 @@ function SiteDeployment({
   const collector = map?.components.find(
     (c) => !c.planned && c.kind === "percepta",
   );
-  const confirmedArchive = recent(
-    archive?.value?.messages[0],
-    archive?.value?.period_seconds,
-  );
-  const confirmedCycle = recent(
-    output?.value?.messages[0],
-    archive?.value?.period_seconds,
-  );
+  const confirmedArchive = recent(archive?.value?.messages[0], period);
+  const confirmedCycle = recent(output?.value?.messages[0], period);
   const activeForecast =
     confirmedCycle &&
     receivedForecasts(output?.value?.messages[0]).some((s) =>
@@ -345,12 +369,11 @@ function SiteDeployment({
         );
       case "flexibility":
         return !!flex?.value?.some((c) => c.forecast);
-      case "evPredictor":
-        return !!flex?.value?.some(
-          (c) =>
-            c.forecast?.prediction?.usable &&
-            Date.parse(c.forecast.prediction.valid_until) > Date.now(),
-        );
+      case "sensors":
+        return confirmedCycle && hasDeviceSamples(output?.value?.messages[0]);
+      case "access":
+      case "training":
+        return platformHealth?.value?.[node.kind] === true;
       case "runtime":
         return !!map && !error;
       case "community":
@@ -375,12 +398,15 @@ function SiteDeployment({
           history?.value?.source_status === "linked" &&
           !!history.value.points.length
         );
+      case "observations":
+        return confirmedCycle && hasDeviceSamples(output?.value?.messages[0]);
+      case "delivery":
+        return activeForecast;
+      case "request":
       case "decision":
         return (
           confirmedCycle && !!output?.value?.messages[0]?.inference_decision
         );
-      case "ev-jobs":
-        return !!flex?.value?.some((c) => c.forecast?.prediction?.usable);
       default:
         return false;
     }
@@ -526,6 +552,8 @@ function SiteDeployment({
     };
   }
   function open(kind: string) {
+    if (kind === "sensors") kind = "flow:observations";
+    if (kind === "actuators") kind = "flow:dispatch";
     if (suppress.current || busy || !map || !draft || !assigned) return;
     if (kind === "percepta") {
       const host = map.destinations.find(
@@ -570,11 +598,21 @@ function SiteDeployment({
   function nodeButton(n: GraphNode, x: number, y: number) {
     const movable = services.includes(n.kind as Service);
     const lit = activity(n);
+    const supporting = supportingKinds.includes(n.kind);
+    const signalLabel = supporting
+      ? lit
+        ? "Service available"
+        : "Availability unconfirmed"
+      : lit
+        ? "Recent activity"
+        : "No confirmed activity";
     return (
       <button
         key={n.id}
         type="button"
         data-module={n.kind}
+        data-supporting={supporting || undefined}
+        {...(supporting ? { title: signalLabel } : {})}
         data-active={lit}
         aria-label={n.name + " · " + n.state}
         className={
@@ -596,12 +634,12 @@ function SiteDeployment({
           {icon(n.kind)}
           <i
             className={"deployment-signal" + (lit ? " active" : "")}
-            aria-label={lit ? "Recent activity" : "No confirmed activity"}
+            aria-label={signalLabel}
           />
         </span>
         <span className="deployment-service-name">
           <strong>{n.name}</strong>
-          <small>{n.state}</small>
+          {!supporting && <small>{n.state}</small>}
         </span>
         {movable && <GripVertical className="deployment-grip" size={12} />}
       </button>
@@ -609,11 +647,12 @@ function SiteDeployment({
   }
   const flow = layout?.edges.find((e) => "flow:" + e.id === selected);
   const compact = !!layout && layout.width > width + 2;
+  const graphNodes = layout ? [...layout.nodes, ...layout.terminals] : [];
   function edgeName(e: NonNullable<typeof layout>["edges"][number]) {
     return (
-      (layout?.nodes.find((n) => n.id === e.source)?.name || "") +
+      (graphNodes.find((n) => n.id === e.source)?.name || "") +
       (e.twoWay ? " ↔ " : " → ") +
-      (layout?.nodes.find((n) => n.id === e.target)?.name || "")
+      (graphNodes.find((n) => n.id === e.target)?.name || "")
     );
   }
   const selectedMove = services.find((s) => "move:" + s === selected);
@@ -633,6 +672,10 @@ function SiteDeployment({
         <div>
           <span className="eyebrow">{siteName}</span>
           <h2>Deployment</h2>
+        </div>
+        <div className="deployment-legend" aria-label="Connection status">
+          <span>Observed</span>
+          <span>Planned</span>
         </div>
       </header>
       {error && (
@@ -661,6 +704,19 @@ function SiteDeployment({
             data-compact={compact}
             style={{ width: layout.width, height: layout.height }}
           >
+            <div
+              role="group"
+              aria-label="External devices"
+              className="deployment-external"
+            >
+              <span
+                className="deployment-external-title"
+                style={{ left: layout.terminals[0]?.x }}
+              >
+                External devices
+              </span>
+              {layout.terminals.map((n) => nodeButton(n, 0, 0))}
+            </div>
             {layout.hosts.map((h) => (
               <section
                 key={h.destination.id}
@@ -793,7 +849,7 @@ function SiteDeployment({
                   d={e.path}
                   fill="none"
                   strokeWidth="1.6"
-                  strokeDasharray={e.id === "safety" ? "3 4" : undefined}
+                  strokeDasharray={e.planned ? "4 4" : undefined}
                   strokeLinejoin="round"
                   markerEnd={`url(#${marker}${activeEdge(e.id) ? "observed" : e.channel})`}
                   markerStart={
@@ -811,9 +867,11 @@ function SiteDeployment({
                   type="button"
                   key={e.id}
                   title={
-                    activeEdge(e.id)
-                      ? "Recent evidence for this house"
-                      : e.label
+                    e.planned
+                      ? "Planned · no execution recorded"
+                      : activeEdge(e.id)
+                        ? "Recent evidence for this house"
+                        : e.label
                   }
                   className={
                     "deployment-edge-label " +
@@ -821,9 +879,15 @@ function SiteDeployment({
                   }
                   style={{ left: e.x, top: e.y }}
                   onClick={() => open("flow:" + e.id)}
-                  aria-label={edgeName(e) + " · " + e.label}
+                  aria-label={
+                    edgeName(e) +
+                    " · " +
+                    (e.step ? e.step + " · " : "") +
+                    e.label
+                  }
                 >
                   {compact && <strong>{edgeName(e)}</strong>}
+                  {e.step && <b className="deployment-step">{e.step}</b>}
                   {e.label}
                 </button>
               ))}
@@ -856,9 +920,7 @@ function SiteDeployment({
         <Overlay
           title={
             flow
-              ? (layout?.nodes.find((n) => n.id === flow.source)?.name || "") +
-                (flow.twoWay ? " ↔ " : " → ") +
-                (layout?.nodes.find((n) => n.id === flow.target)?.name || "")
+              ? (flow.step ? flow.step + " · " : "") + edgeName(flow)
               : selectedMove
                 ? "Move " + names[selectedMove]
                 : selected === "messages"
@@ -874,7 +936,7 @@ function SiteDeployment({
             <PerceptaMessages
               siteId={siteId}
               siteName={siteName}
-              periodSeconds={archive?.value?.period_seconds}
+              periodSeconds={period}
               onBack={close}
             />
           ) : selectedMove ? (
@@ -919,7 +981,7 @@ function SiteDeployment({
                 siteId={siteId}
                 onPrepared={onCollectionChange}
               />
-              <button className="btn" onClick={() => select("evPredictor")}>
+              <button className="btn" onClick={() => select("flexibility")}>
                 EV flexibility forecasts
               </button>{" "}
               <button className="btn" onClick={() => select("flow:delivery")}>
@@ -1002,7 +1064,16 @@ function SiteDeployment({
                   </dd>
                 </div>
               </dl>
-              <button className="btn" onClick={() => select("flow:write")}>
+              <button
+                className="btn"
+                onClick={() =>
+                  select(
+                    archive?.value?.owner === "runtime"
+                      ? "mongo"
+                      : "flow:write",
+                  )
+                }
+              >
                 View archived cycles
               </button>
             </>
@@ -1016,19 +1087,15 @@ function SiteDeployment({
               )}
               <FlexibilityForecasts rows={flex?.value} />
             </>
-          ) : flow?.id === "permissions" ? (
+          ) : flow?.id === "dispatch" ? (
             <p>
-              AI Training asks Access Control whether the current user may
-              perform the requested operation in the community workspace.
+              The planned final step sends validated commands from Percepta to
+              the equipment through its provider. No device dispatch is
+              confirmed for this house.
             </p>
-          ) : flow?.id === "training-runtime" ? (
-            <p>
-              AI Training reads registered instances, deployed models and
-              bundles from Runtime to show which deployment serves each site.
-            </p>
-          ) : flow?.id === "training-kpi" ? (
-            <p>{sharedServices.kpi.description}</p>
-          ) : selected === "supervisor" || flow?.id === "safety" ? (
+          ) : selected === "supervisor" ||
+            flow?.id === "safety" ||
+            flow?.id === "verdict" ? (
             <p>
               The fail-safe supervisor is planned to check proposed actions
               before dispatch. It has no deployed instance or recorded verdict
@@ -1080,14 +1147,24 @@ function SiteDeployment({
               <CycleFlow
                 key={flow?.id || "write"}
                 kind={flow?.id || "write"}
-                periodSeconds={archive?.value?.period_seconds}
+                periodSeconds={period}
                 measurementNames={output?.value?.measurement_names}
                 batch={(archival ? archive : output)?.value}
                 error={(archival ? archive : output)?.error}
               />
             </>
           ) : (
-            <p>{sharedServices[selected]?.description}</p>
+            <>
+              <p>{sharedServices[selected]?.description}</p>
+              {(selected === "access" || selected === "training") && (
+                <p>
+                  Service health ·{" "}
+                  {platformHealth?.value?.[selected]
+                    ? "Available"
+                    : "Unconfirmed"}
+                </p>
+              )}
+            </>
           )}
         </Overlay>
       )}

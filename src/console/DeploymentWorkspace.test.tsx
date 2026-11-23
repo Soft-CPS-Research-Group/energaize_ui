@@ -115,6 +115,8 @@ function setup(map = data, draft = initial, fail = false) {
       ev_chargers: [],
       points: [],
     };
+    if (path === "/access-api/api/health" || path === "/ai-training-api/health")
+      return Response.json({ status: "ok" });
     if (path.endsWith("/deployment-draft") && init?.method === "PUT") {
       if (fail)
         return new Response(
@@ -263,7 +265,7 @@ it("opens cycle, forecast, decision and archive evidence without exposing an add
   await screen.findByRole("heading", { name: "Deployment" });
   for (const [label, empty] of [
     [
-      /Percepta ↔ Inference/,
+      /Inference → Percepta/,
       "No recorded inference response in the latest cycles.",
     ],
     [/RabbitMQ → Percepta/, "No received forecasts in the latest cycles."],
@@ -275,7 +277,7 @@ it("opens cycle, forecast, decision and archive evidence without exposing an add
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   }
 });
-it("routes the archive to its reported writer and preserves all service placements", () => {
+it("draws the telemetry archive only when it is the writer and preserves service placements", () => {
   for (let mask = 0; mask < 8; mask++) {
     const assigned = Object.fromEntries(
       services.map((s, i) => [s, mask & (1 << i) ? "local" : "cloud"]),
@@ -286,8 +288,12 @@ it("routes the archive to its reported writer and preserves all service placemen
         { ...initial, revision: "saved", services: assigned },
         owner,
       );
-      expect(layout.edges.find((e) => e.id === "archive")?.target).toBe(owner);
-      expect(layout.edges.find((e) => e.id === "write")?.source).toBe(owner);
+      expect(layout.edges.find((e) => e.id === "archive")?.target).toBe(
+        owner === "telemetry" ? owner : undefined,
+      );
+      expect(layout.edges.find((e) => e.id === "write")?.source).toBe(
+        owner === "telemetry" ? owner : undefined,
+      );
       expect(
         layout.nodes.find((n) => n.kind === "supervisor")?.destination,
       ).toBe(layout.nodes.find((n) => n.kind === "percepta")?.destination);
@@ -346,14 +352,46 @@ it("uses the available width and keeps the complete backend group inside the ser
       expect(node.x).toBeGreaterThan(group.x);
       expect(node.y + node.height).toBeLessThan(group.y + group.height);
     }
-    expect(layout.edges.find((e) => e.id === "ev-jobs")).toMatchObject({
-      source: "flexibility",
-      target: "evPredictor",
-      twoWay: true,
-    });
-    expect(layout.edges.find((e) => e.id === "training-kpi")).toMatchObject({
-      source: "kpi",
-      target: "training",
-    });
+    expect(
+      layout.edges
+        .filter((e) => e.step)
+        .map((e) => [e.step, e.source, e.target]),
+    ).toEqual([
+      [1, "sensors", "percepta"],
+      [2, "percepta", "controller"],
+      [3, "controller", "percepta"],
+      [4, "percepta", "supervisor"],
+      [5, "supervisor", "percepta"],
+      [6, "percepta", "actuators"],
+    ]);
+    expect(
+      layout.terminals.every((t) => t.y + t.height < layout.hosts[0].y),
+    ).toBe(true);
+    expect(layout.edges.filter((e) => e.planned).map((e) => e.step)).toEqual([
+      4, 5, 6,
+    ]);
+    expect(layout.nodes.find((n) => n.kind === "kpi")).toBeUndefined();
+    expect(
+      layout.edges.some((e) =>
+        [e.source, e.target].some((k) =>
+          ["access", "runtime", "training"].includes(k),
+        ),
+      ),
+    ).toBe(false);
   }
+});
+
+it("uses platform health for the compact services and keeps unverified dispatch explicit", async () => {
+  setup();
+  const training = await screen.findByRole("button", {
+    name: /^AI Training ·/,
+  });
+  await waitFor(() =>
+    expect(training).toHaveAttribute("title", "Service available"),
+  );
+  expect(
+    screen.getByRole("button", { name: /^Access Control ·/ }),
+  ).toHaveAttribute("data-active", "true");
+  fireEvent.click(screen.getByRole("button", { name: /Percepta → Actuators/ }));
+  expect(screen.getByText(/No device dispatch is confirmed/)).toBeVisible();
 });

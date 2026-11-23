@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, Pause, Play, Radio, RefreshCw, Search } from 'lucide-react';
-import { FieldValues, cyclePeriod } from './CycleReadings';
+import { FieldValues, cyclePeriod, cycleRefreshSeconds } from './CycleReadings';
 import { runtimeRequest } from '../api/runtimeApi';
 import { displayMeasurementName } from './PerceptaMeasurementEditor';
 
@@ -83,12 +83,15 @@ export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds }: { 
     void load();
     return () => { ++sequence.current; request.current?.abort(); };
   }, [load]);
+  const period = cyclePeriod(periodSeconds, batch?.messages[0]?.payload);
+  const intervalSeconds=cycleRefreshSeconds(period);
   useEffect(() => {
-    if (paused) return;
-    const timer = window.setInterval(() => { if (!busy) void load(); }, 5000);
-    return () => window.clearInterval(timer);
-  }, [load, paused, busy]);
-  useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 5000); return () => window.clearInterval(timer); }, []);
+    if (paused || busy) return;
+    const check=()=>{if(!document.hidden) void load();};
+    const timer = window.setTimeout(check,intervalSeconds*1000);
+    document.addEventListener('visibilitychange',check);
+    return ()=>{window.clearTimeout(timer);document.removeEventListener('visibilitychange',check);};
+  }, [load, paused, busy, intervalSeconds]);
   const names = batch?.measurement_names || {};
   const search = query.trim().toLowerCase();
   const items = (batch?.messages || []).filter(m => {
@@ -101,7 +104,6 @@ export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds }: { 
   });
   const latest = batch?.messages[0];
   const age = latest ? Math.max(0, Math.floor((clock - new Date(latest.timestamp).getTime()) / 1000)) : null;
-  const period = cyclePeriod(periodSeconds, latest?.payload);
   const status = error ? 'Update failed' : paused ? 'Paused' : !batch ? 'Connecting…' : !batch.available ? 'Source not linked' : age === null ? 'Waiting for messages' : age > (period ? period*2+5 : 90) ? 'No recent messages' : 'Receiving recent messages';
   const text = selected ? JSON.stringify(selected.payload, null, 2) : '';
   const consumption = selected?.calculations?.non_shiftable_load;
@@ -124,8 +126,8 @@ export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds }: { 
   }
   return <section className="percepta-messages" aria-label="Percepta messages">
     <button className="btn text" onClick={onBack}><ArrowLeft size={16}/>Back to deployment</button>
-    <header className="percepta-messages-heading"><div><span className="eyebrow">{siteName} · Percepta</span><h2>Messages</h2><p>Page checks every 5 seconds.{period && ` Each cycle covers ${period} seconds.`}</p></div>
-      <div className="actions"><button className="btn" onClick={() => { setPaused(!paused); request.current?.abort(); }}><>{paused ? <Play size={15}/> : <Pause size={15}/>}</>{paused ? 'Resume' : 'Pause'}</button><button className="btn" disabled={busy} onClick={() => void load()}><RefreshCw size={15}/>{busy ? 'Updating…' : 'Refresh'}</button></div>
+    <header className="percepta-messages-heading"><div><span className="eyebrow">{siteName} · Percepta</span><h2>Messages</h2><p>Page checks every {intervalSeconds} seconds.{period && ` Each cycle covers ${period} seconds.`}</p></div>
+      <div className="actions"><button className="btn" onClick={() => { setPaused(!paused); if(paused) void load(); else request.current?.abort(); }}><>{paused ? <Play size={15}/> : <Pause size={15}/>}</>{paused ? 'Resume' : 'Pause'}</button><button className="btn" disabled={busy} onClick={() => void load()}><RefreshCw size={15}/>{busy ? 'Updating…' : 'Refresh'}</button></div>
     </header>
     <div className="percepta-messages-status"><span role="status"><Radio size={15}/>{status}</span><span>{latest ? `Last message ${time(latest.timestamp)}` : 'No message received yet'}</span><small>{batch ? `Checked ${time(batch.checked_at)}` : 'Checking source…'}</small></div>
     {error && <p role="alert" className="notice">{error}{batch ? ' Previously loaded messages remain visible.' : ''}</p>}

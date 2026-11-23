@@ -52,3 +52,9 @@ export function cyclePeriod(
     1000;
   return seconds > 0 && Number.isFinite(seconds) ? seconds : undefined;
 }
+
+export function cycleRefreshSeconds(period?: number | null) {
+  return period && period > 0 && Number.isFinite(period)
+    ? Math.min(900, Math.max(15, Math.round(period)))
+    : 60;
+}

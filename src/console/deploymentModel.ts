@@ -93,8 +93,8 @@ export const names: Record<string, string> = {
   training: "AI Training",
   runtime: "Runtime",
   mongo: "MongoDB",
-  evPredictor: "EV predictor",
-  kpi: "KPI Manager",
+  sensors: "Sensors & meters",
+  actuators: "Actuators",
 };
 export const sharedServices: Record<
   string,
@@ -105,7 +105,7 @@ export const sharedServices: Record<
     description: "Access Control manages platform access and permissions.",
   },
   flexibility: {
-    role: "EV policies & forecasts",
+    role: "EV predictor & policies",
     description:
       "Flexibility manages flexibility policies and requests, including EV availability. Consumption and solar forecasts use the separate Forecasting service.",
   },
@@ -133,16 +133,6 @@ export const sharedServices: Record<
     description:
       "RabbitMQ routes published cycles to the archive consumer and house forecasts to Percepta through separate exchanges and queues.",
   },
-  evPredictor: {
-    role: "Plug-in windows",
-    description:
-      "The EV predictor claims jobs from Flexibility and returns predicted usage windows for each charger.",
-  },
-  kpi: {
-    role: "Community indicators",
-    description:
-      "AI Training requests indicators from the KPI provider for a mapped community and time range. This integration has no per-house activity signal.",
-  },
   mongo: {
     role: "Cycle storage",
     description:
@@ -156,7 +146,9 @@ export const backendKinds = [
   "access",
   "flexibility",
   "training",
+  "mongo",
 ];
+export const supportingKinds = ["access", "training", "runtime"];
 export const stateName = (state: string) =>
   ({
     online: "Online at last check",
@@ -209,6 +201,8 @@ export interface Edge {
   channel: "http" | "amqp" | "storage";
   setting?: ConnectionId;
   twoWay?: boolean;
+  step?: number;
+  planned?: boolean;
   path: string;
   x: number;
   y: number;
@@ -263,7 +257,7 @@ export function graphLayout(
   let right = inset;
   const hosts: HostBox[] = ordered.map((destination) => {
     const width = destination === cloud ? cloudWidth : localWidth;
-    const host = { destination, x: right, y: 8, width, height: 168 };
+    const host = { destination, x: right, y: 120, width, height: 168 };
     right += width + gap;
     return host;
   });
@@ -312,13 +306,7 @@ export function graphLayout(
     }
   }
   if (cloud) {
-    for (const kind of [
-      ...backendKinds,
-      "broker",
-      "mongo",
-      "evPredictor",
-      "kpi",
-    ])
+    for (const kind of [...backendKinds, "broker"])
       add(kind, cloud.id, sharedServices[kind].role);
   }
   const backendHost = hosts.find((h) => h.destination === cloud);
@@ -330,344 +318,365 @@ export function graphLayout(
     percepta: 3,
     broker: 3,
     telemetry: 3,
-    flexibility: 3,
-    evPredictor: 3,
+    mongo: 3,
+    training: 3,
     supervisor: 5,
-    mongo: 5,
+    flexibility: 5,
     runtime: 5,
-    training: 5,
-    kpi: 5,
   };
-  let nextY = 131;
+  const node = (kind: string) => nodes.find((n) => n.kind === kind);
+  const hostOf = (n: GraphNode) =>
+    hosts.find((h) => h.destination.id === n.destination)!;
+  const centerX = (n: GraphNode) => n.x + n.width / 2;
+  const centerY = (n: GraphNode) => n.y + n.height / 2;
+  let nextY = 272;
   function row(kinds: string[], gap: number) {
     const members = nodes.filter((n) => kinds.includes(n.kind));
     if (!members.length) return;
-    const counts = new Map<string, number>();
-    for (const node of members) {
-      const host = hosts.find((h) => h.destination.id === node.destination)!;
-      const column =
-        host === backendHost
-          ? (host.width * columns[node.kind]) / 6
-          : host.width / 2;
-      const key = host.destination.id + "/" + column;
-      const index = counts.get(key) ?? 0;
-      counts.set(key, index + 1);
-      node.width = Math.min(
-        230,
-        Math.floor(host.width / (host === backendHost ? 3 : 1)) - 32,
-      );
-      node.height = 60;
-      node.x = host.x + column - node.width / 2;
-      node.y = nextY + index * 66;
-      host.height = Math.max(host.height, node.y + node.height + 36 - host.y);
+    for (const n of members) {
+      const h = hostOf(n),
+        local = h !== backendHost,
+        chip = supportingKinds.includes(n.kind);
+      const column = local ? h.width / 2 : (h.width * columns[n.kind]) / 6;
+      n.width = chip
+        ? Math.min(124, h.width / 3 - 30)
+        : Math.min(224, local ? h.width - 70 : Math.floor(h.width / 3) - 30);
+      n.height = chip ? 30 : 58;
+      n.x = h.x + column - n.width / 2;
+      n.y = nextY;
+      h.height = Math.max(h.height, n.y + n.height - h.y + 25);
     }
-    nextY = Math.max(...members.map((n) => n.y + n.height)) + gap;
+    nextY += Math.max(...members.map((n) => n.height)) + gap;
   }
-  const collectorOnHouseMachine = nodes.some(
-    (n) => n.kind === "percepta" && n.destination !== cloud?.id,
-  );
-  if (collectorOnHouseMachine) {
-    row(["supervisor"], 36);
-    row(["controller"], 46);
-    row(["percepta"], 105);
-  } else {
-    row(["supervisor", "percepta", "controller"], 105);
-  }
-  row(["forecasting", "broker", "mongo"], 142);
-  row(["community", "telemetry", "runtime"], 66);
-  row(["access", "flexibility", "training"], 82);
-  row(["evPredictor", "kpi"], 20);
-  const api = nodes.find((n) => n.kind === "community");
-  const training = nodes.find((n) => n.kind === "training");
+  const collector = node("percepta");
+  const localCollector = collector && hostOf(collector) !== backendHost;
+  if (localCollector) {
+    row(["controller"], 80);
+    row(["percepta"], 90);
+    row(["supervisor"], 60);
+  } else row(["controller", "percepta", "supervisor"], 128);
+  row(["forecasting", "broker"], 112);
+  row(["community", "telemetry", "flexibility"], 86);
+  row(["mongo"], 32);
+  row(supportingKinds, 12);
+  const community = node("community"),
+    runtime = node("runtime");
   const group =
-    api && training && backendHost
+    community && runtime && backendHost
       ? {
           x: backendHost.x + 7,
-          y: api.y - 35,
+          y: community.y - 32,
           width: backendHost.width - 14,
-          height: training.y + training.height + 15 - (api.y - 35),
+          height: runtime.y + runtime.height + 12 - (community.y - 32),
           destination: backendHost.destination.id,
         }
       : undefined;
-
-  const edges: Edge[] = [];
-  // Multiple observed instances of one kind do not identify a unique route.
-  const single = (kind: string) => {
-    const matches = nodes.filter((n) => n.kind === kind);
-    return matches.length === 1 ? matches[0] : undefined;
-  };
-  const cx = (n: GraphNode) => n.x + n.width / 2;
-  const cy = (n: GraphNode) => n.y + n.height / 2;
-  function betweenRows(
-    id: string,
-    sourceKind: string,
-    targetKind: string,
-    label: string,
-    channel: Edge["channel"],
-    lane: number,
-    startOffset = 0,
-    endOffset = 0,
-    setting?: ConnectionId,
-    twoWay = false,
-  ) {
-    const source = single(sourceKind),
-      target = single(targetKind);
-    if (!source || !target) return;
-    const down = source.y < target.y;
-    const sx = cx(source) + startOffset,
-      tx = cx(target) + endOffset;
-    const sy = down ? source.y + source.height : source.y,
-      ty = down ? target.y : target.y + target.height;
-    const y = Math.min(sy, ty) + Math.abs(sy - ty) * lane;
-    edges.push({
-      id,
-      source: source.id,
-      target: target.id,
-      channel,
-      label,
-      setting,
-      twoWay,
-      path: "M " + sx + " " + sy + " V " + y + " H " + tx + " V " + ty,
-      x: (sx + tx) / 2,
-      y,
-    });
+  const width = Math.max(0, right - gap + inset);
+  const terminals: GraphNode[] = [];
+  if (collector) {
+    const host = hostOf(collector);
+    const terminalWidth = Math.min(176, (host.width - 32) / 2);
+    for (const [kind, fraction, state] of [
+      ["sensors", 0.25, "Provider readings"],
+      ["actuators", 0.75, "Command destination"],
+    ] as const) {
+      terminals.push({
+        id: kind,
+        kind,
+        name: names[kind],
+        state,
+        destination: "external",
+        x: host.x + host.width * fraction - terminalWidth / 2,
+        y: 27,
+        width: terminalWidth,
+        height: 50,
+      });
+    }
   }
-  function acrossRow(
+  const edges: Edge[] = [];
+  type Point = [number, number];
+  function connect(
     id: string,
     source: GraphNode,
     target: GraphNode,
     label: string,
     channel: Edge["channel"],
-    setting?: ConnectionId,
-    twoWay = false,
+    points: Point[],
+    at: Point,
+    step?: number,
+    planned = false,
   ) {
-    const upperTrack =
-      source.destination === target.destination &&
-      Math.abs(target.x - source.x) < source.width + 195;
-    const rightward = target.x > source.x;
-    const sx = rightward ? source.x + source.width : source.x;
-    const tx = rightward ? target.x : target.x + target.width;
     edges.push({
       id,
       source: source.id,
       target: target.id,
       label,
       channel,
-      setting,
-      twoWay,
-      path: upperTrack
-        ? `M ${cx(source) + (rightward ? 20 : -20)} ${source.y} V ${source.y - 21} H ${cx(target) + (rightward ? -20 : 20)} V ${target.y}`
-        : `M ${sx} ${cy(source)} H ${tx}`,
-      x: (sx + tx) / 2,
-      y: upperTrack ? source.y - 21 : cy(source) - 12,
+      path: points
+        .map(([x, y], i) => (i === 0 ? "M " : "L ") + x + " " + y)
+        .join(" "),
+      x: at[0],
+      y: at[1],
+      step,
+      planned,
     });
   }
-  {
-    const percepta = single("percepta"),
-      controller = single("controller");
-    if (percepta && controller && percepta.y === controller.y) {
-      acrossRow(
-        "decision",
-        percepta,
-        controller,
-        "HTTP · cycle / decision",
-        "http",
-        "inference",
-        true,
-      );
-    } else
-      betweenRows(
-        "decision",
-        "percepta",
-        "controller",
-        "HTTP · cycle / decision",
-        "http",
-        0.5,
-        0,
-        0,
-        "inference",
-        true,
-      );
+  function vertical(
+    id: string,
+    from: string,
+    to: string,
+    label: string,
+    channel: Edge["channel"],
+    lane: number,
+    start = 0,
+    end = 0,
+    step?: number,
+    planned = false,
+  ) {
+    const a = node(from),
+      b = node(to);
+    if (!a || !b) return;
+    const down = a.y < b.y,
+      sx = centerX(a) + start,
+      tx = centerX(b) + end,
+      sy = down ? a.y + a.height : a.y,
+      ty = down ? b.y : b.y + b.height;
+    const y = Math.min(sy, ty) + Math.abs(ty - sy) * lane;
+    connect(
+      id,
+      a,
+      b,
+      label,
+      channel,
+      [
+        [sx, sy],
+        [sx, y],
+        [tx, y],
+        [tx, ty],
+      ],
+      [(sx + tx) / 2, y],
+      step,
+      planned,
+    );
   }
-  betweenRows(
-    "cycles",
-    "percepta",
-    "broker",
-    "AMQP · cycles",
-    "amqp",
-    0.28,
-    32,
-    32,
-    "broker",
-  );
-  {
-    betweenRows(
+  function parallelPorts(
+    id: string,
+    from: string,
+    to: string,
+    label: string,
+    above: boolean,
+    step?: number,
+    planned = false,
+  ) {
+    const a = node(from),
+      b = node(to);
+    if (!a || !b) return;
+    if (a.y !== b.y) {
+      const offset = above ? -40 : 40;
+      vertical(
+        id,
+        from,
+        to,
+        label,
+        "http",
+        above ? 0.3 : 0.71,
+        offset,
+        offset,
+        step,
+        planned,
+      );
+      return;
+    }
+    const sign = a.x < b.x ? 1 : -1,
+      sx = centerX(a) + sign * a.width * 0.31,
+      tx = centerX(b) - sign * b.width * 0.31;
+    const anchor = a.y + (above ? 0 : a.height),
+      y = anchor + (above ? -28 : 31);
+    connect(
+      id,
+      a,
+      b,
+      label,
+      "http",
+      [
+        [sx, anchor],
+        [sx, y],
+        [tx, y],
+        [tx, anchor],
+      ],
+      [(sx + tx) / 2, y],
+      step,
+      planned,
+    );
+  }
+  const [sensors, actuators] = terminals;
+  if (collector && sensors && actuators) {
+    const host = hostOf(collector);
+    for (const input of [true, false]) {
+      const terminal = input ? sensors : actuators;
+      const sx = centerX(terminal),
+        sy = terminal.y + terminal.height,
+        railY = 96;
+      const tx = localCollector
+        ? input
+          ? host.x + 12
+          : host.x + host.width - 12
+        : centerX(collector) + (input ? -17 : 17);
+      const targetY = localCollector ? centerY(collector) : collector.y;
+      const points: Point[] = [
+        [sx, sy],
+        [sx, railY],
+        [tx, railY],
+        [tx, targetY],
+      ];
+      if (localCollector)
+        points.push([
+          input ? collector.x : collector.x + collector.width,
+          targetY,
+        ]);
+      connect(
+        input ? "observations" : "dispatch",
+        input ? terminal : collector,
+        input ? collector : terminal,
+        input ? "Readings" : "Command",
+        "http",
+        input ? points : points.reverse(),
+        [(sx + tx) / 2, railY],
+        input ? 1 : 6,
+        !input,
+      );
+    }
+  }
+  parallelPorts("request", "percepta", "controller", "Cycle", true, 2);
+  parallelPorts("decision", "controller", "percepta", "Proposal", false, 3);
+  parallelPorts("safety", "percepta", "supervisor", "Review", true, 4, true);
+  parallelPorts("verdict", "supervisor", "percepta", "Verdict", false, 5, true);
+  const broker = node("broker"),
+    forecast = node("forecasting");
+  if (localCollector && collector && broker) {
+    for (const outgoing of [true, false]) {
+      const tx = centerX(broker) + (outgoing ? 28 : -28),
+        sy = centerY(collector) + (outgoing ? 12 : -12);
+      const lane =
+          hostOf(collector).x + hostOf(collector).width + (outgoing ? 12 : 4),
+        y = broker.y - (outgoing ? 37 : 74);
+      const points: Point[] = [
+        [collector.x + collector.width, sy],
+        [lane, sy],
+        [lane, y],
+        [tx, y],
+        [tx, broker.y],
+      ];
+      connect(
+        outgoing ? "cycles" : "delivery",
+        outgoing ? collector : broker,
+        outgoing ? broker : collector,
+        outgoing ? "AMQP · cycles" : "AMQP · forecasts",
+        "amqp",
+        outgoing ? points : points.reverse(),
+        [(lane + tx) / 2, y],
+      );
+    }
+  } else {
+    vertical(
+      "cycles",
+      "percepta",
+      "broker",
+      "AMQP · cycles",
+      "amqp",
+      0.4,
+      27,
+      27,
+    );
+    vertical(
       "delivery",
       "broker",
       "percepta",
       "AMQP · forecasts",
       "amqp",
-      0.52,
-      -32,
-      -32,
-      "forecasting",
+      0.68,
+      -27,
+      -27,
     );
   }
-  const predictor = single("forecasting"),
-    broker = single("broker");
-  if (predictor && broker) {
-    acrossRow("publish", predictor, broker, "AMQP · forecasts", "amqp");
+  if (forecast && broker) {
+    const sx = centerX(forecast) + forecast.width * 0.24,
+      tx = centerX(broker) - broker.width * 0.32,
+      track = forecast.y + forecast.height + 23;
+    connect(
+      "publish",
+      forecast,
+      broker,
+      "Publish forecasts",
+      "amqp",
+      [
+        [sx, forecast.y + forecast.height],
+        [sx, track],
+        [tx, track],
+        [tx, broker.y + broker.height],
+      ],
+      [(sx + tx) / 2, track],
+    );
   }
-  betweenRows(
-    "sites",
-    "community",
-    "forecasting",
-    "HTTP · sites",
-    "http",
-    0.47,
-    0,
-    -26,
-  );
-  betweenRows(
+  vertical("sites", "community", "forecasting", "Sites", "http", 0.53, 0, -27);
+  vertical(
     "history",
     "telemetry",
     "forecasting",
-    "HTTP · energy history",
+    "Energy history",
     "http",
-    0.64,
-    -34,
-    26,
+    0.65,
+    -36,
+    15,
   );
-  const writer = archiveOwner === "runtime" ? "runtime" : "telemetry";
-  betweenRows(
-    "archive",
-    "broker",
-    writer,
-    "AMQP · archive queue",
-    "amqp",
-    0.45,
-    16,
-    16,
-  );
-  betweenRows(
-    "write",
-    writer,
-    "mongo",
-    "Write cycles",
-    "storage",
-    0.22,
-    34,
-    34,
-  );
-  betweenRows(
+  if (archiveOwner !== "runtime") {
+    vertical(
+      "archive",
+      "broker",
+      "telemetry",
+      "Archive queue",
+      "amqp",
+      0.41,
+      20,
+      0,
+    );
+    vertical(
+      "write",
+      "telemetry",
+      "mongo",
+      "Write cycles",
+      "storage",
+      0.37,
+      -32,
+      -32,
+    );
+  }
+  vertical(
     "read",
     "mongo",
     "telemetry",
     "Read history",
     "storage",
     0.73,
-    -34,
-    -34,
+    32,
+    32,
   );
-  const supervisor = single("supervisor"),
-    collector = single("percepta");
-  if (supervisor && collector) {
-    if (collectorOnHouseMachine) {
-      const x = collector.x - 18;
-      edges.push({
-        id: "safety",
-        source: collector.id,
-        target: supervisor.id,
-        label: "Safety check",
-        channel: "http",
-        twoWay: true,
-        path: `M ${collector.x} ${cy(collector)} H ${x} V ${cy(supervisor)} H ${supervisor.x}`,
-        x: x + 18,
-        y: supervisor.y + supervisor.height + 19,
-      });
-    } else if (collector.y === supervisor.y) {
-      acrossRow(
-        "safety",
-        collector,
-        supervisor,
-        "Safety check",
-        "http",
-        undefined,
-        true,
-      );
-    } else
-      betweenRows(
-        "safety",
-        "percepta",
-        "supervisor",
-        "Safety check",
-        "http",
-        0.5,
-        0,
-        0,
-        undefined,
-        true,
-      );
-  }
-  betweenRows(
+  parallelPorts(
     "flex-history",
     "telemetry",
     "flexibility",
     "Charger history",
-    "http",
-    0.5,
+    false,
   );
-  betweenRows(
-    "ev-jobs",
-    "flexibility",
-    "evPredictor",
-    "Jobs / forecasts",
-    "http",
-    0.52,
-    0,
-    0,
-    undefined,
-    true,
-  );
-  betweenRows(
-    "training-runtime",
-    "runtime",
-    "training",
-    "Deployments",
-    "http",
-    0.5,
-  );
-  betweenRows(
-    "training-kpi",
-    "kpi",
-    "training",
-    "Community KPIs",
-    "http",
-    0.48,
-  );
-  const access = single("access"),
-    trainingNode = single("training");
-  if (access && trainingNode) {
-    const sx = cx(access),
-      tx = cx(trainingNode) - 42,
-      track = access.y + access.height + 31;
-    edges.push({
-      id: "permissions",
-      source: access.id,
-      target: trainingNode.id,
-      label: "Permissions",
-      channel: "http",
-      path: `M ${sx} ${access.y + access.height} V ${track} H ${tx} V ${trainingNode.y + trainingNode.height}`,
-      x: sx + (tx - sx) * 0.24,
-      y: track,
-    });
-  }
+  // Keep the numbered control path in reading order for keyboard and compact layouts.
+  edges.sort((a, b) => (a.step ?? 99) - (b.step ?? 99));
   return {
     hosts,
     nodes,
+    terminals,
     edges,
     group,
-    width: Math.max(0, right - gap + inset),
+    width,
     height: Math.max(190, ...hosts.map((h) => h.y + h.height + 8)),
   };
 }

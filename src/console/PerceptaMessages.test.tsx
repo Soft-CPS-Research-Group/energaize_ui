@@ -64,6 +64,15 @@ it('pauses polling and resumes while preserving an inspected message', async () 
   expect(screen.getByRole('button', { name: /Follow latest/ })).toHaveAttribute('aria-pressed', 'false');
 });
 
+it('waits for the configured house period between two automatic reads',async()=>{
+  vi.useFakeTimers();api.mockResolvedValue(batch());
+  render(<PerceptaMessages siteId="house" siteName="RH01" periodSeconds={60} onBack={()=>{}}/>);
+  await act(async()=>{});
+  await act(async()=>{vi.advanceTimersByTime(59000);});
+  expect(api).toHaveBeenCalledTimes(1);
+  await act(async()=>{vi.advanceTimersByTime(1000);});
+  expect(api).toHaveBeenCalledTimes(2);
+});
 it('distinguishes missing sources, failures and stale output', async () => {
   api.mockResolvedValue({ ...batch(), available: false, source: null, messages: [], notice: 'No Percepta message source is linked to this house.' });
   render(<PerceptaMessages siteId="house" siteName="RH01" onBack={() => {}}/>);
@@ -114,5 +123,5 @@ it('shows the received forecast horizons and distinguishes zero solar from a mis
 it('separates the page check from the published house cycle',async()=>{
   api.mockResolvedValue(batch());
   render(<PerceptaMessages siteId="house" siteName="RH25" periodSeconds={900} onBack={()=>{}}/>);
-  expect(await screen.findByText(/Page checks every 5 seconds.*900 seconds/)).toBeVisible();
+  expect(await screen.findByText(/Page checks every 900 seconds.*900 seconds/)).toBeVisible();
 });
