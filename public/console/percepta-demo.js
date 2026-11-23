@@ -98,7 +98,7 @@ tLoad=function(panel){
  const activityEndpoint=perceptaChargerActivity(asset);
  const site=key.startsWith('site:')?scoped().find(s=>s.id===key.slice(5)):chosen();
  if(!activityEndpoint&&!perceptaSource(site)&&!channels.some(c=>c.mongo_binding?.field?.startsWith('payload.entities.'))){perceptaLoad(panel);return;}
- window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{request:tRequest,title:asset?.name||site?.name||'Measurements',showChannelConfiguration:false,activityEndpoint,
+ window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{request:tRequest,title:asset?.name||site?.name||'Measurements',showChannelConfiguration:false,activityEndpoint,compactHeader:true,initialDurationMs:21600000,startLive:channels.some(c=>c.mongo_binding?.field?.startsWith('payload.entities.')),
   channels:perceptaChartChannels(channels,asset?.assetType),onConfigureChannel:cid=>tConfigure(cid),onLinkChannel:cid=>tBind(panel,cid),onUnlinkChannel:cid=>tUnbind(panel,cid)},key);
 };
 

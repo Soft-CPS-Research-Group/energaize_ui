@@ -8,6 +8,7 @@ import type { MeasurementChannel } from './measurementChannels';
 import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, type MeasurementRequest, type MeasurementSeries, type TimeWindow } from './measurementData';
 
 export interface MeasurementChartProps {
+  compactHeader?: boolean; initialDurationMs?: number; startLive?: boolean; inlineHorizon?: boolean;
   showLatest?: boolean; forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
   incremental?: boolean; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
   request: MeasurementRequest; endpoint?: string; latestEndpoint?: string; initialEnd?: number;
@@ -18,9 +19,9 @@ const presets = [{ label: '1h', ms: 3600000 }, { label: '6h', ms: 21600000 }, { 
 const date = (t: number, time = true) => new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', ...(time ? { hour: '2-digit', minute: '2-digit' } : {}) });
 const localInput = (t: number) => { const d = new Date(t); return new Date(t - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 export function MeasurementChart(props: MeasurementChartProps) {
-  const [forecast, setForecast] = useState<MeasurementSeries>({points:[]});
+  const [externalForecast, setForecast] = useState<MeasurementSeries>({points:[]});
   const [forecastRead,setForecastRead]=useState<{key:string;failed:boolean}>();
-  const [duration, setDuration] = useState(3600000), [live, setLive] = useState(false);
+  const [duration, setDuration] = useState(props.initialDurationMs || 3600000), [live, setLive] = useState(false);
   const [range, setRange] = useState<TimeWindow | null>(null), [result, setResult] = useState<MeasurementSeries>({ points: [] });
   const [loading, setLoading] = useState(false), [error, setError] = useState(''), [progress, setProgress] = useState(0), [refresh, setRefresh] = useState(0);
   const [picker, setPicker] = useState(false), [draft, setDraft] = useState<DateRange>(), [from, setFrom] = useState(''), [to, setTo] = useState('');
@@ -40,34 +41,34 @@ export function MeasurementChart(props: MeasurementChartProps) {
     cache.current = undefined; setResult({ points: [] }); setRange(null); setError(''); setRetainedHistory(null); setLiveStarted(null);
     async function initialise() {
       try {
-        const last = props.latestEndpoint ? await requestRef.current(props.latestEndpoint, controller.signal) : null;
-        const fresh = !props.initialEnd && !!last?.point && Date.now() - Date.parse(last.point.timestamp) <= (props.expectedSeconds || 15) * 3000;
+        const last = !props.startLive && props.latestEndpoint ? await requestRef.current(props.latestEndpoint, controller.signal) : null;
+        const fresh = !!props.startLive || !props.initialEnd && !!last?.point && Date.now() - Date.parse(last.point.timestamp) <= (props.expectedSeconds || 15) * 3000;
         const end = props.initialEnd || (fresh ? Date.now() : last?.point ? Date.parse(last.point.timestamp) + 1 : Date.now());
         if (mounted) { setLiveStarted(fresh ? Date.now() : null); setLive(fresh); setRange({ start: end - durationRef.current, end }); }
       } catch (e) { if (mounted) setError((e as Error).message); }
     }
     if (props.endpoint) void initialise();
     return () => { mounted = false; controller.abort(); };
-  }, [props.endpoint, props.latestEndpoint, props.initialEnd]);
+  }, [props.endpoint, props.latestEndpoint, props.initialEnd, props.startLive]);
   useEffect(() => {
     if (!live) return;
     const tick = () => { if (!document.hidden) { const end = Date.now(); setRange({ start: end - duration, end }); } };
-    tick(); const timer = setInterval(tick, 15000); document.addEventListener('visibilitychange', tick);
+    const timer = setInterval(tick, 15000); document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
   }, [live, duration]);
   useEffect(() => {
     if (!range || !props.endpoint) return;
-    if (props.series && !props.series.length) { setResult({ points: [] }); cache.current = undefined; setLoading(false); setError(''); return; }
+    if (!props.inlineHorizon && props.series && !props.series.length) { setResult({ points: [] }); cache.current = undefined; setLoading(false); setError(''); return; }
     const controller = new AbortController(); let mounted = true;
     setLoading(true); setProgress(0); setError('');
     const previous = cache.current;
     const incremental = props.incremental !== false && live && previous && previous.queryKey === props.queryKey && previous.range.start <= range.start && previous.range.end >= range.start && previous.range.end < range.end;
-    const queryRange = incremental ? { start: Math.max(range.start, previous.range.end - 30000), end: range.end } : range;
+    const queryRange = incremental ? { start: Math.max(range.start, previous.range.end - Math.max(30000,(props.expectedSeconds || 15)*2000)), end: range.end } : range;
     void loadWindow(requestRef.current, props.endpoint, queryRange, controller.signal, count => { if (mounted) setProgress(count); }).then(data => {
       if (!mounted) return;
       if (incremental) {
         const merged = mergeWindow(previous.data.points, data.points, range);
-        data = { ...data, points: compactPoints(merged, range), sample_count: undefined,
+        data = { ...data, points: compactPoints(merged, range, props.inlineHorizon ? 6000 : 1200), sample_count: undefined,
           resolution: previous.data.resolution, bucket_seconds: Math.max(previous.data.bucket_seconds || 0, merged.length > 1200 ? (range.end - range.start) / 240000 : 0),
           generated_count: undefined, partial_count: undefined };
       }
@@ -90,6 +91,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
     }).catch(()=>{if(!controller.signal.aborted){setForecast({points:[]});setForecastRead({key,failed:true});}});
     return()=>controller.abort();
   },[live,props.forecastEndpoint,range?.end,props.forecastRequest,props.queryKey]);
+  const forecast=useMemo(()=>props.inlineHorizon ? {points:(displayResult.horizon ?? []).filter(p=>props.series?.some(s=>s.id===p.channelId))}:externalForecast,[props.inlineHorizon,displayResult.horizon,props.series,externalForecast]);
   const forecastEnd=live&&forecast.points.length&&displayRange ? Math.min(displayRange.end+Math.min(duration,86400000),Math.max(...forecast.points.map(p=>Date.parse(p.timestamp)))) : null;
   const axisRange=displayRange ? {...displayRange,end:forecastEnd||displayRange.end} : null;
   const plotSeries = useMemo(() => {
@@ -113,7 +115,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
     cancelLatest();
     if (live) { if (showingRetained) { setRange(retainedHistory!.range); setResult(retainedHistory!.data); cache.current = retainedHistory!; } setLive(false); return; }
     setRetainedHistory(cache.current?.data.points.length ? cache.current : null);
-    setLiveStarted(Date.now()); setLive(true);
+    const end=Date.now(); setRange({start:end-duration,end}); setLiveStarted(end); setLive(true);
   };
   const choose = (ms: number) => { cancelLatest(); setDuration(ms); if (showingRetained) setLive(false); const end = live && !showingRetained ? Date.now() : displayRange?.end || Date.now(); setRange({ start: end - ms, end }); };
   const shift = (direction: number) => { cancelLatest(); if (displayRange) { setLive(false); const delta = displayRange.end - displayRange.start; setRange({ start: displayRange.start + delta * direction, end: displayRange.end + delta * direction }); } };
@@ -161,12 +163,12 @@ export function MeasurementChart(props: MeasurementChartProps) {
     })}</div>}
     {forecastRead?.failed && !forecastPending && <p role="status">Published horizon unavailable.</p>}
     {props.showLatest && props.note && <p className="telemetry-calendar-hint">{props.note}</p>}
-    {!historyPending && !numeric.length && hasFuture && <p role="status">Only the published horizon is available in this window.</p>}
+    {!props.compactHeader && !historyPending && !numeric.length && hasFuture && <p role="status">Only the published horizon is available in this window.</p>}
     {live && showingRetained && <div className="telemetry-live-context" role="status">{showingRetained ? `No recent readings. Showing stored history from ${date(displayRange!.start)} to ${date(displayRange!.end)}. Live is checking the current time every 15 s.` : `Historical readings + live updates · live started ${date(liveStarted || Date.now())}.`}</div>}
     {displayResult.errors?.length ? <p className="telemetry-series-errors" role="status">{displayResult.errors.join(' · ')}</p> : null}
-    {((displayResult.partial_count ?? 0) > 0 || displayResult.points.some(incomplete)) &&
+    {!props.compactHeader && ((displayResult.partial_count ?? 0) > 0 || displayResult.points.some(incomplete)) &&
       <p className="telemetry-live-context" role="status">Some readings in this window are incomplete or unverified.</p>}
-    {props.series && !props.series.length ? <div className="telemetry-empty"><h3>{props.showLatest ? 'Select a measurement' : 'Select a measurement below'}</h3><p>Choose a series to display.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length && !hasFuture ? <div className="telemetry-empty"><Radio size={26} /><h3>{awaiting ? 'Loading measurements' : (displayResult.errors?.length ? 'No readings from available sources' : 'No readings in this window')}</h3><p>{awaiting ? 'Reading the selected measurements through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
+    {props.series && !props.series.length ? <div className="telemetry-empty"><h3>Select a measurement</h3><p>Choose a series to display.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length && !hasFuture ? <div className="telemetry-empty"><Radio size={26} /><h3>{awaiting ? 'Loading measurements' : (displayResult.errors?.length ? 'No readings from available sources' : 'No readings in this window')}</h3><p>{awaiting ? 'Reading the selected measurements through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
       {unitGroups.map((group) => <div className="telemetry-unit-plot" key={group[0].id}>
 
       <TimeseriesPlot data={group.flatMap(c => c.rows).sort((a, b) => a.epochMs - b.epochMs)} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>

@@ -1,109 +1,77 @@
 import {useCallback, useMemo, useState} from 'react';
 import {MeasurementChart} from './MeasurementChart';
-import {channelRequest, type MeasurementChannel} from './measurementChannels';
-import {compactPoints, type MeasurementPoint, type MeasurementSeries} from './measurementData';
+import type {MeasurementChannel} from './measurementChannels';
+import {compactPoints, type MeasurementPoint} from './measurementData';
 import {type Feed, readJson} from './DeploymentFlow';
 
 export interface HouseArchive {site:string; database:string; collection:string; meter?:string; exportMeter?:string; period?:number}
-type Metric = 'import'|'export'|'load'|'solar'|'power'|'prices';
-type Series = MeasurementChannel & {id:Metric; color:string};
-type PeriodPoint = MeasurementPoint & {period_start?:string; period_end?:string};
-type Parameter = {parameter_type_id:string; generated?:boolean; measurement_unit?:string; final_values?:{period_start:string;period_end:string;value:number|null}[]};
-const prefix='/telemetry-api/api/measurements';
-const epoch=(value:unknown)=>Date.parse(String(value).replace(/^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) ([+-]\d\d)(\d\d)$/, '$1T$2$3:$4'));
+type Lane = 'grid_in' | 'grid_out' | 'load' | 'solar' | 'price';
+type Series = MeasurementChannel & {id:Lane; color:string};
+type Sample = Record<Lane,number|null> & {at:string;partial:Lane[]};
+interface Interval {lane:'load'|'solar'|'price';start:string;end:string;value:number}
+interface WindowPage {samples:Sample[];horizon:Interval[];next_cursor?:string|null}
 
-export function meanPower(point:PeriodPoint){
-  const hours=(epoch(point.period_end)-epoch(point.period_start))/3600000;
-  return {...point,value:typeof point.value==='number' && hours>0 ? point.value/hours : null};
-}
-
-export function forecastPoints(parameters:Parameter[], metric:Metric, period:number, now:number):MeasurementPoint[]{
-  const type=metric==='prices'?'energy_price':metric==='solar'?'solar_energy_prediction':'energy_consumption_prediction';
-  const matches=parameters.filter(p=>p.parameter_type_id===type && p.generated===false);
-  if(matches.length!==1 || !(metric==='prices'?['€/kWh','EUR/kWh']:['kWh']).includes(matches[0].measurement_unit||''))return [];
+const series:Series[] = [
+  {id:'grid_in',title:'Grid import',color:'#166d87',unit:'kW'},
+  {id:'grid_out',title:'Grid export',color:'#a34578',unit:'kW'},
+  {id:'load',title:'Non-shiftable load',color:'#5361a8',unit:'kW',curve:'monotone',forecastEndpoint:'/forecast'},
+  {id:'solar',title:'Solar production',color:'#ac741e',unit:'kW',curve:'monotone',forecastEndpoint:'/forecast'},
+  {id:'price',title:'Electricity price',color:'#437c70',unit:'€/kWh',curve:'stepAfter',forecastEndpoint:'/forecast'}
+];
+export function forecastPoints(intervals:Interval[],now:number):MeasurementPoint[] {
   const points:MeasurementPoint[]=[];
-  let previousEnd:number|undefined;
-  for(const row of [...(matches[0].final_values||[])].sort((a,b)=>epoch(a.period_start)-epoch(b.period_start))){
-    const start=epoch(row.period_start), end=epoch(row.period_end);
-    if(!(end>start) || end<=now || typeof row.value!=='number')continue;
-    if(previousEnd!==undefined && start>previousEnd)points.push({id:metric+'-gap-'+start,timestamp:new Date(previousEnd).toISOString(),channelId:metric,value:null});
-    const value=metric==='prices'?row.value:row.value*(metric==='power'?3600000:period*1000)/(end-start);
-    const add=(time:number)=>points.push({id:metric+'-'+time,channelId:metric,timestamp:new Date(time).toISOString(),value});
-    if(metric==='prices'){add(Math.max(start,now));add(end-1);}
-    else add(Math.max(now, (start+end)/2));
-    previousEnd=end;
+  for(const lane of ['price','load','solar'] as const){
+    let previousEnd=0;
+    const add=(time:number,value:number|null)=>points.push({channelId:lane,id:lane+'-'+time,timestamp:new Date(time).toISOString(),value});
+    const rows=intervals.filter(r=>r.lane===lane && Date.parse(r.end)>now).sort((a,b)=>Date.parse(a.start)-Date.parse(b.start));
+    rows.forEach((row,index)=>{
+      const start=Math.max(now,Date.parse(row.start)),end=Date.parse(row.end);
+      if(previousEnd && previousEnd<start)add(previousEnd,null);
+      add(start,row.value);
+      if(end>start+1 && (lane==='price' || !rows[index+1] || Date.parse(rows[index+1].start)>end))add(end-1,row.value);
+      previousEnd=end;
+    });
   }
   return points;
 }
-
 export function HouseEnergy({archive}:{archive:HouseArchive}){
   const [prices,setPrices]=useState(false);
-  const [selected,setSelected]=useState<Metric[]>(['import','export','load','solar']);
-  const [period,setPeriod]=useState(archive.period||60);
-  const site='/sites/'+encodeURIComponent(archive.site);
-  const all=useMemo(()=>{
-    const series:Series[]=[];
-    function add(id:Metric,title:string,base:string,color:string,forecast=false){
-      series.push({id,title,endpoint:base+'/series',unit:id==='prices'?'EUR/kWh':id==='power'?'kW':'kWh',color,expectedSeconds:period,
-        curve:id==='prices'?'stepAfter':id==='solar'||id==='load'||id==='power'?'monotone':'linear',forecastEndpoint:forecast?'/forecast':undefined});
-    }
-    if(archive.meter)add('import','Grid import','/capabilities/'+encodeURIComponent(archive.meter),'#166d87');
-    if(archive.exportMeter)add('export','Grid export','/capabilities/'+encodeURIComponent(archive.exportMeter),'#a34578');
-    add('load','Non-shiftable load',site+'/derived/non_shiftable_load','#5361a8',true);
-    add('solar','Solar production',site+'/derived/solar_generation','#ac741e',true);
-    add('power','Mean load power','/power','#238363',true);
-    add('prices','Electricity price','/percepta/'+encodeURIComponent(archive.database)+'/'+encodeURIComponent(archive.collection)+'/prices','#437c70',true);
-    return series;
-  },[archive,site,period]);
-  const active=useMemo(()=>all.filter(s=>prices?s.id==='prices':selected.includes(s.id)),[all,prices,selected]);
-  const read=useCallback(async(path:string,signal:AbortSignal):Promise<MeasurementSeries>=>{
-    const url=new URL(path,'http://console.local');
-    const power=url.pathname.startsWith('/power/');
-    // Native capability charts offer a bounded envelope. House-derived metrics use paginated raw periods.
-    if(url.pathname.startsWith('/capabilities/'))return readJson(prefix+path,signal);
-    const endpoint=power?site+'/derived/non_shiftable_load/series':url.pathname.replace(/\/chart$/,'/series');
-    const query=url.searchParams;
-    query.delete('max_points');query.set('limit','1000');
-    const rows:PeriodPoint[]=[];
-    const seen=new Set<string>();
-    do{
-      const page=await readJson<MeasurementSeries>(prefix+endpoint+'?'+query,signal);
-      rows.push(...page.points);
-      if(!page.next_cursor){if(page.truncated)throw Error('Incomplete archive window.');break;}
-      if(seen.has(page.next_cursor))throw Error('Archive cursor repeated.');
-      seen.add(page.next_cursor);query.set('cursor',page.next_cursor);
-    }while(!signal.aborted);
-    signal.throwIfAborted();
-    const points=power?rows.map(meanPower):rows;
-    return {points:compactPoints(points,{start:epoch(query.get('from_ts')),end:epoch(query.get('until_ts'))}),sample_count:rows.length};
-  },[site]);
-  const archived=useCallback(async(summary:boolean,signal:AbortSignal)=>{
-    const feed=await readJson<Feed>(prefix+site+'/cycle-archive?limit=1&summary='+summary,signal);
-    if(feed.site_id!==archive.site)throw Error('Unexpected installation in archive response.');
-    if(feed.period_seconds && !signal.aborted)setPeriod(feed.period_seconds);
-    return feed;
-  },[site,archive.site]);
+  const [selected,setSelected]=useState<Lane[]>(['grid_in','grid_out','load','solar']);
+  const period=archive.period||60;
+  const available=useMemo(()=>series.filter(s=>(s.id!=='grid_in'||archive.meter)&&(s.id!=='grid_out'||archive.exportMeter)).map(s=>({...s,expectedSeconds:period})),[archive.meter,archive.exportMeter,period]);
+  const active=useMemo(()=>available.filter(s=>prices?s.id==='price':s.id!=='price'&&selected.includes(s.id)),[available,prices,selected]);
+  const prefix='/telemetry-api/api/measurements/sites/'+encodeURIComponent(archive.site);
   const request=useCallback(async(path:string,signal:AbortSignal)=>{
     if(path==='/latest'){
-      const cycle=(await archived(true,signal)).messages[0];
+      const feed=await readJson<Feed>(prefix+'/cycle-archive?limit=1&summary=true',signal);
+      const cycle=feed.messages[0];
       return {points:[],point:cycle?{id:cycle.id,timestamp:cycle.timestamp,value:null}:undefined};
     }
-    return channelRequest(active,read)(path,signal);
-  },[active,archived,read]);
-  const forecast=useCallback(async(_path:string,signal:AbortSignal)=>{
-    const feed=await archived(false,signal);
-    const entities=Object.values(feed.messages[0]?.payload.entities||{}) as {entity_type_id:string;parameters?:Record<string,Parameter>}[];
-    return {points:active.filter(s=>s.forecastEndpoint).flatMap(s=>{
-      const parameters=entities.filter(e=>e.entity_type_id===(s.id==='prices'?'energy_market':'forecast_service')).flatMap(e=>Object.values(e.parameters||{}));
-      return forecastPoints(parameters,s.id,feed.period_seconds||period,Date.now());
-    })};
-  },[active,archived,period]);
-  const key=active.map(s=>s.id).join(',');
+    const query=new URL(path,'http://console.local').searchParams;
+    query.delete('limit');query.delete('max_points');
+    if(archive.meter)query.set('grid_import',archive.meter);
+    if(archive.exportMeter)query.set('grid_export',archive.exportMeter);
+    const range={start:Date.parse(query.get('from_ts')!),end:Date.parse(query.get('until_ts')!)};
+    const points:MeasurementPoint[]=[];
+    let horizon:MeasurementPoint[]=[];
+    const seen=new Set<string>();
+    for(;;){
+      const page=await readJson<WindowPage>(prefix+'/energy-window?'+query,signal);
+      if(!seen.size)horizon=forecastPoints(page.horizon,range.end);
+      for(const row of page.samples){
+        for(const {id} of available)points.push({channelId:id,id:id+'@'+row.at,timestamp:row.at,value:row[id],quality:row.partial.includes(id)?'partial':undefined});
+      }
+      if(!page.next_cursor)break;
+      if(seen.has(page.next_cursor))throw Error('Archive cursor repeated.');
+      seen.add(page.next_cursor);query.set('cursor',page.next_cursor);
+    }
+    const budget=1200*available.length;
+    return {points:compactPoints(points,range,budget),horizon,bucket_seconds:points.length>budget?(range.end-range.start)/200000:0};
+  },[prefix,available,archive.meter,archive.exportMeter]);
   return <section className="surface chart-section house-energy">
     <nav className="tabs" aria-label="Energy data view">{['Energy','Electricity price'].map((name,i)=><button key={name} aria-pressed={prices===!!i} className={prices===!!i?'active':''} onClick={()=>setPrices(!!i)}>{name}</button>)}</nav>
-    {!prices && <div className="telemetry-series-legend" role="group" aria-label="Visible measurements">{all.filter(s=>s.id!=='prices').map(s=><button key={s.id} aria-pressed={selected.includes(s.id)} onClick={()=>setSelected(ids=>ids.includes(s.id)?ids.filter(id=>id!==s.id):[...ids,s.id])}><i style={{background:s.color}}/>{s.title}</button>)}</div>}
-    <MeasurementChart title={prices?'Electricity price':'House energy'} series={active} showLatest queryKey={key} request={request} endpoint="/series" latestEndpoint="/latest" expectedSeconds={period}
-      note={prices?undefined:'Non-shiftable load excludes EV charging. Forecast energy is shown as average kWh per '+period+'-second cycle.'}
-      forecastEndpoint={active.some(s=>s.forecastEndpoint)?'/forecast':undefined} forecastRequest={forecast} forecastLabel={prices?'Published prices':'Forecast'}/>
+    {!prices && <div className="telemetry-series-legend" role="group" aria-label="Visible measurements">{available.filter(s=>s.id!=='price').map(s=><button key={s.id} aria-pressed={selected.includes(s.id)} onClick={()=>setSelected(ids=>ids.includes(s.id)?ids.filter(id=>id!==s.id):[...ids,s.id])}><i style={{background:s.color}}/>{s.title}</button>)}</div>}
+    <MeasurementChart title={prices?'Electricity price':'House energy'} series={active} compactHeader startLive initialDurationMs={21600000} inlineHorizon
+      queryKey={[archive.site,archive.meter,archive.exportMeter].join('/')} request={request} endpoint="/series" latestEndpoint="/latest" expectedSeconds={period} forecastLabel={prices?'Published prices':'Forecast'}/>
   </section>;
 }

@@ -13,7 +13,7 @@ export interface MeasurementPoint {
 export interface MeasurementSeries {
   points: MeasurementPoint[]; next_cursor?: string | null; truncated?: boolean; unit?: string | null;
   errors?: string[]; resolution?: string; bucket_seconds?: number; sample_count?: number; generated_count?: number;
-  partial_count?: number;
+  partial_count?: number; horizon?: MeasurementPoint[];
   sampling_interval_seconds?: number | null; from?: string; until?: string;
 }
 export type MeasurementRequest = (path: string, signal: AbortSignal) => Promise<MeasurementSeries & { point?: MeasurementPoint }>;

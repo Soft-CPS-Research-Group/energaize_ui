@@ -27,7 +27,7 @@ it('toggles real series together, preserves the chosen period and separates inco
   fireEvent.click(screen.getByRole('button', { name: /^Grid power/ }));
   await waitFor(() => expect(screen.getAllByTestId('line')).toHaveLength(1));
   fireEvent.click(screen.getByRole('button', { name: /^Battery charge/ }));
-  await waitFor(() => expect(screen.getByText('Select a measurement below')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText('Select a measurement')).toBeInTheDocument());
 });
 
 it('keeps identically named sensors with their equipment and separates collection from history', () => {
