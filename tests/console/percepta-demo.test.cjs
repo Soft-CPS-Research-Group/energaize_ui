@@ -45,3 +45,12 @@ test('RH grid power uses the harmonized output window, leaving other sources unt
  assert.equal(rows[0].displayScale,240);assert.equal(rows[0].unit,'kW');
  assert.equal(rows[1].displayScale,undefined);assert.equal(rows[2].displayScale,undefined);
 });
+
+test('applied Percepta channels show interval imports and exports together, and select battery charge level',()=>{
+ const c=setup();
+ const native=kind=>({backendId:kind,name:kind,collection:{parameter_type_id:kind},enabled:true,mongo_binding:{field:'payload.entities.meter.parameters.'+kind,value_unit:'kWh'}});
+ const meters=c.perceptaChartChannels([native('energy_in_total'),native('energy_out_total')],'grid_meter');
+ assert.deepEqual(Array.from(meters,row=>[row.title,row.defaultVisible]),[['Grid import',true],['Grid export',true]]);
+ const battery=c.perceptaChartChannels([native('energy_in'),native('state_of_charge')],'battery');
+ assert.deepEqual(Array.from(battery,row=>row.defaultVisible),[false,true]);
+});

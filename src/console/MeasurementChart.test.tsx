@@ -132,3 +132,13 @@ it('shows published prices only in live mode and keeps them out of recorded read
  expect(screen.queryByText('Published prices')).not.toBeInTheDocument();
  expect(screen.getByRole('button',{name:'Live'})).toHaveAttribute('aria-pressed','false');
 });
+
+it('waits for the archive response before declaring the initial window empty',async()=>{
+ let resolveLatest!:(value:{points:[]})=>void;
+ const latest=new Promise<{points:[]}>(resolve=>{resolveLatest=resolve;});
+ render(<MeasurementChart title="Meter" endpoint="/series" latestEndpoint="/latest" request={path=>path==='/latest'?latest:Promise.resolve({points:[]})}/>);
+ expect(screen.getByText('Loading measurements')).toBeInTheDocument();
+ expect(screen.queryByText('No readings in this window')).toBeNull();
+ await act(async()=>resolveLatest({points:[]}));
+ expect(await screen.findByText('No readings in this window')).toBeInTheDocument();
+});

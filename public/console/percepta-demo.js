@@ -8,12 +8,18 @@ function perceptaSource(site) {
  if(!ref)return null;const parts=ref.identifier.split('/');
  return parts.length===2?{database:parts[0],collection:parts[1]}:null;
 }
-function perceptaChartChannels(channels){
+function perceptaChartChannels(channels,assetType){
  const linked=channels.filter(c=>c.enabled&&(c.mongo_binding||c.simulation_binding));
  const meters=linked.filter(c=>/^energy_(in|out)_total$/.test(c.collection?.parameter_type_id||'')||/^observations\.grid_meters\.[^.]+\.energy_(in|out)_total$/.test(c.mongo_binding?.field||''));
- const defaults=new Set((meters.length?meters:linked.filter(c=>c.name==='state_of_charge')).map(c=>c.backendId));
+ const defaults=new Set((meters.length?meters:linked.filter(c=>(c.collection?.parameter_type_id||c.name)==='state_of_charge')).map(c=>c.backendId));
  return linked.map(c=>{
   const result={...channelForChart(c),defaultVisible:defaults.has(c.backendId)};
+  if(c.mongo_binding?.field?.startsWith('payload.entities.')){
+   const kind=c.collection?.parameter_type_id||c.quantity||c.name;
+   const names={energy_in_total:'Grid import',energy_out_total:'Grid export',state_of_charge:'State of charge',...(assetType==='battery'?{energy_in:'Charge energy',energy_out:'Discharge energy'}:{}),...(assetType==='pv_system'?{energy:'Solar production'}:{})};
+   result.title=names[kind]||result.title;
+   result.unit=c.mongo_binding.value_unit||result.unit;
+  }
   if(c.mongo_binding?.database==='living_lab'&&c.mongo_binding.field.startsWith('observations.grid_meters.')&&c.unit==='kWh'){
    result.unit='kW';result.displayScale=240;result.title=result.title.replace(' energy','').replace(/^Energy in l(\d)$/,'Import · phase $1').replace(/^Energy out l(\d)$/,'Export · phase $1');
    result.note='Estimated mean power: interval energy × 240. Percepta proportionally trims upstream one-minute energy to a 15-second output window.';
@@ -91,9 +97,9 @@ tLoad=function(panel){
  const asset=key.startsWith('asset:')?currentAssets().find(a=>a.id===key.slice(6)):null;
  const activityEndpoint=perceptaChargerActivity(asset);
  const site=key.startsWith('site:')?scoped().find(s=>s.id===key.slice(5)):chosen();
- if(!activityEndpoint&&!perceptaSource(site)){perceptaLoad(panel);return;}
+ if(!activityEndpoint&&!perceptaSource(site)&&!channels.some(c=>c.mongo_binding?.field?.startsWith('payload.entities.'))){perceptaLoad(panel);return;}
  window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{request:tRequest,title:asset?.name||site?.name||'Measurements',showChannelConfiguration:false,activityEndpoint,
-  channels:perceptaChartChannels(channels),onConfigureChannel:cid=>tConfigure(cid),onLinkChannel:cid=>tBind(panel,cid),onUnlinkChannel:cid=>tUnbind(panel,cid)},key);
+  channels:perceptaChartChannels(channels,asset?.assetType),onConfigureChannel:cid=>tConfigure(cid),onLinkChannel:cid=>tBind(panel,cid),onUnlinkChannel:cid=>tUnbind(panel,cid)},key);
 };
 
 // Describe the linked collection configuration without claiming a managed deployment.
