@@ -103,13 +103,13 @@ it('opens equipment first and saves a device assignment once for all its measure
  fireEvent.change(screen.getByRole('textbox',{name:'Device identifier'}),{target:{value:'new-meter'}});
  expect(screen.getByRole('button',{name:'Next: house data'})).toBeDisabled();
  fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
- await screen.findByText('Source saved for this equipment and its measurements.');
+ await screen.findByText('Equipment default saved.');
  const save=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/equipment/asset/source')&&init?.method==='PUT');
  expect(JSON.parse(String(save?.[1]?.body))).toEqual({connection_id:'connection',device_id:'new-meter'});
  expect(fetcher.mock.calls.some(([url,init])=>String(url).includes('/signals/')&&init?.method==='PUT')).toBe(false);
  fireEvent.click(screen.getByRole('button',{name:/Total grid import/}));
  expect(screen.queryByRole('combobox',{name:'Connection'})).not.toBeInTheDocument();
- expect(screen.getByText('Source: Meter connection · new-meter')).toBeInTheDocument();
+ expect(screen.getByRole('combobox',{name:'Measurement adapter'})).toHaveValue('connection');
 });
 it('inherits community definitions read-only and offers no community or price source editor in a house',async()=>{
  const fetcher=setup();await openEquipment();
@@ -282,7 +282,7 @@ it.each(['native','gen1_3em'])('creates a Cleanwatts source and saves %s counter
  });
  fireEvent.change(screen.getByLabelText('RabbitMQ exchange'),{target:{value:'Shelly-meter'}});
  fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
- await screen.findByText('Equipment source saved. Review the existing measurement mappings for this source.');
+ await screen.findByText('Equipment default saved.');
  fireEvent.click(screen.getByRole('button',{name:'Add measurement'}));
  expect(screen.getByRole('combobox',{name:'Measurement'})).toHaveValue('energy_out_total');
  if(format==='native'){
@@ -295,17 +295,15 @@ it.each(['native','gen1_3em'])('creates a Cleanwatts source and saves %s counter
    fireEvent.change(screen.getByLabelText('Counter reports'),{target:{value:'interval'}});
    expect(screen.getByLabelText('Unit reported by the device')).toHaveValue('Wh');
  }else{
-   expect(screen.getByText(/lifetime counters in Wh for all three phases/)).toBeVisible();
+   expect(screen.getByText(/Pending native Percepta support/)).toBeVisible();
    expect(screen.queryByLabelText('Counter reports')).not.toBeInTheDocument();
  }
  fireEvent.click(screen.getByRole('button',{name:'Save measurement'}));
  await screen.findByText('Measurement saved.');
  const measurement=fetcher.mock.calls.find(([url,init])=>String(url).endsWith('/assets/asset/signals')&&init?.method==='POST');
- expect(JSON.parse(String(measurement?.[1]?.body)).collection.source_binding).toMatchObject({
-   shelly_accumulation:format==='native'?'interval':'lifetime',
-   topic:format==='native'?'/status/em1data:0':'/status/emdata:0',
-   match_key:format==='native'?'total_act_ret_energy':'total_act_ret',source_measurement_unit:'Wh',
- });
+ const saved=JSON.parse(String(measurement?.[1]?.body));
+ if(format==='native')expect(saved.collection.source_binding).toMatchObject({shelly_accumulation:'interval',topic:'/status/em1data:0',match_key:'total_act_ret_energy',source_measurement_unit:'Wh'});
+ else expect(saved.enabled).toBe(false);
 });
 
 it('returns to the last equipment from house data before going to the equipment list',async()=>{
@@ -337,7 +335,7 @@ it('creates a source inline and asks before assigning it to an equipment item',a
  expect(fetcher.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);
  fireEvent.change(screen.getByRole('textbox',{name:'Device identifier'}),{target:{value:'new-meter'}});
  fireEvent.click(screen.getByRole('button',{name:'Save equipment source'}));
- await screen.findByText('Equipment source saved. Review the existing measurement mappings for this source.');
+ await screen.findByText('Equipment default saved.');
  expect(fetcher.mock.calls.some(([url,init])=>String(url).endsWith('/equipment/asset/source')&&init?.method==='PUT')).toBe(true);
 });
 it('edits source settings in place and preserves the existing assignment',async()=>{
