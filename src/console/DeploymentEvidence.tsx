@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { BatteryCharging, CarFront, CheckCheck, CircuitBoard, Gauge, PlugZap, Sun, Waves, Zap } from "lucide-react";
+import { CheckCheck, CircuitBoard, Waves, Zap } from "lucide-react";
 import { fieldName, FieldValues } from "./CycleReadings";
 import { runtimeRequest } from "../api/runtimeApi";
-import type { Profile, Source } from "./perceptaSetupModel";
+import { EquipmentArt } from "./EquipmentArt";
+import type { Profile, Source, Connection, Connector } from "./perceptaSetupModel";
 
 export function EquipmentIcon({ kind }: { kind: string }) {
-  const Icon = /solar|pv/.test(kind) ? Sun : /battery/.test(kind) ? BatteryCharging :
-    /charger/.test(kind) ? PlugZap : /vehicle|^ev$/.test(kind) ? CarFront :
-    /forecast/.test(kind) ? Waves : /market/.test(kind) ? Zap : Gauge;
-  return <Icon aria-hidden="true" size={19}/>;
+  if (kind === "forecast_service") return <Waves aria-hidden="true" size={19}/>;
+  if (kind === "energy_market") return <Zap aria-hidden="true" size={19}/>;
+  return <EquipmentArt type={kind}/>;
+
 }
 export function readingValue(value: unknown) {
   return typeof value === "number" ? value.toLocaleString("en-GB", {maximumSignificantDigits: 7}) : String(value);
@@ -18,14 +19,27 @@ type Asset = {id?: string; asset_id?: string; name?: string; asset_type?: string
 type Equipment = {id: string; name: string; kind: string; profile?: Profile; unavailable?: boolean; source?: string; sourcesUnavailable?: boolean};
 export function EquipmentSources({ siteId }: { siteId: string }) {
   const [items, setItems] = useState<Equipment[]>();
+  const [adapters,setAdapters] = useState<Record<string,string>>({});
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
     const options = {signal: controller.signal};
     async function load() {
-      const [response, sources] = await Promise.all([
+      async function adapterNames() {
+        const house = await fetch("/community-api/api/sites/"+encodeURIComponent(siteId), options);
+        if (!house.ok) return {};
+        const {assigned_rec_id} = await house.json();
+        if (!assigned_rec_id) return {};
+        const [connections, types] = await Promise.all([
+          runtimeRequest<Connection[]>("/api/runtime/connections?community_id="+encodeURIComponent(assigned_rec_id),options),
+          runtimeRequest<Connector[]>("/api/runtime/connector-types",options).catch(()=>[] as Connector[]),
+        ]);
+        return Object.fromEntries(connections.map(c=>[c.id, types.find(t=>t.id===c.provider)?.name || c.name || c.provider]));
+      }
+      const [response, sources, names] = await Promise.all([
         fetch("/community-api/api/assets/", options),
         runtimeRequest<Source[]>("/api/runtime/percepta/sites/"+encodeURIComponent(siteId)+"/equipment-sources",options).catch(() => undefined),
+        adapterNames().catch(()=>({})),
       ]);
       if (!response.ok) throw Error("Equipment inventory is unavailable.");
       const assets: Asset[] = await response.json();
@@ -41,20 +55,20 @@ export function EquipmentSources({ siteId }: { siteId: string }) {
           return {...item, kind: profile.asset_type || item.kind, profile};
         } catch { return {...item, unavailable: true}; }
       }));
-      if (!controller.signal.aborted) setItems(results);
+      if (!controller.signal.aborted) {setItems(results);setAdapters(names);}
     }
     void load().catch(() => { if (!controller.signal.aborted) setError("Equipment inventory is unavailable."); });
     return () => controller.abort();
   }, [siteId]);
   if (error) return <p role="alert">{error}</p>;
-  if (!items) return <p role="status">Loading equipment…</p>;
+  if (!items) return <div className="equipment-loading" role="status"><EquipmentArt type="grid_meter"/><span>Loading equipment…</span></div>;
   if (!items.length) return <p>No equipment registered for this house.</p>;
   return <><p>Measurement inputs configured for this house in Percepta. Open Readings on the map to see what arrived.</p>
     <div className="evidence-stack">{items.map(item => {
       const channels = item.profile?.capabilities.filter(c => c.enabled && c.capability_type !== "actuator" && (c.collection?.role === "input" || (!c.collection && !c.mongo_binding))) || [];
       return <section className="evidence-group" key={item.id}><header><EquipmentIcon kind={item.kind}/><h4>{item.name}</h4></header>
         {item.unavailable ? <p>Measurement configuration unavailable</p> : !channels.length ? <p>No measurement inputs configured</p> :
-          <ul>{channels.map(c => <li key={c.capability_id}><span>{fieldName(c.name)} <small>{c.unit}</small></span><small>{item.source || c.collection?.source_binding?.connection_id ? "Source linked" : item.sourcesUnavailable ? "Source unavailable" : "No source linked"}</small></li>)}</ul>}
+          <ul>{channels.map(c => <li key={c.capability_id}><span>{fieldName(c.name)} <small>{c.unit}</small></span><small>{c.collection?.source_binding?.connection_id || item.source ? adapters[c.collection?.source_binding?.connection_id || item.source || ""] || "Adapter unavailable" : item.sourcesUnavailable ? "Source unavailable" : "No source linked"}</small></li>)}</ul>}
       </section>;
     })}</div></>;
 }

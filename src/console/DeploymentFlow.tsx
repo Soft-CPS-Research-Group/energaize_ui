@@ -9,6 +9,7 @@ import {
   fieldName,
 } from "./CycleReadings";
 import { ProposalReceipt } from "./DeploymentEvidence";
+import { DeploymentSeries } from "./DeploymentSeries";
 import { stamp } from "./deploymentModel";
 
 type ObjectData = Record<string, unknown>;
@@ -274,14 +275,8 @@ export function CycleFlow({
         </p>
       ) : (
         <div className={recordedCycle ? "cycle-reader recorded-cycle" : "cycle-reader"}>
-          {!recordedCycle && <nav aria-label="Recent cycles">
-            <button
-              type="button"
-              aria-pressed={!pinned}
-              onClick={() => setPinned(undefined)}
-            >
-              Follow latest
-            </button>
+          {!recordedCycle && <aside className="cycle-picker"><header><strong>Recent cycles</strong><small>{rows.length} shown</small></header>
+            <nav aria-label="Recent cycles">
             {rows.map((m) => (
               <button
                 type="button"
@@ -292,7 +287,7 @@ export function CycleFlow({
                 {clockTime(m.timestamp)}
               </button>
             ))}
-          </nav>}
+          </nav><footer>{pinned ? <button className="btn text" type="button" onClick={()=>setPinned(undefined)}>Follow latest</button> : <span>Following latest</span>}</footer></aside>}
           <article className="deployment-cycle">
             <h4>
               {new Date(current.timestamp).toLocaleDateString("en-GB", {
@@ -307,32 +302,8 @@ export function CycleFlow({
               <>
                 {forecasts ? (
                   receivedForecasts(current).map((f) => (
-                    <details key={f.id}>
-                      <summary>
-                        {fieldName(labels[f.id]?.measurement || f.name)} ·{" "}
-                        {f.intervals.length} intervals
-                      </summary>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>From</th>
-                            <th>Until</th>
-                            <th>Forecast</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {f.intervals.map((v, j) => (
-                            <tr key={j}>
-                              <td>{stamp(String(v.period_start))}</td>
-                              <td>{stamp(String(v.period_end))}</td>
-                              <td>
-                                {String(v.value)} {f.unit}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </details>
+                    <DeploymentSeries key={f.id} title={fieldName(labels[f.id]?.measurement || f.name)} unit={f.unit}
+                      points={f.intervals.map(v=>({start:String(v.period_start),end:String(v.period_end),value:Number(v.value)}))}/>
                   ))
                 ) : kind === "request" || kind === "observations" ? (
                   <MessageEquipment

@@ -741,3 +741,30 @@ span.deployment-edge-label, span.deployment-edge-label:hover { cursor: default; 
 .deployment-cycle table {width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .deployment-cycle th,.deployment-cycle td {text-align:left;border-bottom:1px solid var(--line);padding:6px}
 @media(max-width:600px){.evidence-group>dl>div {flex-wrap:wrap;gap:6px}.evidence-group dd {margin-left:auto}}
+
+.cycle-picker header,.cycle-picker footer {font-size:12px;padding:7px 0;color:var(--muted)}
+.cycle-picker header strong,.cycle-picker header small {display:block}
+.cycle-picker footer {border-top:1px solid var(--line);margin-top:4px}
+.cycle-picker footer button {padding:0}
+.equipment-loading,.sites-path>div {display:flex;align-items:center;gap:12px}
+.evidence-group>header img,.equipment-loading img,.sites-path img {width:36px;height:36px;object-fit:contain}
+.sites-path {display:flex;flex-wrap:wrap;gap:20px 40px;border-block:1px solid var(--line);padding:16px 0}
+.sites-path small,.sites-path strong {display:block}
+.sites-path small,.series-axis,.deployment-series>header span,.control-example small {color:var(--muted);font-size:12px}
+.deployment-series {margin:10px 0;padding:14px 16px;border:1px solid var(--line);border-radius:10px;min-width:0;font-variant-numeric:tabular-nums;text-align:left}
+.deployment-series>header,.series-axis,.control-example>header {display:flex;align-items:center;justify-content:space-between;gap:8px}
+.deployment-series>header h4 {margin:0;font-size:14px}
+.series-range {font-size:13px;margin:5px 0}
+.deployment-series>svg {width:100%;height:78px;color:var(--brand);display:block}
+.series-table {overflow:auto;max-height:240px}
+.series-table table {width:100%;border-collapse:collapse}
+.series-table :is(td,th) {text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+.evidence-group>dl>div.price-horizon {display:block}
+.evidence-group .price-horizon dd {text-align:left}
+.price-horizon dt {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.control-example {padding:14px 16px;background:var(--bg);border:1px dashed var(--muted);border-radius:10px}
+.control-example>header {justify-content:flex-start}
+.control-example>header span {margin-left:auto;font-size:12px}
+.control-example nav {display:flex;gap:5px;flex-wrap:wrap;margin:12px 0}
+.control-example nav button {font:inherit;font-size:12px;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:5px 8px;cursor:pointer}
+.control-example nav button[aria-current] {background:var(--tint);border-color:var(--brand)}

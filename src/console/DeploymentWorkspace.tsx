@@ -28,6 +28,9 @@ import {
   X,
 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
+import { ControlPreview } from "./ControlPreview";
+import { DeploymentSeries } from "./DeploymentSeries";
+import { EquipmentArt } from "./EquipmentArt";
 import { EquipmentSources } from "./DeploymentEvidence";
 import { PerceptaMessages } from "./PerceptaMessages";
 import { HouseForecastPlan } from "./HouseForecastPlan";
@@ -717,6 +720,7 @@ function SiteDeployment({
           </button>
         </div>
       )}
+      {map && draft && !collector && !error && <p className="deployment-start">Open Percepta on the map to configure inputs and start collection.</p>}
       {busy && <p role="status">{busy}</p>}
       {!layout || !map || !draft ? (
         <p role="status">Loading deployment…</p>
@@ -929,7 +933,6 @@ function SiteDeployment({
           launchPlan={launch}
           configurationOnly={!!collector && !collector.managed}
           navigate={navigate}
-          onMessages={() => select("messages")}
           onOpenChange={(o) => {
             if (!o) close();
           }}
@@ -956,6 +959,7 @@ function SiteDeployment({
         >
           {busy && <p role="status">{busy}</p>}
           {error && <p role="alert">{error}</p>}
+          {!linkedCycle && (flow || selected === "supervisor") && <ControlPreview key={flow?.id || selected} stage={flow?.id || "safety"}/>}
           {selected === "sensors" ? <EquipmentSources siteId={siteId}/> : selected === "messages" ? (
             <PerceptaMessages
               initialCycle={linkedCycle}
@@ -1123,18 +1127,13 @@ function SiteDeployment({
             flow?.id === "verdict" ? (
             <p>
               The fail-safe supervisor is planned to check proposed actions
-              before dispatch. It has no deployed instance or recorded verdict
-              for this house.
+              before dispatch. Deployment is not available for this service yet.
             </p>
           ) : selected === "community" || flow?.id === "sites" ? (
             <>
               <p>{sharedServices.community.description}</p>
-              <dl>
-                <dt>Community</dt>
-                <dd>{communityName || "Unavailable"}</dd>
-                <dt>Site</dt>
-                <dd>{siteName}</dd>
-              </dl>
+              <div className="sites-path"><div><EquipmentArt type="community"/><span><small>Community</small><strong>{communityName || "Unavailable"}</strong></span></div>
+                <div><EquipmentArt type="home"/><span><small>Site</small><strong>{siteName}</strong></span></div></div>
             </>
           ) : flow?.id === "history" ? (
             <>
@@ -1147,19 +1146,8 @@ function SiteDeployment({
               ) : !history?.value ? (
                 <p>Loading…</p>
               ) : history?.value.points.length ? (
-                <table>
-                  <tbody>
-                    {history?.value.points.map((p) => (
-                      <tr key={p.timestamp}>
-                        <td>{stamp(p.timestamp)}</td>
-                        <td>
-                          {p.value ?? "Missing"} {history?.value?.unit}
-                        </td>
-                        <td>{p.quality}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DeploymentSeries title="Base household consumption" unit={history.value.unit || ""}
+                  points={history.value.points.map(p=>({start:p.timestamp,value:p.value,quality:p.quality}))}/>
               ) : (
                 <p>No readings in this time window.</p>
               )}

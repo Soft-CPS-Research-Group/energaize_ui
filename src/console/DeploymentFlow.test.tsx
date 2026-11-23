@@ -38,7 +38,7 @@ it("follows new cycles, preserves a pinned reading, and displays the check indep
   expect(screen.getByText("10 kW")).toBeVisible();
   expect(screen.getByText("15 seconds")).toBeVisible();
   fireEvent.click(
-    within(screen.getByRole("navigation")).getAllByRole("button")[1],
+    within(screen.getByRole("navigation")).getAllByRole("button")[0],
   );
   rerender(
     <CycleFlow

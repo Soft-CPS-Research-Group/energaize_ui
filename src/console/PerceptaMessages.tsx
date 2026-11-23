@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, Pause, Play, Radio, RefreshCw, Search } from 'lucide-react';
+import { DeploymentSeries } from "./DeploymentSeries";
 import { EquipmentIcon, ProposalReceipt, readingValue } from './DeploymentEvidence';
 import { FieldValues, cyclePeriod, cycleRefreshSeconds } from './CycleReadings';
 import { runtimeRequest } from '../api/runtimeApi';
@@ -43,6 +44,13 @@ export function MessageEquipment({ entities, names }: { entities: unknown; names
               {intervals.length} {intervals.length === 1 ? 'interval' : 'intervals'} · {String(intervals[0].value)} {unit} in the first interval
               <br/><small>{time(String(intervals[0].period_start))} – {time(String(intervals[intervals.length - 1].period_end))}</small>
             </> : 'No received forecast'}</dd></div>;
+          }
+          if (record(entity).entity_type_id === 'energy_market' && values.length > 1 && values.every(v=>typeof record(v).value === 'number' && typeof record(v).period_start === 'string')) {
+            const name=displayMeasurementName(names[id]?.measurement || String(measurement.parameter_type_id || id));
+            return <div className="price-horizon" key={id}><dt className="deployment-sr">{name}</dt><dd>
+              {measurement.generated === true && <small>Generated</small>}
+              <DeploymentSeries title={name} unit={unit} points={values.map(v=>({start:String(record(v).period_start),end:typeof record(v).period_end==='string'?String(record(v).period_end):undefined,value:Number(record(v).value)}))}/>
+            </dd></div>;
           }
           return <div key={id}><dt>{displayMeasurementName(names[id]?.measurement || String(measurement.parameter_type_id || id))}</dt>
             <dd><strong>{first == null ? 'No reading' : typeof first === 'object' ? <FieldValues value={first}/> : `${readingValue(first)} ${unit}`.trim()}</strong>

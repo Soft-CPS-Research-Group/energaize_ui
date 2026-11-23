@@ -17,9 +17,7 @@ import {
 } from "./deploymentModel";
 import { receivedForecasts, recent } from "./DeploymentFlow";
 vi.mock("./PerceptaSetup", () => ({
-  PerceptaSetup: ({ onMessages }: { onMessages: () => void }) => (
-    <button onClick={onMessages}>Collection messages</button>
-  ),
+  PerceptaSetup: () => <p>Configure collection inputs</p>,
 }));
 vi.mock("./PerceptaMessages", () => ({
   PerceptaMessages: () => <p>House messages</p>,
@@ -246,7 +244,7 @@ it("only checks the machine whose refresh button was pressed", async () => {
     ]),
   );
 });
-it("exposes model selection, forecast settings and messages from the map", async () => {
+it("exposes model selection, forecast settings and collection setup from the map", async () => {
   setup();
   fireEvent.click(await screen.findByRole("button", { name: /^Inference ·/ }));
   expect(screen.getByLabelText("Algorithm")).toBeVisible();
@@ -257,8 +255,7 @@ it("exposes model selection, forecast settings and messages from the map", async
   ).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("button", { name: /^Percepta ·/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Collection messages" }));
-  expect(screen.getByText("House messages")).toBeVisible();
+  expect(screen.getByText("Configure collection inputs")).toBeVisible();
 });
 it("opens cycle, forecast, decision and archive evidence without exposing an address editor", async () => {
   setup();
@@ -395,4 +392,17 @@ it("uses platform health for the compact services and keeps unverified dispatch 
   ).toHaveAttribute("data-active", "true");
   fireEvent.click(screen.getByRole("button", { name: /Percepta → Actuators/ }));
   expect(screen.getByText(/No device dispatch is confirmed/)).toBeVisible();
+});
+
+it("previews the control sequence for a house without inference and sends no operations", async()=>{
+  const calls=setup();
+  fireEvent.click(await screen.findByRole("button",{name:/Inference → Percepta/}));
+  fireEvent.click(await screen.findByRole("button",{name:"Preview example"}));
+  const preview=screen.getByRole("region",{name:"Simulated control cycle"});
+  for(const name of ["2 · Cycle","3 · Proposal","4 · Review","5 · Verdict","6 · Command"]){
+    fireEvent.click(within(preview).getByRole("button",{name}));
+    expect(within(preview).getByRole("button",{name})).toHaveAttribute("aria-current","step");
+  }
+  expect(within(preview).getByText("Simulated only")).toBeVisible();
+  expect(calls.mock.calls.filter(([,init])=>init?.method && init.method!=="GET")).toHaveLength(0);
 });
