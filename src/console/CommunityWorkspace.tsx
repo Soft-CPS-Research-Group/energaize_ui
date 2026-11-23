@@ -88,7 +88,7 @@ export function CommunityWorkspace(): JSX.Element {
       if(session.role==='rec_manager')deploymentSlots.forEach(node=>{
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);
-        root.render(<DeploymentWorkspace key={node.dataset.deploymentSite} communityName={node.dataset.deploymentCommunity} siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)} onCollectionChange={()=>{refreshInventory=true;}}/>);
+        root.render(<DeploymentWorkspace key={node.dataset.deploymentSite} communityName={node.dataset.deploymentCommunity} chargers={JSON.parse(node.dataset.deploymentChargers || '[]')} siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)} onCollectionChange={()=>{refreshInventory=true;}}/>);
       });
       shadow.querySelectorAll<HTMLElement>('[data-flex-calendar]').forEach(node=>{
         if(roots.has(node))return;

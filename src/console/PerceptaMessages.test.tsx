@@ -110,3 +110,9 @@ it('shows the received forecast horizons and distinguishes zero solar from a mis
   expect(forecasts).toHaveTextContent('Solar forecast1 interval · 0 kWh');
   expect(forecasts).toHaveTextContent('Consumption forecastNo received forecast');
 });
+
+it('separates the page check from the published house cycle',async()=>{
+  api.mockResolvedValue(batch());
+  render(<PerceptaMessages siteId="house" siteName="RH25" periodSeconds={900} onBack={()=>{}}/>);
+  expect(await screen.findByText(/Page checks every 5 seconds.*900 seconds/)).toBeVisible();
+});

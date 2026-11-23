@@ -93,22 +93,24 @@ export const names: Record<string, string> = {
   training: "AI Training",
   runtime: "Runtime",
   mongo: "MongoDB",
+  evPredictor: "EV predictor",
+  kpi: "KPI Manager",
 };
 export const sharedServices: Record<
   string,
   { role: string; description: string }
 > = {
   access: {
-    role: "Access control",
+    role: "Roles & permissions",
     description: "Access Control manages platform access and permissions.",
   },
   flexibility: {
-    role: "Flexibility",
+    role: "EV policies & forecasts",
     description:
       "Flexibility manages flexibility policies and requests, including EV availability. Consumption and solar forecasts use the separate Forecasting service.",
   },
   training: {
-    role: "AI Training",
+    role: "Models & training runs",
     description: "AI Training manages algorithm preparation and training runs.",
   },
   community: {
@@ -117,9 +119,9 @@ export const sharedServices: Record<
       "The Community API supplies the sites in the energy community to Forecasting so it can resolve the house’s site ID.",
   },
   telemetry: {
-    role: "Energy history",
+    role: "Cycle archive & history",
     description:
-      "Telemetry reads the archived measurements and serves derived consumption and solar generation series through its HTTP API.",
+      "Telemetry consumes each house’s RabbitMQ archive queue, writes the cycles to MongoDB and serves derived consumption and solar generation series through its HTTP API.",
   },
   runtime: {
     role: "Deployment",
@@ -131,13 +133,30 @@ export const sharedServices: Record<
     description:
       "RabbitMQ routes published cycles to the archive consumer and house forecasts to Percepta through separate exchanges and queues.",
   },
+  evPredictor: {
+    role: "Plug-in windows",
+    description:
+      "The EV predictor claims jobs from Flexibility and returns predicted usage windows for each charger.",
+  },
+  kpi: {
+    role: "Community indicators",
+    description:
+      "AI Training requests indicators from the KPI provider for a mapped community and time range. This integration has no per-house activity signal.",
+  },
   mongo: {
     role: "Cycle storage",
     description:
       "The house collection stores one document per cycle. Telemetry uses these records to build the historical series.",
   },
 };
-export const backendKinds = ["community", "telemetry", "runtime"];
+export const backendKinds = [
+  "community",
+  "telemetry",
+  "runtime",
+  "access",
+  "flexibility",
+  "training",
+];
 export const stateName = (state: string) =>
   ({
     online: "Online at last check",
@@ -222,6 +241,7 @@ export function graphLayout(
   map: DeploymentMap,
   draft: Draft,
   archiveOwner?: string | null,
+  availableWidth = 920,
 ) {
   const destinations = map.destinations;
   const cloud = destinations.find((d) => d.placement === "cloud");
@@ -229,11 +249,22 @@ export function graphLayout(
     ...destinations.filter((d) => d !== cloud),
     ...(cloud ? [cloud] : []),
   ];
-  let right = 8;
+  const others = ordered.filter((d) => d !== cloud).length;
+  const gap = 18,
+    inset = 3;
+  const localWidth = Math.max(
+    225,
+    Math.min(310, Math.floor(availableWidth * 0.23)),
+  );
+  const cloudWidth = Math.max(
+    550,
+    Math.floor(availableWidth - 2 * inset - others * (localWidth + gap)),
+  );
+  let right = inset;
   const hosts: HostBox[] = ordered.map((destination) => {
-    const width = destination === cloud ? 554 : 226;
+    const width = destination === cloud ? cloudWidth : localWidth;
     const host = { destination, x: right, y: 8, width, height: 168 };
-    right += width + 24;
+    right += width + gap;
     return host;
   });
   const nodes: GraphNode[] = [];
@@ -281,22 +312,33 @@ export function graphLayout(
     }
   }
   if (cloud) {
-    for (const kind of [...backendKinds, "broker", "mongo"])
+    for (const kind of [
+      ...backendKinds,
+      "broker",
+      "mongo",
+      "evPredictor",
+      "kpi",
+    ])
       add(kind, cloud.id, sharedServices[kind].role);
   }
   const backendHost = hosts.find((h) => h.destination === cloud);
   const columns: Record<string, number> = {
-    supervisor: 442,
-    controller: 116,
-    percepta: 442,
-    broker: 442,
-    runtime: 266,
-    forecasting: 116,
-    community: 90,
-    telemetry: 442,
-    mongo: 442,
+    controller: 1,
+    forecasting: 1,
+    community: 1,
+    access: 1,
+    percepta: 3,
+    broker: 3,
+    telemetry: 3,
+    flexibility: 3,
+    evPredictor: 3,
+    supervisor: 5,
+    mongo: 5,
+    runtime: 5,
+    training: 5,
+    kpi: 5,
   };
-  let nextY = 102;
+  let nextY = 131;
   function row(kinds: string[], gap: number) {
     const members = nodes.filter((n) => kinds.includes(n.kind));
     if (!members.length) return;
@@ -305,48 +347,45 @@ export function graphLayout(
       const host = hosts.find((h) => h.destination.id === node.destination)!;
       const column =
         host === backendHost
-          ? (columns[node.kind] ?? host.width / 2)
+          ? (host.width * columns[node.kind]) / 6
           : host.width / 2;
       const key = host.destination.id + "/" + column;
       const index = counts.get(key) ?? 0;
       counts.set(key, index + 1);
+      node.width = Math.min(
+        230,
+        Math.floor(host.width / (host === backendHost ? 3 : 1)) - 32,
+      );
+      node.height = 60;
       node.x = host.x + column - node.width / 2;
       node.y = nextY + index * 66;
       host.height = Math.max(host.height, node.y + node.height + 36 - host.y);
     }
     nextY = Math.max(...members.map((n) => n.y + n.height)) + gap;
   }
-  const sharedNarrowHost = nodes.some(
-    (n) =>
-      n.kind === "controller" &&
-      n.destination !== cloud?.id &&
-      nodes.some(
-        (p) => p.kind === "percepta" && p.destination === n.destination,
-      ),
+  const collectorOnHouseMachine = nodes.some(
+    (n) => n.kind === "percepta" && n.destination !== cloud?.id,
   );
-  if (sharedNarrowHost) {
-    row(["supervisor"], 40);
-    row(["controller"], 48);
-    row(["percepta"], 78);
+  if (collectorOnHouseMachine) {
+    row(["supervisor"], 36);
+    row(["controller"], 46);
+    row(["percepta"], 105);
   } else {
-    row(["supervisor"], 42);
-    row(["percepta", "controller"], 78);
+    row(["supervisor", "percepta", "controller"], 105);
   }
-  row(["forecasting", "broker"], 94);
-  row(backendKinds, 84);
-  row(["mongo"], 18);
-  row(
-    nodes.filter((n) => !(n.kind in columns)).map((n) => n.kind),
-    18,
-  );
+  row(["forecasting", "broker", "mongo"], 142);
+  row(["community", "telemetry", "runtime"], 66);
+  row(["access", "flexibility", "training"], 82);
+  row(["evPredictor", "kpi"], 20);
   const api = nodes.find((n) => n.kind === "community");
+  const training = nodes.find((n) => n.kind === "training");
   const group =
-    api && backendHost
+    api && training && backendHost
       ? {
-          x: backendHost.x + 12,
-          y: api.y - 12,
-          width: backendHost.width - 24,
-          height: api.height + 52,
+          x: backendHost.x + 7,
+          y: api.y - 35,
+          width: backendHost.width - 14,
+          height: training.y + training.height + 15 - (api.y - 35),
           destination: backendHost.destination.id,
         }
       : undefined;
@@ -402,6 +441,9 @@ export function graphLayout(
     setting?: ConnectionId,
     twoWay = false,
   ) {
+    const upperTrack =
+      source.destination === target.destination &&
+      Math.abs(target.x - source.x) < source.width + 195;
     const rightward = target.x > source.x;
     const sx = rightward ? source.x + source.width : source.x;
     const tx = rightward ? target.x : target.x + target.width;
@@ -413,9 +455,11 @@ export function graphLayout(
       channel,
       setting,
       twoWay,
-      path: `M ${sx} ${cy(source)} H ${tx}`,
+      path: upperTrack
+        ? `M ${cx(source) + (rightward ? 20 : -20)} ${source.y} V ${source.y - 21} H ${cx(target) + (rightward ? -20 : 20)} V ${target.y}`
+        : `M ${sx} ${cy(source)} H ${tx}`,
       x: (sx + tx) / 2,
-      y: cy(source) - 12,
+      y: upperTrack ? source.y - 21 : cy(source) - 12,
     });
   }
   {
@@ -463,7 +507,7 @@ export function graphLayout(
       "percepta",
       "AMQP · forecasts",
       "amqp",
-      0.74,
+      0.52,
       -32,
       -32,
       "forecasting",
@@ -480,7 +524,7 @@ export function graphLayout(
     "forecasting",
     "HTTP · sites",
     "http",
-    0.73,
+    0.47,
     0,
     -26,
   );
@@ -490,7 +534,7 @@ export function graphLayout(
     "forecasting",
     "HTTP · energy history",
     "http",
-    0.33,
+    0.64,
     -34,
     26,
   );
@@ -501,7 +545,7 @@ export function graphLayout(
     writer,
     "AMQP · archive queue",
     "amqp",
-    0.55,
+    0.45,
     16,
     16,
   );
@@ -511,7 +555,7 @@ export function graphLayout(
     "mongo",
     "Write cycles",
     "storage",
-    0.38,
+    0.22,
     34,
     34,
   );
@@ -521,14 +565,14 @@ export function graphLayout(
     "telemetry",
     "Read history",
     "storage",
-    0.76,
+    0.73,
     -34,
     -34,
   );
   const supervisor = single("supervisor"),
     collector = single("percepta");
   if (supervisor && collector) {
-    if (sharedNarrowHost) {
+    if (collectorOnHouseMachine) {
       const x = collector.x - 18;
       edges.push({
         id: "safety",
@@ -541,6 +585,16 @@ export function graphLayout(
         x: x + 18,
         y: supervisor.y + supervisor.height + 19,
       });
+    } else if (collector.y === supervisor.y) {
+      acrossRow(
+        "safety",
+        collector,
+        supervisor,
+        "Safety check",
+        "http",
+        undefined,
+        true,
+      );
     } else
       betweenRows(
         "safety",
@@ -555,12 +609,65 @@ export function graphLayout(
         true,
       );
   }
+  betweenRows(
+    "flex-history",
+    "telemetry",
+    "flexibility",
+    "Charger history",
+    "http",
+    0.5,
+  );
+  betweenRows(
+    "ev-jobs",
+    "flexibility",
+    "evPredictor",
+    "Jobs / forecasts",
+    "http",
+    0.52,
+    0,
+    0,
+    undefined,
+    true,
+  );
+  betweenRows(
+    "training-runtime",
+    "runtime",
+    "training",
+    "Deployments",
+    "http",
+    0.5,
+  );
+  betweenRows(
+    "training-kpi",
+    "kpi",
+    "training",
+    "Community KPIs",
+    "http",
+    0.48,
+  );
+  const access = single("access"),
+    trainingNode = single("training");
+  if (access && trainingNode) {
+    const sx = cx(access),
+      tx = cx(trainingNode) - 42,
+      track = access.y + access.height + 31;
+    edges.push({
+      id: "permissions",
+      source: access.id,
+      target: trainingNode.id,
+      label: "Permissions",
+      channel: "http",
+      path: `M ${sx} ${access.y + access.height} V ${track} H ${tx} V ${trainingNode.y + trainingNode.height}`,
+      x: sx + (tx - sx) * 0.24,
+      y: track,
+    });
+  }
   return {
     hosts,
     nodes,
     edges,
     group,
-    width: Math.max(0, right - 16),
+    width: Math.max(0, right - gap + inset),
     height: Math.max(190, ...hosts.map((h) => h.y + h.height + 8)),
   };
 }

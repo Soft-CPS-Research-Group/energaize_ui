@@ -326,3 +326,34 @@ it("rejects stale evidence and generated forecasts", () => {
   message.payload.entities.forecast.parameters.solar.generated = false;
   expect(receivedForecasts(message)[0].intervals[0].value).toBe(0);
 });
+
+it("uses the available width and keeps the complete backend group inside the server", () => {
+  const map = { ...data, destinations: [data.destinations[0]] };
+  for (const width of [600, 960, 1440]) {
+    const layout = graphLayout(map, initial, "telemetry", width);
+    expect(layout.width).toBe(width);
+    expect(layout.hosts[0].width).toBeGreaterThan(width - 10);
+    const group = layout.group!;
+    for (const kind of [
+      "access",
+      "community",
+      "runtime",
+      "telemetry",
+      "flexibility",
+      "training",
+    ]) {
+      const node = layout.nodes.find((n) => n.kind === kind)!;
+      expect(node.x).toBeGreaterThan(group.x);
+      expect(node.y + node.height).toBeLessThan(group.y + group.height);
+    }
+    expect(layout.edges.find((e) => e.id === "ev-jobs")).toMatchObject({
+      source: "flexibility",
+      target: "evPredictor",
+      twoWay: true,
+    });
+    expect(layout.edges.find((e) => e.id === "training-kpi")).toMatchObject({
+      source: "kpi",
+      target: "training",
+    });
+  }
+});

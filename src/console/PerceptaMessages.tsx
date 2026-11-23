@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, Pause, Play, Radio, RefreshCw, Search } from 'lucide-react';
+import { FieldValues, cyclePeriod } from './CycleReadings';
 import { runtimeRequest } from '../api/runtimeApi';
 import { displayMeasurementName } from './PerceptaMeasurementEditor';
 
@@ -10,7 +11,7 @@ type Consumption = {
   excluded_grid_meters?: number;
 };
 export type PerceptaMessage = { id: string; timestamp: string; payload: Record<string, unknown>; truncated: boolean; calculations?: {non_shiftable_load?: Consumption} };
-type MeasurementNames = Record<string, { equipment: string; measurement: string }>;
+export type MeasurementNames = Record<string, { equipment?: string; measurement: string }>;
 type MessageBatch = { site_id: string; checked_at: string; available: boolean; source: string | null; messages: PerceptaMessage[]; notice: string | null; measurement_names?: MeasurementNames | null };
 const time = (value: string) => new Date(value).toLocaleString('en-GB');
 const sections = ['observations', 'derived_data', 'forecasts', 'community', 'decisions'];
@@ -19,7 +20,7 @@ const hasValues = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v)
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
-function MessageEquipment({ entities, names }: { entities: unknown; names: MeasurementNames }) {
+export function MessageEquipment({ entities, names }: { entities: unknown; names: MeasurementNames }) {
   return <details open><summary>Equipment readings</summary>
     {Object.entries(record(entities)).map(([key, entity]) => {
       const parameters = Object.entries(record(record(entity).parameters));
@@ -52,7 +53,7 @@ function MessageEquipment({ entities, names }: { entities: unknown; names: Measu
 }
 
 /** Inspect persisted output, independently of inference and without consuming broker messages. */
-export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string; siteName: string; onBack: () => void }) {
+export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds }: { siteId: string; siteName: string; periodSeconds?: number; onBack: () => void }) {
   const [batch, setBatch] = useState<MessageBatch | null>(null);
   const [selected, setSelected] = useState<PerceptaMessage | null>(null);
   const [paused, setPaused] = useState(false), [follow, setFollow] = useState(true);
@@ -100,7 +101,8 @@ export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string;
   });
   const latest = batch?.messages[0];
   const age = latest ? Math.max(0, Math.floor((clock - new Date(latest.timestamp).getTime()) / 1000)) : null;
-  const status = error ? 'Update failed' : paused ? 'Paused' : !batch ? 'Connecting…' : !batch.available ? 'Source not linked' : age === null ? 'Waiting for messages' : age > 60 ? 'No recent messages' : 'Receiving recent messages';
+  const period = cyclePeriod(periodSeconds, latest?.payload);
+  const status = error ? 'Update failed' : paused ? 'Paused' : !batch ? 'Connecting…' : !batch.available ? 'Source not linked' : age === null ? 'Waiting for messages' : age > (period ? period*2+5 : 90) ? 'No recent messages' : 'Receiving recent messages';
   const text = selected ? JSON.stringify(selected.payload, null, 2) : '';
   const consumption = selected?.calculations?.non_shiftable_load;
   const meterNote = {
@@ -122,7 +124,7 @@ export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string;
   }
   return <section className="percepta-messages" aria-label="Percepta messages">
     <button className="btn text" onClick={onBack}><ArrowLeft size={16}/>Back to deployment</button>
-    <header className="percepta-messages-heading"><div><span className="eyebrow">{siteName} · Percepta</span><h2>Messages</h2><p>Stored Percepta output. Updates every 5 seconds.</p></div>
+    <header className="percepta-messages-heading"><div><span className="eyebrow">{siteName} · Percepta</span><h2>Messages</h2><p>Page checks every 5 seconds.{period && ` Each cycle covers ${period} seconds.`}</p></div>
       <div className="actions"><button className="btn" onClick={() => { setPaused(!paused); request.current?.abort(); }}><>{paused ? <Play size={15}/> : <Pause size={15}/>}</>{paused ? 'Resume' : 'Pause'}</button><button className="btn" disabled={busy} onClick={() => void load()}><RefreshCw size={15}/>{busy ? 'Updating…' : 'Refresh'}</button></div>
     </header>
     <div className="percepta-messages-status"><span role="status"><Radio size={15}/>{status}</span><span>{latest ? `Last message ${time(latest.timestamp)}` : 'No message received yet'}</span><small>{batch ? `Checked ${time(batch.checked_at)}` : 'Checking source…'}</small></div>
@@ -140,7 +142,7 @@ export function PerceptaMessages({ siteId, siteName, onBack }: { siteId: string;
         </section>}
         <div className="percepta-message-mode"><button aria-pressed={mode === 'sections'} onClick={() => setMode('sections')}>Sections</button><button aria-pressed={mode === 'json'} onClick={() => setMode('json')}>JSON</button></div>
         {selected.truncated ? <p className="notice">This message exceeds the preview size limit. Its payload has been omitted.</p> : mode === 'json' ? <pre>{text}</pre> : <>{hasValues(selected.payload.entities)&&<MessageEquipment entities={selected.payload.entities} names={names}/>}
-          {sections.filter(s => hasValues(selected.payload[s])).map(s => <details key={s} open><summary>{title(s)}<small>{hasValues(selected.payload[s]) ? `${Object.keys(selected.payload[s] as object).length} entries` : 'No entries'}</small></summary><pre>{JSON.stringify(selected.payload[s] ?? {}, null, 2)}</pre></details>)}</>}
+          {sections.filter(s => hasValues(selected.payload[s])).map(s => <details key={s} open><summary>{title(s)}<small>{hasValues(selected.payload[s]) ? `${Object.keys(selected.payload[s] as object).length} entries` : 'No entries'}</small></summary><FieldValues value={selected.payload[s]}/></details>)}</>}
         {notice && <p role="status">{notice}</p>}
       </> : <div className="percepta-message-empty"><Radio size={28}/><p>Select a message to inspect its contents.</p></div>}</section>
     </div>

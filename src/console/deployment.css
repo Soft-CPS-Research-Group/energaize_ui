@@ -651,3 +651,54 @@ span.deployment-edge-label, span.deployment-edge-label:hover { cursor: default; 
 .deployment-cycle pre {overflow:auto;max-height:38vh;font-size:12px;background:var(--bg);padding:12px}
 .deployment-dialog table {width:100%;text-align:left;font-size:12px;border-collapse:collapse}
 .deployment-dialog td,.deployment-dialog th {padding:5px 8px;border-bottom:1px solid var(--line)}
+
+/* Size the geometry to the inventory's available space, including on wide screens. */
+.site-main:has(.deployment-workspace) .detail {max-width:none}
+.site-main:has(.deployment-workspace) {padding-inline:clamp(10px,1.4vw,25px)}
+.deployment-workspace {max-width:none;min-width:0}
+.deployment-scroll {padding:3px 0 12px;max-width:100%}
+.deployment-map {margin:0}
+.deployment-heading {margin-bottom:12px}
+.deployment-map .deployment-node {padding:7px 11px;gap:9px;justify-content:flex-start}
+.deployment-map .deployment-node strong {font-size:14px;font-weight:600}
+.deployment-map .deployment-node small {font-size:11px;line-height:1.25}
+.deployment-node .deployment-service-icon {width:33px;height:34px;flex:0 0 33px}
+.deployment-node .deployment-service-icon svg {width:21px;height:21px}
+.deployment-node[data-module="telemetry"] .deployment-service-icon {background:light-dark(#e1edf9,#173958);color:light-dark(#205482,#b4d8ff)}
+.deployment-map .deployment-node[data-module="telemetry"][data-active="true"] {border-color:light-dark(#7db6a6,#4b9782)}
+.deployment-backends-footer {inset:7px auto auto 10px;display:block}
+.deployment-backends-name {font-size:12px;cursor:default;background:var(--surface);border-radius:5px}
+.deployment-backends-name:hover {text-decoration:none}
+.deployment-wire.observed {stroke:light-dark(#148153,#72d8a8);stroke-width:2.3px}
+.deployment-edge-label.observed {color:light-dark(#116841,#93e3bd);border-color:light-dark(#9fc7b5,#40785b)}
+.deployment-edge-label {font-size:11px;padding:2px 5px}
+.cycle-timing {display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));border-block:1px solid var(--line);gap:12px;padding:12px 0}
+.cycle-timing span,.cycle-timing strong {display:block}.cycle-timing span {font-size:11px;color:var(--muted)}
+.cycle-timing strong,.cycle-reader time {font-variant-numeric:tabular-nums}
+.cycle-reader {display:grid;grid-template-columns:minmax(85px,110px) minmax(0,1fr);gap:16px;align-items:start}
+.cycle-reader nav {display:grid;gap:3px}
+.cycle-reader nav button {font:inherit;font-size:12px;font-variant-numeric:tabular-nums;text-align:left;color:var(--text);border:0;border-radius:5px;background:transparent;padding:7px}
+.cycle-reader nav button[aria-current="true"],.cycle-reader nav button[aria-pressed="true"] {background:var(--tint);color:var(--brand)}
+.cycle-reader article {min-width:0}.cycle-reader h4 {margin:4px 0 10px}
+.cycle-fields {margin:0}.cycle-fields>div {display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,2fr);gap:8px;border-bottom:1px solid var(--line);padding:5px 0}
+.cycle-fields dt {color:var(--muted)}.cycle-fields dd {margin:0;overflow-wrap:anywhere}.cycle-value-list {padding-left:18px}
+.deployment-flex-forecasts>section {padding-block:12px;border-top:1px solid var(--line)}
+.deployment-flex-forecasts h4 {margin:0 0 5px}
+@media (min-width:700px) and (max-width:1050px) {
+  .site-main:has(.deployment-workspace) .tree {width:150px;flex:0 0 150px}
+  .site-main:has(.deployment-workspace) .workspace {gap:14px}
+}
+@media(max-width:600px) {
+ .cycle-reader {grid-template-columns:1fr}.cycle-reader nav {display:flex;overflow-x:auto}.cycle-reader nav button {white-space:nowrap}
+}
+.deployment-map[data-compact="true"] {width:100%!important;height:auto!important;display:grid;gap:12px}
+.deployment-map[data-compact="true"] .deployment-host,.deployment-map[data-compact="true"] .deployment-backends {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(135px,100%),1fr));align-content:start;gap:8px;padding:10px}
+.deployment-map[data-compact="true"] :is(.deployment-host,.deployment-backends,.deployment-node,.deployment-backends-footer,.deployment-edge-label) {position:static;width:auto!important;height:auto!important;transform:none}
+.deployment-map[data-compact="true"] :is(.deployment-host>header,.deployment-backends,.deployment-backends-footer) {grid-column:1/-1}
+.deployment-map[data-compact="true"] .deployment-host>header {height:auto;min-height:62px}
+.deployment-map[data-compact="true"] .deployment-backends {order:2}
+.deployment-map[data-compact="true"] .deployment-node {min-height:60px}
+.deployment-map[data-compact="true"] .deployment-wires {display:none}
+.deployment-map[data-compact="true"] .deployment-routes {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr));gap:6px}
+.deployment-routes h3 {grid-column:1/-1;margin:4px 0}
+.deployment-map[data-compact="true"] .deployment-edge-label {display:grid;gap:2px;text-align:left;padding:8px;white-space:normal}

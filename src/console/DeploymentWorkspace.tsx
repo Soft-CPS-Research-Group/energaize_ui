@@ -14,6 +14,11 @@ import {
   Cpu,
   Database,
   GripVertical,
+  BatteryCharging,
+  Gauge,
+  BrainCircuit,
+  KeyRound,
+  CalendarClock,
   Layers3,
   Network,
   Radio,
@@ -49,6 +54,11 @@ import {
   recent,
   useObservation,
 } from "./DeploymentFlow";
+import {
+  chargerForecasts,
+  FlexibilityForecasts,
+  type Charger,
+} from "./DeploymentFlexibility";
 import { applyCollector, bindModel } from "./deploymentActions";
 export type { DeploymentMap } from "./deploymentModel";
 
@@ -97,8 +107,19 @@ function Overlay({
     </dialog>
   );
 }
+const noChargers: Charger[] = [];
 const icon = (kind: string) =>
-  kind === "supervisor" ? (
+  kind === "kpi" ? (
+    <Gauge size={19} />
+  ) : kind === "flexibility" ? (
+    <CalendarClock size={19} />
+  ) : kind === "evPredictor" ? (
+    <BatteryCharging size={19} />
+  ) : kind === "training" ? (
+    <BrainCircuit size={19} />
+  ) : kind === "access" ? (
+    <KeyRound size={19} />
+  ) : kind === "supervisor" ? (
     <ShieldCheck size={19} />
   ) : kind === "percepta" ? (
     <Radio size={19} />
@@ -121,6 +142,7 @@ type Props = {
   siteId: string;
   siteName: string;
   communityName?: string;
+  chargers?: Charger[];
   navigate: (path: string) => void;
   onCollectionChange?: () => void;
 };
@@ -137,6 +159,7 @@ function SiteDeployment({
   siteId,
   siteName,
   communityName,
+  chargers = noChargers,
   navigate,
   onCollectionChange,
 }: Props) {
@@ -193,6 +216,29 @@ function SiteDeployment({
       clearInterval(timer);
     };
   }, [reload]);
+  const screenRef = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(920);
+  useEffect(() => {
+    const element = screenRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0)
+        setWidth(Math.floor(entry.contentRect.width));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const flexView = [
+    "flow:ev-jobs",
+    "flow:flex-history",
+    "flexibility",
+    "evPredictor",
+  ].includes(selected || "");
+  const flex = useObservation(
+    siteId + "/flex",
+    useCallback((s) => chargerForecasts(chargers, s), [chargers]),
+    flexView ? 5000 : 60000,
+  );
   const archival = [
     "flow:archive",
     "flow:write",
@@ -238,7 +284,7 @@ function SiteDeployment({
     30000,
   );
   const layout =
-    map && draft ? graphLayout(map, draft, archive?.value?.owner) : null;
+    map && draft ? graphLayout(map, draft, archive?.value?.owner, width) : null;
   const assigned = map && draft ? placements(map, draft) : undefined;
   const local = map?.destinations.find((d) => d.placement === "local");
   const collector = map?.components.find(
@@ -297,10 +343,44 @@ function SiteDeployment({
           (history?.value?.source_status === "linked" &&
             !!history?.value.points.length)
         );
+      case "flexibility":
+        return !!flex?.value?.some((c) => c.forecast);
+      case "evPredictor":
+        return !!flex?.value?.some(
+          (c) =>
+            c.forecast?.prediction?.usable &&
+            Date.parse(c.forecast.prediction.valid_until) > Date.now(),
+        );
       case "runtime":
         return !!map && !error;
       case "community":
         return !!communityName && !!map && !error;
+      default:
+        return false;
+    }
+  }
+  const archiveActive =
+    confirmedArchive &&
+    archive?.value?.messages[0]?.writer ===
+      (archive?.value?.owner || "telemetry");
+  function activeEdge(id: string) {
+    switch (id) {
+      case "write":
+      case "archive":
+        return archiveActive;
+      case "cycles":
+        return confirmedCycle || confirmedArchive;
+      case "read":
+        return (
+          history?.value?.source_status === "linked" &&
+          !!history.value.points.length
+        );
+      case "decision":
+        return (
+          confirmedCycle && !!output?.value?.messages[0]?.inference_decision
+        );
+      case "ev-jobs":
+        return !!flex?.value?.some((c) => c.forecast?.prediction?.usable);
       default:
         return false;
     }
@@ -494,6 +574,8 @@ function SiteDeployment({
       <button
         key={n.id}
         type="button"
+        data-module={n.kind}
+        data-active={lit}
         aria-label={n.name + " · " + n.state}
         className={
           "deployment-node" +
@@ -526,6 +608,14 @@ function SiteDeployment({
     );
   }
   const flow = layout?.edges.find((e) => "flow:" + e.id === selected);
+  const compact = !!layout && layout.width > width + 2;
+  function edgeName(e: NonNullable<typeof layout>["edges"][number]) {
+    return (
+      (layout?.nodes.find((n) => n.id === e.source)?.name || "") +
+      (e.twoWay ? " ↔ " : " → ") +
+      (layout?.nodes.find((n) => n.id === e.target)?.name || "")
+    );
+  }
   const selectedMove = services.find((s) => "move:" + s === selected);
   const selectedHost = map?.destinations.find(
     (d) => d.placement === assigned?.controller,
@@ -534,7 +624,11 @@ function SiteDeployment({
     if (!busy) select(null);
   };
   return (
-    <section className="deployment-workspace" aria-label="Deployment">
+    <section
+      ref={screenRef}
+      className="deployment-workspace"
+      aria-label="Deployment"
+    >
       <header className="deployment-heading">
         <div>
           <span className="eyebrow">{siteName}</span>
@@ -564,6 +658,7 @@ function SiteDeployment({
           <div
             ref={canvas}
             className="deployment-map"
+            data-compact={compact}
             style={{ width: layout.width, height: layout.height }}
           >
             {layout.hosts.map((h) => (
@@ -644,16 +739,6 @@ function SiteDeployment({
                         <Layers3 size={14} />
                         Platform backends
                       </span>
-                      {["access", "flexibility", "training"].map((k) => (
-                        <button
-                          type="button"
-                          key={k}
-                          className="deployment-supporting-backend"
-                          onClick={() => open(k)}
-                        >
-                          {names[k]}
-                        </button>
-                      ))}
                     </div>
                     {layout.nodes
                       .filter((n) => backendKinds.includes(n.kind))
@@ -678,7 +763,7 @@ function SiteDeployment({
               aria-hidden="true"
             >
               <defs>
-                {["http", "amqp", "storage"].map((c) => (
+                {["http", "amqp", "storage", "observed"].map((c) => (
                   <marker
                     key={c}
                     id={marker + c}
@@ -701,37 +786,48 @@ function SiteDeployment({
               {layout.edges.map((e) => (
                 <path
                   key={e.id}
-                  className={"deployment-wire " + e.channel}
+                  className={
+                    "deployment-wire " +
+                    (activeEdge(e.id) ? "observed" : e.channel)
+                  }
                   d={e.path}
                   fill="none"
                   strokeWidth="1.6"
                   strokeDasharray={e.id === "safety" ? "3 4" : undefined}
                   strokeLinejoin="round"
-                  markerEnd={`url(#${marker}${e.channel})`}
+                  markerEnd={`url(#${marker}${activeEdge(e.id) ? "observed" : e.channel})`}
                   markerStart={
-                    e.twoWay ? `url(#${marker}${e.channel})` : undefined
+                    e.twoWay
+                      ? `url(#${marker}${activeEdge(e.id) ? "observed" : e.channel})`
+                      : undefined
                   }
                 />
               ))}
             </svg>
-            {layout.edges.map((e) => (
-              <button
-                type="button"
-                key={e.id}
-                className={"deployment-edge-label " + e.channel}
-                style={{ left: e.x, top: e.y }}
-                onClick={() => open("flow:" + e.id)}
-                aria-label={
-                  layout.nodes.find((n) => n.id === e.source)?.name +
-                  (e.twoWay ? " ↔ " : " → ") +
-                  layout.nodes.find((n) => n.id === e.target)?.name +
-                  " · " +
-                  e.label
-                }
-              >
-                {e.label}
-              </button>
-            ))}
+            <div className="deployment-routes">
+              {compact && <h3>Connections</h3>}
+              {layout.edges.map((e) => (
+                <button
+                  type="button"
+                  key={e.id}
+                  title={
+                    activeEdge(e.id)
+                      ? "Recent evidence for this house"
+                      : e.label
+                  }
+                  className={
+                    "deployment-edge-label " +
+                    (activeEdge(e.id) ? "observed" : e.channel)
+                  }
+                  style={{ left: e.x, top: e.y }}
+                  onClick={() => open("flow:" + e.id)}
+                  aria-label={edgeName(e) + " · " + e.label}
+                >
+                  {compact && <strong>{edgeName(e)}</strong>}
+                  {e.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -778,6 +874,7 @@ function SiteDeployment({
             <PerceptaMessages
               siteId={siteId}
               siteName={siteName}
+              periodSeconds={archive?.value?.period_seconds}
               onBack={close}
             />
           ) : selectedMove ? (
@@ -822,6 +919,9 @@ function SiteDeployment({
                 siteId={siteId}
                 onPrepared={onCollectionChange}
               />
+              <button className="btn" onClick={() => select("evPredictor")}>
+                EV flexibility forecasts
+              </button>{" "}
               <button className="btn" onClick={() => select("flow:delivery")}>
                 Received forecasts
               </button>
@@ -881,6 +981,53 @@ function SiteDeployment({
                 Deploy and connect
               </button>
             </form>
+          ) : selected === "telemetry" ? (
+            <>
+              <p>{sharedServices.telemetry.description}</p>
+              <dl className="cycle-fields">
+                <div>
+                  <dt>Last archived cycle</dt>
+                  <dd>
+                    {archive?.value?.messages[0]
+                      ? stamp(archive.value.messages[0].timestamp)
+                      : "No confirmed cycle"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Collection period</dt>
+                  <dd>
+                    {archive?.value?.period_seconds
+                      ? archive.value.period_seconds + " seconds"
+                      : "Unknown"}
+                  </dd>
+                </div>
+              </dl>
+              <button className="btn" onClick={() => select("flow:write")}>
+                View archived cycles
+              </button>
+            </>
+          ) : flexView ? (
+            <>
+              {flow?.id === "flex-history" && (
+                <p>
+                  Flexibility reads observed charger measurements over HTTP when
+                  a prediction job requests its history.
+                </p>
+              )}
+              <FlexibilityForecasts rows={flex?.value} />
+            </>
+          ) : flow?.id === "permissions" ? (
+            <p>
+              AI Training asks Access Control whether the current user may
+              perform the requested operation in the community workspace.
+            </p>
+          ) : flow?.id === "training-runtime" ? (
+            <p>
+              AI Training reads registered instances, deployed models and
+              bundles from Runtime to show which deployment serves each site.
+            </p>
+          ) : flow?.id === "training-kpi" ? (
+            <p>{sharedServices.kpi.description}</p>
           ) : selected === "supervisor" || flow?.id === "safety" ? (
             <p>
               The fail-safe supervisor is planned to check proposed actions
@@ -931,7 +1078,10 @@ function SiteDeployment({
                 <p>{sharedServices.mongo.description}</p>
               )}
               <CycleFlow
+                key={flow?.id || "write"}
                 kind={flow?.id || "write"}
+                periodSeconds={archive?.value?.period_seconds}
+                measurementNames={output?.value?.measurement_names}
                 batch={(archival ? archive : output)?.value}
                 error={(archival ? archive : output)?.error}
               />

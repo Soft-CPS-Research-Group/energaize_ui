@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 import { runtimeRequest } from "../api/runtimeApi";
+import { MessageEquipment, type MeasurementNames } from "./PerceptaMessages";
+import {
+  clockTime,
+  cyclePeriod,
+  FieldValues,
+  fieldName,
+} from "./CycleReadings";
 import { stamp } from "./deploymentModel";
 
 type ObjectData = Record<string, unknown>;
@@ -21,7 +28,7 @@ export interface Feed {
   owner?: string | null;
   period_seconds?: number;
   instance_id?: string;
-  measurement_names?: Record<string, { measurement: string }>;
+  measurement_names?: MeasurementNames;
 }
 
 export function useObservation<T>(
@@ -128,37 +135,76 @@ export function recent(
   );
 }
 
+type FlowProps = {
+  kind: string;
+  batch?: Feed;
+  error?: string;
+  periodSeconds?: number;
+  measurementNames?: MeasurementNames;
+};
+const archiveKinds = ["archive", "write", "read"];
 export function CycleFlow({
   kind,
   batch,
   error,
-}: {
-  kind: string;
-  batch?: Feed;
-  error?: string;
-}) {
+  periodSeconds,
+  measurementNames,
+}: FlowProps) {
+  const [pinned, setPinned] = useState<Cycle>();
   if (error) return <p role="alert">{error}</p>;
   if (!batch) return <p role="status">Loading cycles…</p>;
-  const forecasts = kind === "delivery" || kind === "publish";
-  const decision = kind === "decision";
-  const rows = batch.messages.filter(
-    (m) =>
-      (!forecasts && !decision) ||
-      (forecasts ? receivedForecasts(m).length : !!m.inference_decision),
+  const forecasts = kind === "delivery" || kind === "publish",
+    decision = kind === "decision";
+  const rows = batch.messages.filter((m) =>
+    forecasts
+      ? receivedForecasts(m).length > 0
+      : decision
+        ? !!m.inference_decision
+        : true,
   );
+  const current = pinned || rows[0],
+    period = cyclePeriod(
+      periodSeconds ?? batch.period_seconds,
+      batch.messages[0]?.payload,
+    );
+  const labels = batch.measurement_names ?? measurementNames ?? {};
   return (
     <>
+      <div className="cycle-timing">
+        <div>
+          <span>Page check</span>
+          <strong>Every 5 seconds</strong>
+        </div>
+        <div>
+          <span>Last checked</span>
+          <strong>
+            <time dateTime={batch.checked_at}>
+              {clockTime(batch.checked_at)}
+            </time>
+          </strong>
+        </div>
+        <div>
+          <span>House cycle</span>
+          <strong>{period ? period + " seconds" : "Unknown"}</strong>
+        </div>
+        <div>
+          <span>
+            Latest{" "}
+            {decision ? "decision" : forecasts ? "forecast cycle" : "cycle"}
+          </span>
+          <strong>{clockTime(rows[0]?.timestamp)}</strong>
+        </div>
+      </div>
       <p>
         {forecasts
           ? "Forecasts received by Percepta, grouped by cycle."
           : decision
             ? "Inference responses recorded for this house’s cycles."
-            : ["archive", "write", "read"].includes(kind)
-              ? "Documents stored in this house’s MongoDB collection."
-              : "Cycles published by Percepta."}{" "}
-        Updates every 5 seconds.
+            : archiveKinds.includes(kind)
+              ? "Cycles stored in this house’s MongoDB collection."
+              : "Cycles published by Percepta."}
       </p>
-      {rows.length === 0 && (
+      {!current ? (
         <p role="status">
           {forecasts
             ? "No received forecasts in the latest cycles."
@@ -166,59 +212,116 @@ export function CycleFlow({
               ? "No recorded inference response in the latest cycles."
               : "No recorded cycles for this house."}
         </p>
+      ) : (
+        <div className="cycle-reader">
+          <nav aria-label="Recent cycles">
+            <button
+              type="button"
+              aria-pressed={!pinned}
+              onClick={() => setPinned(undefined)}
+            >
+              Follow latest
+            </button>
+            {rows.map((m) => (
+              <button
+                type="button"
+                key={m.id}
+                onClick={() => setPinned(m)}
+                aria-current={m.id === current.id ? "true" : undefined}
+              >
+                {clockTime(m.timestamp)}
+              </button>
+            ))}
+          </nav>
+          <article className="deployment-cycle">
+            <h4>
+              {new Date(current.timestamp).toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+              })}{" "}
+              · {clockTime(current.timestamp)}
+            </h4>
+            {current.truncated ? (
+              <p>Payload exceeds the preview limit.</p>
+            ) : (
+              <>
+                {forecasts ? (
+                  receivedForecasts(current).map((f) => (
+                    <details key={f.id}>
+                      <summary>
+                        {fieldName(labels[f.id]?.measurement || f.name)} ·{" "}
+                        {f.intervals.length} intervals
+                      </summary>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>From</th>
+                            <th>Until</th>
+                            <th>Forecast</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {f.intervals.map((v, j) => (
+                            <tr key={j}>
+                              <td>{stamp(String(v.period_start))}</td>
+                              <td>{stamp(String(v.period_end))}</td>
+                              <td>
+                                {String(v.value)} {f.unit}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </details>
+                  ))
+                ) : decision ? (
+                  <>
+                    <h4>Recorded decision</h4>
+                    <FieldValues value={current.inference_decision} />
+                  </>
+                ) : (
+                  <>
+                    {!!current.payload.entities && (
+                      <MessageEquipment
+                        entities={current.payload.entities}
+                        names={labels}
+                      />
+                    )}
+                    {Object.entries(current.payload)
+                      .filter(
+                        ([key]) =>
+                          !["entities", "period_start", "period_end"].includes(
+                            key,
+                          ),
+                      )
+                      .map(([key, value]) => (
+                        <details key={key}>
+                          <summary>{fieldName(key)}</summary>
+                          <FieldValues value={value} />
+                        </details>
+                      ))}
+                  </>
+                )}
+                <details>
+                  <summary>Original JSON</summary>
+                  <pre>
+                    {JSON.stringify(
+                      decision
+                        ? {
+                            cycle: current.payload,
+                            decision: current.inference_decision,
+                          }
+                        : current.payload,
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </details>
+              </>
+            )}
+          </article>
+        </div>
       )}
-      {rows.map((m, i) => (
-        <details
-          key={m.id}
-          className="deployment-cycle"
-          open={i === 0 || undefined}
-        >
-          <summary>{stamp(m.timestamp)}</summary>
-          {m.truncated ? (
-            <p>Payload exceeds the preview limit.</p>
-          ) : forecasts ? (
-            receivedForecasts(m).map((f) => (
-              <details key={f.id}>
-                <summary>
-                  {batch.measurement_names?.[f.id]?.measurement || f.name} ·{" "}
-                  {f.intervals.length} intervals
-                </summary>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>From</th>
-                      <th>Until</th>
-                      <th>Forecast</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {f.intervals.map((v, j) => (
-                      <tr key={j}>
-                        <td>{stamp(String(v.period_start))}</td>
-                        <td>{stamp(String(v.period_end))}</td>
-                        <td>
-                          {String(v.value)} {f.unit}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </details>
-            ))
-          ) : decision ? (
-            <>
-              <details>
-                <summary>Recorded cycle</summary>
-                <pre>{JSON.stringify(m.payload, null, 2)}</pre>
-              </details>
-              <h4>Recorded response</h4>
-              <pre>{JSON.stringify(m.inference_decision, null, 2)}</pre>
-            </>
-          ) : (
-            <pre>{JSON.stringify(m.payload, null, 2)}</pre>
-          )}
-        </details>
-      ))}
     </>
   );
 }
