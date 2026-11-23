@@ -145,6 +145,7 @@ const icon = (kind: string) =>
   );
 type Props = {
   initialCycle?: string;
+  initialMessages?: boolean;
   siteId: string;
   siteName: string;
   communityName?: string;
@@ -163,6 +164,7 @@ export function DeploymentWorkspace(props: Props) {
 }
 function SiteDeployment({
   initialCycle,
+  initialMessages,
   siteId,
   siteName,
   communityName,
@@ -173,7 +175,7 @@ function SiteDeployment({
   const base = "/api/runtime/sites/" + siteId;
   const [draft, setDraft] = useState<Draft>(),
     [map, setMap] = useState<DeploymentMap>();
-  const [selected, select] = useState<string | null>(initialCycle ? "flow:decision" : null),
+  const [selected, select] = useState<string | null>(initialCycle ? (initialMessages ? "messages" : "flow:decision") : null),
     [launch, setLaunch] = useState<PerceptaLaunchPlan>();
   const [linkedCycle, setLinkedCycle] = useState(initialCycle);
   const [error, setError] = useState(""),
@@ -297,13 +299,13 @@ function SiteDeployment({
   );
   const [receipt, setReceipt] = useState<{batch?: Feed; error?: string}>();
   useEffect(() => {
-    if (!linkedCycle) return;
+    if (!linkedCycle || initialMessages) return;
     const abort = new AbortController();
     void feed(siteId, false, false, abort.signal, linkedCycle).then(batch => {
       if (!abort.signal.aborted) setReceipt({batch: {...batch, messages: batch.messages.filter(m => Date.parse(m.timestamp) === Date.parse(linkedCycle))}});
     }).catch(e => { if (!abort.signal.aborted) setReceipt({error: e.message}); });
     return () => abort.abort();
-  }, [siteId, linkedCycle]);
+  }, [siteId, linkedCycle, initialMessages]);
   const history = useObservation(
     siteId + "/energy",
     useCallback(
@@ -956,6 +958,7 @@ function SiteDeployment({
           {error && <p role="alert">{error}</p>}
           {selected === "sensors" ? <EquipmentSources siteId={siteId}/> : selected === "messages" ? (
             <PerceptaMessages
+              initialCycle={linkedCycle}
               siteId={siteId}
               siteName={siteName}
               periodSeconds={period}

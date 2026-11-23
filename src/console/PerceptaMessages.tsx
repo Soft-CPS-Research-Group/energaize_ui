@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, Pause, Play, Radio, RefreshCw, Search } from 'lucide-react';
-import { EquipmentIcon, readingValue } from './DeploymentEvidence';
+import { EquipmentIcon, ProposalReceipt, readingValue } from './DeploymentEvidence';
 import { FieldValues, cyclePeriod, cycleRefreshSeconds } from './CycleReadings';
 import { runtimeRequest } from '../api/runtimeApi';
 import { displayMeasurementName } from './PerceptaMeasurementEditor';
@@ -11,7 +11,7 @@ type Consumption = {
   grid_meter_status?: 'main_meters_only' | 'roles_required' | 'readings_missing' | 'inventory_unavailable';
   excluded_grid_meters?: number;
 };
-export type PerceptaMessage = { id: string; timestamp: string; payload: Record<string, unknown>; truncated: boolean; calculations?: {non_shiftable_load?: Consumption} };
+export type PerceptaMessage = { id: string; timestamp: string; payload: Record<string, unknown>; truncated: boolean; inference_decision?:Record<string,unknown>; calculations?: {non_shiftable_load?: Consumption} };
 export type MeasurementNames = Record<string, { equipment?: string; measurement: string }>;
 type MessageBatch = { site_id: string; checked_at: string; available: boolean; source: string | null; messages: PerceptaMessage[]; notice: string | null; measurement_names?: MeasurementNames | null };
 const time = (value: string) => new Date(value).toLocaleString('en-GB');
@@ -56,36 +56,38 @@ export function MessageEquipment({ entities, names }: { entities: unknown; names
 }
 
 /** Inspect persisted output, independently of inference and without consuming broker messages. */
-export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds }: { siteId: string; siteName: string; periodSeconds?: number; onBack: () => void }) {
+export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds, initialCycle }: { initialCycle?: string; siteId: string; siteName: string; periodSeconds?: number; onBack: () => void }) {
   const [batch, setBatch] = useState<MessageBatch | null>(null);
   const [selected, setSelected] = useState<PerceptaMessage | null>(null);
-  const [paused, setPaused] = useState(false), [follow, setFollow] = useState(true);
+  const [paused, setPaused] = useState(false), [follow, setFollow] = useState(!initialCycle);
   const [query, setQuery] = useState(''), [mode, setMode] = useState<'sections' | 'json'>('sections');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [notice, setNotice] = useState('');
   const [clock, setClock] = useState(Date.now());
   const request = useRef<AbortController | null>(null), sequence = useRef(0), following = useRef(follow);
   following.current = follow;
+  const pinnedCycle = useRef(initialCycle);
   const load = useCallback(async () => {
     request.current?.abort();
     const controller = new AbortController(); request.current = controller;
     const seq = ++sequence.current;
     setBusy(true);
     try {
-      const result = await runtimeRequest<MessageBatch>(`/api/runtime/percepta/sites/${encodeURIComponent(siteId)}/messages`, { signal: controller.signal });
+      const target = pinnedCycle.current;
+      const result = await runtimeRequest<MessageBatch>(`/api/runtime/percepta/sites/${encodeURIComponent(siteId)}/messages${target ? "?"+new URLSearchParams({cycle:target}) : ""}`, { signal: controller.signal });
       if (seq !== sequence.current || controller.signal.aborted) return;
       if (result.site_id !== siteId) throw new Error('The message source does not match this house.');
       setBatch(result); setError(''); setClock(Date.now());
-      setSelected(previous => following.current ? result.messages[0] || null : previous);
+      setSelected(previous => following.current ? result.messages[0] || null : previous || (target && result.messages.find(m => Date.parse(m.timestamp)===Date.parse(target))) || null);
     } catch (e) {
       if (seq === sequence.current && !controller.signal.aborted) setError((e as Error).message);
     } finally { if (seq === sequence.current) setBusy(false); }
   }, [siteId]);
   useEffect(() => {
     // Reset before reading another house, including when used outside the keyed deployment view.
-    setBatch(null); setSelected(null); setError(''); setQuery(''); setFollow(true); following.current = true;
+    setBatch(null); setSelected(null); setError(''); setQuery(''); setFollow(!initialCycle); following.current = !initialCycle; pinnedCycle.current=initialCycle;
     void load();
     return () => { ++sequence.current; request.current?.abort(); };
-  }, [load]);
+  }, [load, initialCycle]);
   const period = cyclePeriod(periodSeconds, batch?.messages[0]?.payload);
   const intervalSeconds=cycleRefreshSeconds(period);
   useEffect(() => {
@@ -135,10 +137,11 @@ export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds }: { 
     <div className="percepta-messages-status"><span role="status"><Radio size={15}/>{status}</span><span>{latest ? `Last message ${time(latest.timestamp)}` : 'No message received yet'}</span><small>{batch ? `Checked ${time(batch.checked_at)}` : 'Checking source…'}</small></div>
     {error && <p role="alert" className="notice">{error}{batch ? ' Previously loaded messages remain visible.' : ''}</p>}
     {batch?.notice && <p className="notice">{batch.notice}</p>}
-    <div className="percepta-message-toolbar"><label className="percepta-message-search"><Search size={16}/><input aria-label="Search messages" placeholder="Search recent messages…" value={query} onChange={e => setQuery(e.target.value)}/></label><button className="btn text" aria-pressed={follow} onClick={() => { setFollow(!follow); if (!follow) setSelected(latest || null); }}>{follow ? 'Following latest' : 'Follow latest'}</button><span>{items.length} / {batch?.messages.length || 0} recent messages</span></div>
+    <div className="percepta-message-toolbar"><label className="percepta-message-search"><Search size={16}/><input aria-label="Search messages" placeholder="Search recent messages…" value={query} onChange={e => setQuery(e.target.value)}/></label><button className="btn text" aria-pressed={follow} onClick={() => { pinnedCycle.current=undefined; setFollow(!follow); if (!follow) setSelected(latest || null); }}>{follow ? 'Following latest' : 'Follow latest'}</button><span>{items.length} / {batch?.messages.length || 0} recent messages</span></div>
     <div className="percepta-message-workspace">
-      <div className="percepta-message-list" aria-label="Recent messages">{items.map(m => <button key={m.id} aria-pressed={selected?.id === m.id} onClick={() => { setSelected(m); setFollow(false); setNotice(''); }}><time>{time(m.timestamp)}</time><strong>Percepta output</strong><small>{m.truncated ? 'Payload exceeds preview limit' : [...(hasValues(m.payload.entities) ? ['Equipment readings'] : []), ...sections.filter(s => hasValues(m.payload[s])).map(title)].join(' · ') || 'Empty payload'}</small></button>)}{!items.length && <p>{busy && !batch ? 'Loading messages…' : query ? 'No recent messages match your search.' : batch?.available ? 'No stored messages found. Waiting for Percepta output.' : 'Messages will appear when a source is linked.'}</p>}</div>
+      <div className="percepta-message-list" aria-label="Recent messages">{items.map(m => <button key={m.id} aria-pressed={selected?.id === m.id} onClick={() => { pinnedCycle.current=undefined; setSelected(m); setFollow(false); setNotice(''); }}><time>{time(m.timestamp)}</time><strong>Percepta output</strong><small>{m.truncated ? 'Payload exceeds preview limit' : [...(hasValues(m.payload.entities) ? ['Equipment readings'] : []), ...sections.filter(s => hasValues(m.payload[s])).map(title)].join(' · ') || 'Empty payload'}</small></button>)}{!items.length && <p>{busy && !batch ? 'Loading messages…' : query ? 'No recent messages match your search.' : batch?.available ? 'No stored messages found. Waiting for Percepta output.' : 'Messages will appear when a source is linked.'}</p>}</div>
       <section className="percepta-message-inspector" aria-label="Selected message">{selected ? <><header><div><span className="eyebrow">Selected message</span><h3>{time(selected.timestamp)}</h3></div><div className="actions"><button className="btn text" disabled={selected.truncated} onClick={() => void copy()} title="Copy JSON" aria-label="Copy JSON"><Copy size={16}/></button><button className="btn text" disabled={selected.truncated} onClick={download} title="Download JSON" aria-label="Download JSON"><Download size={16}/></button></div></header>
+        {selected.inference_decision && <ProposalReceipt decision={selected.inference_decision}/>}
         {consumption && <section className="percepta-calculated-consumption" aria-label="Platform calculation"><h4>Base household consumption excluding EV charging</h4>
           <strong>{consumption.value===null?'Incomplete readings':energy(consumption.value)}</strong>
           {consumption.grid_meter_status&&<p>{meterNote[consumption.grid_meter_status]}</p>}
