@@ -618,6 +618,4 @@
 .house-forecast-plan li strong,.house-forecast-plan small{display:block}
 .house-forecast-plan li strong{font-size:14px}
 .house-forecast-plan li>span{flex-shrink:0}
-.predictor-destination{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
-.predictor-destination strong{display:block;font-size:14px}
-@media(max-width:600px){.house-forecast-plan>header,.house-forecast-plan li{flex-wrap:wrap;gap:5px}.house-forecast-plan>header .btn{margin-top:4px}}
+@media(max-width:600px){.house-forecast-plan>header,.house-forecast-plan li{flex-wrap:wrap;gap:5px}}

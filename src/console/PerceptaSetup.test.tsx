@@ -33,6 +33,33 @@ function setup(initialSetup=false,failLaunch=false,community=false,equipment=fal
  return fetcher;
 }
 async function openEquipment(){fireEvent.click(screen.getByRole('button',{name:'Edit configuration'}));await screen.findByRole('button',{name:/Grid meter/});}
+it('derives the forecast inputs and prepares their return in House data', async () => {
+ const fetcher = setup();
+ const fallback = fetcher.getMockImplementation()!;
+ let series = ['consumption'];
+ let prepared = false;
+ fetcher.mockImplementation(async (url, init) => {
+  if (!String(url).endsWith('/forecast-plan')) return fallback(url, init);
+  if (init?.method === 'POST') prepared = true;
+  return new Response(JSON.stringify({site_id:'site', return_available:true, ev_chargers:[],
+   lanes:series.map(name => ({series:name, equipment:['Mapped meter'], input_state:'mapped',
+    missing_inputs:[], forecast_channel_configured:prepared}))}));
+ });
+ await openEquipment();
+ expect(screen.queryByRole('region',{name:'House forecast plan'})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
+ const plan = () => within(screen.getByRole('region',{name:'House forecast plan'}));
+ expect(await plan().findByText('Base consumption')).toBeVisible();
+ expect(plan().queryByText('Solar production')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button',{name:'Back'}));
+ series = ['consumption', 'production'];
+ fireEvent.click(screen.getByRole('button',{name:'Next: house data'}));
+ expect(await plan().findByText('Solar production')).toBeVisible();
+ expect(fetcher.mock.calls.every(([,opts]) => !opts?.method || opts.method === 'GET')).toBe(true);
+ fireEvent.click(plan().getByRole('button',{name:'Configure forecast return'}));
+ expect(await plan().findAllByText('Forecast input configured')).toHaveLength(2);
+ expect(fetcher.mock.calls.filter(([url,opts]) => String(url).endsWith('/forecast-plan') && opts?.method === 'POST')).toHaveLength(1);
+});
 it('opens an editable form immediately with a save button in the wizard footer',async()=>{
  const fetcher=setup(false,false,false,true);
  fireEvent.click(screen.getByRole('button',{name:'Collection settings'}));

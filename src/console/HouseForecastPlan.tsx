@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Settings2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Activity } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
 
 type Lane = {
@@ -26,12 +26,10 @@ function inputDescription(lane: Lane) {
   }
 }
 
-export function HouseForecastPlan({ siteId, onConfigure, onPrepared, revision = 0, children }: {
+export function HouseForecastPlan({ siteId, onPrepared, revision = 0 }: {
   siteId: string;
-  onConfigure?: () => void;
   onPrepared?: () => void;
   revision?: number;
-  children?: ReactNode;
 }) {
   const [preparation, setPreparation] = useState<{ site: string; busy?: boolean; error?: string; prepared?: boolean }>();
   const [attempt, setAttempt] = useState(0);
@@ -69,7 +67,6 @@ export function HouseForecastPlan({ siteId, onConfigure, onPrepared, revision = 
     <header>
       <div><h3><Activity size={17} aria-hidden="true" />House forecast plan</h3>
         <p>From the saved equipment and Percepta configuration.</p></div>
-      {onConfigure && <button className="btn" onClick={onConfigure}><Settings2 size={15} />Configure Percepta</button>}
     </header>
     {current?.error ? <p role="alert">Forecast plan unavailable. {current.error} <button className="btn text" onClick={() => setAttempt(n => n + 1)}>Retry</button></p>
       : !plan ? <p role="status">Loading house plan…</p> : <>
@@ -92,6 +89,5 @@ export function HouseForecastPlan({ siteId, onConfigure, onPrepared, revision = 
         {state?.prepared && <p role="status">Return configured. Apply the Percepta configuration to receive forecasts.</p>}
         <p>Check received forecasts in Percepta messages.</p>
       </>}
-    {children}
   </section>;
 }

@@ -254,7 +254,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
    onSave={saveConnection}
    onCancel={()=>setSourceEditor(undefined)}
  />:ready&&<>
- {siteId&&!equipmentId&&!communityMode&&!hasEditor&&<HouseForecastPlan siteId={siteId} revision={planRevision} onPrepared={()=>void run(async()=>{
+ {tab==='general'&&siteId&&!equipmentId&&!communityMode&&!hasEditor&&<HouseForecastPlan siteId={siteId} revision={planRevision} onPrepared={()=>void run(async()=>{
   changed();
   const house=owners.find(o=>o.scope==='sites'&&o.id===siteId);
   if(house)await reloadProfile(house);
