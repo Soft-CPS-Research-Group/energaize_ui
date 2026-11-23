@@ -8,6 +8,7 @@ import {
   FieldValues,
   fieldName,
 } from "./CycleReadings";
+import { ProposalReceipt } from "./DeploymentEvidence";
 import { stamp } from "./deploymentModel";
 
 type ObjectData = Record<string, unknown>;
@@ -99,15 +100,18 @@ export async function feed(
   archive: boolean,
   summary: boolean,
   signal: AbortSignal,
+  cycle?: string,
 ) {
-  const count = summary ? 1 : 8;
+  const count = summary || cycle ? 1 : 8;
+  const query = new URLSearchParams({limit: String(count)});
+  if (cycle) query.set("cycle", cycle);
   const batch = archive
     ? await readJson<Feed>(
         `/telemetry-api/api/measurements/sites/${site}/cycle-archive?limit=${count}&summary=${summary}`,
         signal,
       )
     : await runtimeRequest<Feed>(
-        `/api/runtime/percepta/sites/${site}/messages?limit=${count}`,
+        `/api/runtime/percepta/sites/${site}/messages?${query}`,
         { signal },
       );
   if (batch.site_id !== site || !Array.isArray(batch.messages))
@@ -188,6 +192,7 @@ type FlowProps = {
   error?: string;
   periodSeconds?: number;
   measurementNames?: MeasurementNames;
+  recordedCycle?: string;
 };
 const archiveKinds = ["archive", "write", "read"];
 export function CycleFlow({
@@ -196,6 +201,7 @@ export function CycleFlow({
   error,
   periodSeconds,
   measurementNames,
+  recordedCycle,
 }: FlowProps) {
   const [pinned, setPinned] = useState<Cycle>();
   if (error) return <p role="alert">{error}</p>;
@@ -217,7 +223,7 @@ export function CycleFlow({
   const labels = batch.measurement_names ?? measurementNames ?? {};
   return (
     <>
-      <div className="cycle-timing">
+      {!recordedCycle && <div className="cycle-timing">
         <div>
           <span>Page check</span>
           <strong>
@@ -244,10 +250,10 @@ export function CycleFlow({
           </span>
           <strong>{clockTime(rows[0]?.timestamp)}</strong>
         </div>
-      </div>
+      </div>}
       <p>
         {forecasts
-          ? "Forecasts received by Percepta, grouped by cycle."
+          ? "Forecasts and device readings are both inputs to Percepta. Each cycle uses the forecasts already received for its time window."
           : decision
             ? kind === "request"
               ? "Cycles with a recorded inference exchange."
@@ -256,19 +262,19 @@ export function CycleFlow({
               ? "Cycles stored in this house’s MongoDB collection."
               : kind === "observations"
                 ? "Equipment readings in the cycle assembled by Percepta. Generated values and missing readings are marked."
-                : "Cycles published by Percepta."}
+                : "Percepta publishes a copy of the assembled cycle to RabbitMQ for archiving. The inference request travels separately over HTTP."}
       </p>
       {!current ? (
         <p role="status">
-          {forecasts
+          {recordedCycle ? "No matching proposal for the selected cycle · " + stamp(recordedCycle) : forecasts
             ? "No received forecasts in the latest cycles."
             : decision
               ? "No recorded inference response in the latest cycles."
               : "No recorded cycles for this house."}
         </p>
       ) : (
-        <div className="cycle-reader">
-          <nav aria-label="Recent cycles">
+        <div className={recordedCycle ? "cycle-reader recorded-cycle" : "cycle-reader"}>
+          {!recordedCycle && <nav aria-label="Recent cycles">
             <button
               type="button"
               aria-pressed={!pinned}
@@ -286,7 +292,7 @@ export function CycleFlow({
                 {clockTime(m.timestamp)}
               </button>
             ))}
-          </nav>
+          </nav>}
           <article className="deployment-cycle">
             <h4>
               {new Date(current.timestamp).toLocaleDateString("en-GB", {
@@ -339,8 +345,7 @@ export function CycleFlow({
                   />
                 ) : decision ? (
                   <>
-                    <h4>Recorded decision</h4>
-                    <FieldValues value={current.inference_decision} />
+                    <ProposalReceipt decision={current.inference_decision || {}}/>
                   </>
                 ) : (
                   <>

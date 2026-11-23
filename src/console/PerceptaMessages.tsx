@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, Download, Pause, Play, Radio, RefreshCw, Search } from 'lucide-react';
+import { EquipmentIcon, readingValue } from './DeploymentEvidence';
 import { FieldValues, cyclePeriod, cycleRefreshSeconds } from './CycleReadings';
 import { runtimeRequest } from '../api/runtimeApi';
 import { displayMeasurementName } from './PerceptaMeasurementEditor';
@@ -21,13 +22,13 @@ const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
 export function MessageEquipment({ entities, names }: { entities: unknown; names: MeasurementNames }) {
-  return <details open><summary>Equipment readings</summary>
+  return <div className="evidence-stack" aria-label="Equipment readings">{!Object.keys(record(entities)).length && <p>No equipment readings in this cycle.</p>}
     {Object.entries(record(entities)).map(([key, entity]) => {
       const parameters = Object.entries(record(record(entity).parameters));
       const equipment = parameters.find(([id]) => names[id]?.equipment);
       const forecast = record(entity).entity_type_id === 'forecast_service';
-      return <section className="percepta-message-equipment" key={key} aria-label={forecast ? 'Predictor forecasts' : undefined}>
-        <h4>{forecast ? 'Predictor forecasts' : equipment ? names[equipment[0]].equipment : displayMeasurementName(String(record(entity).entity_type_id || key))}</h4>
+      return <section className="evidence-group" key={key} aria-label={forecast ? 'Predictor forecasts' : undefined}>
+        <header><EquipmentIcon kind={String(record(entity).entity_type_id || '')}/><h4>{forecast ? 'Predictor forecasts' : equipment ? names[equipment[0]].equipment : displayMeasurementName(String(record(entity).entity_type_id || key))}</h4></header>
         <dl>{parameters.map(([id, data]) => {
           const measurement = record(data);
           const values = Array.isArray(measurement.final_values) ? measurement.final_values : [];
@@ -44,12 +45,14 @@ export function MessageEquipment({ entities, names }: { entities: unknown; names
             </> : 'No received forecast'}</dd></div>;
           }
           return <div key={id}><dt>{displayMeasurementName(names[id]?.measurement || String(measurement.parameter_type_id || id))}</dt>
-            <dd>{typeof first === 'number' || typeof first === 'string' ? `${first} ${unit}`.trim() : 'No reading'}{measurement.generated === true ? ' · Generated' : ''}</dd>
+            <dd><strong>{first == null ? 'No reading' : typeof first === 'object' ? <FieldValues value={first}/> : `${readingValue(first)} ${unit}`.trim()}</strong>
+              {measurement.generated === true ? <small>Generated</small> : first != null && measurement.generated === false ? <small>Measured</small> : null}
+              {values.length > 1 && <details><summary>{values.length} samples</summary><ul>{values.map((v,i) => <li key={i}><span>{record(v).period_start ? time(String(record(v).period_start)) : 'Sample '+(i+1)}</span><span>{record(v).value == null ? 'No reading' : readingValue(record(v).value)} {unit}</span></li>)}</ul></details>}</dd>
           </div>;
         })}</dl>
       </section>;
     })}
-  </details>;
+  </div>;
 }
 
 /** Inspect persisted output, independently of inference and without consuming broker messages. */

@@ -358,6 +358,7 @@ it("uses the available width and keeps the complete backend group inside the ser
         .map((e) => [e.step, e.source, e.target]),
     ).toEqual([
       [1, "sensors", "percepta"],
+      [1, "broker", "percepta"],
       [2, "percepta", "controller"],
       [3, "controller", "percepta"],
       [4, "percepta", "supervisor"],

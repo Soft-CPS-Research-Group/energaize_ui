@@ -575,6 +575,7 @@ export function graphLayout(
         "amqp",
         outgoing ? points : points.reverse(),
         [(lane + tx) / 2, y],
+        outgoing ? undefined : 1,
       );
     }
   } else {
@@ -597,6 +598,7 @@ export function graphLayout(
       0.68,
       -27,
       -27,
+      1,
     );
   }
   if (forecast && broker) {

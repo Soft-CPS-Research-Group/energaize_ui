@@ -104,3 +104,12 @@ it("keeps disabled and historical flexibility results distinct for each charger"
   expect(screen.getByText(/Previous forecast/)).toBeVisible();
   expect(screen.getByText("45 min")).toBeVisible();
 });
+
+it("keeps a linked receipt separate from live polling and shows its proposed value", () => {
+  const frame = cycle(10);
+  const batch: Feed = {site_id: "test", available: true, checked_at: frame.timestamp, messages: [{...frame, inference_decision: {providers:["TensorRTNative"], actions:[{action_name:"reference_kw",value:2.2404000759124756, unit:"kW"}]}}]};
+  render(<CycleFlow kind="decision" batch={batch} recordedCycle={frame.timestamp}/>);
+  expect(screen.getByText("Returned to Percepta")).toBeVisible();
+  expect(screen.getByText("2.2404 kW")).toBeVisible();
+  expect(screen.queryByText("Follow latest")).toBeNull();
+});

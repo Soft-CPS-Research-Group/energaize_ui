@@ -74,7 +74,12 @@ export function CommunityWorkspace(): JSX.Element {
       onReady:workspaceReady,
       logout:()=>{sessionStorage.setItem(AUTH_SCENE_STORAGE_KEY,'logout');logout();},
       navigate:(path:string)=>navigation.current(path),
-      onRoute:(path:string|null)=>{if(path&&path!==activePath.current){activePath.current=path;navigation.current(path);}}
+      onRoute:(path:string|null)=>{
+        if(!path || path===activePath.current)return;
+        const previous=new URL(activePath.current,location.origin),next=new URL(path,location.origin);
+        if(previous.searchParams.get('deploymentView')==='proposal' && next.pathname===previous.pathname && next.searchParams.get('tab')==='deployment' && next.searchParams.get('site')===previous.searchParams.get('site'))return;
+        activePath.current=path;navigation.current(path);
+      }
     };
     const environment=createWorkspaceEnvironment(shadow,body,bridge);
     let refreshInventory=false;
@@ -88,7 +93,9 @@ export function CommunityWorkspace(): JSX.Element {
       if(session.role==='rec_manager')deploymentSlots.forEach(node=>{
         if(roots.has(node))return;
         const root=createRoot(node);roots.set(node,root);
-        root.render(<DeploymentWorkspace key={node.dataset.deploymentSite} communityName={node.dataset.deploymentCommunity} chargers={JSON.parse(node.dataset.deploymentChargers || '[]')} siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)} onCollectionChange={()=>{refreshInventory=true;}}/>);
+        const query=new URL(activePath.current,location.origin).searchParams;
+        const cycle=query.get('deploymentView')==='proposal' && query.get('site')===node.dataset.deploymentSite ? query.get('cycle') : null;
+        root.render(<DeploymentWorkspace initialCycle={cycle && Number.isFinite(Date.parse(cycle)) ? cycle : undefined} key={node.dataset.deploymentSite} communityName={node.dataset.deploymentCommunity} chargers={JSON.parse(node.dataset.deploymentChargers || '[]')} siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)} onCollectionChange={()=>{refreshInventory=true;}}/>);
       });
       shadow.querySelectorAll<HTMLElement>('[data-flex-calendar]').forEach(node=>{
         if(roots.has(node))return;

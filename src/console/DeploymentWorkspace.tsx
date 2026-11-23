@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
+import { EquipmentSources } from "./DeploymentEvidence";
 import { PerceptaMessages } from "./PerceptaMessages";
 import { HouseForecastPlan } from "./HouseForecastPlan";
 import { PerceptaSetup, type PerceptaLaunchPlan } from "./PerceptaSetup";
@@ -143,6 +144,7 @@ const icon = (kind: string) =>
     <Network size={19} />
   );
 type Props = {
+  initialCycle?: string;
   siteId: string;
   siteName: string;
   communityName?: string;
@@ -160,6 +162,7 @@ export function DeploymentWorkspace(props: Props) {
   return <SiteDeployment key={props.siteId} {...props} />;
 }
 function SiteDeployment({
+  initialCycle,
   siteId,
   siteName,
   communityName,
@@ -170,8 +173,9 @@ function SiteDeployment({
   const base = "/api/runtime/sites/" + siteId;
   const [draft, setDraft] = useState<Draft>(),
     [map, setMap] = useState<DeploymentMap>();
-  const [selected, select] = useState<string | null>(null),
+  const [selected, select] = useState<string | null>(initialCycle ? "flow:decision" : null),
     [launch, setLaunch] = useState<PerceptaLaunchPlan>();
+  const [linkedCycle, setLinkedCycle] = useState(initialCycle);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(""),
     [checking, setChecking] = useState("");
@@ -291,6 +295,15 @@ function SiteDeployment({
     useCallback((s) => feed(siteId, false, !detailed, s), [siteId, detailed]),
     cycleRefreshSeconds(period) * 1000,
   );
+  const [receipt, setReceipt] = useState<{batch?: Feed; error?: string}>();
+  useEffect(() => {
+    if (!linkedCycle) return;
+    const abort = new AbortController();
+    void feed(siteId, false, false, abort.signal, linkedCycle).then(batch => {
+      if (!abort.signal.aborted) setReceipt({batch: {...batch, messages: batch.messages.filter(m => Date.parse(m.timestamp) === Date.parse(linkedCycle))}});
+    }).catch(e => { if (!abort.signal.aborted) setReceipt({error: e.message}); });
+    return () => abort.abort();
+  }, [siteId, linkedCycle]);
   const history = useObservation(
     siteId + "/energy",
     useCallback(
@@ -552,7 +565,6 @@ function SiteDeployment({
     };
   }
   function open(kind: string) {
-    if (kind === "sensors") kind = "flow:observations";
     if (kind === "actuators") kind = "flow:dispatch";
     if (suppress.current || busy || !map || !draft || !assigned) return;
     if (kind === "percepta") {
@@ -660,7 +672,16 @@ function SiteDeployment({
     (d) => d.placement === assigned?.controller,
   );
   const close = () => {
-    if (!busy) select(null);
+    if (!busy) {
+      select(null);
+      if (linkedCycle) {
+        setLinkedCycle(undefined);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("cycle");
+        url.searchParams.delete("deploymentView");
+        navigate(url.pathname + url.search);
+      }
+    }
   };
   return (
     <section
@@ -675,6 +696,7 @@ function SiteDeployment({
         </div>
         <div className="deployment-legend" aria-label="Connection status">
           <span>Observed</span>
+          <span className="configured-route">Route</span>
           <span>Planned</span>
         </div>
       </header>
@@ -932,7 +954,7 @@ function SiteDeployment({
         >
           {busy && <p role="status">{busy}</p>}
           {error && <p role="alert">{error}</p>}
-          {selected === "messages" ? (
+          {selected === "sensors" ? <EquipmentSources siteId={siteId}/> : selected === "messages" ? (
             <PerceptaMessages
               siteId={siteId}
               siteName={siteName}
@@ -1149,8 +1171,9 @@ function SiteDeployment({
                 kind={flow?.id || "write"}
                 periodSeconds={period}
                 measurementNames={output?.value?.measurement_names}
-                batch={(archival ? archive : output)?.value}
-                error={(archival ? archive : output)?.error}
+                recordedCycle={linkedCycle}
+                batch={linkedCycle ? receipt?.batch : (archival ? archive : output)?.value}
+                error={linkedCycle ? receipt?.error : (archival ? archive : output)?.error}
               />
             </>
           ) : (
