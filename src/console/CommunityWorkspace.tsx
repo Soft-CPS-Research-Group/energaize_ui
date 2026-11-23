@@ -79,7 +79,7 @@ export function CommunityWorkspace(): JSX.Element {
       onRoute:(path:string|null)=>{
         if(!path || path===activePath.current)return;
         const previous=new URL(activePath.current,location.origin),next=new URL(path,location.origin);
-        if(['proposal','messages','issues','configure'].includes(previous.searchParams.get('deploymentView') || '') && next.pathname===previous.pathname && next.searchParams.get('tab')==='deployment' && next.searchParams.get('site')===previous.searchParams.get('site'))return;
+        if(['proposal','messages','issues','configure','sensors'].includes(previous.searchParams.get('deploymentView') || '') && next.pathname===previous.pathname && next.searchParams.get('tab')==='deployment' && next.searchParams.get('site')===previous.searchParams.get('site'))return;
         activePath.current=path;navigation.current(path);
       }
     };
@@ -103,7 +103,7 @@ export function CommunityWorkspace(): JSX.Element {
         const query=new URL(activePath.current,location.origin).searchParams;
         const view=query.get('deploymentView');
         const cycle=(view==='proposal' || view==='messages') && query.get('site')===node.dataset.deploymentSite ? query.get('cycle') : null;
-        root.render(<DeploymentWorkspace reviewEquipment={query.get("reviewEquipment") || undefined} initialAction={query.get('site')===node.dataset.deploymentSite && (view==='issues'||view==='configure')?view:undefined} initialMessages={view==='messages'} initialCycle={cycle && Number.isFinite(Date.parse(cycle)) ? cycle : undefined} key={node.dataset.deploymentSite} communityName={node.dataset.deploymentCommunity} chargers={JSON.parse(node.dataset.deploymentChargers || '[]')} siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)} onCollectionChange={()=>{refreshInventory=true;}}/>);
+        root.render(<DeploymentWorkspace reviewEquipment={query.get("reviewEquipment") || undefined} initialAction={query.get('site')===node.dataset.deploymentSite && (view==='issues'||view==='configure'||view==='sensors')?view:undefined} initialMessages={view==='messages'} initialCycle={cycle && Number.isFinite(Date.parse(cycle)) ? cycle : undefined} key={node.dataset.deploymentSite} communityName={node.dataset.deploymentCommunity} chargers={JSON.parse(node.dataset.deploymentChargers || '[]')} siteId={node.dataset.deploymentSite!} siteName={node.dataset.deploymentName||'House'} navigate={path=>navigation.current(path)} onCollectionChange={()=>{refreshInventory=true;}}/>);
       });
       shadow.querySelectorAll<HTMLElement>('[data-flex-calendar]').forEach(node=>{
         if(roots.has(node))return;

@@ -3,7 +3,7 @@ import { CheckCheck, CircuitBoard, Waves, Zap } from "lucide-react";
 import { fieldName, FieldValues } from "./CycleReadings";
 import { runtimeRequest } from "../api/runtimeApi";
 import { EquipmentArt } from "./EquipmentArt";
-import type { Profile, Source, Connection, Connector } from "./perceptaSetupModel";
+import type { Profile, Source, Connection } from "./perceptaSetupModel";
 
 export function EquipmentIcon({ kind }: { kind: string }) {
   if (kind === "forecast_service") return <Waves aria-hidden="true" size={19}/>;
@@ -16,10 +16,10 @@ export function readingValue(value: unknown) {
 }
 
 type Asset = {id?: string; asset_id?: string; name?: string; asset_type?: string; data?: {name?: string; site_id?: string; site_Id?: string; lifecycle_status?: string}};
-type Equipment = {id: string; name: string; kind: string; profile?: Profile; unavailable?: boolean; source?: string; sourcesUnavailable?: boolean};
+type Equipment = {id: string; name: string; kind: string; profile?: Profile; unavailable?: boolean; source?: Source; sourcesUnavailable?: boolean};
 export function EquipmentSources({ siteId }: { siteId: string }) {
   const [items, setItems] = useState<Equipment[]>();
-  const [adapters,setAdapters] = useState<Record<string,string>>({});
+  const [adapters,setAdapters] = useState<Record<string,Connection>>({});
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
@@ -30,11 +30,8 @@ export function EquipmentSources({ siteId }: { siteId: string }) {
         if (!house.ok) return {};
         const {assigned_rec_id} = await house.json();
         if (!assigned_rec_id) return {};
-        const [connections, types] = await Promise.all([
-          runtimeRequest<Connection[]>("/api/runtime/connections?community_id="+encodeURIComponent(assigned_rec_id),options),
-          runtimeRequest<Connector[]>("/api/runtime/connector-types",options).catch(()=>[] as Connector[]),
-        ]);
-        return Object.fromEntries(connections.map(c=>[c.id, types.find(t=>t.id===c.provider)?.name || c.name || c.provider]));
+        const connections = await runtimeRequest<Connection[]>("/api/runtime/connections?community_id="+encodeURIComponent(assigned_rec_id),options);
+        return Object.fromEntries(connections.map(connection => [connection.id, connection]));
       }
       const [response, sources, names] = await Promise.all([
         fetch("/community-api/api/assets/", options),
@@ -45,7 +42,7 @@ export function EquipmentSources({ siteId }: { siteId: string }) {
       const assets: Asset[] = await response.json();
       const house = assets.filter(a => (a.data?.site_id || a.data?.site_Id) === siteId && a.data?.lifecycle_status !== "retired");
       const results = await Promise.all(house.map(async asset => {
-        const item = {id: String(asset.id || asset.asset_id), name: asset.data?.name || asset.name || "Equipment", kind: asset.asset_type || "", source: sources?.find(s => s.asset_id === (asset.id || asset.asset_id))?.connection_id, sourcesUnavailable: !sources};
+        const item = {id: String(asset.id || asset.asset_id), name: asset.data?.name || asset.name || "Equipment", kind: asset.asset_type || "", source: sources?.find(s => s.asset_id === (asset.id || asset.asset_id)), sourcesUnavailable: !sources};
         try {
           const res = await fetch("/community-api/api/assets/"+encodeURIComponent(item.id)+"/signals", options);
           if (res.status === 404) return item;
@@ -65,10 +62,35 @@ export function EquipmentSources({ siteId }: { siteId: string }) {
   if (!items.length) return <p>No equipment registered for this house.</p>;
   return <><p>Measurement inputs configured for this house in Percepta. Open Readings on the map to see what arrived.</p>
     <div className="evidence-stack">{items.map(item => {
-      const channels = item.profile?.capabilities.filter(c => c.enabled && c.capability_type !== "actuator" && (c.collection?.role === "input" || (!c.collection && !c.mongo_binding))) || [];
+      const channels = item.profile?.capabilities.filter(c => c.capability_type !== "actuator" && (c.collection?.role === "input" || (c.enabled && !c.collection && !c.mongo_binding))) || [];
       return <section className="evidence-group" key={item.id}><header><EquipmentIcon kind={item.kind}/><h4>{item.name}</h4></header>
         {item.unavailable ? <p>Measurement configuration unavailable</p> : !channels.length ? <p>No measurement inputs configured</p> :
-          <ul>{channels.map(c => <li key={c.capability_id}><span>{fieldName(c.name)} <small>{c.unit}</small></span><small>{c.collection?.source_binding?.connection_id || item.source ? adapters[c.collection?.source_binding?.connection_id || item.source || ""] || "Adapter unavailable" : item.sourcesUnavailable ? "Source unavailable" : "No source linked"}</small></li>)}</ul>}
+          <ul className="equipment-source-list">{channels.map(channel => {
+            const contract = channel.collection;
+            const binding = contract?.source_binding;
+            const id = binding?.connection_id || item.source?.connection_id;
+            const adapter = id ? adapters[id] : undefined;
+            const device = binding?.fetch_key || (id === item.source?.connection_id ? item.source?.device_id : undefined);
+            const derived = contract?.parameter_type_id === "electric_vehicle" && !binding?.mapping_required;
+            const reference = derived ? "Charging session" : [
+              device && (adapter?.provider === "cleanwatts" ? "Tag " + device : device),
+              binding?.topic,
+              binding?.match_key !== device && binding?.match_key,
+            ].filter(Boolean).join(" · ");
+            const inputUnit = adapter?.provider === "pulsecharge" && contract?.parameter_type_id === "soc"
+              ? "ratio" : binding?.source_measurement_unit;
+            return <li key={channel.capability_id}>
+              <div><strong>{fieldName(channel.name)}</strong>
+                <small>{derived ? "Derived by Percepta" : adapter?.name || (id || item.sourcesUnavailable ? "Source unavailable" : "No source linked")}</small>
+                {reference && <small className="equipment-source-reference">{reference}</small>}
+              </div>
+              <div className="equipment-source-output">
+                {contract && <code>{contract.parameter_type_id}</code>}
+                <small>{inputUnit && inputUnit !== channel.unit ? inputUnit + " → " : ""}{channel.unit}</small>
+                {!channel.enabled && <small>Pending</small>}
+              </div>
+            </li>;
+          })}</ul>}
       </section>;
     })}</div></>;
 }

@@ -151,7 +151,7 @@ const icon = (kind: string) =>
 type Props = {
   initialCycle?: string;
   initialMessages?: boolean;
-  initialAction?: "issues" | "configure";
+  initialAction?: "issues" | "configure" | "sensors";
   reviewEquipment?: string;
   siteId: string;
   siteName: string;
@@ -184,7 +184,7 @@ function SiteDeployment({
   const base = "/api/runtime/sites/" + siteId;
   const [draft, setDraft] = useState<Draft>(),
     [map, setMap] = useState<DeploymentMap>();
-  const [selected, select] = useState<string | null>(initialCycle ? (initialMessages ? "messages" : "flow:decision") : initialAction==="issues"?"issues":null),
+  const [selected, select] = useState<string | null>(initialCycle ? (initialMessages ? "messages" : "flow:decision") : initialAction==="issues"||initialAction==="sensors"?initialAction:null),
     [launch, setLaunch] = useState<PerceptaLaunchPlan>();
   const [linkedCycle, setLinkedCycle] = useState(initialCycle);
   const [error, setError] = useState(""),

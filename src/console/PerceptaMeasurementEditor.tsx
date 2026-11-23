@@ -11,6 +11,8 @@ export const measurementLabel = (parameter: string, assetType?: string) =>
 export const equipmentMeasurements=(assetType?:string)=>available[assetType||'']||['energy_in_total'];
 const valueType=(p:string)=>p==='flexibility'?'object':['session_status','electric_vehicle'].includes(p)?'string':'float';
 const shelly:Record<string,string>={energy_in_total:'total_act',energy_out_total:'total_act_ret',energy_in_l1:'a_total_act_energy',energy_in_l2:'b_total_act_energy',energy_in_l3:'c_total_act_energy',energy_out_l1:'a_total_act_ret_energy',energy_out_l2:'b_total_act_ret_energy',energy_out_l3:'c_total_act_ret_energy'};
+const softcpsBatteryFields:Record<string,string>={energy_in:'energy_charged_kwh_window',energy_out:'energy_discharged_kwh_window',state_of_charge:'soc_pct'};
+const defaultSoftcpsField=(parameter:string)=>softcpsBatteryFields[parameter]||parameter;
 const shellyTopics={em:'/status/emdata:0',em1:'/status/em1data:0'};
 type ShellyFormat=keyof typeof shellyTopics;
 const shellyField=(format:ShellyFormat,parameter:string)=>{
@@ -79,13 +81,13 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
       source_binding: {
         connection_id: id,
         fetch_key: device || (provider==='cleanwatts'&&channel?.source==='cleanwatts'?channel.tag:undefined),
-        match_key: exampleField||undefined,
+        match_key: provider==='softcps'?defaultSoftcpsField(parameter):exampleField||undefined,
         mapping_required: parameter !== 'electric_vehicle',
         ...(provider === 'cleanwatts_2' ? {
           shelly_accumulation:'lifetime',
           ...(exampleField?{topic:shellyTopics[format],source_measurement_unit:legacyGen1?'Wh':existingShellyBinding?.source_measurement_unit||'Wh'}:{}),
         } : {}),
-        ...((provider === 'cleanwatts' || provider === 'pulsecharge') &&
+        ...(['cleanwatts','pulsecharge','softcps'].includes(provider || '') &&
           !['electric_vehicle','flexibility'].includes(parameter) ? {source_measurement_unit: sourceUnit as 'kWh'|'kW'|'%'|'Status'} : {}),
       },
     }),
@@ -99,9 +101,11 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
   const inherited=source?.connection_id===adapter ? source.device_id : undefined;
   current.source_binding={mapping_required:true,...prior,connection_id:adapter,
     fetch_key:prior?.fetch_key || inherited || (provider==='cleanwatts'&&channel?.source==='cleanwatts'?channel.tag:undefined)};
+  if(provider==='softcps'&&!current.source_binding.match_key)
+    current.source_binding.match_key=defaultSoftcpsField(parameter);
   return current;
  });
- const defaultUnit=(parameter:string)=>parameter==='price'||parameter==='energy_price'?(defaultPriceSource?.provider==='omie'?'EUR/kWh':'EUR/MWh'):parameter.includes('charge')||parameter==='soc'?(provider==='cleanwatts'||provider==='pulsecharge'?'ratio':'%'):parameter==='power'?'kW':parameter==='session_status'?'Status':['electric_vehicle','flexibility'].includes(parameter)?'':'kWh';
+ const defaultUnit=(parameter:string)=>parameter==='price'||parameter==='energy_price'?(defaultPriceSource?.provider==='omie'?'EUR/kWh':'EUR/MWh'):parameter==='state_of_charge'||parameter==='soc'?'ratio':parameter==='power'?'kW':parameter==='session_status'?'Status':['electric_vehicle','flexibility'].includes(parameter)?'':'kWh';
  const [name,setName]=useState(channel?.name||measurementLabel(parameter,profile?.asset_type)),[unit,setUnit]=useState(channel?.unit||defaultUnit(parameter));
  const [dataType,setDataType]=useState(channel?.data_type||valueType(parameter)),[enabled,setEnabled]=useState(channel?.collection?.source_binding && !initialMeasurement ? channel.enabled : true);
  const [missingSource,setMissingSource]=useState(false);
@@ -157,6 +161,7 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
     setContract({...contract,source_binding:defaults.source_binding,temporal_behavior:defaults.temporal_behavior});
   }}><option value="" disabled>Choose an adapter</option>{connections.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>)}
   {owner.scope==='assets'&&['softcps','cleanwatts_2'].includes(chosenProvider||'')&&<label>{shellySource?'Shelly exchange':'Source device identifier'}<input required value={binding?.fetch_key||''} onChange={e=>setBinding('fetch_key',e.target.value)}/></label>}
+  {chosenProvider==='softcps'&&<label>Observation field<input required value={binding?.match_key||''} onChange={e=>setBinding('match_key',e.target.value)}/></label>}
   {nativePrice&&<label>Market<select value={binding?.match_key||'pt_spot_price'} onChange={event=>setBinding('match_key',event.target.value)}><option value="pt_spot_price">Portugal</option><option value="es_spot_price">Spain</option></select><small>Day-ahead prices are supplied in 15-minute blocks.</small></label>}
   {contract.role==='input'&&chosenProvider==='cleanwatts'&&contract.parameter_type_id!=='electric_vehicle'&&<label>Measurement reference<input required value={binding?.fetch_key||''} onChange={e=>setBinding('fetch_key',e.target.value)}/><small>The tag supplied by Cleanwatts for this measurement.</small></label>}
   {contract.role==='input'&&chosenProvider==='pulsecharge'&&<label>Source user identifier<input required value={binding?.match_key||''} onChange={e=>setBinding('match_key',e.target.value)}/></label>}
@@ -195,9 +200,9 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
     </div>
     {binding?.shelly_accumulation!=='interval'&&<p className="percepta-helper">Percepta needs two readings to calculate the energy used between them.</p>}
   </fieldset>}
-  <details><summary>Advanced measurement settings</summary><div className="percepta-fields"><label>Unit<input value={unit} onChange={e=>setUnit(e.target.value)}/></label><label>Value type<select value={dataType} onChange={e=>setDataType(e.target.value)}>{['float','integer','boolean','string','object'].map(v=><option key={v}>{v}</option>)}</select></label><label>Percepta measurement ID<input value={contract.parameter_key||''} onChange={e=>setContract({...contract,parameter_key:e.target.value||null})}/><small>Used in Percepta messages. Leave blank for an automatic ID.</small></label><label>Privacy<select value={contract.privacy} onChange={e=>setContract({...contract,privacy:e.target.value})}>{['private','community','public'].map(v=><option key={v}>{v}</option>)}</select></label></div>
-  {contract.role==='input'&&!nativePrice&&!forecast&&!shellySource&&!['cleanwatts','pulsecharge'].includes(chosenProvider||'')&&<div className="percepta-fields"><label>Field or match key<input value={binding?.match_key||''} onChange={e=>setBinding('match_key',e.target.value||null)}/></label><label>Topic<input value={binding?.topic||''} onChange={e=>setBinding('topic',e.target.value||null)}/></label></div>}
-  {contract.role === 'input' && ['cleanwatts','pulsecharge'].includes(chosenProvider||'') && !['electric_vehicle','flexibility'].includes(contract.parameter_type_id) && (
+  <details><summary>Advanced measurement settings</summary><div className="percepta-fields"><label>Percepta output unit<input value={unit} onChange={e=>setUnit(e.target.value)}/></label><label>Value type<select value={dataType} onChange={e=>setDataType(e.target.value)}>{['float','integer','boolean','string','object'].map(v=><option key={v}>{v}</option>)}</select></label><label>Percepta measurement ID<input value={contract.parameter_key||''} onChange={e=>setContract({...contract,parameter_key:e.target.value||null})}/><small>Used in Percepta messages. Leave blank for an automatic ID.</small></label><label>Privacy<select value={contract.privacy} onChange={e=>setContract({...contract,privacy:e.target.value})}>{['private','community','public'].map(v=><option key={v}>{v}</option>)}</select></label></div>
+  {contract.role==='input'&&!nativePrice&&!forecast&&!shellySource&&!['cleanwatts','pulsecharge','softcps'].includes(chosenProvider||'')&&<div className="percepta-fields"><label>Field or match key<input value={binding?.match_key||''} onChange={e=>setBinding('match_key',e.target.value||null)}/></label><label>Topic<input value={binding?.topic||''} onChange={e=>setBinding('topic',e.target.value||null)}/></label></div>}
+  {contract.role === 'input' && ['cleanwatts','pulsecharge','softcps'].includes(chosenProvider||'') && !['electric_vehicle','flexibility'].includes(contract.parameter_type_id) && (
     <label>
       Unit reported by the device
       <select

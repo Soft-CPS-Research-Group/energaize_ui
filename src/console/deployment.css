@@ -778,3 +778,9 @@ span.deployment-edge-label, span.deployment-edge-label:hover { cursor: default; 
 .control-example nav button[aria-current] {background:var(--tint);border-color:var(--brand)}
 
 .percepta-message-toolbar .cycle-follow {width:auto;white-space:nowrap;padding-inline:14px}
+
+.equipment-source-list li > div {min-width:0;overflow-wrap:anywhere}
+.equipment-source-list small {display:block;margin-top:3px}
+.equipment-source-list .equipment-source-reference {font-family:var(--font-mono,monospace);font-size:11px}
+.equipment-source-output {text-align:right}
+.equipment-source-output code {font-size:12px}
