@@ -47,12 +47,23 @@ const perceptaOverview=overview;
 overview=function(){if(matisseDemo())perceptaOpenOnce('community:'+comm().recId);return perceptaOverview();};
 const perceptaSiteGraph=siteGraph;
 siteGraph=function(site){
- const archived=(site.assets||[]).flatMap(a=>a.channels||[]).filter(c=>c.enabled && c.mongo_binding?.field?.startsWith('payload.entities.') && (!c.mongo_binding.percepta_site_id||c.mongo_binding.percepta_site_id===site.id));
+ const assets=ceramicAssets(site);
+ const selected=ceramicSelection.get(site.id);
+ const equipment=assets.filter(a=>a.id===selected||selected==='group:'+ceramicAssetType(a));
+ if(equipment.length){
+  const key='site:'+site.id;
+  const channels=equipment.flatMap(a=>(a.channels||[]).filter(c=>c.capability_type==='sensor'&&c.enabled));
+  const panelKey=equipment.length===1?'asset:'+equipment[0].id:'group:'+site.id+':'+selected;
+  const label=equipment.length===1?equipment[0].name:ceramicGroupLabel(ceramicAssetType(equipment[0]));
+  return ceramicSiteScene(site)+ceramicChartToggle(key,'Energy data · '+label)+(ceramicCharts.has(key)?'<div class="ceramic-chart-content">'+tPanel(channels,panelKey)+'</div>':'');
+ }
+ const archived=assets.flatMap(a=>a.channels||[]).filter(c=>c.enabled && c.mongo_binding?.field?.startsWith('payload.entities.') && (!c.mongo_binding.percepta_site_id||c.mongo_binding.percepta_site_id===site.id));
  const first=archived[0]?.mongo_binding;
  if(first && archived.every(c=>c.mongo_binding.database===first.database && c.mongo_binding.collection===first.collection)){
-  const candidates=siteGridChannels(site).filter(c=>c.enabled && c.mongo_binding && (c.collection?.parameter_type_id||c.quantity)==='energy_in_total');
+  const meters=siteGridChannels({...site,assets}).filter(c=>c.enabled && c.mongo_binding);
+  const meter=type=>{const matches=meters.filter(c=>(c.collection?.parameter_type_id||c.quantity)===type);return matches.length===1?matches[0].backendId:undefined;};
   const key='site:'+site.id;
-  const archive={site:site.id,database:first.database,collection:first.collection,meter:candidates.length===1?candidates[0].backendId:undefined};
+  const archive={site:site.id,database:first.database,collection:first.collection,meter:meter('energy_in_total'),exportMeter:meter('energy_out_total')};
   return ceramicSiteScene(site)+ceramicChartToggle(key,'Energy data')+(ceramicCharts.has(key)?`<div class="ceramic-chart-content" data-house-energy="${esc(JSON.stringify(archive))}"></div>`:'');
  }
  if(!perceptaSource(site))return perceptaSiteGraph(site);

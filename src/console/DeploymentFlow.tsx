@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import {Radio} from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
 import { MessageEquipment, type MeasurementNames } from "./PerceptaMessages";
 import {
@@ -287,7 +288,7 @@ export function CycleFlow({
                 {clockTime(m.timestamp)}
               </button>
             ))}
-          </nav><footer>{pinned ? <button className="btn text" type="button" onClick={()=>setPinned(undefined)}>Follow latest</button> : <span>Following latest</span>}</footer></aside>}
+          </nav><footer><button className="cycle-follow" type="button" aria-pressed={!pinned} onClick={()=>setPinned(pinned ? undefined : current)}><Radio size={15}/>{pinned ? "Follow latest" : "Following latest"}</button></footer></aside>}
           <article className="deployment-cycle">
             <h4>
               {new Date(current.timestamp).toLocaleDateString("en-GB", {

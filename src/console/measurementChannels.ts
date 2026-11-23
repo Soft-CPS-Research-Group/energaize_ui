@@ -1,6 +1,6 @@
 import { loadWindow, type MeasurementRequest, type MeasurementSeries } from './measurementData';
 export interface MeasurementChannel {
-  defaultVisible?: boolean; displayScale?: number; curve?: 'linear' | 'stepAfter'; forecastEndpoint?: string;
+  defaultVisible?: boolean; displayScale?: number; curve?: 'linear' | 'stepAfter' | 'monotone'; forecastEndpoint?: string;
   incremental?: boolean; id: string; title: string; unit?: string; endpoint?: string; latestEndpoint?: string;
   expectedSeconds?: number | null; note?: string; name?: string;
   assetId?: string; assetName?: string; tag?: string | null; source?: string | null;

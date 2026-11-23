@@ -19,6 +19,7 @@ const date = (t: number, time = true) => new Date(t).toLocaleString('en-GB', { d
 const localInput = (t: number) => { const d = new Date(t); return new Date(t - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 export function MeasurementChart(props: MeasurementChartProps) {
   const [forecast, setForecast] = useState<MeasurementSeries>({points:[]});
+  const [forecastRead,setForecastRead]=useState<{key:string;failed:boolean}>();
   const [duration, setDuration] = useState(3600000), [live, setLive] = useState(false);
   const [range, setRange] = useState<TimeWindow | null>(null), [result, setResult] = useState<MeasurementSeries>({ points: [] });
   const [loading, setLoading] = useState(false), [error, setError] = useState(''), [progress, setProgress] = useState(0), [refresh, setRefresh] = useState(0);
@@ -81,16 +82,19 @@ export function MeasurementChart(props: MeasurementChartProps) {
   const displayRange = showingRetained ? retainedHistory!.range : range;
   useEffect(() => { props.onWindowChange?.(displayRange); }, [displayRange, props.onWindowChange]);
   useEffect(() => {
-    if (!live || !props.forecastEndpoint || !props.forecastRequest || !range) { setForecast({points:[]}); return; }
+    if (!live || !props.forecastEndpoint || !props.forecastRequest || !range) { setForecast({points:[]}); setForecastRead(undefined); return; }
     const controller=new AbortController();
-    void props.forecastRequest(props.forecastEndpoint,controller.signal).then(data=>{if(!controller.signal.aborted)setForecast(data);}).catch(()=>{if(!controller.signal.aborted)setForecast({points:[]});});
+    const key=(props.queryKey || props.forecastEndpoint)+'@'+range.end;
+    void props.forecastRequest(props.forecastEndpoint,controller.signal).then(data=>{
+      if(!controller.signal.aborted){setForecast(data);setForecastRead({key,failed:false});}
+    }).catch(()=>{if(!controller.signal.aborted){setForecast({points:[]});setForecastRead({key,failed:true});}});
     return()=>controller.abort();
-  },[live,props.forecastEndpoint,range?.end,props.forecastRequest]);
+  },[live,props.forecastEndpoint,range?.end,props.forecastRequest,props.queryKey]);
   const forecastEnd=live&&forecast.points.length&&displayRange ? Math.min(displayRange.end+Math.min(duration,86400000),Math.max(...forecast.points.map(p=>Date.parse(p.timestamp)))) : null;
   const axisRange=displayRange ? {...displayRange,end:forecastEnd||displayRange.end} : null;
   const plotSeries = useMemo(() => {
     const channels = props.series || [{ id: 'value', title: props.title, unit: props.unit, expectedSeconds: props.expectedSeconds, color: 'var(--brand)',forecastEndpoint:props.forecastEndpoint,curve:undefined,note:undefined }];
-    return channels.map(c => ({ ...c, forecastRows: (c.forecastEndpoint ? forecast.points : []).filter(p=>displayRange && Date.parse(p.timestamp)>=displayRange.end-900000 && Date.parse(p.timestamp)<= (forecastEnd||0)).map(p=>({epochMs:Math.max(displayRange?.end||0,Date.parse(p.timestamp)), value:typeof p.value==='number'?p.value:null,generated:p.generated,[c.id]:typeof p.value==='number'?p.value:null})), rows: plotRows({ ...displayResult, points: props.series ? displayResult.points.filter(p => p.channelId === c.id) : displayResult.points }, c.expectedSeconds).map(r => ({ ...r, [c.id]: r.value })) }));
+    return channels.map(c => ({ ...c, forecastRows: (c.forecastEndpoint ? forecast.points : []).filter(p=>displayRange && (!p.channelId || p.channelId===c.id) && Date.parse(p.timestamp)>=displayRange.end-900000 && Date.parse(p.timestamp)<= (forecastEnd||0)).map(p=>({epochMs:Math.max(displayRange?.end||0,Date.parse(p.timestamp)), value:typeof p.value==='number'?p.value:null,generated:p.generated,[c.id]:typeof p.value==='number'?p.value:null})), rows: plotRows({ ...displayResult, points: props.series ? displayResult.points.filter(p => p.channelId === c.id) : displayResult.points }, c.expectedSeconds).map(r => ({ ...r, [c.id]: r.value })) }));
   }, [displayResult, props.series, props.title, props.unit, props.expectedSeconds, props.forecastEndpoint, forecast, forecastEnd, displayRange]);
   const rows = useMemo(() => plotSeries.flatMap(c => c.rows).sort((a, b) => a.epochMs - b.epochMs), [plotSeries]);
   const unitGroups = useMemo(() => {
@@ -102,6 +106,9 @@ export function MeasurementChart(props: MeasurementChartProps) {
   const numeric = rows.filter(r => r.value !== null), last = numeric[numeric.length - 1];
   const hasFuture = plotSeries.some(series => series.forecastRows.some(row => row.value !== null));
   const stale = live && (!last || Date.now() - last.epochMs > Math.max(props.expectedSeconds || 15, displayResult.bucket_seconds || 0) * 3000);
+  const historyPending = !cache.current || cache.current.queryKey!==props.queryKey || cache.current.range!==range;
+  const forecastPending = !!(live && props.forecastEndpoint && forecastRead?.key!==((props.queryKey || props.forecastEndpoint)+'@'+range?.end));
+  const awaiting = loading || historyPending || forecastPending;
   const toggleLive = () => {
     cancelLatest();
     if (live) { if (showingRetained) { setRange(retainedHistory!.range); setResult(retainedHistory!.data); cache.current = retainedHistory!; } setLive(false); return; }
@@ -145,14 +152,21 @@ export function MeasurementChart(props: MeasurementChartProps) {
         <DayPicker mode="range" weekStartsOn={1} selected={draft} defaultMonth={draft?.from} onSelect={() => {}} onDayClick={selectDay} />
         <div className="telemetry-date-fields"><label>From<input aria-label="Start date and time" type="datetime-local" value={from} onInput={e => editDates(e.currentTarget.value, to)} onChange={e => editDates(e.target.value, to)} /></label><label>Until<input aria-label="End date and time" type="datetime-local" value={to} onInput={e => editDates(from, e.currentTarget.value)} onChange={e => editDates(from, e.target.value)} /></label></div><div className="telemetry-calendar-foot"><small>Local time · end time is exclusive · max. 31 days</small><button disabled={!validDraft} onClick={applyDates}>Apply range</button></div></div>}
     </div>
-    {props.showLatest && last?.value != null && <p className="telemetry-latest"><strong>{last.value.toLocaleString('en-GB',{maximumSignificantDigits:5})} {props.unit}</strong> · Latest in window · {date(last.epochMs)}</p>}
+    {props.showLatest && numeric.length>0 && <div className="energy-latest-values">{plotSeries.map(series=>{
+      const values=series.rows.filter(r=>r.value!==null);
+      const reading=values[values.length-1];
+      if(!reading)return null;
+      const unchanged=series.id==='import' && !!reading.value && values.length>=15 && reading.epochMs-values[0].epochMs>=14*60000 && series.rows.every(r=>r.value===reading.value);
+      return <div key={series.id}><small><i style={{background:series.color}}/>{series.title}</small><strong>{reading.value!.toLocaleString('en-GB',{maximumSignificantDigits:5})} {series.unit}</strong><time>{date(reading.epochMs)}</time>{unchanged && <span>Same value throughout this window</span>}</div>;
+    })}</div>}
+    {forecastRead?.failed && !forecastPending && <p role="status">Published horizon unavailable.</p>}
     {props.showLatest && props.note && <p className="telemetry-calendar-hint">{props.note}</p>}
-    {!numeric.length && hasFuture && <p role="status">Only the published horizon is available in this window.</p>}
+    {!historyPending && !numeric.length && hasFuture && <p role="status">Only the published horizon is available in this window.</p>}
     {live && showingRetained && <div className="telemetry-live-context" role="status">{showingRetained ? `No recent readings. Showing stored history from ${date(displayRange!.start)} to ${date(displayRange!.end)}. Live is checking the current time every 15 s.` : `Historical readings + live updates · live started ${date(liveStarted || Date.now())}.`}</div>}
     {displayResult.errors?.length ? <p className="telemetry-series-errors" role="status">{displayResult.errors.join(' · ')}</p> : null}
     {((displayResult.partial_count ?? 0) > 0 || displayResult.points.some(incomplete)) &&
       <p className="telemetry-live-context" role="status">Some readings in this window are incomplete or unverified.</p>}
-    {props.series && !props.series.length ? <div className="telemetry-empty"><h3>Select a measurement below</h3><p>Use the pills to show or hide readings. Additional channels are available under Measurement channels.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length && !hasFuture ? <div className="telemetry-empty"><Radio size={26} /><h3>{loading ? 'Loading measurements' : 'No readings in this window'}</h3><p>{loading ? 'Reading the selected sensor through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
+    {props.series && !props.series.length ? <div className="telemetry-empty"><h3>{props.showLatest ? 'Select a measurement' : 'Select a measurement below'}</h3><p>Choose a series to display.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length && !hasFuture ? <div className="telemetry-empty"><Radio size={26} /><h3>{awaiting ? 'Loading measurements' : (displayResult.errors?.length ? 'No readings from available sources' : 'No readings in this window')}</h3><p>{awaiting ? 'Reading the selected measurements through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
       {unitGroups.map((group) => <div className="telemetry-unit-plot" key={group[0].id}>
 
       <TimeseriesPlot data={group.flatMap(c => c.rows).sort((a, b) => a.epochMs - b.epochMs)} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
@@ -169,7 +183,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
           return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
         {group.map(c => <Line key={c.id} data={c.rows} name={c.title} type={c.curve || "linear"} dataKey={c.id} stroke={c.color} strokeWidth={2.2} dot={c.rows.filter(r => r.value !== null).length === 1} activeDot={false} connectNulls={false} isAnimationActive={false} />)}
-        {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name={props.forecastLabel || "Published prices"} type="stepAfter" dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
+        {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name={props.forecastLabel || "Published prices"} type={c.curve || "stepAfter"} dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
         {forecastEnd && displayRange && <ReferenceLine x={displayRange.end} stroke="var(--muted)" strokeDasharray="3 3" label={{value:'Now',position:'insideTopRight',fill:'var(--muted)',fontSize:11}}/>}
         {!forecastEnd && live && !showingRetained && liveStarted !== null && displayRange && liveStarted >= displayRange.start && liveStarted <= displayRange.end && <ReferenceLine x={liveStarted} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Live started', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}
         {drag && <ReferenceArea x1={Math.min(drag.start, drag.end)} x2={Math.max(drag.start, drag.end)} fill="var(--brand)" fillOpacity={0.1} strokeOpacity={0} />}

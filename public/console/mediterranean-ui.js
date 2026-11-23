@@ -84,7 +84,7 @@ function ceramicSiteScene(site) {
 }
 function ceramicChartToggle(key, label) {
   const open = ceramicCharts.has(key);
-  return `<button class="ceramic-chart-toggle" data-med-charts="${esc(key)}" aria-expanded="${open}"><span>${icon('chart')}<strong>${label}</strong><small>Measurements, history and comparisons</small></span><span>${open ? 'Hide charts' : 'Show charts'} ${icon(open ? 'up' : 'down')}</span></button>`;
+  return `<button class="ceramic-chart-toggle" data-med-charts="${esc(key)}" aria-expanded="${open}"><span>${icon('chart')}<strong>${esc(label)}</strong><small>Measurements, history and comparisons</small></span><span>${open ? 'Hide charts' : 'Show charts'} ${icon(open ? 'up' : 'down')}</span></button>`;
 }
 const ceramicOriginalSiteGraph = siteGraph;
 siteGraph = function(site) {
@@ -105,10 +105,31 @@ document.addEventListener('click', event => {
     const value = select.dataset.medSelect;
     if (value && !ceramicAssets(site).some(a => a.id === value) && !ceramicGroups(ceramicAssets(site)).some(g => 'group:' + g.type === value)) return;
     ceramicSelection.set(owner, select.dataset.medSelect);
-    // Replace only the scene: selecting equipment does not remount charts or services.
+    // Keep the inventory in place while updating the chart under this scene.
     const stage = select.closest('[data-med-site]');
     const valueToFocus = select.dataset.medSelect;
-    stage.outerHTML = ceramicSiteScene(site);
+    const toggle=stage.nextElementSibling;
+    if(toggle?.classList.contains('ceramic-chart-toggle')){
+      const content=toggle.nextElementSibling;
+      const view=document.createElement('div');
+      view.innerHTML=siteGraph(site);
+      stage.replaceWith(view.querySelector('[data-med-site]'));
+      toggle.replaceWith(view.querySelector('.ceramic-chart-toggle'));
+      const next=view.querySelector('.ceramic-chart-content');
+      if(next && content?.classList.contains('ceramic-chart-content')){
+        const panel=content.querySelector('[data-telemetry-panel]');
+        const nextPanel=next.querySelector('[data-telemetry-panel]');
+        if(panel && nextPanel){
+          if(panel.dataset.telemetryPanel!==nextPanel.dataset.telemetryPanel){
+            panel.dataset.telemetryPanel=nextPanel.dataset.telemetryPanel;
+            tLoad(panel);
+          }
+        }else{
+          content.replaceWith(next);
+          if(nextPanel)tLoad(nextPanel);
+        }
+      }
+    }else stage.outerHTML=ceramicSiteScene(site);
     const current = [...document.querySelectorAll('[data-med-site]')].find(n => n.dataset.medSite === owner);
     const nextFocus = [...(current?.querySelectorAll('[data-med-select]') || [])].find(n => n.dataset.medSelect === valueToFocus) || current?.querySelector('.ceramic-inspector [data-asset], .ceramic-inspector [data-personal-asset]');
     nextFocus?.focus({ preventScroll: true });

@@ -1002,7 +1002,7 @@ function SiteDeployment({
                   : selected==="issues" ? "Reading issues" : names[selected] || "Deployment"
           }
           onClose={close}
-          wide={!!flow || selected === "messages" || selected === "mongo"}
+          wide={!!flow || ["messages","mongo","telemetry","sensors","flexibility","forecasting","issues"].includes(selected || "")}
         >
           {busy && <p role="status">{busy}</p>}
           {error && <p role="alert">{error}</p>}
