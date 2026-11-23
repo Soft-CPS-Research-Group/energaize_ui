@@ -1111,7 +1111,7 @@ function SiteDeployment({
                   </select>
                 </label>
               )}
-              {model && <ModelInputReport report={inputs?.report} error={inputs?.error}/>}
+              {model && <ModelInputReport report={inputs?.report} error={inputs?.error} onReview={()=>open("percepta")}/>}
               <button className="btn primary" disabled={!!busy || !inputs?.report?.ready}>
                 Deploy and connect
               </button>
