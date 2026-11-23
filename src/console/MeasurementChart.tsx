@@ -8,7 +8,7 @@ import type { MeasurementChannel } from './measurementChannels';
 import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, type MeasurementRequest, type MeasurementSeries, type TimeWindow } from './measurementData';
 
 export interface MeasurementChartProps {
-  forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
+  forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
   incremental?: boolean; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
   request: MeasurementRequest; endpoint?: string; latestEndpoint?: string; initialEnd?: number;
   title: string; unit?: string; note?: string; expectedSeconds?: number | null;
@@ -89,9 +89,9 @@ export function MeasurementChart(props: MeasurementChartProps) {
   const forecastEnd=live&&forecast.points.length&&displayRange ? Math.min(displayRange.end+Math.min(duration,86400000),Math.max(...forecast.points.map(p=>Date.parse(p.timestamp)))) : null;
   const axisRange=displayRange ? {...displayRange,end:forecastEnd||displayRange.end} : null;
   const plotSeries = useMemo(() => {
-    const channels = props.series || [{ id: 'value', title: props.title, unit: props.unit, expectedSeconds: props.expectedSeconds, color: 'var(--brand)',forecastEndpoint:undefined,curve:undefined,note:undefined }];
+    const channels = props.series || [{ id: 'value', title: props.title, unit: props.unit, expectedSeconds: props.expectedSeconds, color: 'var(--brand)',forecastEndpoint:props.forecastEndpoint,curve:undefined,note:undefined }];
     return channels.map(c => ({ ...c, forecastRows: (c.forecastEndpoint ? forecast.points : []).filter(p=>displayRange && Date.parse(p.timestamp)>=displayRange.end-900000 && Date.parse(p.timestamp)<= (forecastEnd||0)).map(p=>({epochMs:Math.max(displayRange?.end||0,Date.parse(p.timestamp)), value:typeof p.value==='number'?p.value:null,generated:p.generated,[c.id]:typeof p.value==='number'?p.value:null})), rows: plotRows({ ...displayResult, points: props.series ? displayResult.points.filter(p => p.channelId === c.id) : displayResult.points }, c.expectedSeconds).map(r => ({ ...r, [c.id]: r.value })) }));
-  }, [displayResult, props.series, props.title, props.unit, props.expectedSeconds, forecast, forecastEnd, displayRange]);
+  }, [displayResult, props.series, props.title, props.unit, props.expectedSeconds, props.forecastEndpoint, forecast, forecastEnd, displayRange]);
   const rows = useMemo(() => plotSeries.flatMap(c => c.rows).sort((a, b) => a.epochMs - b.epochMs), [plotSeries]);
   const unitGroups = useMemo(() => {
     const groups = new Map<string, typeof plotSeries>();
@@ -165,11 +165,11 @@ export function MeasurementChart(props: MeasurementChartProps) {
           return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
         {group.map(c => <Line key={c.id} data={c.rows} name={c.title} type={c.curve || "linear"} dataKey={c.id} stroke={c.color} strokeWidth={2.2} dot={c.rows.filter(r => r.value !== null).length === 1} activeDot={false} connectNulls={false} isAnimationActive={false} />)}
-        {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name="Published prices" type="stepAfter" dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
+        {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name={props.forecastLabel || "Published prices"} type="stepAfter" dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
         {forecastEnd && displayRange && <ReferenceLine x={displayRange.end} stroke="var(--muted)" strokeDasharray="3 3" label={{value:'Now',position:'insideTopRight',fill:'var(--muted)',fontSize:11}}/>}
         {!forecastEnd && live && !showingRetained && liveStarted !== null && displayRange && liveStarted >= displayRange.start && liveStarted <= displayRange.end && <ReferenceLine x={liveStarted} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Live started', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}
         {drag && <ReferenceArea x1={Math.min(drag.start, drag.end)} x2={Math.max(drag.start, drag.end)} fill="var(--brand)" fillOpacity={0.1} strokeOpacity={0} />}
-      </TimeseriesPlot></div>)}{forecastEnd && <div className="price-horizon-key" title="Future quarter-hour timestamps are inferred from the latest Percepta document."><span>Recorded prices</span><span>Published prices</span></div>}</div>}
+      </TimeseriesPlot></div>)}{forecastEnd && <div className="price-horizon-key" title="Published horizon from the latest Percepta cycle."><span>{props.forecastLabel==="Forecast"?"Recorded":"Recorded prices"}</span><span>{props.forecastLabel || "Published prices"}</span></div>}</div>}
     <span className="chart-sr-only" role="status">{loading ? `Loading measurements${progress ? ` · ${progress.toLocaleString()} samples` : ''}` : ''}</span>
 
   </div>;

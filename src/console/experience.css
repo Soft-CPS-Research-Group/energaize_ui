@@ -1208,3 +1208,7 @@
 .pump-runtime-fields legend { font-weight: 600; margin-bottom: .5rem; }
 .pump-runtime-fields label { display: grid; gap: .35rem; min-width: 0; flex: 1; }
 .pump-runtime-fields input { width: 100%; }
+
+.configuration-notice.is-partial>summary,.configuration-notice.is-empty>summary {background:var(--surface);border-color:var(--line);color:var(--muted)}
+.configuration-notice.is-partial>summary:hover,.configuration-notice.is-empty>summary:hover {background:var(--bg)}
+.identity-actions .reading-issue {color:light-dark(#8b5408,#f0c783);white-space:normal}

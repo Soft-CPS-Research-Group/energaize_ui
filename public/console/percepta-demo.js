@@ -47,6 +47,14 @@ const perceptaOverview=overview;
 overview=function(){if(matisseDemo())perceptaOpenOnce('community:'+comm().recId);return perceptaOverview();};
 const perceptaSiteGraph=siteGraph;
 siteGraph=function(site){
+ const archived=(site.assets||[]).flatMap(a=>a.channels||[]).filter(c=>c.enabled && c.mongo_binding?.field?.startsWith('payload.entities.') && (!c.mongo_binding.percepta_site_id||c.mongo_binding.percepta_site_id===site.id));
+ const first=archived[0]?.mongo_binding;
+ if(first && archived.every(c=>c.mongo_binding.database===first.database && c.mongo_binding.collection===first.collection)){
+  const candidates=siteGridChannels(site).filter(c=>c.enabled && c.mongo_binding && (c.collection?.parameter_type_id||c.quantity)==='energy_in_total');
+  const key='site:'+site.id;
+  const archive={site:site.id,database:first.database,collection:first.collection,meter:candidates.length===1?candidates[0].backendId:undefined};
+  return ceramicSiteScene(site)+ceramicChartToggle(key,'Energy data')+(ceramicCharts.has(key)?`<div class="ceramic-chart-content" data-house-energy="${esc(JSON.stringify(archive))}"></div>`:'');
+ }
  if(!perceptaSource(site))return perceptaSiteGraph(site);
  const key='site:'+site.id;perceptaOpenOnce(key);
  const channels=siteGridChannels(site).filter(c=>c.mongo_binding?.field?.startsWith('payload.')||(/^observations\.grid_meters\.[^.]+\.energy_(in|out)_total$/.test(c.mongo_binding?.field||'')&&c.unit==='kWh'));

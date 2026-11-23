@@ -82,7 +82,7 @@ siteDetailOriginal = function () {
   }
   const site = chosen();
   const inventoryNotice = isDeploymentView() ? '' : configurationNotice(siteConfiguration(site), site.name, '<button class="btn text" data-tab="assets">Review equipment</button>');
-  html = html.replace(button('Edit site','edit-site','edit'), `<div class="identity-actions">${inventoryNotice}${identityIcon('Edit site','edit-site')}</div>`);
+  html = html.replace(button('Edit site','edit-site','edit'), `<div class="identity-actions">${person().role==='manager' && !isDeploymentView() ? `<span data-house-attention="${esc(site.id)}"></span>` : ''}${inventoryNotice}${identityIcon('Edit site','edit-site')}</div>`);
   html = html.replace('<div class="sitehead"><div><h1>', `<div class="sitehead"><div class="site-identity"><span class="site-product-art">${productArt(siteIllustration(site.sourcePayload?.subtype||site.type))}</span><div><h1>`).replace('</p></div><div class="identity-actions">','</p></div></div><div class="identity-actions">');
   if (state.tab === 'settings') html = html.replace('<h2>Site configuration</h2>', '<div class="sectionhead"><h2>Site configuration</h2>'+button('Edit site','edit-site','edit')+'</div>');
 

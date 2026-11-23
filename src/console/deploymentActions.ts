@@ -54,7 +54,7 @@ export async function bindModel(site: string, draft: Draft, model: string) {
   return runtimeRequest<Draft>(base + "/inference-binding", {
     method: "PUT",
     signal: AbortSignal.timeout(120000),
-    body: JSON.stringify({ ...body, activate_if_needed: true }),
+    body: JSON.stringify({ ...body, activate_if_needed: true, match_inputs: true }),
   });
 }
 export async function applyCollector(

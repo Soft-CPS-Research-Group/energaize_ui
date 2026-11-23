@@ -642,9 +642,10 @@ span.deployment-edge-label, span.deployment-edge-label:hover { cursor: default; 
 .deployment-host:not([data-placement="cloud"]) .deployment-host-status {flex:0 1 62px}
 .deployment-node .deployment-service-icon {position:relative}
 .deployment-signal {position:absolute;width:7px;height:7px;right:-2px;top:-2px;border-radius:50%;background:var(--line);outline:2px solid var(--surface)}
-.deployment-signal.active {background:#29945c;animation:deployment-pulse 2.2s ease-out infinite}
+.deployment-signal.active {background:#29945c}
+.deployment-node[data-arrived] .deployment-signal.active {animation:deployment-pulse .85s ease-out 2}
 @keyframes deployment-pulse {0%,55%{box-shadow:0 0 0 0 #29945c55}100%{box-shadow:0 0 0 5px #29945c00}}
-@media(prefers-reduced-motion:reduce){.deployment-signal.active{animation:none}}
+@media(prefers-reduced-motion:reduce){.deployment-node[data-arrived] .deployment-signal.active{animation:none}}
 .deployment-cycle {border-top:1px solid var(--line);padding:8px 0}
 .deployment-cycle summary {cursor:pointer}
 .deployment-cycle details {padding:8px}

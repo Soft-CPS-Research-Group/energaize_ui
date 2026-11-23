@@ -28,6 +28,8 @@ import {
   X,
 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
+import { ModelInputReport, useModelInputs } from "./ModelInputReport";
+import { HouseAttention } from "./HouseAttention";
 import { ControlPreview } from "./ControlPreview";
 import { DeploymentSeries } from "./DeploymentSeries";
 import { EquipmentArt } from "./EquipmentArt";
@@ -149,6 +151,8 @@ const icon = (kind: string) =>
 type Props = {
   initialCycle?: string;
   initialMessages?: boolean;
+  initialAction?: "issues" | "configure";
+  reviewEquipment?: string;
   siteId: string;
   siteName: string;
   communityName?: string;
@@ -168,6 +172,8 @@ export function DeploymentWorkspace(props: Props) {
 function SiteDeployment({
   initialCycle,
   initialMessages,
+  initialAction,
+  reviewEquipment,
   siteId,
   siteName,
   communityName,
@@ -178,7 +184,7 @@ function SiteDeployment({
   const base = "/api/runtime/sites/" + siteId;
   const [draft, setDraft] = useState<Draft>(),
     [map, setMap] = useState<DeploymentMap>();
-  const [selected, select] = useState<string | null>(initialCycle ? (initialMessages ? "messages" : "flow:decision") : null),
+  const [selected, select] = useState<string | null>(initialCycle ? (initialMessages ? "messages" : "flow:decision") : initialAction==="issues"?"issues":null),
     [launch, setLaunch] = useState<PerceptaLaunchPlan>();
   const [linkedCycle, setLinkedCycle] = useState(initialCycle);
   const [error, setError] = useState(""),
@@ -345,6 +351,25 @@ function SiteDeployment({
     receivedForecasts(output?.value?.messages[0]).some((s) =>
       s.intervals.some((i) => Date.parse(String(i.period_end)) > Date.now()),
     );
+  const lastOutput=output?.value?.messages[0],lastArchive=archive?.value?.messages[0];
+  const evidence=[lastOutput?.timestamp,lastArchive?.timestamp,lastOutput?.inference_decision ? lastOutput.timestamp : undefined];
+  const previousEvidence=useRef<(string|undefined)[]>([]);
+  const [arrivals,setArrivals]=useState<string[]>([]);
+  useEffect(()=>{
+    const previous=previousEvidence.current;
+    const active:string[]=[];
+    if(confirmedCycle && previous[0] && evidence[0]!==previous[0]){
+      active.push("percepta","broker");
+      if(hasDeviceSamples(lastOutput))active.push("sensors");
+    }
+    if(confirmedArchive && previous[1] && evidence[1]!==previous[1]){
+      active.push("mongo",lastArchive?.writer || "telemetry");
+    }
+    if(confirmedCycle && evidence[2] && previous[0] && evidence[2]!==previous[2])active.push("controller","percepta");
+    previousEvidence.current=evidence;
+    setArrivals(active);
+    if(active.length){const timer=setTimeout(()=>setArrivals([]),1800);return ()=>clearTimeout(timer);}
+  },[evidence[0],evidence[1],evidence[2]]);
   function activity(node: GraphNode) {
     if (
       node.component &&
@@ -612,6 +637,14 @@ function SiteDeployment({
     }
     select(kind);
   }
+  const startupAction=useRef(initialAction);
+  useEffect(()=>{
+    if(startupAction.current==="configure" && map && draft && assigned){
+      startupAction.current=undefined;
+      open("percepta");
+    }
+  },[map,draft,assigned]);
+
   function nodeButton(n: GraphNode, x: number, y: number) {
     const movable = services.includes(n.kind as Service);
     const lit = activity(n);
@@ -631,6 +664,7 @@ function SiteDeployment({
         data-supporting={supporting || undefined}
         {...(supporting ? { title: signalLabel } : {})}
         data-active={lit}
+        data-arrived={arrivals.includes(n.kind) || undefined}
         aria-label={n.name + " · " + n.state}
         className={
           "deployment-node" +
@@ -676,10 +710,22 @@ function SiteDeployment({
   const selectedHost = map?.destinations.find(
     (d) => d.placement === assigned?.controller,
   );
+  const catalogDevice=selectedHost?.selectable_inference_device ? device : undefined;
+  const [catalog,setCatalog]=useState<{key:string;models:string[]}>();
+  const catalogKey=selected==="controller" && assigned ? base+"/model-catalog?"+new URLSearchParams({placement:assigned.controller,...(catalogDevice?{device:catalogDevice}:{})}) : "";
+  useEffect(()=>{
+    if(!catalogKey)return;
+    const abort=new AbortController();
+    void runtimeRequest<string[]>(catalogKey,{signal:abort.signal}).then(models=>{
+      if(!abort.signal.aborted)setCatalog({key:catalogKey,models});
+    }).catch(()=>{if(!abort.signal.aborted)setCatalog(undefined);});
+    return ()=>abort.abort();
+  },[catalogKey]);
+  const inputs=useModelInputs(siteId, assigned?.controller, selected==="controller" ? model : "", selectedHost?.selectable_inference_device ? device : undefined);
   const close = () => {
     if (!busy) {
       select(null);
-      if (linkedCycle) {
+      if (linkedCycle || initialAction) {
         setLinkedCycle(undefined);
         const url = new URL(window.location.href);
         url.searchParams.delete("cycle");
@@ -926,6 +972,7 @@ function SiteDeployment({
       {selected === "percepta" && launch && (
         <PerceptaSetup
           siteId={siteId}
+          equipmentId={initialAction==="configure"?reviewEquipment:undefined}
           hideTrigger
           open
           initialSetup
@@ -952,7 +999,7 @@ function SiteDeployment({
                 ? "Move " + names[selectedMove]
                 : selected === "messages"
                   ? "Percepta messages"
-                  : names[selected] || "Deployment"
+                  : selected==="issues" ? "Reading issues" : names[selected] || "Deployment"
           }
           onClose={close}
           wide={!!flow || selected === "messages" || selected === "mongo"}
@@ -960,7 +1007,7 @@ function SiteDeployment({
           {busy && <p role="status">{busy}</p>}
           {error && <p role="alert">{error}</p>}
           {!linkedCycle && (flow || selected === "supervisor") && <ControlPreview key={flow?.id || selected} stage={flow?.id || "safety"}/>}
-          {selected === "sensors" ? <EquipmentSources siteId={siteId}/> : selected === "messages" ? (
+          {selected === "issues" ? <><HouseAttention siteId={siteId} details/><button className="btn" onClick={()=>open("percepta")}>Review Percepta inputs</button></> : selected === "sensors" ? <EquipmentSources siteId={siteId}/> : selected === "messages" ? (
             <PerceptaMessages
               initialCycle={linkedCycle}
               siteId={siteId}
@@ -1021,7 +1068,7 @@ function SiteDeployment({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (assigned)
+                if (assigned && inputs?.report?.ready)
                   void run("Deploying and connecting inference…", async () => {
                     const saved = await persist(assigned, device);
                     const bound = await bindModel(siteId, saved, model);
@@ -1050,11 +1097,7 @@ function SiteDeployment({
                 />
               </label>
               <datalist id={marker + "models"}>
-                {map?.components
-                  .filter((c) => c.inference_model)
-                  .map((c) => (
-                    <option key={c.id} value={c.inference_model!} />
-                  ))}
+                {[...new Set([...(catalog?.key===catalogKey?catalog.models:[]),...(map?.components.flatMap(c=>c.inference_model?[c.inference_model]:[]) || [])])].map(name=><option key={name} value={name}/>)}
               </datalist>
               {selectedHost?.selectable_inference_device && (
                 <label className="deployment-field">
@@ -1068,7 +1111,8 @@ function SiteDeployment({
                   </select>
                 </label>
               )}
-              <button className="btn primary" disabled={!!busy || !model}>
+              {model && <ModelInputReport report={inputs?.report} error={inputs?.error}/>}
+              <button className="btn primary" disabled={!!busy || !inputs?.report?.ready}>
                 Deploy and connect
               </button>
             </form>
