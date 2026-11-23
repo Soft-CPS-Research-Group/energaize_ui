@@ -9,8 +9,8 @@ export interface HouseArchive {site:string;database:string;collection:string;met
 const epoch=(v:unknown)=>Date.parse(String(v).replace(/^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) ([+-]\d\d)(\d\d)$/, '$1T$2$3:$4'));
 
 type PeriodPoint=MeasurementPoint & {period_start?:string;period_end?:string};
-export function archiveValues(points:PeriodPoint[],metric:Metric,period:number) {
-  let total=0, complete=true, previous:number|undefined;
+export function archiveValues(points:PeriodPoint[],metric:Metric,period:number,windowStart?:number) {
+  let total=0, complete=true, previous=windowStart;
   return points.map(p=>{
     if(metric==='power'){
       const hours=(epoch(p.period_end)-epoch(p.period_start))/3600000;
@@ -49,12 +49,17 @@ export function HouseEnergy({archive}:{archive:HouseArchive}) {
       if(parameters.length!==1)return {points:[]};
       const p=parameters[0];
       if(!(metric==='prices'?['€/kWh','EUR/kWh']:['kWh']).includes(p.measurement_unit || ''))return {points:[]};
-      return {points:(p.final_values || []).flatMap(r=>{
+      const points:MeasurementPoint[]=[];
+      let previousEnd:number|undefined;
+      for(const r of [...(p.final_values || [])].sort((a,b)=>epoch(a.period_start)-epoch(b.period_start))){
         const start=epoch(r.period_start),end=epoch(r.period_end);
-        if(!Number.isFinite(start)||!(end>start)||end<=Date.now()||typeof r.value!=='number')return [];
+        if(!Number.isFinite(start)||!(end>start)||end<=Date.now()||typeof r.value!=='number')continue;
         const value=metric==='power'?r.value*3600000/(end-start):r.value;
-        return [{id:r.period_start,timestamp:new Date(start).toISOString(),value},{id:r.period_end+'-end',timestamp:new Date(end-1).toISOString(),value}];
-      })};
+        if(previousEnd!==undefined && start>previousEnd)points.push({id:r.period_start+'-gap',timestamp:new Date(previousEnd).toISOString(),value:null});
+        points.push({id:r.period_start,timestamp:new Date(Math.max(start,Date.now())).toISOString(),value},{id:r.period_end+'-end',timestamp:new Date(end-1).toISOString(),value});
+        previousEnd=end;
+      }
+      return {points};
     }
     const base=metric==='prices'?'/percepta/'+encodeURIComponent(archive.database)+'/'+encodeURIComponent(archive.collection)+'/prices':
       metric==='import'||metric==='cumulative'?'/capabilities/'+encodeURIComponent(archive.meter || ''):scope+'/derived/'+(metric==='solar'?'solar_generation':'non_shiftable_load');
@@ -68,10 +73,10 @@ export function HouseEnergy({archive}:{archive:HouseArchive}) {
       if(seen.has(page.next_cursor))throw Error('Archive pagination stopped advancing.');
       seen.add(page.next_cursor);query.set('cursor',page.next_cursor);
     }while(!signal.aborted);
-    const values=archiveValues(points,metric,period);
+    const values=archiveValues(points,metric,period,epoch(query.get('from_ts')));
     return {points:compactPoints(values,{start:epoch(query.get('from_ts')),end:epoch(query.get('until_ts'))}),sample_count:points.length,partial_count:values.filter(incomplete).length};
   },[metric,archive,scope,period]);
   const note=metric==='power'?'Average power over each measured or forecast interval.':metric==='cumulative'?'Sum of measured grid imports since the start of the selected window. Gaps make the total partial.':metric==='prices'?'Price reported by Percepta and its published tariff intervals.':metric==='load'?'Base household consumption excluding EV charging. Incomplete inputs are marked.':undefined;
   return <section className="surface chart-section"><nav className="tabs" aria-label="Energy series">{(Object.keys(labels) as Metric[]).filter(k=>archive.meter || !['import','cumulative'].includes(k)).map(k=><button key={k} aria-pressed={metric===k} className={metric===k?'active':''} onClick={()=>setMetric(k)}>{labels[k]}</button>)}</nav>
-    <MeasurementChart key={metric} title={labels[metric]} unit={unit} expectedSeconds={period} request={request} endpoint="/series" latestEndpoint="/latest" forecastEndpoint={predict?'/forecast':undefined} forecastRequest={request} forecastLabel={metric==='prices'?'Published prices':'Forecast'} incremental={metric!=='cumulative'} note={note}/></section>;
+    <MeasurementChart showLatest key={metric} title={labels[metric]} unit={unit} expectedSeconds={period} request={request} endpoint="/series" latestEndpoint="/latest" forecastEndpoint={predict?'/forecast':undefined} forecastRequest={request} forecastLabel={metric==='prices'?'Published prices':'Forecast'} incremental={metric!=='cumulative'} note={note}/></section>;
 }

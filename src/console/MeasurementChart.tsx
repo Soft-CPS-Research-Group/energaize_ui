@@ -8,7 +8,7 @@ import type { MeasurementChannel } from './measurementChannels';
 import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, type MeasurementRequest, type MeasurementSeries, type TimeWindow } from './measurementData';
 
 export interface MeasurementChartProps {
-  forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
+  showLatest?: boolean; forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
   incremental?: boolean; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
   request: MeasurementRequest; endpoint?: string; latestEndpoint?: string; initialEnd?: number;
   title: string; unit?: string; note?: string; expectedSeconds?: number | null;
@@ -100,6 +100,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
   }, [plotSeries]);
   const ticks = useMemo(() => { if (!axisRange) return []; const step = resolveAxisTickStepMs(axisRange.start, axisRange.end, 60000); const values: number[] = []; for (let t = Math.ceil(axisRange.start / step) * step; t < axisRange.end; t += step) values.push(t); return values; }, [axisRange?.start, axisRange?.end]);
   const numeric = rows.filter(r => r.value !== null), last = numeric[numeric.length - 1];
+  const hasFuture = plotSeries.some(series => series.forecastRows.some(row => row.value !== null));
   const stale = live && (!last || Date.now() - last.epochMs > Math.max(props.expectedSeconds || 15, displayResult.bucket_seconds || 0) * 3000);
   const toggleLive = () => {
     cancelLatest();
@@ -144,11 +145,14 @@ export function MeasurementChart(props: MeasurementChartProps) {
         <DayPicker mode="range" weekStartsOn={1} selected={draft} defaultMonth={draft?.from} onSelect={() => {}} onDayClick={selectDay} />
         <div className="telemetry-date-fields"><label>From<input aria-label="Start date and time" type="datetime-local" value={from} onInput={e => editDates(e.currentTarget.value, to)} onChange={e => editDates(e.target.value, to)} /></label><label>Until<input aria-label="End date and time" type="datetime-local" value={to} onInput={e => editDates(from, e.currentTarget.value)} onChange={e => editDates(from, e.target.value)} /></label></div><div className="telemetry-calendar-foot"><small>Local time · end time is exclusive · max. 31 days</small><button disabled={!validDraft} onClick={applyDates}>Apply range</button></div></div>}
     </div>
+    {props.showLatest && last?.value != null && <p className="telemetry-latest"><strong>{last.value.toLocaleString('en-GB',{maximumSignificantDigits:5})} {props.unit}</strong> · Latest in window · {date(last.epochMs)}</p>}
+    {props.showLatest && props.note && <p className="telemetry-calendar-hint">{props.note}</p>}
+    {!numeric.length && hasFuture && <p role="status">Only the published horizon is available in this window.</p>}
     {live && showingRetained && <div className="telemetry-live-context" role="status">{showingRetained ? `No recent readings. Showing stored history from ${date(displayRange!.start)} to ${date(displayRange!.end)}. Live is checking the current time every 15 s.` : `Historical readings + live updates · live started ${date(liveStarted || Date.now())}.`}</div>}
     {displayResult.errors?.length ? <p className="telemetry-series-errors" role="status">{displayResult.errors.join(' · ')}</p> : null}
     {((displayResult.partial_count ?? 0) > 0 || displayResult.points.some(incomplete)) &&
       <p className="telemetry-live-context" role="status">Some readings in this window are incomplete or unverified.</p>}
-    {props.series && !props.series.length ? <div className="telemetry-empty"><h3>Select a measurement below</h3><p>Use the pills to show or hide readings. Additional channels are available under Measurement channels.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length ? <div className="telemetry-empty"><Radio size={26} /><h3>{loading ? 'Loading measurements' : 'No readings in this window'}</h3><p>{loading ? 'Reading the selected sensor through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
+    {props.series && !props.series.length ? <div className="telemetry-empty"><h3>Select a measurement below</h3><p>Use the pills to show or hide readings. Additional channels are available under Measurement channels.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length && !hasFuture ? <div className="telemetry-empty"><Radio size={26} /><h3>{loading ? 'Loading measurements' : 'No readings in this window'}</h3><p>{loading ? 'Reading the selected sensor through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
       {unitGroups.map((group) => <div className="telemetry-unit-plot" key={group[0].id}>
 
       <TimeseriesPlot data={group.flatMap(c => c.rows).sort((a, b) => a.epochMs - b.epochMs)} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
