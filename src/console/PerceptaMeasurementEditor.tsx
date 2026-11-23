@@ -65,7 +65,7 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
   const existingShellyBinding=provider==='cleanwatts_2'?profile?.capabilities
    .filter(c=>c.enabled)
    .map(c=>c.collection?.source_binding)
-   .find(binding=>binding?.connection_id===id&&
+   .find(binding=>binding?.connection_id===id&&binding?.fetch_key===device&&
      (binding?.topic===shellyTopics.em||binding?.topic===shellyTopics.em1)):undefined;
   const format=!legacyGen1&&existingShellyBinding?.topic===shellyTopics.em1?'em1':'em';
   const exampleField=(legacyGen1||existingShellyBinding)&&shellyField(format,parameter);
@@ -103,7 +103,7 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
  });
  const defaultUnit=(parameter:string)=>parameter==='price'||parameter==='energy_price'?(defaultPriceSource?.provider==='omie'?'EUR/kWh':'EUR/MWh'):parameter.includes('charge')||parameter==='soc'?(provider==='cleanwatts'||provider==='pulsecharge'?'ratio':'%'):parameter==='power'?'kW':parameter==='session_status'?'Status':['electric_vehicle','flexibility'].includes(parameter)?'':'kWh';
  const [name,setName]=useState(channel?.name||measurementLabel(parameter,profile?.asset_type)),[unit,setUnit]=useState(channel?.unit||defaultUnit(parameter));
- const [dataType,setDataType]=useState(channel?.data_type||valueType(parameter)),[enabled,setEnabled]=useState(true);
+ const [dataType,setDataType]=useState(channel?.data_type||valueType(parameter)),[enabled,setEnabled]=useState(channel?.collection?.source_binding && !initialMeasurement ? channel.enabled : true);
  const [missingSource,setMissingSource]=useState(false);
  const binding=contract.source_binding,chosenProvider=connections.find(c=>c.id===binding?.connection_id)?.provider;
  const shellySource = chosenProvider === 'cleanwatts_2';
@@ -120,7 +120,7 @@ export function PerceptaMeasurementEditor({formId,channel,initialMeasurement,equ
    if(busy)return;
    if(contract.role==='input'&&!binding?.connection_id){setMissingSource(true);return;}
    const collection=unsupportedShelly&&binding
-    ? {...contract,source_binding:{connection_id:binding.connection_id,fetch_key:binding.fetch_key,topic:binding.topic,mapping_required:true}}
+    ? {...contract,source_binding:{connection_id:binding.connection_id,fetch_key:binding.fetch_key,topic:binding.topic?.startsWith('/emeter/') || !numericGen1 ? binding.topic : undefined,mapping_required:true}}
     : shellySource&&binding&&!binding.shelly_accumulation
       ? {...contract,source_binding:{...binding,shelly_accumulation:'lifetime'}} : contract;
    const cleanwattsTag=chosenProvider==='cleanwatts'&&collection.role==='input'&&collection.parameter_type_id!=='electric_vehicle'

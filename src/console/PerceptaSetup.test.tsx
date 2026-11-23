@@ -110,6 +110,7 @@ it('opens equipment first and saves a device assignment once for all its measure
  fireEvent.click(screen.getByRole('button',{name:/Total grid import/}));
  expect(screen.queryByRole('combobox',{name:'Connection'})).not.toBeInTheDocument();
  expect(screen.getByRole('combobox',{name:'Measurement adapter'})).toHaveValue('connection');
+ expect(screen.getByLabelText('Source device identifier')).toHaveValue('meter');
 });
 it('inherits community definitions read-only and offers no community or price source editor in a house',async()=>{
  const fetcher=setup();await openEquipment();
