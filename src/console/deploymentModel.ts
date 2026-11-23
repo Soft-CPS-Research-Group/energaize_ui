@@ -13,6 +13,7 @@ export interface Destination {
   name: string;
   placement: string;
   registered: boolean;
+  selectable_inference_device?: boolean;
   check: Check;
 }
 export interface Component {
@@ -29,6 +30,7 @@ export interface Component {
   image?: string | null;
   planned: boolean;
   supported: boolean;
+  inference_model?: string | null;
 }
 export interface Link {
   id: string;
@@ -66,10 +68,19 @@ export interface Draft {
   launch_available: boolean;
   percepta_host_id?: string | null;
   blockers: string[];
+  inference_device?: "cpu" | "gpu" | null;
+  inference_binding?: {
+    model_id: string;
+    instance_id: string;
+    target_host_id: string;
+    source_host_id: string;
+  } | null;
 }
 export const services: Service[] = ["percepta", "controller", "forecasting"];
-export const includedServices = (draft: Draft) => draft.included_services ?? services;
+export const includedServices = (draft: Draft) =>
+  draft.included_services ?? services;
 export const names: Record<string, string> = {
+  supervisor: "Fail-safe supervisor",
   percepta: "Percepta",
   controller: "Inference",
   forecasting: "Forecasting",
@@ -83,29 +94,48 @@ export const names: Record<string, string> = {
   runtime: "Runtime",
   mongo: "MongoDB",
 };
-export const connections: {
-  id: ConnectionId;
-  title: string;
-  description: string;
-}[] = [
-  { id: "inference", title: "Percepta ↔ Inference",
-    description: "Percepta sends the cycle to Inference over HTTP and receives the decision in the response." },
-  { id: "broker", title: "Percepta → RabbitMQ",
-    description: "Percepta publishes cycles to its output exchange over AMQP. Runtime consumes the archive queue." },
-  { id: "forecasting", title: "RabbitMQ → Percepta",
-    description: "Forecasting publishes forecasts to the house exchange over AMQP. Percepta subscribes to the house queue. Configure the subscription in House data." },
-  { id: "mongo", title: "Percepta storage address",
-    description: "The collector’s published cycles are archived by Runtime. This draft address belongs to Percepta’s storage settings. Native inference configurations can also store decision records directly." },
-];
-export const sharedServices: Record<string, { role: string; description: string }> = {
-  access: { role: "Access control", description: "Access Control manages platform access and permissions." },
-  flexibility: { role: "Flexibility", description: "Flexibility manages flexibility policies and requests, including EV availability. Consumption and solar forecasts use the separate Forecasting service." },
-  training: { role: "AI Training", description: "AI Training manages algorithm preparation and training runs." },
-  community: { role: "House directory", description: "The Community API supplies the sites in the energy community to Forecasting so it can resolve the house’s site ID." },
-  telemetry: { role: "Energy history", description: "Telemetry reads the archived measurements and serves derived consumption and solar generation series through its HTTP API." },
-  runtime: { role: "Cycle archive", description: "Runtime consumes Percepta cycles from the RabbitMQ archive queue and writes them to the house collection in MongoDB." },
-  broker: { role: "AMQP broker", description: "RabbitMQ routes published cycles to Runtime and house forecasts to Percepta through separate exchanges and queues." },
-  mongo: { role: "Cycle storage", description: "Runtime writes the house’s archived cycles here. Telemetry reads these records to build the historical series." },
+export const sharedServices: Record<
+  string,
+  { role: string; description: string }
+> = {
+  access: {
+    role: "Access control",
+    description: "Access Control manages platform access and permissions.",
+  },
+  flexibility: {
+    role: "Flexibility",
+    description:
+      "Flexibility manages flexibility policies and requests, including EV availability. Consumption and solar forecasts use the separate Forecasting service.",
+  },
+  training: {
+    role: "AI Training",
+    description: "AI Training manages algorithm preparation and training runs.",
+  },
+  community: {
+    role: "House directory",
+    description:
+      "The Community API supplies the sites in the energy community to Forecasting so it can resolve the house’s site ID.",
+  },
+  telemetry: {
+    role: "Energy history",
+    description:
+      "Telemetry reads the archived measurements and serves derived consumption and solar generation series through its HTTP API.",
+  },
+  runtime: {
+    role: "Deployment",
+    description:
+      "Runtime registers machines, deploys and monitors containers, and applies or rolls back their configuration.",
+  },
+  broker: {
+    role: "AMQP broker",
+    description:
+      "RabbitMQ routes published cycles to the archive consumer and house forecasts to Percepta through separate exchanges and queues.",
+  },
+  mongo: {
+    role: "Cycle storage",
+    description:
+      "The house collection stores one document per cycle. Telemetry uses these records to build the historical series.",
+  },
 };
 export const backendKinds = ["community", "telemetry", "runtime"];
 export const stateName = (state: string) =>
@@ -139,6 +169,7 @@ export interface GraphNode {
   destination: string;
   state: string;
   component?: Component;
+  instances?: Component[];
   x: number;
   y: number;
   width: number;
@@ -163,59 +194,119 @@ export interface Edge {
   x: number;
   y: number;
 }
-export interface ForecastContext {
-  site_id: string;
-  return_available?: boolean;
-  lanes: { forecast_channel_configured: boolean }[];
+export function placements(
+  map: DeploymentMap,
+  draft: Draft,
+): Record<Service, Placement> {
+  const local = map.destinations.find((d) => d.placement === "local");
+  const result: Record<Service, Placement> = {
+    percepta: local ? "local" : "cloud",
+    controller: local ? "local" : "cloud",
+    forecasting: "cloud",
+  };
+  for (const kind of services) {
+    const actual = map.components.find((c) => c.kind === kind && !c.planned);
+    const location = map.destinations.find(
+      (d) => d.id === actual?.destination_id,
+    )?.placement;
+    if (draft.revision && includedServices(draft).includes(kind))
+      result[kind] = draft.services[kind];
+    else if (location === "local" || location === "cloud")
+      result[kind] = location;
+    if (!local) result[kind] = "cloud";
+  }
+  return result;
 }
 
-export function graphLayout(map: DeploymentMap, draft: Draft, planning: boolean, forecast?: ForecastContext) {
-  // Keep house machines to the left of the platform. Rows follow the data paths,
-  // so moving a service changes the end of its wires without reordering the diagram.
-  const destinations = map.destinations.filter(d => !planning || d.placement !== "other");
-  const cloud = destinations.find(d => d.placement === "cloud");
-  const ordered = [...destinations.filter(d => d !== cloud), ...(cloud ? [cloud] : [])];
+export function graphLayout(
+  map: DeploymentMap,
+  draft: Draft,
+  archiveOwner?: string | null,
+) {
+  const destinations = map.destinations;
+  const cloud = destinations.find((d) => d.placement === "cloud");
+  const ordered = [
+    ...destinations.filter((d) => d !== cloud),
+    ...(cloud ? [cloud] : []),
+  ];
   let right = 8;
-  const hosts: HostBox[] = ordered.map(destination => {
+  const hosts: HostBox[] = ordered.map((destination) => {
     const width = destination === cloud ? 554 : 226;
     const host = { destination, x: right, y: 8, width, height: 168 };
     right += width + 24;
     return host;
   });
   const nodes: GraphNode[] = [];
-  function add(kind: string, destination: string, state: string, component?: Component) {
-    if (!hosts.some(h => h.destination.id === destination)) return;
-    nodes.push({ id: component?.id ?? kind, kind, name: component?.name || names[kind] || kind,
-      destination, state, component, x: 0, y: 0, width: 142, height: 52 });
+  function add(
+    kind: string,
+    destination: string,
+    state: string,
+    component?: Component,
+  ) {
+    if (!hosts.some((h) => h.destination.id === destination)) return;
+    nodes.push({
+      id: component?.id ?? kind,
+      kind,
+      name: component?.name || names[kind] || kind,
+      destination,
+      state,
+      component,
+      x: 0,
+      y: 0,
+      width: 142,
+      height: 52,
+    });
   }
-  if (planning) {
-    for (const kind of includedServices(draft)) {
-      const host = destinations.find(d => d.placement === draft.services[kind]);
-      if (host) add(kind, host.id, "Draft · not applied");
+  const desired = placements(map, draft);
+  for (const kind of services) {
+    const host = destinations.find((d) => d.placement === desired[kind]);
+    const instances = map.components.filter(
+      (c) => c.kind === kind && !c.planned,
+    );
+    const current =
+      instances.find((c) => c.id === draft.inference_binding?.instance_id) ||
+      instances.find((c) => c.destination_id === host?.id) ||
+      instances[0];
+    if (host) {
+      const state = current
+        ? current.destination_id === host.id
+          ? stateName(current.state)
+          : "Move pending"
+        : kind === "forecasting" && host === cloud
+          ? "Shared predictor"
+          : "Awaiting deployment";
+      add(kind, host.id, state, current);
+      nodes[nodes.length - 1].instances = instances;
+      if (kind === "percepta") add("supervisor", host.id, "Not deployed");
     }
-  } else {
-    for (const c of map.components.filter(c => !c.planned)) add(c.kind, c.destination_id, stateName(c.state), c);
   }
-  const houseForecast = forecast?.site_id === map.site_id ? forecast : undefined;
   if (cloud) {
-    if (!planning && houseForecast?.return_available && !nodes.some(n => n.kind === "forecasting")) {
-      add("forecasting", cloud.id, "Shared cloud service");
-    }
-    for (const kind of [...backendKinds, "broker", "mongo"]) add(kind, cloud.id, sharedServices[kind].role);
+    for (const kind of [...backendKinds, "broker", "mongo"])
+      add(kind, cloud.id, sharedServices[kind].role);
   }
-  const backendHost = hosts.find(h => h.destination === cloud);
+  const backendHost = hosts.find((h) => h.destination === cloud);
   const columns: Record<string, number> = {
-    controller: 116, percepta: 442, broker: 442, runtime: 442,
-    forecasting: 116, community: 90, telemetry: 266, mongo: 354,
+    supervisor: 442,
+    controller: 116,
+    percepta: 442,
+    broker: 442,
+    runtime: 266,
+    forecasting: 116,
+    community: 90,
+    telemetry: 442,
+    mongo: 442,
   };
   let nextY = 102;
   function row(kinds: string[], gap: number) {
-    const members = nodes.filter(n => kinds.includes(n.kind));
+    const members = nodes.filter((n) => kinds.includes(n.kind));
     if (!members.length) return;
     const counts = new Map<string, number>();
     for (const node of members) {
-      const host = hosts.find(h => h.destination.id === node.destination)!;
-      const column = host === backendHost ? columns[node.kind] ?? host.width / 2 : host.width / 2;
+      const host = hosts.find((h) => h.destination.id === node.destination)!;
+      const column =
+        host === backendHost
+          ? (columns[node.kind] ?? host.width / 2)
+          : host.width / 2;
       const key = host.destination.id + "/" + column;
       const index = counts.get(key) ?? 0;
       counts.set(key, index + 1);
@@ -223,71 +314,253 @@ export function graphLayout(map: DeploymentMap, draft: Draft, planning: boolean,
       node.y = nextY + index * 66;
       host.height = Math.max(host.height, node.y + node.height + 36 - host.y);
     }
-    nextY = Math.max(...members.map(n => n.y + n.height)) + gap;
+    nextY = Math.max(...members.map((n) => n.y + n.height)) + gap;
   }
-  const sharedNarrowHost = nodes.some(n => n.kind === "controller" && n.destination !== cloud?.id &&
-    nodes.some(p => p.kind === "percepta" && p.destination === n.destination));
+  const sharedNarrowHost = nodes.some(
+    (n) =>
+      n.kind === "controller" &&
+      n.destination !== cloud?.id &&
+      nodes.some(
+        (p) => p.kind === "percepta" && p.destination === n.destination,
+      ),
+  );
   if (sharedNarrowHost) {
-    row(["controller"], 52);
+    row(["supervisor"], 40);
+    row(["controller"], 48);
     row(["percepta"], 78);
   } else {
+    row(["supervisor"], 42);
     row(["percepta", "controller"], 78);
   }
   row(["forecasting", "broker"], 94);
   row(backendKinds, 84);
   row(["mongo"], 18);
-  row(nodes.filter(n => !(n.kind in columns)).map(n => n.kind), 18);
-  const api = nodes.find(n => n.kind === "community");
-  const group = api && backendHost ? {
-    x: backendHost.x + 12, y: api.y - 12, width: backendHost.width - 24, height: api.height + 52,
-    destination: backendHost.destination.id,
-  } : undefined;
+  row(
+    nodes.filter((n) => !(n.kind in columns)).map((n) => n.kind),
+    18,
+  );
+  const api = nodes.find((n) => n.kind === "community");
+  const group =
+    api && backendHost
+      ? {
+          x: backendHost.x + 12,
+          y: api.y - 12,
+          width: backendHost.width - 24,
+          height: api.height + 52,
+          destination: backendHost.destination.id,
+        }
+      : undefined;
 
   const edges: Edge[] = [];
   // Multiple observed instances of one kind do not identify a unique route.
   const single = (kind: string) => {
-    const matches = nodes.filter(n => n.kind === kind);
+    const matches = nodes.filter((n) => n.kind === kind);
     return matches.length === 1 ? matches[0] : undefined;
   };
   const cx = (n: GraphNode) => n.x + n.width / 2;
   const cy = (n: GraphNode) => n.y + n.height / 2;
-  function betweenRows(id: string, sourceKind: string, targetKind: string, label: string,
-    channel: Edge["channel"], lane: number, startOffset = 0, endOffset = 0, setting?: ConnectionId, twoWay = false) {
-    const source = single(sourceKind), target = single(targetKind);
+  function betweenRows(
+    id: string,
+    sourceKind: string,
+    targetKind: string,
+    label: string,
+    channel: Edge["channel"],
+    lane: number,
+    startOffset = 0,
+    endOffset = 0,
+    setting?: ConnectionId,
+    twoWay = false,
+  ) {
+    const source = single(sourceKind),
+      target = single(targetKind);
     if (!source || !target) return;
     const down = source.y < target.y;
-    const sx = cx(source) + startOffset, tx = cx(target) + endOffset;
-    const sy = down ? source.y + source.height : source.y, ty = down ? target.y : target.y + target.height;
+    const sx = cx(source) + startOffset,
+      tx = cx(target) + endOffset;
+    const sy = down ? source.y + source.height : source.y,
+      ty = down ? target.y : target.y + target.height;
     const y = Math.min(sy, ty) + Math.abs(sy - ty) * lane;
-    edges.push({ id, source: source.id, target: target.id, channel, label, setting, twoWay,
-      path: 'M ' + sx + ' ' + sy + ' V ' + y + ' H ' + tx + ' V ' + ty, x: (sx + tx) / 2, y });
+    edges.push({
+      id,
+      source: source.id,
+      target: target.id,
+      channel,
+      label,
+      setting,
+      twoWay,
+      path: "M " + sx + " " + sy + " V " + y + " H " + tx + " V " + ty,
+      x: (sx + tx) / 2,
+      y,
+    });
   }
-  function acrossRow(id: string, source: GraphNode, target: GraphNode, label: string, channel: Edge["channel"],
-    setting?: ConnectionId, twoWay = false) {
+  function acrossRow(
+    id: string,
+    source: GraphNode,
+    target: GraphNode,
+    label: string,
+    channel: Edge["channel"],
+    setting?: ConnectionId,
+    twoWay = false,
+  ) {
     const rightward = target.x > source.x;
     const sx = rightward ? source.x + source.width : source.x;
     const tx = rightward ? target.x : target.x + target.width;
-    edges.push({ id, source: source.id, target: target.id, label, channel, setting, twoWay,
-      path: `M ${sx} ${cy(source)} H ${tx}`, x: (sx + tx) / 2, y: cy(source) - 12 });
+    edges.push({
+      id,
+      source: source.id,
+      target: target.id,
+      label,
+      channel,
+      setting,
+      twoWay,
+      path: `M ${sx} ${cy(source)} H ${tx}`,
+      x: (sx + tx) / 2,
+      y: cy(source) - 12,
+    });
   }
-  if (planning || map.links.some(l => l.id === "inference" && l.state === "configured")) {
-    const percepta = single("percepta"), controller = single("controller");
+  {
+    const percepta = single("percepta"),
+      controller = single("controller");
     if (percepta && controller && percepta.y === controller.y) {
-      acrossRow("decision", percepta, controller, "HTTP · cycle / decision", "http", "inference", true);
-    } else betweenRows("decision", "percepta", "controller", "HTTP · cycle / decision", "http", 0.5, 0, 0, "inference", true);
+      acrossRow(
+        "decision",
+        percepta,
+        controller,
+        "HTTP · cycle / decision",
+        "http",
+        "inference",
+        true,
+      );
+    } else
+      betweenRows(
+        "decision",
+        "percepta",
+        "controller",
+        "HTTP · cycle / decision",
+        "http",
+        0.5,
+        0,
+        0,
+        "inference",
+        true,
+      );
   }
-  betweenRows("cycles", "percepta", "broker", "AMQP · cycles", "amqp", 0.28, 32, 32, "broker");
-  if ((planning && single("forecasting")) || houseForecast?.lanes.some(lane => lane.forecast_channel_configured)) {
-    betweenRows("delivery", "broker", "percepta", "AMQP · forecasts", "amqp", 0.74, -32, -32, "forecasting");
+  betweenRows(
+    "cycles",
+    "percepta",
+    "broker",
+    "AMQP · cycles",
+    "amqp",
+    0.28,
+    32,
+    32,
+    "broker",
+  );
+  {
+    betweenRows(
+      "delivery",
+      "broker",
+      "percepta",
+      "AMQP · forecasts",
+      "amqp",
+      0.74,
+      -32,
+      -32,
+      "forecasting",
+    );
   }
-  const predictor = single("forecasting"), broker = single("broker");
+  const predictor = single("forecasting"),
+    broker = single("broker");
   if (predictor && broker) {
     acrossRow("publish", predictor, broker, "AMQP · forecasts", "amqp");
   }
-  betweenRows("sites", "community", "forecasting", "HTTP · sites", "http", 0.73, 0, -26);
-  betweenRows("history", "telemetry", "forecasting", "HTTP · energy history", "http", 0.33, 0, 26);
-  betweenRows("archive", "broker", "runtime", "AMQP · archive queue", "amqp", 0.55);
-  betweenRows("write", "runtime", "mongo", "Write cycles", "storage", 0.67, 0, 36);
-  betweenRows("read", "mongo", "telemetry", "Read history", "storage", 0.67, -36);
-  return { hosts, nodes, edges, group, width: Math.max(0, right - 16), height: Math.max(190, ...hosts.map(h => h.y + h.height + 8)) };
+  betweenRows(
+    "sites",
+    "community",
+    "forecasting",
+    "HTTP · sites",
+    "http",
+    0.73,
+    0,
+    -26,
+  );
+  betweenRows(
+    "history",
+    "telemetry",
+    "forecasting",
+    "HTTP · energy history",
+    "http",
+    0.33,
+    -34,
+    26,
+  );
+  const writer = archiveOwner === "runtime" ? "runtime" : "telemetry";
+  betweenRows(
+    "archive",
+    "broker",
+    writer,
+    "AMQP · archive queue",
+    "amqp",
+    0.55,
+    16,
+    16,
+  );
+  betweenRows(
+    "write",
+    writer,
+    "mongo",
+    "Write cycles",
+    "storage",
+    0.38,
+    34,
+    34,
+  );
+  betweenRows(
+    "read",
+    "mongo",
+    "telemetry",
+    "Read history",
+    "storage",
+    0.76,
+    -34,
+    -34,
+  );
+  const supervisor = single("supervisor"),
+    collector = single("percepta");
+  if (supervisor && collector) {
+    if (sharedNarrowHost) {
+      const x = collector.x - 18;
+      edges.push({
+        id: "safety",
+        source: collector.id,
+        target: supervisor.id,
+        label: "Safety check",
+        channel: "http",
+        twoWay: true,
+        path: `M ${collector.x} ${cy(collector)} H ${x} V ${cy(supervisor)} H ${supervisor.x}`,
+        x: x + 18,
+        y: supervisor.y + supervisor.height + 19,
+      });
+    } else
+      betweenRows(
+        "safety",
+        "percepta",
+        "supervisor",
+        "Safety check",
+        "http",
+        0.5,
+        0,
+        0,
+        undefined,
+        true,
+      );
+  }
+  return {
+    hosts,
+    nodes,
+    edges,
+    group,
+    width: Math.max(0, right - 16),
+    height: Math.max(190, ...hosts.map((h) => h.y + h.height + 8)),
+  };
 }

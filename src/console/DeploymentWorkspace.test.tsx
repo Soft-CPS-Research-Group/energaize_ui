@@ -9,19 +9,20 @@ import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { DeploymentWorkspace } from "./DeploymentWorkspace";
 import {
   graphLayout,
+  placements,
   services,
   type DeploymentMap,
   type Draft,
   type Placement,
 } from "./deploymentModel";
-vi.mock("./RuntimePanel", () => ({
-  RuntimePanel: ({ kind, startPerceptaSetup }: { kind: string; startPerceptaSetup?: boolean }) => <div>{startPerceptaSetup ? "First Percepta setup" : "Configure " + kind}</div>,
-}));
+import { receivedForecasts, recent } from "./DeploymentFlow";
 vi.mock("./PerceptaSetup", () => ({
-  PerceptaSetup: ({open, launchPlan, startOnHouseData, configurationOnly, onOpenChange}: {open:boolean;launchPlan?:{hostId:string;revision:string};startOnHouseData?:boolean;configurationOnly?:boolean;onOpenChange:(open:boolean)=>void}) =>
-    open ? <div>{startOnHouseData ? "House data settings" : configurationOnly
-      ? <section aria-label="Collection setup"><button onClick={() => onOpenChange(false)}>Close collection setup</button></section>
-      : `Review Percepta on ${launchPlan?.hostId} · ${launchPlan?.revision}`}</div> : null,
+  PerceptaSetup: ({ onMessages }: { onMessages: () => void }) => (
+    <button onClick={onMessages}>Collection messages</button>
+  ),
+}));
+vi.mock("./PerceptaMessages", () => ({
+  PerceptaMessages: () => <p>House messages</p>,
 }));
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal = function () {
@@ -101,450 +102,227 @@ const initial: Draft = {
   launch_available: false,
   blockers: ["Final service contracts are pending."],
 };
-function mock(map = data, draft = initial) {
-  const fetcher = vi.fn(
-    async (url: string, options?: RequestInit) =>
-      new Response(
-        JSON.stringify(
-          options?.method === "PUT"
-            ? {
-                ...draft,
-                ...JSON.parse(options.body as string),
-                revision: "saved",
-                updated_at: "2026-10-28T12:00:00Z",
-              }
-            : url.endsWith("/forecast-plan")
-              ? {site_id: "house", lanes: [], ev_chargers: []}
-            : url.endsWith("deployment-draft")
-              ? draft
-              : map,
-        ),
-      ),
-  );
-  vi.stubGlobal("fetch", fetcher);
-  return fetcher;
-}
-const open = async (planning = true) => {
-  render(
-    <DeploymentWorkspace siteId="house" siteName="House" navigate={() => {}} />,
-  );
-  await screen.findByRole("heading", { name: "SoftCPS server" });
-  if (planning) fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
-};
-it("reviews a house Predictor destination and saves it without starting a service", async () => {
-  const fetcher = mock(data, { ...initial, included_services: [] });
-  await open(false);
-  expect(screen.queryByRole("region", { name: "House forecast plan" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Set up deployment" }));
-  fireEvent.keyDown(screen.getByRole("button", { name: "Forecasting Unassigned" }), {shiftKey:true, key:"F10"});
-  const editor = within(screen.getByRole("dialog"));
-  const select = editor.getByRole("combobox", { name: "Destination" });
-  fireEvent.change(select, { target: { value: "cloud" } });
-  expect(editor.getByText(/shared cloud Predictor checks the community hourly/)).toBeVisible();
-  fireEvent.change(select, { target: { value: "local" } });
-  expect(editor.getByText(/registers with the cloud/)).toBeVisible();
-  fireEvent.click(editor.getByRole("button", { name: "Review plan" }));
-  const review = within(screen.getByRole("dialog"));
-  expect(review.getByText("Planned destination")).toBeVisible();
-  expect(within(review.getByRole("region", {name: "Planned services on Raspberry · Leça"})).getByText("Forecasting")).toBeVisible();
-  fireEvent.click(review.getByRole("button", { name: "Save reviewed draft" }));
-  expect(await screen.findByText("Draft saved")).toBeVisible();
-  const writes = fetcher.mock.calls.filter(([, init]) => init?.method && init.method !== "GET");
-  expect(writes).toHaveLength(1);
-  const [[url, init]] = writes;
-  expect(url).toMatch(/\/api\/runtime\/sites\/house\/deployment-draft$/);
-  expect(init?.method).toBe("PUT");
-  expect(JSON.parse(String(init?.body))).toMatchObject({ included_services: ["forecasting"], services: { forecasting: "local" } });
-});
 
-it("presents only cloud for a house without a machine, including after an old local assignment", async () => {
-  mock({ ...data, destinations: [data.destinations[0]] }, {
-    ...initial, revision: "old", stale: true, included_services: ["forecasting"],
-    services: { ...initial.services, forecasting: "local" },
+function setup(map = data, draft = initial, fail = false) {
+  const calls = vi.fn(async (url: string, init?: RequestInit) => {
+    const path = new URL(url, "http://localhost").pathname;
+    const empty = {
+      site_id: "house",
+      messages: [],
+      checked_at: new Date().toISOString(),
+      available: false,
+      lanes: [],
+      ev_chargers: [],
+      points: [],
+    };
+    if (path.endsWith("/deployment-draft") && init?.method === "PUT") {
+      if (fail)
+        return new Response(
+          JSON.stringify({ detail: "Another editor saved this draft" }),
+          { status: 409 },
+        );
+      draft = {
+        ...draft,
+        ...JSON.parse(String(init.body)),
+        revision: "updated",
+      };
+      return Response.json(draft);
+    }
+    return Response.json(
+      path.endsWith("/deployment-view") || path.endsWith("/deployment-check")
+        ? map
+        : path.endsWith("/deployment-draft")
+          ? draft
+          : empty,
+    );
   });
-  await open();
-  fireEvent.contextMenu(screen.getByRole("button", { name: "Forecasting Destination unavailable" }));
-  const editor = within(screen.getByRole("dialog"));
-  expect(editor.getByRole("option", { name: "Previous destination unavailable" })).toBeDisabled();
-  expect(editor.getAllByRole("option").filter(o => !(o as HTMLOptionElement).disabled).map(o => o.textContent)).toEqual(["Unassigned", "SoftCPS server"]);
-  expect(editor.getByText(/a machine is assigned in Inventory/)).toBeVisible();
-});
-it("identifies an assigned machine that still needs Runtime registration", async () => {
-  mock({ ...data, destinations: [data.destinations[0], { ...data.destinations[1], registered: false }] });
-  await open();
-  fireEvent.contextMenu(screen.getByRole("button", { name: /Forecasting · Draft/ }));
-  const editor = within(screen.getByRole("dialog"));
-  expect(editor.getByRole("option", { name: "Raspberry · Leça · registration pending" })).toBeDisabled();
-  expect(editor.getByRole("option", { name: "SoftCPS server" })).toBeEnabled();
-});
-function moveInference() {
-  vi.stubGlobal("PointerEvent", MouseEvent);
-  const host = screen.getByRole("region", { name: "Raspberry · Leça" });
-  vi.spyOn(host, "getBoundingClientRect").mockReturnValue({
-    left: 500,
-    right: 1000,
-    top: 0,
-    bottom: 600,
-  } as DOMRect);
-  const node = screen.getByRole("button", { name: /Inference · Draft/ });
-  fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
-  fireEvent.pointerMove(node, { clientX: 700, clientY: 200 });
-  fireEvent.pointerUp(node, { clientX: 700, clientY: 200 });
-  fireEvent.click(node);
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  vi.stubGlobal("fetch", calls);
+  render(
+    <DeploymentWorkspace
+      siteId="house"
+      siteName="RH01"
+      communityName="LivingLab"
+      navigate={() => {}}
+    />,
+  );
+  return calls;
 }
-it("keeps a saved draft separate from runtime and blocks unsupported bundle launch", async () => {
-  const fetcher = mock();
-  await open();
-  moveInference();
-  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-  await screen.findByText("Draft saved. Running services have not changed.");
-  const write = fetcher.mock.calls.find(
-    ([, options]) => options?.method === "PUT",
-  )!;
-  expect(write[0]).toContain("/sites/house/deployment-draft");
-  expect(JSON.parse(write[1]!.body as string).services.controller).toBe(
-    "local",
+it("shows one map including all house services, and does not write on entry", async () => {
+  const calls = setup();
+  const host = await screen.findByRole("region", { name: "Raspberry · Leça" });
+  for (const kind of ["Percepta", "Inference", "Fail-safe supervisor"])
+    expect(
+      within(host).getByRole("button", { name: new RegExp("^" + kind + " ·") }),
+    ).toBeVisible();
+  expect(screen.queryByText("Live services")).not.toBeInTheDocument();
+  expect(screen.queryByText("Check machines")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /^Community ·/ }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("LivingLab");
+  expect(calls.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+});
+it("preserves saved placements and puts all services on a cloud-only site", () => {
+  expect(placements(data, { ...initial, revision: "old" })).toEqual(
+    initial.services,
   );
+  const cloudOnly = { ...data, destinations: [data.destinations[0]] };
   expect(
-    fetcher.mock.calls.filter(([, o]) => o?.method === "POST"),
-  ).toHaveLength(0);
-  fireEvent.click(screen.getByRole("button", { name: "Back to live services" }));
-  expect(
-    screen.queryByRole("button", { name: /Percepta · Draft/ }),
-  ).not.toBeInTheDocument();
-  expect(
-    within(screen.getByRole("region", {name: "Raspberry · Leça"})).getByText("No services deployed for this house"),
-  ).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
-  expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument();
-  expect(screen.getByRole("dialog")).toHaveTextContent(
-    "Final service contracts are pending.",
-  );
-});
-it("opens the running service by default and keeps the plan available", async () => {
-  mock({
-    ...data,
-    components: [
-      { ...data.components[0], state: "running", planned: false, instance_id: "running-percepta" },
-      ...data.components.slice(1),
-    ],
-  });
-  await open(false);
-  expect(screen.getByRole("heading", { name: "Live services" })).toBeVisible();
-  expect(screen.queryByRole("button", { name: /Percepta · Draft/ })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Percepta · Running" }));
-  expect(screen.getByText("Configure percepta")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Back to deployment" }));
-  fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
-  expect(screen.getByRole("heading", { name: "Configure deployment" })).toBeVisible();
-});
-it("directs an empty operation view to the deployment plan", async () => {
-  mock();
-  await open(false);
-  expect(screen.getByRole("button", { name: "Check machines" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Percepta messages" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Set up deployment" }));
-  expect(screen.queryByRole("button", { name: "Check machines" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Percepta messages" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
-  expect(screen.getByRole("region",{name:"Collection setup"})).toBeVisible();
-  expect(screen.queryByRole("combobox",{name:"Destination"})).not.toBeInTheDocument();
-});
-it("saves a Percepta-only plan and opens its wizard on the reviewed host", async () => {
-  const fetcher=mock();
-  await open();
-  for (const name of ["Inference", "Forecasting"]) {
-    fireEvent.contextMenu(screen.getByRole("button", { name: new RegExp(name + " · Draft") }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Destination" }), { target: { value: "" } });
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
-  }
-  expect(screen.queryByRole("button",{name:/Inference · Draft/})).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button",{name:"Set up Percepta"}));
-  expect(await screen.findByText("Review Percepta on pi · saved")).toBeVisible();
-  const write=fetcher.mock.calls.find(([,options])=>options?.method==="PUT");
-  expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({included_services:["percepta"],services:{percepta:"local"}});
-  expect(fetcher.mock.calls.some(([,options])=>options?.method==="POST")).toBe(false);
-});
-it("drags a service from the sidebar to a machine and back", async () => {
-  mock(data, {...initial, included_services: []});
-  vi.stubGlobal("PointerEvent", MouseEvent);
-  await open();
-  const shelf = screen.getByRole("complementary", { name: "Available services" });
-  const host = screen.getByRole("region", { name: "Raspberry · Leça" });
-  vi.spyOn(shelf, "getBoundingClientRect").mockReturnValue({left: 0, right: 200, top: 0, bottom: 400} as DOMRect);
-  vi.spyOn(host, "getBoundingClientRect").mockReturnValue({left: 500, right: 900, top: 0, bottom: 500} as DOMRect);
-  function dragCard(card: HTMLElement, from: number, to: number) {
-    fireEvent.pointerDown(card, {button: 0, clientX: from, clientY: 50});
-    fireEvent.pointerMove(card, {clientX: to, clientY: 50});
-    fireEvent.pointerUp(card, {clientX: to, clientY: 50});
-  }
-  dragCard(within(shelf).getByRole("button", { name: /Percepta/ }), 100, 650);
-  dragCard(screen.getByRole("button", { name: /Percepta · Draft/ }), 650, 100);
-  expect(screen.queryByRole("button", { name: /Percepta · Draft/ })).not.toBeInTheDocument();
-  expect(within(shelf).getByRole("button", { name: /Percepta Unassigned/ })).toBeVisible();
-});
-it("opens the forecast inputs directly when the Predictor is clicked", async () => {
-  const fetcher = mock();
-  await open();
-  fireEvent.click(screen.getByRole("button", {name:/Forecasting · Draft/}));
-  expect(screen.getByText("House data settings")).toBeVisible();
-  expect(screen.queryByLabelText("Destination")).not.toBeInTheDocument();
-  expect(fetcher.mock.calls.every(([, init]) => !init?.method)).toBe(true);
-});
-it("opens the shared forecast editor from the plan instead of saving a second address", async () => {
-  const fetcher=mock();
-  await open();
-  fireEvent.click(screen.getByRole("button",{name:"Edit forecasting connection"}));
-  expect(screen.queryByLabelText("Host or IP")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button",{name:"Open forecast settings"}));
-  expect(screen.getByText("House data settings")).toBeVisible();
-  expect(fetcher.mock.calls.every(([,options])=>!options?.method)).toBe(true);
-});
-it("allows editing connection overlays with cancel and save; automatic mode clears overrides", async () => {
-  mock();
-  await open();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Edit broker connection" }),
-  );
-  fireEvent.change(screen.getByLabelText("Connection"), {
-    target: { value: "manual" },
-  });
-  fireEvent.change(screen.getByLabelText("Host or IP"), {
-    target: { value: "broker.example" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Edit broker connection" }),
-  );
-  expect(screen.getByLabelText("Connection")).toHaveValue("automatic");
-  fireEvent.change(screen.getByLabelText("Connection"), {
-    target: { value: "manual" },
-  });
-  fireEvent.change(screen.getByLabelText("Host or IP"), {
-    target: { value: "broker.example" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Update draft" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Edit broker connection" }),
-  );
-  expect(screen.getByLabelText("Host or IP")).toHaveValue("broker.example");
-  fireEvent.change(screen.getByLabelText("Connection"), {
-    target: { value: "automatic" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Update draft" }));
-  expect(
-    screen.getByRole("button", { name: "Edit broker connection" }),
-  ).not.toHaveTextContent("edited");
-});
-it("moves a service by dragging into a house, without saving or launching it", async () => {
-  const fetcher = mock();
-  vi.stubGlobal("PointerEvent", MouseEvent);
-  await open();
-  const host = screen.getByRole("region", { name: "Raspberry · Leça" });
-  vi.spyOn(host, "getBoundingClientRect").mockReturnValue({
-    left: 500,
-    right: 1000,
-    top: 0,
-    bottom: 600,
-  } as DOMRect);
-  const node = screen.getByRole("button", { name: /Inference · Draft/ });
-  fireEvent.pointerDown(node, { button: 0, clientX: 100, clientY: 100 });
-  fireEvent.pointerMove(node, { clientX: 700, clientY: 200 });
-  fireEvent.pointerUp(node, { clientX: 700, clientY: 200 });
-  fireEvent.click(node);
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
-  expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
-  const plannedHouse = screen.getByRole("region", {
-    name: "Planned services on Raspberry · Leça",
-  });
-  expect(
-    within(plannedHouse).getByRole("button", { name: "Configure Inference" }),
-  ).toBeInTheDocument();
-  expect(
-    within(plannedHouse).getByRole("button", { name: "Configure Percepta" }),
-  ).toBeInTheDocument();
-});
-it("checks only on request and retains the last observation with its timestamp", async () => {
-  const fetcher = mock({
-    ...data,
-    destinations: [
-      {
-        ...data.destinations[0],
-        check: {
-          state: "online",
-          checked_at: "2020-01-01T00:00:00Z",
-          architecture: "x86_64",
-          message:
-            "Docker responds. Application connections are checked separately.",
-        },
-      },
-      data.destinations[1],
-    ],
-  });
-  await open(false);
-  const online = screen.getByText("Online");
-  expect(online).toBeInTheDocument();
-  const header = online.closest("header")!;
-  expect(header).toHaveTextContent("Last checked");
-  expect(header.querySelector("time")).toHaveAttribute(
-    "dateTime",
-    "2020-01-01T00:00:00Z",
-  );
-  expect(header).toHaveTextContent("x86_64");
-  expect(
-    screen.queryByText(
-      "Docker responds. Application connections are checked separately.",
-    ),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByText("Check expired")).not.toBeInTheDocument();
-  expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
-  fetcher.mockImplementationOnce(
-    async () =>
-      new Response(JSON.stringify({ detail: "Machine check unavailable" }), {
-        status: 503,
-      }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Check machines" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Machine check unavailable",
-  );
-  expect(fetcher.mock.calls.find(([, options]) => options?.method === "POST")?.[0]).toContain("/sites/house/deployment-check");
-});
-it("preserves edits when a save fails", async () => {
-  const fetcher = mock();
-  await open();
-  moveInference();
-  fetcher.mockImplementationOnce(
-    async () =>
-      new Response(
-        JSON.stringify({ detail: "Another editor saved this draft" }),
-        { status: 409 },
+    new Set(
+      graphLayout(cloudOnly, { ...initial, revision: "old" }).nodes.map(
+        (n) => n.destination,
       ),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Another editor");
-  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
-});
-it("ignores late responses after changing houses", async () => {
-  const pending: ((r: Response) => void)[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn((url: string) =>
-      url.includes("/old/")
-        ? new Promise<Response>((r) => pending.push(r))
-        : Promise.resolve(
-            new Response(
-              JSON.stringify(
-                url.endsWith("deployment-draft")
-                  ? {
-                      ...initial,
-                      services: {
-                        percepta: "cloud",
-                        controller: "cloud",
-                        forecasting: "cloud",
-                      },
-                    }
-                  : { ...data, destinations: [data.destinations[0]] },
-              ),
-            ),
-          ),
     ),
+  ).toEqual(new Set(["cloud"]));
+});
+it("keeps observed instances and distinguishes a pending move from a running service", () => {
+  const c = {
+    ...data.components[0],
+    planned: false,
+    state: "running",
+    destination_id: "cloud",
+  };
+  const map = { ...data, components: [c] };
+  expect(placements(map, initial).percepta).toBe("cloud");
+  const node = graphLayout(map, { ...initial, revision: "saved" }).nodes.find(
+    (n) => n.kind === "percepta",
   );
-  const { rerender } = render(
-    <DeploymentWorkspace siteId="old" siteName="Old" navigate={() => {}} />,
-  );
-  rerender(
-    <DeploymentWorkspace siteId="new" siteName="New" navigate={() => {}} />,
-  );
-  await screen.findByRole("heading", { name: "SoftCPS server" });
-  pending[0](new Response(JSON.stringify(data)));
-  pending[1](new Response(JSON.stringify(initial)));
+  expect(node).toMatchObject({
+    destination: "pi",
+    state: "Move pending",
+    component: c,
+  });
+});
+it("saves a move with automatic connections and the current revisions", async () => {
+  const calls = setup();
+  const card = await screen.findByRole("button", { name: /^Forecasting ·/ });
+  fireEvent.keyDown(card, { key: "F10", shiftKey: true });
+  fireEvent.change(screen.getByLabelText("Machine"), {
+    target: { value: "local" },
+  });
   await waitFor(() =>
     expect(
-      screen.queryByRole("heading", { name: "Raspberry · Leça" }),
-    ).not.toBeInTheDocument(),
+      within(
+        screen.getByRole("region", { name: "Raspberry · Leça" }),
+      ).getByRole("button", { name: /^Forecasting ·/ }),
+    ).toBeVisible(),
+  );
+  const put = calls.mock.calls.find(([, init]) => init?.method === "PUT")!;
+  expect(JSON.parse(String(put[1]?.body))).toMatchObject({
+    included_services: services,
+    services: { forecasting: "local" },
+    connections: {},
+    base_revision: "r1",
+    expected_revision: null,
+  });
+});
+it("keeps the prior topology on a revision conflict", async () => {
+  setup(data, initial, true);
+  const card = await screen.findByRole("button", { name: /^Forecasting ·/ });
+  fireEvent.contextMenu(card);
+  fireEvent.change(screen.getByLabelText("Machine"), {
+    target: { value: "local" },
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent("Another editor");
+  expect(
+    within(screen.getByRole("region", { name: "SoftCPS server" })).getByRole(
+      "button",
+      { name: /^Forecasting ·/ },
+    ),
+  ).toBeVisible();
+});
+it("only checks the machine whose refresh button was pressed", async () => {
+  const calls = setup();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Refresh Raspberry · Leça" }),
+  );
+  await waitFor(() =>
+    expect(
+      calls.mock.calls
+        .filter(([, init]) => init?.method === "POST")
+        .map(([url]) => url),
+    ).toEqual([
+      "/runtime-api/api/runtime/sites/house/deployment-check?host_id=pi",
+    ]),
   );
 });
-it("routes logical data between its producers and consumers for all service placements", () => {
+it("exposes model selection, forecast settings and messages from the map", async () => {
+  setup();
+  fireEvent.click(await screen.findByRole("button", { name: /^Inference ·/ }));
+  expect(screen.getByLabelText("Algorithm")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Forecasting ·/ }));
+  expect(
+    screen.getByRole("region", { name: "House forecast plan" }),
+  ).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Percepta ·/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Collection messages" }));
+  expect(screen.getByText("House messages")).toBeVisible();
+});
+it("opens cycle, forecast, decision and archive evidence without exposing an address editor", async () => {
+  setup();
+  await screen.findByRole("heading", { name: "Deployment" });
+  for (const [label, empty] of [
+    [
+      /Percepta ↔ Inference/,
+      "No recorded inference response in the latest cycles.",
+    ],
+    [/RabbitMQ → Percepta/, "No received forecasts in the latest cycles."],
+    [/Telemetry → MongoDB/, "No recorded cycles for this house."],
+  ] as const) {
+    fireEvent.click(await screen.findByRole("button", { name: label }));
+    expect(await screen.findByText(empty)).toBeVisible();
+    expect(screen.queryByLabelText("Host or IP")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  }
+});
+it("routes the archive to its reported writer and preserves all service placements", () => {
   for (let mask = 0; mask < 8; mask++) {
-    const placements = Object.fromEntries(
+    const assigned = Object.fromEntries(
       services.map((s, i) => [s, mask & (1 << i) ? "local" : "cloud"]),
     ) as Record<(typeof services)[number], Placement>;
-    const layout = graphLayout(data, { ...initial, services: placements }, true);
-    expect(layout.width).toBeLessThanOrEqual(936);
-    expect(layout.edges.map(e => [e.source, e.target])).toEqual([
-      ["percepta", "controller"], ["percepta", "broker"], ["broker", "percepta"],
-      ["forecasting", "broker"], ["community", "forecasting"],
-      ["telemetry", "forecasting"], ["broker", "runtime"], ["runtime", "mongo"], ["mongo", "telemetry"],
-    ]);
-    for (const node of layout.nodes) {
-      const host = layout.hosts.find(h => h.destination.id === node.destination)!;
-      expect(node.x).toBeGreaterThan(host.x);
-      expect(node.x + node.width).toBeLessThan(host.x + host.width);
-      expect(node.y).toBeGreaterThan(host.y + 78);
-      expect(node.y + node.height).toBeLessThan(host.y + host.height);
-      for (const other of layout.nodes.filter(n => n !== node)) {
-        expect(node.x >= other.x + other.width || node.x + node.width <= other.x ||
-          node.y >= other.y + other.height || node.y + node.height <= other.y).toBe(true);
-      }
-      for (const edge of layout.edges) {
-        expect(edge.x < node.x || edge.x > node.x + node.width ||
-          edge.y < node.y || edge.y > node.y + node.height).toBe(true);
+    for (const owner of ["runtime", "telemetry"]) {
+      const layout = graphLayout(
+        data,
+        { ...initial, revision: "saved", services: assigned },
+        owner,
+      );
+      expect(layout.edges.find((e) => e.id === "archive")?.target).toBe(owner);
+      expect(layout.edges.find((e) => e.id === "write")?.source).toBe(owner);
+      expect(
+        layout.nodes.find((n) => n.kind === "supervisor")?.destination,
+      ).toBe(layout.nodes.find((n) => n.kind === "percepta")?.destination);
+      for (const node of layout.nodes) {
+        const h = layout.hosts.find(
+          (h) => h.destination.id === node.destination,
+        )!;
+        expect(node.x).toBeGreaterThan(h.x);
+        expect(node.y + node.height).toBeLessThan(h.y + h.height);
       }
     }
   }
 });
-
-it("keeps the platform in the cloud and uses saved house inputs for shared forecast context", () => {
-  const live = {...data, components: [{...data.components[0], planned: false}]};
-  const diagram = graphLayout(live, initial, false, { site_id: "house", return_available: true,
-    lanes: [{ forecast_channel_configured: true }] });
-  expect(diagram.nodes.find(n => n.kind === "forecasting")).toMatchObject({destination: "cloud", state: "Shared cloud service"});
-  expect(diagram.edges.map(e => e.id)).toContain("delivery");
-  expect(diagram.edges.map(e => e.id)).not.toContain("decision");
-  const unset = graphLayout(live, initial, false);
-  expect(unset.edges.map(e => e.id)).not.toContain("delivery");
-  expect(unset.nodes.some(n => n.kind === "forecasting")).toBe(false);
-  const emptyPlan = graphLayout(data, {...initial, included_services: []}, true);
-  expect(emptyPlan.nodes.every(n => n.destination === "cloud")).toBe(true);
-  expect(emptyPlan.edges.map(e => e.id)).toEqual(["archive","write","read"]);
-});
-
-it("nests the operational backends on SoftCPS and keeps the Percepta storage override editable", async () => {
-  mock(); await open();
-  const group = within(screen.getByRole("region", {name: "SoftCPS server"})).getByRole("group", {name: "Platform backends"});
-  for (const name of ["Community", "Telemetry", "Runtime"]) {
-    expect(within(group).getByRole("button", {name: new RegExp("^" + name + " ·")})).toBeVisible();
-  }
-  fireEvent.click(screen.getByRole("button", {name: /MongoDB · Cycle storage/}));
-  fireEvent.click(screen.getByRole("button", {name: "Edit Percepta storage address"}));
-  expect(screen.getByRole("dialog", {name: "Percepta storage address"})).toBeVisible();
-});
-
-it("opens plan details and retains unsaved placement when closing them", async () => {
-  const fetcher = mock();
-  await open();
-  moveInference();
-  fireEvent.click(screen.getByRole("button", { name: /Percepta · Draft/ }));
-  expect(screen.getByRole("region", { name: "Collection setup" })).toBeVisible();
-  expect(screen.queryByLabelText("Destination")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Close collection setup" }));
-  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
-  expect(
-    screen.getByRole("region", {
-      name: "Planned services on Raspberry · Leça",
-    }),
-  ).toHaveTextContent("Inference");
-  fireEvent.click(screen.getByRole("button", { name: "Configure Percepta" }));
-  expect(screen.getByRole("region", { name: "Collection setup" })).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Close collection setup" }));
-  fireEvent.click(screen.getByRole("button", { name: /Inference · Draft/ }));
-  expect(screen.getByText("Configure controller")).toBeVisible();
-  expect(screen.queryByLabelText("Destination")).not.toBeInTheDocument();
-  expect(fetcher.mock.calls.every(([, o]) => !o?.method)).toBe(true);
+it("rejects stale evidence and generated forecasts", () => {
+  const now = Date.now();
+  const message = {
+    id: "cycle",
+    timestamp: new Date(now - 100000).toISOString(),
+    truncated: false,
+    payload: {
+      entities: {
+        forecast: {
+          entity_type_id: "forecast_service",
+          parameters: {
+            solar: {
+              generated: true,
+              final_values: [{ value: 0, period_start: "a", period_end: "b" }],
+            },
+          },
+        },
+      },
+    },
+  };
+  expect(recent(message, 15, now)).toBe(false);
+  expect(receivedForecasts(message)).toEqual([]);
+  message.payload.entities.forecast.parameters.solar.generated = false;
+  expect(receivedForecasts(message)[0].intervals[0].value).toBe(0);
 });

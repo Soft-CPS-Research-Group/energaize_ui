@@ -24,10 +24,11 @@ type SiteCollectionSettings = {
 export type PerceptaLaunchPlan = {
   hostId: string;
   revision: string;
+  resolveRevision?: () => Promise<string>;
   replace?: { instanceId: string; containerId: string; from?: string };
 };
-type Props={target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;configured?:boolean;compact?:boolean;initialSetup?:boolean;configurationOnly?:boolean;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean;startOnHouseData?:boolean;launchPlan?:PerceptaLaunchPlan;nativeCollection?:boolean;onLaunched?:()=>void;navigate?:(path:string)=>void};
-export function PerceptaSetup({target,equipmentId,siteId,communityId,onChange,configured=false,compact=false,initialSetup=false,configurationOnly=false,open:controlledOpen,onOpenChange,hideTrigger=false,startOnHouseData=false,launchPlan,nativeCollection,onLaunched,navigate}:Props){
+type Props={onMessages?:()=>void;target?:CollectionTarget;equipmentId?:string;siteId?:string;communityId?:string;onChange:()=>void;configured?:boolean;compact?:boolean;initialSetup?:boolean;configurationOnly?:boolean;open?:boolean;onOpenChange?:(open:boolean)=>void;hideTrigger?:boolean;startOnHouseData?:boolean;launchPlan?:PerceptaLaunchPlan;nativeCollection?:boolean;onLaunched?:()=>void;navigate?:(path:string)=>void};
+export function PerceptaSetup({onMessages,target,equipmentId,siteId,communityId,onChange,configured=false,compact=false,initialSetup=false,configurationOnly=false,open:controlledOpen,onOpenChange,hideTrigger=false,startOnHouseData=false,launchPlan,nativeCollection,onLaunched,navigate}:Props){
  const [localOpen,setLocalOpen]=useState(false),open=controlledOpen??localOpen;
  const setOpen=(value:boolean)=>{setLocalOpen(value);onOpenChange?.(value);};
  const label=equipmentId?'Collection settings':communityId?'Community data':configured?'Edit configuration':'Configure Percepta';
@@ -35,12 +36,12 @@ export function PerceptaSetup({target,equipmentId,siteId,communityId,onChange,co
   setOpen(false);
   navigate('/app/community/inventory?'+new URLSearchParams({site:siteId,tab:'assets'}));
  }:undefined;
- return <>{!hideTrigger&&<button className={compact?'btn runtime-icon-button':'btn'} aria-label={label} title={label} onClick={()=>setOpen(true)}>{compact?<Pencil size={17}/>:<><Settings2 size={16}/>{label}</>}</button>}{open&&<PerceptaWizard target={target} equipmentId={equipmentId} siteId={siteId} communityId={communityId} initialSetup={initialSetup} configurationOnly={configurationOnly} startOnHouseData={startOnHouseData} launchPlan={launchPlan} nativeCollection={nativeCollection} onLaunched={onLaunched} onChange={onChange} onClose={()=>setOpen(false)} onManageEquipment={manageEquipment}/>}</>;
+ return <>{!hideTrigger&&<button className={compact?'btn runtime-icon-button':'btn'} aria-label={label} title={label} onClick={()=>setOpen(true)}>{compact?<Pencil size={17}/>:<><Settings2 size={16}/>{label}</>}</button>}{open&&<PerceptaWizard onMessages={onMessages} target={target} equipmentId={equipmentId} siteId={siteId} communityId={communityId} initialSetup={initialSetup} configurationOnly={configurationOnly} startOnHouseData={startOnHouseData} launchPlan={launchPlan} nativeCollection={nativeCollection} onLaunched={onLaunched} onChange={onChange} onClose={()=>setOpen(false)} onManageEquipment={manageEquipment}/>}</>;
 }
-type WizardProps=Pick<Props,'target'|'equipmentId'|'siteId'|'communityId'|'onChange'|'launchPlan'|'nativeCollection'|'onLaunched'> & {
+type WizardProps=Pick<Props,'onMessages'|'target'|'equipmentId'|'siteId'|'communityId'|'onChange'|'launchPlan'|'nativeCollection'|'onLaunched'> & {
  onClose:()=>void;onManageEquipment?:()=>void;initialSetup:boolean;configurationOnly:boolean;startOnHouseData:boolean;
 };
-function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,initialSetup,configurationOnly,startOnHouseData,launchPlan,nativeCollection,onLaunched,onManageEquipment}:WizardProps){
+function PerceptaWizard({onMessages,target,equipmentId,siteId,communityId,onChange,onClose,initialSetup,configurationOnly,startOnHouseData,launchPlan,nativeCollection,onLaunched,onManageEquipment}:WizardProps){
  const communityMode=!!communityId,dialog=useRef<HTMLDialogElement>(null),titleId=useId();
  const measurementFormId=useId();
  const [actuatorEditor,setActuatorEditor]=useState(false),[measurementKind,setMeasurementKind]=useState<'calculated'|'forecast'>('calculated');
@@ -62,6 +63,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const [recPeers, setRecPeers] = useState<RecPeer[]>([]);
  const [destinations,setDestinations]=useState<RuntimeHost[]>([]),[destination,setDestination]=useState(''),[launchPending,setLaunchPending]=useState(false);
  const launchRequest=useRef<string|null>(null);
+ const reviewedRevision=useRef(launchPlan?.revision);
  const destinationImage = (host?: RuntimeHost) =>
    host?.allowed_images?.find(image => image === host.percepta_collection_image)
    ?? host?.allowed_images?.find(image => /percepta|data-provider/i.test(image));
@@ -133,7 +135,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const saveMeasurement=(body:unknown)=>void run(async()=>{if(conflict)return;if(owner?.scope==='recs'&&!communityMode)throw Error('Community data is edited from community Inventory only.');await api(`/community-api/api/${owner!.scope}/${owner!.id}/signals${editing?'/'+editing.capability_id:''}`,editing?.version?{...(body as object),expected_version:editing.version}:body,editing?'PUT':'POST');await reloadProfile(owner!);setEditing(undefined);setInitialMeasurement(undefined);changed();setNotice(actuatorEditor?'Actuator definition saved. No command was sent.':communityMode?'Shared measurement saved. Houses use this definition when their configuration is applied.':'Measurement saved.');});
  const startCollection=()=>void run(async()=>{
   if(configurationOnly||!snapshot)return;const host=destinations.find(h=>h.id===destination),image=destinationImage(host);if(!host||!image)throw Error('Choose a deployment destination.');launchRequest.current??=runtimeRequestId();setLaunchPending(true);
-  try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image,...(launchPlan?{draft_revision:launchPlan.revision}:{}),...(replacement?{replace_instance_id:replacement.instanceId,replace_container_id:replacement.containerId}:{})})});let operation=result.operation;
+  try{const result=await runtime<{instance_id:string;operation:RuntimeOperation}>(`/api/runtime/percepta/sites/${siteId}/launch`,{method:'POST',body:JSON.stringify({request_id:launchRequest.current,version:snapshot.version,host_id:host.id,image,...(launchPlan?{draft_revision:reviewedRevision.current!}:{}),...(replacement?{replace_instance_id:replacement.instanceId,replace_container_id:replacement.containerId}:{})})});let operation=result.operation;
    for(let attempt=0;operation.status==='pending'&&attempt<45;attempt++){await new Promise(resolve=>setTimeout(resolve,1000));operation=await runtime<RuntimeOperation>('/api/runtime/operations/'+operation.id);}
    if(operation.status==='failed'){launchRequest.current=null;throw Error(operation.error||'Collection could not start.');}if(operation.status!=='succeeded')throw Error('Start has not been confirmed yet. Check the existing operation before retrying.');onChange();onClose();onLaunched?.();
   }catch(e){
@@ -240,7 +242,7 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
  const sharedData=rec&&<section className="percepta-shared-summary" aria-label="From your community"><div className="percepta-section-heading"><h3><Users size={18}/>From your community</h3></div><p>Included automatically. Edit these in community Inventory → Community data.</p>{readingChannels(rec).length?<ul>{readingChannels(rec).map(c=><li key={c.capability_id}><strong>{displayMeasurementName(c.name)}</strong><span>{originName(owners.find(o=>o.id===rec)!,c)}{c.collection?.source_binding?.match_key==='pt_spot_price'?' · Portugal':c.collection?.source_binding?.match_key==='es_spot_price'?' · Spain':''}</span></li>)}</ul>:<p>No shared data configured.</p>}</section>;
  const measurementCard=(c:Channel,stored=false)=><button key={c.capability_id} className="percepta-measurement-card" disabled={equipmentSourceEditing||(stored&&!source)} onClick={()=>{setInitialMeasurement(undefined);setActuatorEditor(false);setMeasurementKind(isForecast(c)?'forecast':'calculated');setEditing(c);}}><Activity size={18}/><strong>{displayMeasurementName(c.name)}</strong><span>{c.unit||'State'}{stored?' · Stored readings':''}<ChevronRight size={14}/></span></button>;
  return <dialog ref={dialog} className="percepta-dialog runtime-modal" aria-labelledby={titleId} onCancel={e=>{e.preventDefault();if(!busy)onClose();}}>
- <header className="percepta-dialog-header"><div><span className="eyebrow">{equipmentId?'Equipment settings':<>{communityMode?'Community setup':'Collection setup'} · step {step+1} of {steps.length}</>}</span><h2 id={titleId}>{equipmentId?'Equipment collection':communityMode?'Community data':'Configure Percepta'}</h2></div><button className="btn" aria-label="Close configuration" disabled={busy} onClick={onClose}><X size={18}/></button></header>
+ <header className="percepta-dialog-header"><div><span className="eyebrow">{equipmentId?'Equipment settings':<>{communityMode?'Community setup':'Collection setup'} · step {step+1} of {steps.length}</>}</span><h2 id={titleId}>{equipmentId?'Equipment collection':communityMode?'Community data':'Configure Percepta'}</h2></div>{onMessages&&<button className="btn" disabled={busy} onClick={onMessages}>Messages</button>}<button className="btn" aria-label="Close configuration" disabled={busy} onClick={onClose}><X size={18}/></button></header>
  {!equipmentId&&<ol className="wizard-steps" aria-label="Collection setup steps">{steps.map(([id,title],i)=><li key={id}><button disabled={busy||!ready||hasEditor||i>step} aria-current={i===step?'step':undefined} onClick={()=>goToStep(id)}><span>{i+1}</span>{title}</button></li>)}</ol>}
  <div className="percepta-dialog-content percepta-setup"><fieldset className="percepta-wizard-content" disabled={busy}>
  {error&&<p role="alert" className="notice">{error}{conflict&&owner&&<button className="btn" disabled={busy} onClick={()=>void run(async()=>{await reloadProfile(owner);setEditing(undefined);setConflict(false);setNotice('Latest data loaded. Select the measurement again to review and edit.');})}>Discard edits and reload</button>}</p>}{notice&&<p role="status">{notice}</p>}{!ready&&!error&&<div className="percepta-configuration-loading"><EVChargingLoader label="Loading configuration…"/></div>}
@@ -380,8 +382,9 @@ function PerceptaWizard({target,equipmentId,siteId,communityId,onChange,onClose,
          ...(supportsRecSharing ? {share_with_rec: shareWithRec} : {}),
        }),
      });
+   if (launchPlan?.resolveRevision) reviewedRevision.current = await launchPlan.resolveRevision();
    const params = selectedTarget
-       ? '?' + new URLSearchParams({host_id: selectedTarget.host_id, image: selectedTarget.image,...(launchPlan?{draft_revision:launchPlan.revision}:{})})
+       ? '?' + new URLSearchParams({host_id: selectedTarget.host_id, image: selectedTarget.image,...(launchPlan?{draft_revision:reviewedRevision.current!}:{})})
        : '';
      setConfirmReplace(false);
      setSnapshot(await runtime(`/api/runtime/percepta/sites/${siteId}/preview${params}`, {method: 'POST'}));

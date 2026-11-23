@@ -7,7 +7,7 @@ siteDetailOriginal=function(){
  html=html.replace(/<section class="surface" style="margin-top:20px"><div class="sectionhead"><h2>Site control<\/h2>[\s\S]*?<\/section>/,'');
  if(state.tab==='deployment'&&person().role==='manager'){
   const end=html.indexOf('</nav>')+6;
-  html=html.slice(0,end)+`<div data-deployment-site="${esc(chosen().id)}" data-deployment-name="${esc(chosen().name)}"></div></div></div>`;
+  html=html.slice(0,end)+`<div data-deployment-site="${esc(chosen().id)}" data-deployment-name="${esc(chosen().name)}" data-deployment-community="${esc(comm().name)}"></div></div></div>`;
  }
  return html;
 };

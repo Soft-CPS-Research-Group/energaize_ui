@@ -7,47 +7,49 @@ import {
   type ReactNode,
 } from "react";
 import {
-  ArrowLeft,
-  Check,
-  ChevronRight,
+  Activity,
+  Building2,
+  ChartNoAxesCombined,
   Cloud,
   Cpu,
   Database,
   GripVertical,
-  Network,
-  Activity,
-  Building2,
-  ChartNoAxesCombined,
   Layers3,
+  Network,
   Radio,
   RefreshCw,
   Server,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { runtimeRequest } from "../api/runtimeApi";
 import { PerceptaMessages } from "./PerceptaMessages";
-import { EVChargingLoader } from "../components/ui/EVChargingLoader";
-import { RuntimePanel } from "./RuntimePanel";
+import { HouseForecastPlan } from "./HouseForecastPlan";
 import { PerceptaSetup, type PerceptaLaunchPlan } from "./PerceptaSetup";
 import {
   backendKinds,
-  sharedServices,
-  connections,
   graphLayout,
-  includedServices,
   names,
+  placements,
   services,
+  sharedServices,
   stamp,
   stateName,
-  type Connection,
-  type ConnectionId,
   type DeploymentMap,
   type Draft,
   type GraphNode,
-  type ForecastContext,
   type Placement,
   type Service,
 } from "./deploymentModel";
+import {
+  CycleFlow,
+  feed,
+  readJson,
+  receivedForecasts,
+  recent,
+  useObservation,
+} from "./DeploymentFlow";
+import { applyCollector, bindModel } from "./deploymentActions";
 export type { DeploymentMap } from "./deploymentModel";
 
 function Overlay({
@@ -96,361 +98,443 @@ function Overlay({
   );
 }
 const icon = (kind: string) =>
-  kind === "percepta" ? (
+  kind === "supervisor" ? (
+    <ShieldCheck size={19} />
+  ) : kind === "percepta" ? (
     <Radio size={19} />
   ) : kind === "controller" ? (
     <Cpu size={19} />
   ) : kind === "mongo" ? (
     <Database size={19} />
-  ) : kind === "forecasting" ? <ChartNoAxesCombined size={19} />
-    : kind === "community" ? <Building2 size={19} />
-    : kind === "telemetry" ? <Activity size={19} />
-    : kind === "runtime" || kind === "backend" ? (
+  ) : kind === "forecasting" ? (
+    <ChartNoAxesCombined size={19} />
+  ) : kind === "community" ? (
+    <Building2 size={19} />
+  ) : kind === "telemetry" ? (
+    <Activity size={19} />
+  ) : kind === "runtime" || kind === "backend" ? (
     <Server size={19} />
   ) : (
     <Network size={19} />
   );
-export function DeploymentWorkspace({
-  siteId,
-  siteName,
-  navigate,
-  onCollectionChange,
-}: {
+type Props = {
   siteId: string;
   siteName: string;
+  communityName?: string;
   navigate: (path: string) => void;
   onCollectionChange?: () => void;
-}) {
-  const [forecastContext, setForecastContext] = useState<ForecastContext>();
-  const [messagesOpen, setMessagesOpen] = useState(false);
-  const [map, setMap] = useState<DeploymentMap | null>(null),
-    [draft, setDraft] = useState<Draft | null>(null),
-    [saved, setSaved] = useState<Draft | null>(null);
-  const [view, setView] = useState<"plan" | "operation">("operation"),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState("");
-  const [checking, setChecking] = useState(false),
-    [saving, setSaving] = useState(false),
-    [editing, setEditing] = useState<string | null>(null),
-    [review, setReview] = useState(false),
-    [detail, setDetail] = useState<Service | null>(null);
-  const [forecastSetup, setForecastSetup] = useState(false);
-  const [collectionSetup, setCollectionSetup] = useState(false);
-  const [launchPlan, setLaunchPlan] = useState<PerceptaLaunchPlan | null>(null);
+};
+type EnergyHistory = {
+  site_id: string;
+  source_status: string;
+  points: { timestamp: string; value: number | null; quality?: string }[];
+  unit?: string;
+};
+export function DeploymentWorkspace(props: Props) {
+  return <SiteDeployment key={props.siteId} {...props} />;
+}
+function SiteDeployment({
+  siteId,
+  siteName,
+  communityName,
+  navigate,
+  onCollectionChange,
+}: Props) {
+  const base = "/api/runtime/sites/" + siteId;
+  const [draft, setDraft] = useState<Draft>(),
+    [map, setMap] = useState<DeploymentMap>();
+  const [selected, select] = useState<string | null>(null),
+    [launch, setLaunch] = useState<PerceptaLaunchPlan>();
+  const [error, setError] = useState(""),
+    [busy, setBusy] = useState(""),
+    [checking, setChecking] = useState("");
+  const [model, setModel] = useState(""),
+    [device, setDevice] = useState<"cpu" | "gpu">("cpu");
   const [dragging, setDragging] = useState<Service | null>(null),
-    [hoverHost, setHoverHost] = useState<string | null>(null);
-  const shelf = useRef<HTMLElement>(null);
-  const sequence = useRef(0),
-    canvas = useRef<HTMLDivElement>(null),
+    [hover, setHover] = useState("");
+  const canvas = useRef<HTMLDivElement>(null),
     marker = useId().replaceAll(":", "");
+  const live = useRef(true),
+    lock = useRef(false),
+    epoch = useRef(0);
   const drag = useRef<{
       kind: Service;
       x: number;
       y: number;
       moved: boolean;
-    } | null>(null),
-    suppressClick = useRef<Service | null>(null);
-  const dirty =
-    !!draft &&
-    !!saved &&
-    JSON.stringify([draft.services, draft.connections, [...includedServices(draft)].sort()]) !==
-      JSON.stringify([saved.services, saved.connections, [...includedServices(saved)].sort()]);
-  const load = useCallback(async () => {
-    const seq = ++sequence.current;
-    setError("");
-    try {
-      const [m, d] = await Promise.all([
-        runtimeRequest<DeploymentMap>(
-          `/api/runtime/sites/${siteId}/deployment-view`,
-        ),
-        runtimeRequest<Draft>(`/api/runtime/sites/${siteId}/deployment-draft`),
-      ]);
-      if (seq === sequence.current) {
-        setMap(m);
-        setDraft(d);
-        setSaved(d);
-      }
-    } catch (e) {
-      if (seq === sequence.current) setError((e as Error).message);
+    }>(),
+    suppress = useRef(false);
+  const reload = useCallback(async () => {
+    const seq = ++epoch.current;
+    const [m, d] = await Promise.all([
+      runtimeRequest<DeploymentMap>(base + "/deployment-view"),
+      runtimeRequest<Draft>(base + "/deployment-draft"),
+    ]);
+    if (m.site_id !== siteId || d.site_id !== siteId)
+      throw Error("Unexpected deployment for this house.");
+    if (live.current && seq === epoch.current) {
+      setMap(m);
+      setDraft(d);
     }
-  }, [siteId]);
+  }, [base, siteId]);
   useEffect(() => {
-    setMap(null);
-    setMessagesOpen(false);
-    setDraft(null);
-    setSaved(null);
-    setEditing(null);
-    setDetail(null);
-    setForecastSetup(false);
-    setCollectionSetup(false);
-    setLaunchPlan(null);
-    setReview(false);
-    setView("operation");
-    setMessage("");
-    setChecking(false);
-    setSaving(false);
-    void load();
-    return () => {
-      sequence.current++;
+    live.current = true;
+    const refresh = () => {
+      if (!lock.current)
+        void reload().catch((e) => {
+          if (live.current) setError(e.message);
+        });
     };
-  }, [load]);
-  useEffect(() => {
-    const controller = new AbortController();
-    void runtimeRequest<ForecastContext>(`/api/runtime/sites/${siteId}/forecast-plan`, { signal: controller.signal })
-      .then(result => {
-        if (!controller.signal.aborted && result.site_id === siteId && Array.isArray(result.lanes)) setForecastContext(result);
-      }).catch(() => { /* The inventory remains available when forecast configuration is unavailable. */ });
-    return () => controller.abort();
-  }, [siteId, forecastSetup, collectionSetup]);
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-  const check = async () => {
-    const seq = sequence.current;
-    setChecking(true);
-    setError("");
-    try {
-      const m = await runtimeRequest<DeploymentMap>(
-        `/api/runtime/sites/${siteId}/deployment-check`,
-        { method: "POST", signal: AbortSignal.timeout(60000) },
-      );
-      if (seq === sequence.current) setMap(m);
-    } catch (e) {
-      if (seq === sequence.current) setError((e as Error).message);
-    } finally {
-      if (seq === sequence.current) setChecking(false);
-    }
-  };
-  const save = async () => {
-    if (!draft) return null;
-    const seq = sequence.current;
-    setSaving(true);
-    setError("");
-    try {
-      const result = await runtimeRequest<Draft>(
-        `/api/runtime/sites/${siteId}/deployment-draft`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            services: draft.services,
-            included_services: includedServices(draft),
-            connections: draft.connections,
-            base_revision: map?.revision ?? null,
-            expected_revision: draft.revision,
-          }),
-        },
-      );
-      if (seq !== sequence.current) return null;
-      setDraft(result);
-      setSaved(result);
-      setMessage("Draft saved. Running services have not changed.");
-      return result;
-    } catch (e) {
-      if (seq === sequence.current) setError((e as Error).message);
-      return null;
-    } finally {
-      if (seq === sequence.current) setSaving(false);
-    }
-  };
-  const place = (kind: Service, placement: Placement) => {
-    if (saving || (placement === "local" && !localDestination?.registered)) return;
-    setDraft((d) =>
-      d ? { ...d, included_services: [...new Set([...includedServices(d), kind])], services: { ...d.services, [kind]: placement } } : d,
+    refresh();
+    const timer = setInterval(refresh, 30000);
+    return () => {
+      live.current = false;
+      ++epoch.current;
+      clearInterval(timer);
+    };
+  }, [reload]);
+  const archival = [
+    "flow:archive",
+    "flow:write",
+    "flow:read",
+    "mongo",
+  ].includes(selected || "");
+  const detailed = [
+    "flow:decision",
+    "flow:delivery",
+    "flow:publish",
+    "flow:cycles",
+  ].includes(selected || "");
+  const archive = useObservation(
+    siteId + "/archive/" + archival,
+    useCallback((s) => feed(siteId, true, !archival, s), [siteId, archival]),
+    archival ? 5000 : 20000,
+  );
+  const output = useObservation(
+    siteId + "/messages/" + detailed,
+    useCallback((s) => feed(siteId, false, !detailed, s), [siteId, detailed]),
+    detailed ? 5000 : 20000,
+  );
+  const history = useObservation(
+    siteId + "/energy",
+    useCallback(
+      async (signal) => {
+        const end = Date.now(),
+          params = new URLSearchParams({
+            from_ts: new Date(end - 3600000).toISOString(),
+            until_ts: new Date(end).toISOString(),
+            limit: "10",
+          });
+        const series = await readJson<EnergyHistory>(
+          `/telemetry-api/api/measurements/sites/${siteId}/derived/non_shiftable_load/series?${params}`,
+          signal,
+        );
+        if (series.site_id !== siteId)
+          throw Error("Unexpected house in Telemetry response");
+        return series;
+      },
+      [siteId],
+    ),
+    30000,
+  );
+  const layout =
+    map && draft ? graphLayout(map, draft, archive?.value?.owner) : null;
+  const assigned = map && draft ? placements(map, draft) : undefined;
+  const local = map?.destinations.find((d) => d.placement === "local");
+  const collector = map?.components.find(
+    (c) => !c.planned && c.kind === "percepta",
+  );
+  const confirmedArchive = recent(
+    archive?.value?.messages[0],
+    archive?.value?.period_seconds,
+  );
+  const confirmedCycle = recent(
+    output?.value?.messages[0],
+    archive?.value?.period_seconds,
+  );
+  const activeForecast =
+    confirmedCycle &&
+    receivedForecasts(output?.value?.messages[0]).some((s) =>
+      s.intervals.some((i) => Date.parse(String(i.period_end)) > Date.now()),
     );
-    setMessage("");
-  };
-  const unplace = (kind: Service) => {
-    setDraft(d => d ? { ...d, included_services: includedServices(d).filter(service => service !== kind) } : d);
-    setMessage("");
-  };
-  function isDragClick(kind: string) {
-    const suppressed = suppressClick.current === kind;
-    suppressClick.current = null;
-    return suppressed;
+  function activity(node: GraphNode) {
+    if (
+      node.component &&
+      (node.destination !== node.component.destination_id ||
+        node.component.state !== "running" ||
+        node.component.health === "unhealthy")
+    )
+      return false;
+    switch (node.kind) {
+      case "percepta":
+        return (
+          !!node.component &&
+          (confirmedCycle ||
+            (confirmedArchive &&
+              archive?.value?.instance_id === node.component.id))
+        );
+      case "controller":
+        return (
+          !!node.component &&
+          confirmedCycle &&
+          !!output?.value?.messages[0]?.inference_decision &&
+          node.component.id === draft?.inference_binding?.instance_id
+        );
+      case "forecasting":
+        return (
+          activeForecast &&
+          (node.component?.destination_id === node.destination ||
+            (assigned?.forecasting === "cloud" && !node.component))
+        );
+      case "broker":
+        return confirmedCycle || confirmedArchive;
+      case "mongo":
+        return confirmedArchive;
+      case "telemetry":
+        return (
+          (confirmedArchive &&
+            archive?.value?.messages[0]?.writer === "telemetry") ||
+          (history?.value?.source_status === "linked" &&
+            !!history?.value.points.length)
+        );
+      case "runtime":
+        return !!map && !error;
+      case "community":
+        return !!communityName && !!map && !error;
+      default:
+        return false;
+    }
   }
-  const moveHandlers = (kind: Service) => ({
-    title: "Click to configure. Drag to move, or use Shift+F10 for destinations.",
-    "aria-keyshortcuts": "Shift+F10",
-    onContextMenu: (event: React.MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      if (!saving && !drag.current?.moved) setEditing("move:" + kind);
-    },
-    onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
-      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-        event.preventDefault();
-        setEditing("move:" + kind);
-      }
-    },
-    onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (event.button !== 0 || saving) return;
-      suppressClick.current = null;
-      drag.current = { kind, x: event.clientX, y: event.clientY, moved: false };
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-    },
-    onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => {
-      const current = drag.current;
-      if (!current) return;
-      if (Math.hypot(event.clientX - current.x, event.clientY - current.y) > 8) current.moved = true;
-      if (current.moved) {
-        setDragging(kind);
-        const target = dropTarget(event.clientX, event.clientY)?.dataset;
-        setHoverHost(target?.placement === "local" && !localDestination?.registered ? null : target?.deploymentHost || null);
-      }
-    },
-    onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => {
-      if (drag.current?.moved) {
-        const placement = dropTarget(event.clientX, event.clientY)?.dataset.placement;
-        if (placement === "cloud" || placement === "local") place(kind, placement);
-        if (placement === "unassigned") unplace(kind);
-        suppressClick.current = kind;
-        setTimeout(() => { suppressClick.current = null; }, 0);
-      }
-      endDrag();
-    },
-    onPointerCancel: endDrag,
-  });
-  function endDrag() {
-    drag.current = null;
-    setDragging(null);
-    setHoverHost(null);
+  async function persist(
+    next: Record<Service, Placement>,
+    gpu?: "cpu" | "gpu",
+  ) {
+    if (!draft || !map) throw Error("Reload deployment before making changes.");
+    const inferenceDevice = map.destinations.find(
+      (d) => d.placement === next.controller,
+    )?.selectable_inference_device
+      ? gpu || draft.inference_device || "cpu"
+      : null;
+    const saved = await runtimeRequest<Draft>(base + "/deployment-draft", {
+      method: "PUT",
+      body: JSON.stringify({
+        services: next,
+        included_services: services,
+        connections: {},
+        inference_device: inferenceDevice,
+        expected_revision: draft.revision,
+        base_revision: map.revision,
+      }),
+    });
+    if (live.current) setDraft(saved);
+    return saved;
   }
-  function dropTarget(x: number, y: number) {
-    const targets = [...(canvas.current?.querySelectorAll<HTMLElement>("[data-deployment-host]") || [])];
-    if (shelf.current) targets.push(shelf.current);
-    return targets.find(el => {
-      const r = el.getBoundingClientRect();
-      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  async function run(label: string, work: () => Promise<void>) {
+    if (lock.current) return;
+    lock.current = true;
+    ++epoch.current;
+    setError("");
+    setBusy(label);
+    try {
+      await work();
+    } catch (e) {
+      if (live.current) setError((e as Error).message);
+    } finally {
+      try {
+        if (live.current) await reload();
+      } catch (e) {
+        if (live.current) setError((e as Error).message);
+      }
+      lock.current = false;
+      if (live.current) setBusy("");
+    }
+  }
+  async function move(kind: Service, target: Placement) {
+    if (!assigned || !draft || (target === "local" && !local?.registered))
+      return;
+    select(null);
+    if (assigned[kind] === target) return;
+    const models = map?.components.filter(
+      (c) => !c.planned && c.inference_model,
+    );
+    const bound =
+      draft.inference_binding?.model_id ||
+      (models?.length === 1 ? models[0].inference_model : null);
+    await run("Updating " + names[kind] + "…", async () => {
+      let next = await persist({ ...assigned, [kind]: target });
+      if (kind === "forecasting") return;
+      if (bound) next = await bindModel(siteId, next, bound);
+      if (collector && (kind === "percepta" || bound))
+        await applyCollector(siteId, next, collector);
     });
   }
-  const activePercepta = map?.components.find(c => c.kind === "percepta" && !c.planned);
-  const hasRuntimePercepta = !!activePercepta;
-  const hasRuntime = !!map?.components.some(c => !c.planned);
-  const selected = draft ? includedServices(draft) : [];
-  const localDestination = map?.destinations.find(d => d.placement === "local");
-  const plannedPercepta = map?.destinations.find(d => d.placement === draft?.services.percepta);
-  const replace = activePercepta?.managed && activePercepta.instance_id && activePercepta.container_id
-    && ["running", "exited", "created"].includes(activePercepta.state)
-    ? {
-      instanceId: activePercepta.instance_id,
-      containerId: activePercepta.container_id,
-      from: activePercepta.destination_id !== plannedPercepta?.id
-        ? map?.destinations.find(d => d.id === activePercepta.destination_id)?.name || activePercepta.destination_id
-        : undefined,
-    } : undefined;
-  const canOpenPlannedPercepta = !!plannedPercepta?.registered && (!activePercepta || !!replace) &&
-    (dirty || draft?.percepta_host_id === undefined || draft.percepta_host_id === plannedPercepta.id);
-  const perceptaOnly = selected.length === 1 && selected[0] === "percepta";
-  const setupLabel = replace?.from ? "Move Percepta" : "Set up Percepta";
-  const openPlannedPercepta = async () => {
-    if (!draft || !plannedPercepta || !canOpenPlannedPercepta) return;
-    const reviewed = dirty || !draft.revision || draft.stale ? await save() : draft;
-    if (!reviewed?.revision) return;
-    if (reviewed.percepta_host_id !== undefined && reviewed.percepta_host_id !== plannedPercepta.id) {
-      setError("The reviewed plan needs a destination with an approved Percepta collection image.");
-      setReview(false);
-      setEditing(null);
-      return;
+  async function check(id: string) {
+    if (checking || busy) return;
+    setChecking(id);
+    setError("");
+    const seq = ++epoch.current;
+    try {
+      const m = await runtimeRequest<DeploymentMap>(
+        base + "/deployment-check?" + new URLSearchParams({ host_id: id }),
+        { method: "POST", signal: AbortSignal.timeout(60000) },
+      );
+      if (live.current && seq === epoch.current && m.site_id === siteId)
+        setMap(m);
+    } catch (e) {
+      if (live.current) setError((e as Error).message);
+    } finally {
+      if (live.current) setChecking("");
     }
-    setReview(false);
-    setEditing(null);
-    setLaunchPlan({ hostId: plannedPercepta.id, revision: reviewed.revision, replace });
-  };
-  const openForecastSettings = () => {
-    setEditing(null);
-    setReview(false);
-    setForecastSetup(true);
-  };
-  const configureService = (kind: Service) => {
-    setReview(false);
-    if (kind === "forecasting") openForecastSettings();
-    else if (kind === "percepta") {
-      setEditing(null);
-      setCollectionSetup(true);
-    } else setDetail("controller");
-  };
-  if (detail && detail !== "forecasting")
-    return (
-      <section className="deployment-detail">
-        <button
-          className="btn text"
-          onClick={() => {
-            setDetail(null);
-            const seq = sequence.current;
-            void runtimeRequest<DeploymentMap>(
-              `/api/runtime/sites/${siteId}/deployment-view`,
-            )
-              .then((m) => {
-                if (seq === sequence.current) setMap(m);
-              })
-              .catch((e) => setError(e.message));
-          }}
-        >
-          <ArrowLeft size={16} /> Back to deployment
-        </button>
-        <RuntimePanel
-          siteId={siteId}
-          siteName={siteName}
-          kind={detail}
-          startPerceptaSetup={detail === "percepta" && !hasRuntimePercepta}
-          navigate={navigate}
-          onCollectionChange={onCollectionChange}
-        />
-      </section>
-    );
-  if (messagesOpen) return <PerceptaMessages key={siteId} siteId={siteId} siteName={siteName} onBack={() => setMessagesOpen(false)} />;
-  const planning = view === "plan",
-    layout = map && draft ? graphLayout(map, draft, planning, forecastContext) : null;
-  const movingService = services.find(kind => editing === "move:" + kind);
-  const placement = draft && movingService && selected.includes(movingService) ? draft.services[movingService] : "";
-  const currentLink = editing?.startsWith("link:")
-    ? connections.find((l) => l.id === editing.slice(5))
-    : null;
-  function renderNode(node: GraphNode, originX: number, originY: number) {
-    const movable = planning && services.includes(node.kind as Service);
-    const shared = !!sharedServices[node.kind] || (!planning && !node.component);
-    return <button key={node.id} type="button"
-      className={["deployment-node", movable && "movable", shared && "shared", dragging === node.kind && "dragging"].filter(Boolean).join(" ")}
-      style={{ left: node.x - originX, top: node.y - originY, width: node.width, height: node.height }}
-      aria-label={node.name + " · " + node.state} disabled={saving}
-      onClick={() => {
-        if (isDragClick(node.kind)) return;
-        if (movable) configureService(node.kind as Service);
-        else if (node.kind === "percepta" && node.component) setDetail("percepta");
-        else setEditing(shared ? node.kind : "actual:" + node.id);
-      }} {...(movable ? moveHandlers(node.kind as Service) : {})}>
-      <span className="deployment-service-icon">{icon(node.kind)}</span>
-      <span className="deployment-service-name"><strong>{node.name}</strong><small>{node.state}</small></span>
-      {movable && <GripVertical className="deployment-grip" size={12} />}
-    </button>;
   }
+  function hostAt(x: number, y: number) {
+    return [
+      ...(canvas.current?.querySelectorAll<HTMLElement>(
+        "[data-deployment-host]",
+      ) || []),
+    ].find((el) => {
+      const r = el.getBoundingClientRect();
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    })?.dataset.placement;
+  }
+  function moveHandlers(kind: Service) {
+    return {
+      title: "Drag to move. Click to configure. Shift+F10 to choose a machine.",
+      "aria-keyshortcuts": "Shift+F10",
+      onContextMenu: (e: React.MouseEvent) => {
+        e.preventDefault();
+        select("move:" + kind);
+      },
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+          e.preventDefault();
+          select("move:" + kind);
+        }
+      },
+      onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+        if (e.button !== 0 || busy) return;
+        suppress.current = false;
+        drag.current = { kind, x: e.clientX, y: e.clientY, moved: false };
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        const d = drag.current;
+        if (!d || d.kind !== kind) return;
+        if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) d.moved = true;
+        if (d.moved) {
+          setDragging(kind);
+          setHover(hostAt(e.clientX, e.clientY) || "");
+        }
+      },
+      onPointerCancel: () => {
+        drag.current = undefined;
+        setDragging(null);
+        setHover("");
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        if (drag.current?.moved) {
+          suppress.current = true;
+          setTimeout(() => {
+            suppress.current = false;
+          }, 0);
+          const target = hostAt(e.clientX, e.clientY);
+          if (target === "cloud" || target === "local") void move(kind, target);
+        }
+        drag.current = undefined;
+        setDragging(null);
+        setHover("");
+      },
+    };
+  }
+  function open(kind: string) {
+    if (suppress.current || busy || !map || !draft || !assigned) return;
+    if (kind === "percepta") {
+      const host = map.destinations.find(
+        (d) => d.placement === assigned.percepta,
+      );
+      if (!host) return;
+      const replacement =
+        collector?.managed && collector.container_id && collector.instance_id
+          ? {
+              instanceId: collector.instance_id,
+              containerId: collector.container_id,
+              from:
+                host.id !== collector.destination_id
+                  ? map.destinations.find(
+                      (d) => d.id === collector.destination_id,
+                    )?.name
+                  : undefined,
+            }
+          : undefined;
+      setLaunch({
+        hostId: host.id,
+        revision: draft.revision || "",
+        replace: replacement,
+        resolveRevision: async () => {
+          const result = await persist(assigned);
+          if (!result.revision) throw Error("Deployment could not be saved.");
+          return result.revision;
+        },
+      });
+    }
+    if (kind === "controller") {
+      setModel(
+        draft.inference_binding?.model_id ||
+          map.components.find((c) => !c.planned && c.inference_model)
+            ?.inference_model ||
+          "",
+      );
+      setDevice(draft.inference_device || "cpu");
+    }
+    select(kind);
+  }
+  function nodeButton(n: GraphNode, x: number, y: number) {
+    const movable = services.includes(n.kind as Service);
+    const lit = activity(n);
+    return (
+      <button
+        key={n.id}
+        type="button"
+        aria-label={n.name + " · " + n.state}
+        className={
+          "deployment-node" +
+          (movable ? " movable" : "") +
+          (dragging === n.kind ? " dragging" : "")
+        }
+        style={{
+          left: n.x - x,
+          top: n.y - y,
+          width: n.width,
+          height: n.height,
+        }}
+        disabled={!!busy}
+        {...(movable ? moveHandlers(n.kind as Service) : {})}
+        onClick={() => open(n.kind)}
+      >
+        <span className="deployment-service-icon">
+          {icon(n.kind)}
+          <i
+            className={"deployment-signal" + (lit ? " active" : "")}
+            aria-label={lit ? "Recent activity" : "No confirmed activity"}
+          />
+        </span>
+        <span className="deployment-service-name">
+          <strong>{n.name}</strong>
+          <small>{n.state}</small>
+        </span>
+        {movable && <GripVertical className="deployment-grip" size={12} />}
+      </button>
+    );
+  }
+  const flow = layout?.edges.find((e) => "flow:" + e.id === selected);
+  const selectedMove = services.find((s) => "move:" + s === selected);
+  const selectedHost = map?.destinations.find(
+    (d) => d.placement === assigned?.controller,
+  );
+  const close = () => {
+    if (!busy) select(null);
+  };
   return (
     <section className="deployment-workspace" aria-label="Deployment">
-      <PerceptaSetup
-        siteId={siteId}
-        hideTrigger
-        open={forecastSetup}
-        onOpenChange={setForecastSetup}
-        startOnHouseData
-        configurationOnly
-        onChange={() => onCollectionChange?.()}
-      />
-      {collectionSetup && <PerceptaSetup siteId={siteId} navigate={navigate} hideTrigger open configurationOnly nativeCollection onOpenChange={setCollectionSetup} onChange={() => onCollectionChange?.()} />}
-      {launchPlan && (
-        <PerceptaSetup
-          siteId={siteId}
-          navigate={navigate}
-          hideTrigger
-          open
-          initialSetup
-          launchPlan={launchPlan}
-          onOpenChange={(open) => { if (!open) setLaunchPlan(null); }}
-          onLaunched={() => { setMessage(""); setView("operation"); void load(); }}
-          onChange={() => onCollectionChange?.()}
-        />
-      )}
       <header className="deployment-heading">
         <div>
           <span className="eyebrow">{siteName}</span>
@@ -458,563 +542,405 @@ export function DeploymentWorkspace({
         </div>
       </header>
       {error && (
-        <div className="notice" role="alert">
+        <div role="alert" className="notice">
           {error}{" "}
           <button
             className="btn text"
-            onClick={() => {
-              if (
-                !dirty ||
-                window.confirm("Reload and discard unsaved changes?")
-              )
-                void load();
-            }}
+            onClick={() =>
+              void reload()
+                .then(() => setError(""))
+                .catch((e) => setError(e.message))
+            }
           >
             Reload
           </button>
         </div>
       )}
-      {!map || !draft || !layout ? (
-        <EVChargingLoader label="Loading deployment…" />
+      {busy && <p role="status">{busy}</p>}
+      {!layout || !map || !draft ? (
+        <p role="status">Loading deployment…</p>
       ) : (
-        <>
-          <div className="deployment-toolbar">
-            <div>
-              <h3>{planning ? "Configure deployment" : "Live services"}</h3>
-              {planning && <small>Drag a service onto a machine. Click the service to configure it.</small>}
-            </div>
-            <button className="btn" onClick={() => setView(planning ? "operation" : "plan")}>
-              {planning ? "Back to live services" : map.components.some(component => !component.planned) ? "Edit deployment setup" : "Set up deployment"}
-            </button>
-          </div>
-          {draft.stale && planning && (
-            <p className="notice">
-              The house destinations changed since this draft was saved. Review
-              the destinations below and save again.
-            </p>
-          )}
-          {!planning && (
-            <div className="deployment-operation-bar">
-              <p>{hasRuntime ? 'Arrows show logical data flow. Select a service for details.' : 'No managed instances are listed for this house.'}</p>
-              <div className="actions" role="group" aria-label="Operation tools">
-                <button className="btn" onClick={() => setCollectionSetup(true)}>Configure Percepta</button>
-                <button className="btn" onClick={() => setMessagesOpen(true)}><Radio size={15}/>Percepta messages</button>
-                <button className="btn" disabled={checking} onClick={() => void check()}>
-                  <RefreshCw size={15} className={checking ? "deployment-spinning" : ""} />
-                  {checking ? "Checking machines…" : "Check machines"}
-                </button>
-              </div>
-            </div>
-          )}
-          <div className={planning ? "deployment-planner" : undefined}>
-          {planning && (
-            <aside ref={shelf} data-deployment-host="unassigned" data-placement="unassigned"
-              className={"deployment-shelf" + (hoverHost === "unassigned" ? " is-drop-target" : "")}
-              aria-label="Available services">
-              <h3>Unassigned services</h3>
-              <p>Drag a service here to unassign it.</p>
-              {services.filter(kind => !layout.nodes.some(node => node.kind === kind)).map(kind => (
-                <button key={kind} className="deployment-shelf-service" disabled={saving}
-                  {...moveHandlers(kind)}
-                  onClick={() => {
-                    if (isDragClick(kind)) return;
-                    configureService(kind);
-                  }}>
-                  {icon(kind)}<span><strong>{names[kind]}</strong><small>{selected.includes(kind) ? "Destination unavailable" : "Unassigned"}</small></span><GripVertical size={15} />
-                </button>
-              ))}
-            </aside>
-          )}
-          <div className="deployment-scroll">
-            <div
-              ref={canvas}
-              className={"deployment-map" + (dragging ? " is-dragging" : "")}
-              style={{ width: layout.width, height: layout.height }}
-            >
-              {layout.hosts.map((h) => (
-                <section
-                  key={h.destination.id}
-                  data-deployment-host={h.destination.id}
-                  data-placement={h.destination.placement}
-                  className={
-                    "deployment-host" +
-                    (hoverHost === h.destination.id ? " is-drop-target" : "")
-                  }
-                  aria-label={h.destination.name}
-                  style={{
-                    left: h.x,
-                    top: h.y,
-                    width: h.width,
-                    height: h.height,
-                  }}
-                >
-                  <header>
-                    {h.destination.placement === "cloud" ? (
-                      <Cloud size={23} />
-                    ) : (
-                      <Cpu size={23} />
-                    )}
-                    <div className="deployment-host-identity">
-                      <span className="eyebrow">
-                        {h.destination.placement === "cloud"
-                          ? "CENTRAL SERVER"
-                          : "HOUSE MACHINE"}
+        <div className="deployment-scroll">
+          <div
+            ref={canvas}
+            className="deployment-map"
+            style={{ width: layout.width, height: layout.height }}
+          >
+            {layout.hosts.map((h) => (
+              <section
+                key={h.destination.id}
+                aria-label={h.destination.name}
+                data-deployment-host={h.destination.id}
+                data-placement={h.destination.placement}
+                className={
+                  "deployment-host" +
+                  (hover === h.destination.placement ? " is-drop-target" : "")
+                }
+                style={{
+                  left: h.x,
+                  top: h.y,
+                  width: h.width,
+                  height: h.height,
+                }}
+              >
+                <header>
+                  {h.destination.placement === "cloud" ? <Cloud /> : <Cpu />}
+                  <div className="deployment-host-identity">
+                    <span className="eyebrow">
+                      {h.destination.placement === "cloud"
+                        ? "CENTRAL SERVER"
+                        : "HOUSE MACHINE"}
+                    </span>
+                    <h3>{h.destination.name}</h3>
+                  </div>
+                  <div className="deployment-host-status">
+                    <span
+                      className={
+                        "deployment-state state-" + h.destination.check.state
+                      }
+                    >
+                      <i />
+                      {h.destination.check.state === "online"
+                        ? "Online"
+                        : stateName(h.destination.check.state)}
+                    </span>
+                    <time
+                      dateTime={h.destination.check.checked_at || undefined}
+                    >
+                      {stamp(h.destination.check.checked_at)}
+                    </time>
+                  </div>
+                  <button
+                    className="deployment-refresh"
+                    title={"Refresh " + h.destination.name}
+                    aria-label={"Refresh " + h.destination.name}
+                    disabled={!!checking || !!busy || !h.destination.registered}
+                    onClick={() => void check(h.destination.id)}
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={
+                        checking === h.destination.id
+                          ? "deployment-spinning"
+                          : ""
+                      }
+                    />
+                  </button>
+                </header>
+                {layout.group?.destination === h.destination.id && (
+                  <div
+                    role="group"
+                    aria-label="Platform backends"
+                    className="deployment-backends"
+                    style={{
+                      left: layout.group.x - h.x,
+                      top: layout.group.y - h.y,
+                      width: layout.group.width,
+                      height: layout.group.height,
+                    }}
+                  >
+                    <div className="deployment-backends-footer">
+                      <span className="deployment-backends-name">
+                        <Layers3 size={14} />
+                        Platform backends
                       </span>
-                      <h3>{h.destination.name}</h3>
-                      {!planning && <small className="deployment-hardware">
-                        {h.destination.check.architecture ||
-                          "Architecture not checked"}
-                        {h.destination.check.memory_bytes
-                          ? ` · ${(h.destination.check.memory_bytes / 1024 ** 3).toFixed(1)} GiB`
-                          : ""}
-                      </small>}
+                      {["access", "flexibility", "training"].map((k) => (
+                        <button
+                          type="button"
+                          key={k}
+                          className="deployment-supporting-backend"
+                          onClick={() => open(k)}
+                        >
+                          {names[k]}
+                        </button>
+                      ))}
                     </div>
-                    {!planning && <div className="deployment-host-status">
-                      <span
-                        className={
-                          "deployment-state state-" + h.destination.check.state
-                        }
-                      >
-                        <i />
-                        {h.destination.check.state === "online"
-                          ? "Online"
-                          : h.destination.check.state === "unreachable"
-                            ? "Unreachable"
-                            : stateName(h.destination.check.state)}
-                      </span>
-                      <time
-                        dateTime={h.destination.check.checked_at || undefined}
-                      >
-                        {h.destination.check.checked_at ? (
-                          <>
-                            Last checked at
-                            <br />
-                            {stamp(h.destination.check.checked_at)}
-                          </>
-                        ) : (
-                          "Never checked"
-                        )}
-                      </time>
-                    </div>}
-                  </header>
-                  {h.destination.placement !== "cloud" && !layout.nodes.some(
+                    {layout.nodes
+                      .filter((n) => backendKinds.includes(n.kind))
+                      .map((n) =>
+                        nodeButton(n, layout.group!.x, layout.group!.y),
+                      )}
+                  </div>
+                )}
+                {layout.nodes
+                  .filter(
                     (n) =>
                       n.destination === h.destination.id &&
-                      (planning || !!n.component),
-                  ) && (
-                    <p className="deployment-empty">
-                      {planning
-                        ? "Drop a service here"
-                        : "No services deployed for this house"}
-                    </p>
-                  )}
-                  {layout.group?.destination === h.destination.id && <div
-                    className="deployment-backends" role="group" aria-label="Platform backends"
-                    style={{ left: layout.group.x - h.x, top: layout.group.y - h.y, width: layout.group.width, height: layout.group.height }}>
-                    <div className="deployment-backends-footer">
-                    <button type="button" className="deployment-backends-name" onClick={() => setEditing("backend")}>
-                      <Layers3 size={14} /> Platform backends
-                    </button>
-                    {["access", "flexibility", "training"].map(kind => <button key={kind} type="button"
-                      className="deployment-supporting-backend" onClick={() => setEditing(kind)}>{names[kind]}</button>)}
-                    </div>
-                    {layout.nodes.filter(n => n.destination === h.destination.id && backendKinds.includes(n.kind))
-                      .map(n => renderNode(n, layout.group!.x, layout.group!.y))}
-                  </div>}
-                  {layout.nodes.filter(n => n.destination === h.destination.id && !backendKinds.includes(n.kind))
-                    .map(n => renderNode(n, h.x, h.y))}
-                </section>
-              ))}
-              <svg
-                className="deployment-wires"
-                width={layout.width}
-                height={layout.height}
-                aria-hidden="true"
-              >
-                <defs>
-                  {(["http", "amqp", "storage"] as const).map(channel => <marker key={channel}
-                    id={marker + channel} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                    <path className={"deployment-wire " + channel} d="M 1 1 L 7 4 L 1 7" fill="none" strokeWidth="1.6" />
-                  </marker>)}
-                </defs>
-                {layout.edges.map(edge => <path key={edge.id} className={"deployment-wire " + edge.channel}
-                  d={edge.path} fill="none" strokeWidth="1.6" strokeLinejoin="round" markerEnd={`url(#${marker}${edge.channel})`}
-                  markerStart={edge.twoWay ? `url(#${marker}${edge.channel})` : undefined} />)}
-              </svg>
-              {layout.edges.map(edge => {
-                const setting = planning && edge.setting;
-                const style = {left: edge.x, top: edge.y};
-                const source = layout.nodes.find(n => n.id === edge.source)!.name;
-                const target = layout.nodes.find(n => n.id === edge.target)!.name;
-                const title = source + (edge.twoWay ? " ↔ " : " → ") + target + " · " + edge.label;
-                const className = "deployment-edge-label " + edge.channel;
-                return setting ? <button key={edge.id} type="button" className={className} style={style}
-                  title={title} aria-label={"Edit " + setting + " connection"} onClick={() => setEditing("link:" + setting)}>
-                  {edge.label}{draft.connections[setting]?.mode === "manual" && setting !== "forecasting" && " · edited"}
-                </button> : <span key={edge.id} className={className} style={style} title={title}>
-                  <span className="deployment-edge-endpoints">{source} {edge.twoWay ? "↔" : "→"} {target}, </span>{edge.label}
-                </span>;
-              })}
-            </div>
-          </div>
-          </div>
-          {planning && (
-            <footer className="deployment-actions">
-              <div>
-                <strong>
-                  {dirty
-                    ? "Unsaved changes"
-                    : draft.revision
-                      ? "Draft saved"
-                      : "Suggested starting plan"}
-                </strong>
-                <span>
-                  {dirty
-                    ? "Save your changes before leaving."
-                    : draft.updated_at
-                      ? stamp(draft.updated_at)
-                      : "Review the suggested locations and connections."}
-                </span>
-              </div>
-              <button
-                className="btn"
-                disabled={
-                  saving || (!dirty && !!draft.revision && !draft.stale)
-                }
-                onClick={() => void save()}
-              >
-                {saving ? "Saving…" : "Save draft"}
-              </button>
-              <button
-                className={perceptaOnly && canOpenPlannedPercepta ? "btn" : "btn primary"}
-                disabled={saving}
-                onClick={() => setReview(true)}
-              >
-                Review plan <ChevronRight size={15} />
-              </button>
-              {!review && perceptaOnly && canOpenPlannedPercepta && <button
-                className="btn primary"
-                disabled={saving}
-                onClick={() => void openPlannedPercepta()}
-              >
-                {setupLabel} <ChevronRight size={15} />
-              </button>}
-            </footer>
-          )}
-          {message && (
-            <p className="deployment-feedback" role="status">
-              <Check size={15} />
-              {message}
-            </p>
-          )}
-          {!planning && !map.components.some(c => c.kind === "controller" && !c.planned) && <button className="btn text deployment-inference-link" onClick={() => setDetail("controller")}>Inference settings</button>}
-          {movingService && (
-            <Overlay
-              title={"Move " + names[movingService]}
-              onClose={() => setEditing(null)}
+                      !backendKinds.includes(n.kind),
+                  )
+                  .map((n) => nodeButton(n, h.x, h.y))}
+              </section>
+            ))}
+            <svg
+              className="deployment-wires"
+              width={layout.width}
+              height={layout.height}
+              aria-hidden="true"
             >
-              <label className="deployment-field">
-                Destination
-                <select value={placement} disabled={saving}
-                  onChange={event => {
-                    const placement = event.target.value;
-                    if (placement === "cloud" || placement === "local") place(movingService, placement);
-                    else unplace(movingService);
-                  }}>
-                  <option value="">Unassigned</option>
-                  {placement && !map.destinations.some(d => d.placement === placement) &&
-                    <option value={placement} disabled>Previous destination unavailable</option>}
-                  {map.destinations.filter(d => d.placement === "cloud" || d.placement === "local").map(d =>
-                    <option key={d.id} value={d.placement} disabled={!d.registered}>
-                      {d.name}{!d.registered ? " · registration pending" : ""}
-                    </option>
-                  )}
-                </select>
-              </label>
-              {movingService === "forecasting" && <>
-                {placement === "local" && localDestination ? (
-                  <p>{localDestination.registered
-                    ? [stateName(localDestination.check.state), localDestination.check.architecture].filter(Boolean).join(" · ")
-                    : "Machine registration pending"}. One CPU container runs on the house machine. It registers with the cloud and checks hourly for updated models. If it goes offline, publishing stays assigned to the house until it is returned to the cloud.</p>
-                ) : placement === "cloud" ? (
-                  <p>The shared cloud Predictor checks the community hourly for houses with recent consumption readings. It handles houses that have no registered local Predictor.</p>
-                ) : null}
-                {!localDestination && <p>A house destination becomes available when a machine is assigned in Inventory.</p>}
-                <p>Forecasts start when usable readings and a trained model are available. Models are trained in the cloud. Saving the plan records the destination.</p>
-                <div className="actions">
-                  <button className="btn primary" onClick={() => { setEditing(null); setReview(true); }}>Review plan</button>
-                  <button className="btn" onClick={openForecastSettings}>Open forecast settings</button>
-                </div>
-              </>}
-            </Overlay>
-          )}
-          {currentLink?.id === "forecasting" && (
-            <Overlay title={currentLink.title} onClose={()=>setEditing(null)}>
-              <p>{currentLink.description}</p>
-              <button className="btn primary" onClick={openForecastSettings}>Open forecast settings</button>
-            </Overlay>
-          )}
-          {currentLink && currentLink.id !== "forecasting" && (
-            <ConnectionEditor
-              key={currentLink.id}
-              id={currentLink.id}
-              draft={draft}
-              map={map}
-              onClose={() => setEditing(null)}
-              onSave={(value) => {
-                setDraft({
-                  ...draft,
-                  connections: {
-                    ...draft.connections,
-                    [currentLink.id]: value,
-                  },
-                });
-                setMessage("");
-                setEditing(null);
-              }}
-            />
-          )}
-          {editing && !movingService && !currentLink && (
-            <Overlay
-              title={
-                names[editing] ||
-                layout.nodes.find((n) => "actual:" + n.id === editing)?.name ||
-                "Shared infrastructure"
-              }
-              onClose={() => setEditing(null)}
-            >
-              {editing.startsWith("actual:") ? <>
-                <p>{layout.nodes.find(n => "actual:" + n.id === editing)?.state}</p>
-                {layout.nodes.some(n => "actual:" + n.id === editing && n.component && n.kind !== "forecasting") &&
-                  <button className="btn" onClick={() => {
-                    const node = layout.nodes.find(n => "actual:" + n.id === editing)!;
-                    setEditing(null); setDetail(node.kind as Service);
-                  }}>Manage current service</button>}
-              </> : <>
-                <p>{editing === "backend"
-                  ? "Community identifies houses, Telemetry supplies their energy history, and Runtime archives their cycles. The platform also runs Access Control, Flexibility and AI Training."
-                  : editing === "forecasting"
-                    ? "The shared cloud Predictor requests the house list from Community and energy history from Telemetry. It publishes available forecasts to RabbitMQ. Its presence here describes the shared service; individual houses can be waiting for data or a model."
-                    : sharedServices[editing]?.description}</p>
-                {planning && editing === "mongo" && selected.includes("percepta") &&
-                  <button className="btn" onClick={() => setEditing("link:mongo")}>Edit Percepta storage address</button>}
-              </>}
-            </Overlay>
-          )}
-          {review && (
-            <Overlay
-              title="Review deployment"
-              onClose={() => setReview(false)}
-            >
-              <div className="deployment-review-heading">
-                <span>{siteName}</span>
-                <small>
-                  {dirty
-                    ? "Unsaved changes"
-                    : draft.revision
-                      ? "Saved draft"
-                      : "Suggested plan"}
-                </small>
-              </div>
-              <div className="deployment-review-machines">
-                {!selected.length && <p className="deployment-review-empty">Assign a service to a machine to set it up.</p>}
-                {map.destinations.map(destination => {
-                  const assigned = selected.filter(kind => draft.services[kind] === destination.placement);
-                  if (!assigned.length) return null;
-                  return (
-                    <section className="deployment-review-machine" key={destination.id}
-                      aria-label={"Planned services on " + destination.name}>
-                      <div className="deployment-review-machine-title">
-                        {destination.placement === "cloud" ? <Cloud size={20} /> : <Cpu size={20} />}
-                        <h4>{destination.name}</h4>
-                      </div>
-                      <div className="deployment-review-services">
-                        {assigned.map(kind => (
-                          <button key={kind} aria-label={"Configure " + names[kind]} onClick={() => configureService(kind)}>
-                            {icon(kind)}<strong>{names[kind]}</strong>
-                            <small>{map.components.some(c => c.kind === kind && !c.planned) ? "Instance exists" : kind === "forecasting" ? "Planned destination" : "Not deployed"}</small>
-                            <ChevronRight size={14} />
-                          </button>
-                        ))}
-                      </div>
-                    </section>
-                  );
-                })}
-              </div>
-              <details className="deployment-review-details">
-                <summary>
-                  Connections{" "}
-                  <span>
-                    {connections.some(c => c.id !== "forecasting" && draft.connections[c.id]?.mode === "manual")
-                      ? "Custom settings"
-                      : "Automatic settings"}
-                  </span>
-                </summary>
-                {connections.filter(c=>selected.includes("percepta")&&
-                  (c.id!=="inference"||selected.includes("controller"))).map((c) => (
-                  <div className="deployment-review-line" key={c.id}>
-                    <span>{c.title}</span>
-                    {c.id==="forecasting"?<button className="btn text" onClick={openForecastSettings}>Open forecast settings</button>:<small>
-                      {draft.connections[c.id]?.mode === "manual"
-                        ? `${draft.connections[c.id]?.host}${draft.connections[c.id]?.port ? ":" + draft.connections[c.id]?.port : ""}`
-                        : "Automatic · to validate"}
-                    </small>}
-                  </div>
-                ))}
-              </details>
-              {draft.blockers.length>0&&(selected.length!==1||selected[0]!=="percepta"||draft.stale||!canOpenPlannedPercepta)&&<details className="deployment-review-availability">
-                <summary>
-                  Deployment requirements
-                </summary>
-                <ul>
-                  {draft.blockers.map((b) => (
-                    <li key={b}>{b}</li>
-                  ))}
-                </ul>
-              </details>}
-              <div className="deployment-review-footer">
-                <small>{selected.includes("percepta") && activePercepta && !replace
-                  ? "Check the existing Percepta instance in Live services."
-                  : selected.includes("percepta")
-                    ? "Review the collection settings to start Percepta."
-                    : "Save the selected services and destinations."}</small>
-                <div className="deployment-dialog-actions">
-                  <button
-                    className="btn"
-                    disabled={saving}
-                    onClick={() =>
-                      void save().then((ok) => {
-                        if (ok) setReview(false);
-                      })
-                    }
+              <defs>
+                {["http", "amqp", "storage"].map((c) => (
+                  <marker
+                    key={c}
+                    id={marker + c}
+                    viewBox="0 0 8 8"
+                    refX="7"
+                    refY="4"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
                   >
-                    Save reviewed draft
-                  </button>
-                  {selected.includes("percepta") && (!activePercepta || replace) &&
-                    <button className="btn primary" disabled={saving || !canOpenPlannedPercepta} onClick={() => void openPlannedPercepta()}>
-                      {setupLabel}
-                    </button>}
-                  {selected.includes("controller") && <button className="btn" onClick={()=>{setReview(false);setDetail("controller");}}>Open inference settings</button>}
-                  {selected.includes("forecasting") && <button className="btn" onClick={openForecastSettings}>Open forecast settings</button>}
-                </div>
-              </div>
-            </Overlay>
+                    <path
+                      className={"deployment-wire " + c}
+                      d="M 1 1 L 7 4 L 1 7"
+                      fill="none"
+                      strokeWidth="1.6"
+                    />
+                  </marker>
+                ))}
+              </defs>
+              {layout.edges.map((e) => (
+                <path
+                  key={e.id}
+                  className={"deployment-wire " + e.channel}
+                  d={e.path}
+                  fill="none"
+                  strokeWidth="1.6"
+                  strokeDasharray={e.id === "safety" ? "3 4" : undefined}
+                  strokeLinejoin="round"
+                  markerEnd={`url(#${marker}${e.channel})`}
+                  markerStart={
+                    e.twoWay ? `url(#${marker}${e.channel})` : undefined
+                  }
+                />
+              ))}
+            </svg>
+            {layout.edges.map((e) => (
+              <button
+                type="button"
+                key={e.id}
+                className={"deployment-edge-label " + e.channel}
+                style={{ left: e.x, top: e.y }}
+                onClick={() => open("flow:" + e.id)}
+                aria-label={
+                  layout.nodes.find((n) => n.id === e.source)?.name +
+                  (e.twoWay ? " ↔ " : " → ") +
+                  layout.nodes.find((n) => n.id === e.target)?.name +
+                  " · " +
+                  e.label
+                }
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {selected === "percepta" && launch && (
+        <PerceptaSetup
+          siteId={siteId}
+          hideTrigger
+          open
+          initialSetup
+          nativeCollection
+          launchPlan={launch}
+          configurationOnly={!!collector && !collector.managed}
+          navigate={navigate}
+          onMessages={() => select("messages")}
+          onOpenChange={(o) => {
+            if (!o) close();
+          }}
+          onChange={() => onCollectionChange?.()}
+          onLaunched={() => {
+            close();
+            void reload().catch((e) => setError(e.message));
+          }}
+        />
+      )}
+      {selected && selected !== "percepta" && (
+        <Overlay
+          title={
+            flow
+              ? (layout?.nodes.find((n) => n.id === flow.source)?.name || "") +
+                (flow.twoWay ? " ↔ " : " → ") +
+                (layout?.nodes.find((n) => n.id === flow.target)?.name || "")
+              : selectedMove
+                ? "Move " + names[selectedMove]
+                : selected === "messages"
+                  ? "Percepta messages"
+                  : names[selected] || "Deployment"
+          }
+          onClose={close}
+          wide={!!flow || selected === "messages" || selected === "mongo"}
+        >
+          {busy && <p role="status">{busy}</p>}
+          {error && <p role="alert">{error}</p>}
+          {selected === "messages" ? (
+            <PerceptaMessages
+              siteId={siteId}
+              siteName={siteName}
+              onBack={close}
+            />
+          ) : selectedMove ? (
+            <label className="deployment-field">
+              Machine
+              <select
+                value={assigned?.[selectedMove]}
+                onChange={(e) =>
+                  void move(selectedMove, e.target.value as Placement)
+                }
+              >
+                {map?.destinations
+                  .filter(
+                    (h) => h.placement === "cloud" || h.placement === "local",
+                  )
+                  .map((h) => (
+                    <option
+                      value={h.placement}
+                      key={h.id}
+                      disabled={!h.registered}
+                    >
+                      {h.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : selected === "forecasting" ? (
+            <>
+              {assigned?.forecasting === "local" &&
+                !map?.components.some(
+                  (c) =>
+                    c.kind === "forecasting" &&
+                    !c.planned &&
+                    c.destination_id === local?.id,
+                ) && (
+                  <p role="status">
+                    Local destination saved. The house Predictor has not
+                    registered here yet.
+                  </p>
+                )}
+              <HouseForecastPlan
+                siteId={siteId}
+                onPrepared={onCollectionChange}
+              />
+              <button className="btn" onClick={() => select("flow:delivery")}>
+                Received forecasts
+              </button>
+            </>
+          ) : selected === "controller" ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (assigned)
+                  void run("Deploying and connecting inference…", async () => {
+                    const saved = await persist(assigned, device);
+                    const bound = await bindModel(siteId, saved, model);
+                    if (live.current) setDraft(bound);
+                    if (collector)
+                      await applyCollector(siteId, bound, collector);
+                    if (live.current) select(null);
+                  });
+              }}
+            >
+              <p>
+                {selectedHost?.name} ·{" "}
+                {assigned?.percepta === assigned?.controller
+                  ? "Private Docker network"
+                  : "Private HTTPS route"}
+              </p>
+              <label className="deployment-field">
+                Algorithm
+                <input
+                  required
+                  maxLength={40}
+                  pattern="[a-z][a-z0-9\-]{0,39}"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  list={marker + "models"}
+                />
+              </label>
+              <datalist id={marker + "models"}>
+                {map?.components
+                  .filter((c) => c.inference_model)
+                  .map((c) => (
+                    <option key={c.id} value={c.inference_model!} />
+                  ))}
+              </datalist>
+              {selectedHost?.selectable_inference_device && (
+                <label className="deployment-field">
+                  Execution
+                  <select
+                    value={device}
+                    onChange={(e) => setDevice(e.target.value as "cpu" | "gpu")}
+                  >
+                    <option value="cpu">CPU</option>
+                    <option value="gpu">GPU · TensorRT</option>
+                  </select>
+                </label>
+              )}
+              <button className="btn primary" disabled={!!busy || !model}>
+                Deploy and connect
+              </button>
+            </form>
+          ) : selected === "supervisor" || flow?.id === "safety" ? (
+            <p>
+              The fail-safe supervisor is planned to check proposed actions
+              before dispatch. It has no deployed instance or recorded verdict
+              for this house.
+            </p>
+          ) : selected === "community" || flow?.id === "sites" ? (
+            <>
+              <p>{sharedServices.community.description}</p>
+              <dl>
+                <dt>Community</dt>
+                <dd>{communityName || "Unavailable"}</dd>
+                <dt>Site</dt>
+                <dd>{siteName}</dd>
+              </dl>
+            </>
+          ) : flow?.id === "history" ? (
+            <>
+              <p>
+                Base consumption series available to Forecasting from Telemetry
+                in the past hour.
+              </p>
+              {history?.error ? (
+                <p role="alert">{history?.error}</p>
+              ) : !history?.value ? (
+                <p>Loading…</p>
+              ) : history?.value.points.length ? (
+                <table>
+                  <tbody>
+                    {history?.value.points.map((p) => (
+                      <tr key={p.timestamp}>
+                        <td>{stamp(p.timestamp)}</td>
+                        <td>
+                          {p.value ?? "Missing"} {history?.value?.unit}
+                        </td>
+                        <td>{p.quality}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p>No readings in this time window.</p>
+              )}
+            </>
+          ) : selected === "mongo" || flow ? (
+            <>
+              {selected === "mongo" && (
+                <p>{sharedServices.mongo.description}</p>
+              )}
+              <CycleFlow
+                kind={flow?.id || "write"}
+                batch={(archival ? archive : output)?.value}
+                error={(archival ? archive : output)?.error}
+              />
+            </>
+          ) : (
+            <p>{sharedServices[selected]?.description}</p>
           )}
-        </>
+        </Overlay>
       )}
     </section>
-  );
-}
-function ConnectionEditor({
-  id,
-  draft,
-  map,
-  onSave,
-  onClose,
-}: {
-  id: ConnectionId;
-  draft: Draft;
-  map: DeploymentMap;
-  onSave: (value: Connection) => void;
-  onClose: () => void;
-}) {
-  const link = connections.find((l) => l.id === id)!;
-  const [value, setValue] = useState<Connection>(
-    draft.connections[id] || { mode: "automatic" },
-  );
-  const samePlan =
-    map.components.find((c) => c.kind === "percepta")
-      ?.planned_destination_id ===
-    map.destinations.find((d) => d.placement === draft.services.percepta)?.id;
-  const existing = samePlan ? map.links.find((l) => l.id === id) : undefined;
-  const sameHost =
-    id === "inference" && draft.services.percepta === draft.services.controller;
-  return (
-    <Overlay title={link.title} onClose={onClose}>
-      <p>{link.description}</p>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave(value);
-        }}
-      >
-        <label className="deployment-field">
-          Connection
-          <select
-            value={value.mode}
-            onChange={(e) =>
-              setValue(
-                e.target.value === "automatic"
-                  ? { mode: "automatic" }
-                  : {
-                      mode: "manual",
-                      host: "",
-                      port:
-                        id === "broker"
-                          ? 5672
-                          : id === "mongo"
-                            ? 27017
-                            : undefined,
-                    },
-              )
-            }
-          >
-            <option value="automatic">Automatic · suggested</option>
-            <option value="manual">Custom address</option>
-          </select>
-        </label>
-        {value.mode === "automatic" ? (
-          <p className="deployment-hint">
-            {existing?.endpoint
-              ? `Configured starting address: ${existing.endpoint}:${existing.port}. Reachability and credentials are unverified.`
-              : sameHost
-                ? "Same machine: the final package should use the Docker service name and internal port. Address pending the service contract."
-                : "Different destinations: a reachable application address is required. A management VPN connection alone does not confirm this route."}
-          </p>
-        ) : (
-          <>
-            <label className="deployment-field">
-              Host or IP
-              <input
-                required
-                maxLength={253}
-                pattern="[a-zA-Z0-9_.:\-]+"
-                placeholder="service.example or 10.0.0.5"
-                value={value.host || ""}
-                onChange={(e) => setValue({ ...value, host: e.target.value })}
-              />
-            </label>
-            <label className="deployment-field">
-              Port
-              <input
-                type="number"
-                required
-                min={1}
-                max={65535}
-                value={value.port || ""}
-                onChange={(e) =>
-                  setValue({
-                    ...value,
-                    port: e.target.value ? Number(e.target.value) : undefined,
-                  })
-                }
-              />
-            </label>
-            <p className="deployment-hint">
-              Address only. Do not enter a URL or credentials. This override is
-              saved in the draft and is not applied to a service.
-            </p>
-          </>
-        )}
-        <div className="deployment-dialog-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn primary">
-            Update draft
-          </button>
-        </div>
-      </form>
-    </Overlay>
   );
 }
