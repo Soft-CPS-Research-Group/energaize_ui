@@ -214,8 +214,8 @@ it("keeps a saved draft separate from runtime and blocks unsupported bundle laun
     screen.queryByRole("button", { name: /Percepta · Draft/ }),
   ).not.toBeInTheDocument();
   expect(
-    screen.getAllByText("No services deployed for this house"),
-  ).toHaveLength(2);
+    within(screen.getByRole("region", {name: "Raspberry · Leça"})).getByText("No services deployed for this house"),
+  ).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /^(Set up deployment|Edit deployment setup)$/ }));
   fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
   expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument();
@@ -469,80 +469,60 @@ it("ignores late responses after changing houses", async () => {
     ).not.toBeInTheDocument(),
   );
 });
-it("keeps all internal connection paths inside their host for all service placement combinations", () => {
+it("routes logical data between its producers and consumers for all service placements", () => {
   for (let mask = 0; mask < 8; mask++) {
     const placements = Object.fromEntries(
       services.map((s, i) => [s, mask & (1 << i) ? "local" : "cloud"]),
     ) as Record<(typeof services)[number], Placement>;
-    const layout = graphLayout(
-      data,
-      { ...initial, services: placements },
-      true,
-    );
+    const layout = graphLayout(data, { ...initial, services: placements }, true);
     expect(layout.width).toBeLessThanOrEqual(936);
-    expect(layout.edges.map((e) => e.id)).toEqual([
-      "inference",
-      "forecasting",
-      "broker",
-      "mongo",
+    expect(layout.edges.map(e => [e.source, e.target])).toEqual([
+      ["percepta", "controller"], ["percepta", "broker"], ["broker", "percepta"],
+      ["forecasting", "broker"], ["community", "forecasting"],
+      ["telemetry", "forecasting"], ["broker", "runtime"], ["runtime", "mongo"], ["mongo", "telemetry"],
     ]);
-    for (const host of layout.hosts) {
-      const members = layout.nodes.filter(
-        (n) => n.destination === host.destination.id,
-      );
-      for (const node of members) {
-        expect(node.x).toBeGreaterThan(host.x);
-        expect(node.x + node.width).toBeLessThan(host.x + host.width);
-        expect(node.y).toBeGreaterThanOrEqual(host.y + 112);
-        expect(node.y + node.height).toBeLessThan(host.y + host.height - 20);
-        for (const other of members.filter((n) => n !== node)) {
-          expect(
-            node.x + node.width <= other.x ||
-              other.x + other.width <= node.x ||
-              node.y + node.height <= other.y ||
-              other.y + other.height <= node.y,
-          ).toBe(true);
-        }
+    for (const node of layout.nodes) {
+      const host = layout.hosts.find(h => h.destination.id === node.destination)!;
+      expect(node.x).toBeGreaterThan(host.x);
+      expect(node.x + node.width).toBeLessThan(host.x + host.width);
+      expect(node.y).toBeGreaterThan(host.y + 78);
+      expect(node.y + node.height).toBeLessThan(host.y + host.height);
+      for (const other of layout.nodes.filter(n => n !== node)) {
+        expect(node.x >= other.x + other.width || node.x + node.width <= other.x ||
+          node.y >= other.y + other.height || node.y + node.height <= other.y).toBe(true);
       }
-      // Single-column cards have equal space on their left and right.
-      if (new Set(members.map((n) => n.x + n.width / 2)).size === 1) {
-        expect(members[0].x + members[0].width / 2).toBe(
-          host.x + host.width / 2,
-        );
-      }
-    }
-    for (const edge of layout.edges.filter((e) => !e.internal)) {
-      const [left, right] = layout.hosts;
-      expect(edge.x).toBe((left.x + left.width + right.x) / 2);
-      // Connection text has its own corridor, clear of both machines.
-      expect(edge.x - 60).toBeGreaterThan(left.x + left.width);
-      expect(edge.x + 60).toBeLessThan(right.x);
-    }
-    for (const edge of layout.edges.filter((e) => e.internal)) {
-      const source = layout.nodes.find((n) => n.kind === "percepta")!,
-        host = layout.hosts.find(
-          (h) => h.destination.id === source.destination,
-        )!;
-      const tokens = edge.path.split(" ");
-      let axis = "";
-      for (let i = 0; i < tokens.length; i++) {
-        if (["M", "H", "V"].includes(tokens[i])) {
-          axis = tokens[i];
-          continue;
-        }
-        const n = Number(tokens[i]);
-        const horizontal = axis === "H" || axis === "M";
-        expect(n).toBeGreaterThanOrEqual(horizontal ? host.x : host.y);
-        expect(n).toBeLessThanOrEqual(
-          horizontal ? host.x + host.width : host.y + host.height,
-        );
-        if (axis === "M") axis = "V";
+      for (const edge of layout.edges) {
+        expect(edge.x < node.x || edge.x > node.x + node.width ||
+          edge.y < node.y || edge.y > node.y + node.height).toBe(true);
       }
     }
   }
-  const operation = graphLayout(data, initial, false);
-  expect(operation.edges).toHaveLength(0);
-  expect(operation.nodes.map((n) => n.kind)).toEqual(["backend"]);
+});
+
+it("keeps the platform in the cloud and uses saved house inputs for shared forecast context", () => {
+  const live = {...data, components: [{...data.components[0], planned: false}]};
+  const diagram = graphLayout(live, initial, false, { site_id: "house", return_available: true,
+    lanes: [{ forecast_channel_configured: true }] });
+  expect(diagram.nodes.find(n => n.kind === "forecasting")).toMatchObject({destination: "cloud", state: "Shared cloud service"});
+  expect(diagram.edges.map(e => e.id)).toContain("delivery");
+  expect(diagram.edges.map(e => e.id)).not.toContain("decision");
+  const unset = graphLayout(live, initial, false);
+  expect(unset.edges.map(e => e.id)).not.toContain("delivery");
+  expect(unset.nodes.some(n => n.kind === "forecasting")).toBe(false);
+  const emptyPlan = graphLayout(data, {...initial, included_services: []}, true);
+  expect(emptyPlan.nodes.every(n => n.destination === "cloud")).toBe(true);
+  expect(emptyPlan.edges.map(e => e.id)).toEqual(["archive","write","read"]);
+});
+
+it("nests the operational backends on SoftCPS and keeps the Percepta storage override editable", async () => {
+  mock(); await open();
+  const group = within(screen.getByRole("region", {name: "SoftCPS server"})).getByRole("group", {name: "Platform backends"});
+  for (const name of ["Community", "Telemetry", "Runtime"]) {
+    expect(within(group).getByRole("button", {name: new RegExp("^" + name + " ·")})).toBeVisible();
+  }
+  fireEvent.click(screen.getByRole("button", {name: /MongoDB · Cycle storage/}));
+  fireEvent.click(screen.getByRole("button", {name: "Edit Percepta storage address"}));
+  expect(screen.getByRole("dialog", {name: "Percepta storage address"})).toBeVisible();
 });
 
 it("opens plan details and retains unsaved placement when closing them", async () => {

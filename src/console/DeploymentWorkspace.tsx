@@ -15,6 +15,10 @@ import {
   Database,
   GripVertical,
   Network,
+  Activity,
+  Building2,
+  ChartNoAxesCombined,
+  Layers3,
   Radio,
   RefreshCw,
   Server,
@@ -26,6 +30,8 @@ import { EVChargingLoader } from "../components/ui/EVChargingLoader";
 import { RuntimePanel } from "./RuntimePanel";
 import { PerceptaSetup, type PerceptaLaunchPlan } from "./PerceptaSetup";
 import {
+  backendKinds,
+  sharedServices,
   connections,
   graphLayout,
   includedServices,
@@ -37,6 +43,8 @@ import {
   type ConnectionId,
   type DeploymentMap,
   type Draft,
+  type GraphNode,
+  type ForecastContext,
   type Placement,
   type Service,
 } from "./deploymentModel";
@@ -94,7 +102,10 @@ const icon = (kind: string) =>
     <Cpu size={19} />
   ) : kind === "mongo" ? (
     <Database size={19} />
-  ) : kind === "backend" ? (
+  ) : kind === "forecasting" ? <ChartNoAxesCombined size={19} />
+    : kind === "community" ? <Building2 size={19} />
+    : kind === "telemetry" ? <Activity size={19} />
+    : kind === "runtime" || kind === "backend" ? (
     <Server size={19} />
   ) : (
     <Network size={19} />
@@ -110,6 +121,7 @@ export function DeploymentWorkspace({
   navigate: (path: string) => void;
   onCollectionChange?: () => void;
 }) {
+  const [forecastContext, setForecastContext] = useState<ForecastContext>();
   const [messagesOpen, setMessagesOpen] = useState(false);
   const [map, setMap] = useState<DeploymentMap | null>(null),
     [draft, setDraft] = useState<Draft | null>(null),
@@ -137,7 +149,7 @@ export function DeploymentWorkspace({
       y: number;
       moved: boolean;
     } | null>(null),
-    suppressClick = useRef(false);
+    suppressClick = useRef<Service | null>(null);
   const dirty =
     !!draft &&
     !!saved &&
@@ -182,6 +194,14 @@ export function DeploymentWorkspace({
       sequence.current++;
     };
   }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void runtimeRequest<ForecastContext>(`/api/runtime/sites/${siteId}/forecast-plan`, { signal: controller.signal })
+      .then(result => {
+        if (!controller.signal.aborted && result.site_id === siteId && Array.isArray(result.lanes)) setForecastContext(result);
+      }).catch(() => { /* The inventory remains available when forecast configuration is unavailable. */ });
+    return () => controller.abort();
+  }, [siteId, forecastSetup, collectionSetup]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -246,6 +266,11 @@ export function DeploymentWorkspace({
     setDraft(d => d ? { ...d, included_services: includedServices(d).filter(service => service !== kind) } : d);
     setMessage("");
   };
+  function isDragClick(kind: string) {
+    const suppressed = suppressClick.current === kind;
+    suppressClick.current = null;
+    return suppressed;
+  }
   const moveHandlers = (kind: Service) => ({
     title: "Click to configure. Drag to move, or use Shift+F10 for destinations.",
     "aria-keyshortcuts": "Shift+F10",
@@ -261,6 +286,7 @@ export function DeploymentWorkspace({
     },
     onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
       if (event.button !== 0 || saving) return;
+      suppressClick.current = null;
       drag.current = { kind, x: event.clientX, y: event.clientY, moved: false };
       event.currentTarget.setPointerCapture?.(event.pointerId);
     },
@@ -279,8 +305,8 @@ export function DeploymentWorkspace({
         const placement = dropTarget(event.clientX, event.clientY)?.dataset.placement;
         if (placement === "cloud" || placement === "local") place(kind, placement);
         if (placement === "unassigned") unplace(kind);
-        suppressClick.current = true;
-        setTimeout(() => { suppressClick.current = false; }, 0);
+        suppressClick.current = kind;
+        setTimeout(() => { suppressClick.current = null; }, 0);
       }
       endDrag();
     },
@@ -376,12 +402,30 @@ export function DeploymentWorkspace({
     );
   if (messagesOpen) return <PerceptaMessages key={siteId} siteId={siteId} siteName={siteName} onBack={() => setMessagesOpen(false)} />;
   const planning = view === "plan",
-    layout = map && draft ? graphLayout(map, draft, planning) : null;
+    layout = map && draft ? graphLayout(map, draft, planning, forecastContext) : null;
   const movingService = services.find(kind => editing === "move:" + kind);
   const placement = draft && movingService && selected.includes(movingService) ? draft.services[movingService] : "";
   const currentLink = editing?.startsWith("link:")
     ? connections.find((l) => l.id === editing.slice(5))
     : null;
+  function renderNode(node: GraphNode, originX: number, originY: number) {
+    const movable = planning && services.includes(node.kind as Service);
+    const shared = !!sharedServices[node.kind] || (!planning && !node.component);
+    return <button key={node.id} type="button"
+      className={["deployment-node", movable && "movable", shared && "shared", dragging === node.kind && "dragging"].filter(Boolean).join(" ")}
+      style={{ left: node.x - originX, top: node.y - originY, width: node.width, height: node.height }}
+      aria-label={node.name + " · " + node.state} disabled={saving}
+      onClick={() => {
+        if (isDragClick(node.kind)) return;
+        if (movable) configureService(node.kind as Service);
+        else if (node.kind === "percepta" && node.component) setDetail("percepta");
+        else setEditing(shared ? node.kind : "actual:" + node.id);
+      }} {...(movable ? moveHandlers(node.kind as Service) : {})}>
+      <span className="deployment-service-icon">{icon(node.kind)}</span>
+      <span className="deployment-service-name"><strong>{node.name}</strong><small>{node.state}</small></span>
+      {movable && <GripVertical className="deployment-grip" size={12} />}
+    </button>;
+  }
   return (
     <section className="deployment-workspace" aria-label="Deployment">
       <PerceptaSetup
@@ -451,7 +495,7 @@ export function DeploymentWorkspace({
           )}
           {!planning && (
             <div className="deployment-operation-bar">
-              <p>{hasRuntime ? 'Select a managed service to inspect it.' : 'No managed instances are listed for this house.'}</p>
+              <p>{hasRuntime ? 'Arrows show logical data flow. Select a service for details.' : 'No managed instances are listed for this house.'}</p>
               <div className="actions" role="group" aria-label="Operation tools">
                 <button className="btn" onClick={() => setCollectionSetup(true)}>Configure Percepta</button>
                 <button className="btn" onClick={() => setMessagesOpen(true)}><Radio size={15}/>Percepta messages</button>
@@ -473,7 +517,7 @@ export function DeploymentWorkspace({
                 <button key={kind} className="deployment-shelf-service" disabled={saving}
                   {...moveHandlers(kind)}
                   onClick={() => {
-                    if (suppressClick.current) return;
+                    if (isDragClick(kind)) return;
                     configureService(kind);
                   }}>
                   {icon(kind)}<span><strong>{names[kind]}</strong><small>{selected.includes(kind) ? "Destination unavailable" : "Unassigned"}</small></span><GripVertical size={15} />
@@ -553,10 +597,10 @@ export function DeploymentWorkspace({
                       </time>
                     </div>}
                   </header>
-                  {!layout.nodes.some(
+                  {h.destination.placement !== "cloud" && !layout.nodes.some(
                     (n) =>
                       n.destination === h.destination.id &&
-                      n.kind !== "backend",
+                      (planning || !!n.component),
                   ) && (
                     <p className="deployment-empty">
                       {planning
@@ -564,6 +608,21 @@ export function DeploymentWorkspace({
                         : "No services deployed for this house"}
                     </p>
                   )}
+                  {layout.group?.destination === h.destination.id && <div
+                    className="deployment-backends" role="group" aria-label="Platform backends"
+                    style={{ left: layout.group.x - h.x, top: layout.group.y - h.y, width: layout.group.width, height: layout.group.height }}>
+                    <div className="deployment-backends-footer">
+                    <button type="button" className="deployment-backends-name" onClick={() => setEditing("backend")}>
+                      <Layers3 size={14} /> Platform backends
+                    </button>
+                    {["access", "flexibility", "training"].map(kind => <button key={kind} type="button"
+                      className="deployment-supporting-backend" onClick={() => setEditing(kind)}>{names[kind]}</button>)}
+                    </div>
+                    {layout.nodes.filter(n => n.destination === h.destination.id && backendKinds.includes(n.kind))
+                      .map(n => renderNode(n, layout.group!.x, layout.group!.y))}
+                  </div>}
+                  {layout.nodes.filter(n => n.destination === h.destination.id && !backendKinds.includes(n.kind))
+                    .map(n => renderNode(n, h.x, h.y))}
                 </section>
               ))}
               <svg
@@ -573,110 +632,28 @@ export function DeploymentWorkspace({
                 aria-hidden="true"
               >
                 <defs>
-                  <marker
-                    id={marker + "end"}
-                    viewBox="0 0 8 8"
-                    refX="7"
-                    refY="4"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto-start-reverse"
-                  >
-                    <path
-                      d="M 1 1 L 7 4 L 1 7"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.4"
-                    />
-                  </marker>
+                  {(["http", "amqp", "storage"] as const).map(channel => <marker key={channel}
+                    id={marker + channel} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path className={"deployment-wire " + channel} d="M 1 1 L 7 4 L 1 7" fill="none" strokeWidth="1.6" />
+                  </marker>)}
                 </defs>
-                {layout.edges.map((edge) => (
-                  <path
-                    key={edge.id}
-                    d={edge.path}
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                    strokeDasharray={
-                      edge.id === "forecasting" ? "4 5" : undefined
-                    }
-                    markerEnd={`url(#${marker}end)`}
-                    markerStart={
-                      connections.find((c) => c.id === edge.id)?.twoWay
-                        ? `url(#${marker}end)`
-                        : undefined
-                    }
-                  />
-                ))}
+                {layout.edges.map(edge => <path key={edge.id} className={"deployment-wire " + edge.channel}
+                  d={edge.path} fill="none" strokeWidth="1.6" strokeLinejoin="round" markerEnd={`url(#${marker}${edge.channel})`}
+                  markerStart={edge.twoWay ? `url(#${marker}${edge.channel})` : undefined} />)}
               </svg>
-              {layout.edges.map((edge) => (
-                <button
-                  key={edge.id}
-                  className={
-                    "deployment-edge-label" +
-                    (edge.internal ? " internal" : "") +
-                    (edge.id === "forecasting" ? " proposed" : "")
-                  }
-                  style={{ left: edge.x, top: edge.y }}
-                  onClick={() => setEditing("link:" + edge.id)}
-                  aria-label={"Edit " + edge.id + " connection"}
-                >
-                  {connections.find((l) => l.id === edge.id)?.label}
-                  {edge.id!=="forecasting"&&draft.connections[edge.id]?.mode === "manual" && " · edited"}
-                </button>
-              ))}
-              {layout.nodes.map((node) => {
-                const movable =
-                  planning && services.includes(node.kind as Service);
-                return (
-                  <button
-                    key={node.id}
-                    className={
-                      "deployment-node" +
-                      (movable ? " movable" : "") +
-                      (dragging === node.kind ? " dragging" : "") +
-                      (node.kind === "backend" ||
-                      node.kind === "broker" ||
-                      node.kind === "mongo"
-                        ? " shared"
-                        : "")
-                    }
-                    style={{
-                      left: node.x,
-                      top: node.y,
-                      width: node.width,
-                      height: node.height,
-                    }}
-                    aria-label={node.name + " · " + node.state}
-                    disabled={saving}
-                    onClick={() => {
-                      if (suppressClick.current) {
-                        suppressClick.current = false;
-                        return;
-                      }
-                      if (!planning && node.kind === "percepta") {
-                        if (node.component) setDetail("percepta");
-                        return;
-                      }
-                      if (movable) configureService(node.kind as Service);
-                      else setEditing(planning ? node.kind : "actual:" + node.id);
-                    }}
-                    {...(movable ? moveHandlers(node.kind as Service) : {})}
-                  >
-                    <span className="deployment-service-icon">
-                      {icon(node.kind)}
-                    </span>
-                    <span className="deployment-service-name">
-                      <strong>{node.name}</strong>
-                      <small>{node.state}</small>
-                    </span>
-                    {movable && (
-                      <GripVertical className="deployment-grip" size={13} />
-                    )}
-                  </button>
-                );
+              {layout.edges.map(edge => {
+                const setting = planning && edge.setting;
+                const style = {left: edge.x, top: edge.y};
+                const source = layout.nodes.find(n => n.id === edge.source)!.name;
+                const target = layout.nodes.find(n => n.id === edge.target)!.name;
+                const title = source + (edge.twoWay ? " ↔ " : " → ") + target + " · " + edge.label;
+                const className = "deployment-edge-label " + edge.channel;
+                return setting ? <button key={edge.id} type="button" className={className} style={style}
+                  title={title} aria-label={"Edit " + setting + " connection"} onClick={() => setEditing("link:" + setting)}>
+                  {edge.label}{draft.connections[setting]?.mode === "manual" && setting !== "forecasting" && " · edited"}
+                </button> : <span key={edge.id} className={className} style={style} title={title}>
+                  <span className="deployment-edge-endpoints">{source} {edge.twoWay ? "↔" : "→"} {target}, </span>{edge.label}
+                </span>;
               })}
             </div>
           </div>
@@ -772,7 +749,7 @@ export function DeploymentWorkspace({
             </Overlay>
           )}
           {currentLink?.id === "forecasting" && (
-            <Overlay title="Predictor → Percepta" onClose={()=>setEditing(null)}>
+            <Overlay title={currentLink.title} onClose={()=>setEditing(null)}>
               <p>{currentLink.description}</p>
               <button className="btn primary" onClick={openForecastSettings}>Open forecast settings</button>
             </Overlay>
@@ -806,55 +783,22 @@ export function DeploymentWorkspace({
               }
               onClose={() => setEditing(null)}
             >
-              {editing.startsWith("actual:") ? (
-                <>
-                  <p>
-                    {
-                      layout.nodes.find((n) => "actual:" + n.id === editing)
-                        ?.state
-                    }
-                  </p>
-                  <p>
-                    Observed runtime instance. To move it, edit and review the
-                    deployment plan; dragging does not move an existing
-                    container.
-                  </p>
-                  {(() => {
-                    const node = layout.nodes.find(
-                      (n) => "actual:" + n.id === editing,
-                    );
-                    return node?.component && node.kind !== "forecasting" ? (
-                      <button
-                        className="btn"
-                        onClick={() => {
-                          setEditing(null);
-                          setDetail(node.kind as Service);
-                        }}
-                      >
-                        Manage current service
-                      </button>
-                    ) : (
-                      <p>
-                        Shared platform context; health and placement have not
-                        been inspected by this view.
-                      </p>
-                    );
-                  })()}
-                </>
-              ) : (
-                <>
-                  <p>
-                    {editing === "backend"
-                      ? "The central platform manages communities, configuration, runtime and forecasting jobs. It is shared by the houses."
-                      : "Central placement is a proposal. The deployment plan does not relocate or create shared infrastructure."}
-                  </p>
-                  <p>
-                    Infrastructure credentials are managed securely outside this
-                    draft. Final placement and access must be confirmed before
-                    launch.
-                  </p>
-                </>
-              )}
+              {editing.startsWith("actual:") ? <>
+                <p>{layout.nodes.find(n => "actual:" + n.id === editing)?.state}</p>
+                {layout.nodes.some(n => "actual:" + n.id === editing && n.component && n.kind !== "forecasting") &&
+                  <button className="btn" onClick={() => {
+                    const node = layout.nodes.find(n => "actual:" + n.id === editing)!;
+                    setEditing(null); setDetail(node.kind as Service);
+                  }}>Manage current service</button>}
+              </> : <>
+                <p>{editing === "backend"
+                  ? "Community identifies houses, Telemetry supplies their energy history, and Runtime archives their cycles. The platform also runs Access Control, Flexibility and AI Training."
+                  : editing === "forecasting"
+                    ? "The shared cloud Predictor requests the house list from Community and energy history from Telemetry. It publishes available forecasts to RabbitMQ. Its presence here describes the shared service; individual houses can be waiting for data or a model."
+                    : sharedServices[editing]?.description}</p>
+                {planning && editing === "mongo" && selected.includes("percepta") &&
+                  <button className="btn" onClick={() => setEditing("link:mongo")}>Edit Percepta storage address</button>}
+              </>}
             </Overlay>
           )}
           {review && (
@@ -909,7 +853,7 @@ export function DeploymentWorkspace({
                 {connections.filter(c=>selected.includes("percepta")&&
                   (c.id!=="inference"||selected.includes("controller"))).map((c) => (
                   <div className="deployment-review-line" key={c.id}>
-                    <span>{c.id==="forecasting"?"Predictor → Percepta":`Percepta → ${names[c.target]}`}</span>
+                    <span>{c.title}</span>
                     {c.id==="forecasting"?<button className="btn text" onClick={openForecastSettings}>Open forecast settings</button>:<small>
                       {draft.connections[c.id]?.mode === "manual"
                         ? `${draft.connections[c.id]?.host}${draft.connections[c.id]?.port ? ":" + draft.connections[c.id]?.port : ""}`
@@ -986,7 +930,7 @@ function ConnectionEditor({
   const sameHost =
     id === "inference" && draft.services.percepta === draft.services.controller;
   return (
-    <Overlay title={"Percepta → " + names[link.target]} onClose={onClose}>
+    <Overlay title={link.title} onClose={onClose}>
       <p>{link.description}</p>
       <form
         onSubmit={(e) => {
