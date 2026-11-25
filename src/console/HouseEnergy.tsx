@@ -1,13 +1,13 @@
 import {useCallback, useMemo, useState} from 'react';
 import {MeasurementChart} from './MeasurementChart';
 import type {MeasurementChannel} from './measurementChannels';
-import {compactPoints, type MeasurementPoint} from './measurementData';
+import {compactPoints, type MeasurementPoint, type TimeWindow} from './measurementData';
 import {type Feed, readJson} from './DeploymentFlow';
 
 export interface HouseArchive {site:string; database:string; collection:string; meter?:string; exportMeter?:string; period?:number}
 type Lane = 'grid_in' | 'grid_out' | 'load' | 'solar' | 'price';
 type Series = MeasurementChannel & {id:Lane; color:string};
-type Sample = Record<Lane,number|null> & {at:string;partial:Lane[]};
+type Sample = Record<Lane,number|null> & {at:string;price_at?:string|null;partial:Lane[]};
 interface Interval {lane:'load'|'solar'|'price';start:string;end:string;value:number}
 interface WindowPage {samples:Sample[];horizon:Interval[];next_cursor?:string|null}
 
@@ -34,6 +34,12 @@ export function forecastPoints(intervals:Interval[],now:number):MeasurementPoint
   }
   return points;
 }
+export function cyclePoint(row:Sample,id:Lane,range:TimeWindow):MeasurementPoint {
+  const start=id==='price' && row.price_at ? Date.parse(row.price_at) : Date.parse(row.at);
+  const timestamp=id==='price' && start<range.start ? new Date(range.start).toISOString()
+    : id==='price' && row.price_at ? row.price_at : row.at;
+  return {channelId:id,id:id+'@'+row.at,timestamp,value:row[id],quality:row.partial.includes(id)?'partial':undefined};
+}
 export function HouseEnergy({archive}:{archive:HouseArchive}){
   const [prices,setPrices]=useState(false);
   const [selected,setSelected]=useState<Lane[]>(['grid_in','grid_out','load','solar']);
@@ -59,7 +65,7 @@ export function HouseEnergy({archive}:{archive:HouseArchive}){
       const page=await readJson<WindowPage>(prefix+'/energy-window?'+query,signal);
       if(!seen.size)horizon=forecastPoints(page.horizon,range.end);
       for(const row of page.samples){
-        for(const {id} of available)points.push({channelId:id,id:id+'@'+row.at,timestamp:row.at,value:row[id],quality:row.partial.includes(id)?'partial':undefined});
+        for(const {id} of available)points.push(cyclePoint(row,id,range));
       }
       if(!page.next_cursor)break;
       if(seen.has(page.next_cursor))throw Error('Archive cursor repeated.');
