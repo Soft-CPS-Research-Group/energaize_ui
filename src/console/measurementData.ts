@@ -20,6 +20,7 @@ export interface MeasurementSeries {
   errors?: string[]; resolution?: string; bucket_seconds?: number; sample_count?: number; generated_count?: number;
   partial_count?: number; horizon?: MeasurementPoint[];
   sampling_interval_seconds?: number | null; from?: string; until?: string;
+  period_total?: { value: number; partial: boolean };
 }
 export type MeasurementRequest = (path: string, signal: AbortSignal) => Promise<MeasurementSeries & { point?: MeasurementPoint }>;
 export type TimeWindow = { start: number; end: number };

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, History, Link2, Radio, RefreshCw, X } from 'lucide-react';
 import { DayPicker, type DateRange } from 'react-day-picker';
-import { Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, Line, Rectangle, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 import { resolveAxisTickStepMs } from '../utils/timeseriesGranularity';
 import { TimeseriesPlot } from '../components/charts/TimeseriesPlot';
 import type { MeasurementChannel } from './measurementChannels';
@@ -10,13 +10,14 @@ import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, readingLi
 export interface MeasurementChartProps {
   compactHeader?: boolean; initialDurationMs?: number; startLive?: boolean; inlineHorizon?: boolean;
   showLatest?: boolean; forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
-  incremental?: boolean; dashedGapFills?: boolean; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
+  incremental?: boolean; dashedGapFills?: boolean; bars?: boolean; zeroLine?: boolean; liveRefreshMs?: number; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
   request: MeasurementRequest; endpoint?: string; latestEndpoint?: string; initialEnd?: number;
   title: string; unit?: string; note?: string; expectedSeconds?: number | null;
   onLink?: () => void; onUnlink?: () => void;
 }
 const presets = [{ label: '1h', ms: 3600000 }, { label: '6h', ms: 21600000 }, { label: '24h', ms: 86400000 }, { label: '7d', ms: 604800000 }, { label: '30d', ms: 2592000000 }];
 const date = (t: number, time = true) => new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', ...(time ? { hour: '2-digit', minute: '2-digit' } : {}) });
+const emptyResult: MeasurementSeries = {points:[]};
 const localInput = (t: number) => { const d = new Date(t); return new Date(t - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 export function MeasurementChart(props: MeasurementChartProps) {
   const [externalForecast, setForecast] = useState<MeasurementSeries>({points:[]});
@@ -53,9 +54,9 @@ export function MeasurementChart(props: MeasurementChartProps) {
   useEffect(() => {
     if (!live) return;
     const tick = () => { if (!document.hidden) { const end = Date.now(); setRange({ start: end - duration, end }); } };
-    const timer = setInterval(tick, 15000); document.addEventListener('visibilitychange', tick);
+    const timer = setInterval(tick, props.liveRefreshMs || 15000); document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
-  }, [live, duration]);
+  }, [live, duration, props.liveRefreshMs]);
   useEffect(() => {
     if (!range || !props.endpoint) return;
     if (!props.inlineHorizon && props.series && !props.series.length) { setResult({ points: [] }); cache.current = undefined; setLoading(false); setError(''); return; }
@@ -78,8 +79,9 @@ export function MeasurementChart(props: MeasurementChartProps) {
   }, [range, props.endpoint, props.queryKey, live, refresh]);
   // Old demonstration data must remain explicitly historical while we watch the
   // current window. Never stretch September timestamps into today's Live axis.
-  const showingRetained = !!(live && retainedHistory && range && retainedHistory.range.end < range.start && !result.points.some(p => Date.parse(p.timestamp) >= range.start && typeof p.value === 'number'));
-  const displayResult = showingRetained ? retainedHistory!.data : result;
+  const matchingQuery = cache.current?.queryKey === props.queryKey;
+  const showingRetained = !!(matchingQuery && live && retainedHistory?.queryKey === props.queryKey && retainedHistory && range && retainedHistory.range.end < range.start && !result.points.some(p => Date.parse(p.timestamp) >= range.start && typeof p.value === 'number'));
+  const displayResult = showingRetained ? retainedHistory!.data : matchingQuery ? result : emptyResult;
   const displayRange = showingRetained ? retainedHistory!.range : range;
   useEffect(() => { props.onWindowChange?.(displayRange); }, [displayRange, props.onWindowChange]);
   useEffect(() => {
@@ -161,6 +163,11 @@ export function MeasurementChart(props: MeasurementChartProps) {
       const unchanged=series.id==='import' && !!reading.value && values.length>=15 && reading.epochMs-values[0].epochMs>=14*60000 && series.rows.every(r=>r.value===reading.value);
       return <div key={series.id}><small><i style={{background:series.color}}/>{series.title}</small><strong>{reading.value!.toLocaleString('en-GB',{maximumSignificantDigits:5})} {series.unit}</strong><time>{date(reading.epochMs)}</time>{unchanged && <span>Same value throughout this window</span>}</div>;
     })}</div>}
+    {props.bars && displayResult.period_total && <div className="energy-period-balance">
+      <span>Grid balance</span>
+      <strong>{displayResult.period_total.value.toLocaleString('en-GB',{maximumFractionDigits:3})} kWh</strong>
+      {displayResult.period_total.partial && <small>Partial or estimated coverage</small>}
+    </div>}
     {props.dashedGapFills && rows.some(row => row.source?.status === 'reused') && <div className="reading-source-legend">
       <span><i className="reading-source-line" aria-hidden="true"/>Previous reading used to fill a gap</span>
     </div>}
@@ -172,9 +179,18 @@ export function MeasurementChart(props: MeasurementChartProps) {
     {!props.compactHeader && ((displayResult.partial_count ?? 0) > 0 || displayResult.points.some(incomplete)) &&
       <p className="telemetry-live-context" role="status">Some readings in this window are incomplete or unverified.</p>}
     {props.series && !props.series.length ? <div className="telemetry-empty"><h3>Select a measurement</h3><p>Choose a series to display.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length && !hasFuture ? <div className="telemetry-empty"><Radio size={26} /><h3>{awaiting ? 'Loading measurements' : (displayResult.errors?.length ? 'No readings from available sources' : 'No readings in this window')}</h3><p>{awaiting ? 'Reading the selected measurements through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
-      {unitGroups.map((group) => <div className="telemetry-unit-plot" key={group[0].id}>
-
-      <TimeseriesPlot data={group.flatMap(c => c.rows).sort((a, b) => a.epochMs - b.epochMs)} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
+      {unitGroups.map(group => {
+        const byTime = new Map<number,Record<string,unknown>>();
+        if (props.bars) for (const c of group) for (const row of c.rows) {
+          if (row.value == null) continue;
+          const bar = byTime.get(row.epochMs) ?? {epochMs:row.epochMs};
+          bar[c.id] = row.value;
+          bar[c.id+'-reused'] = row.source?.status === 'reused';
+          byTime.set(row.epochMs,bar);
+        }
+        const plotData = props.bars ? [...byTime.values()] : group.flatMap(c => c.rows);
+        return <div className="telemetry-unit-plot" key={group[0].id}>
+      <TimeseriesPlot data={plotData.sort((a,b)=>Number(a.epochMs)-Number(b.epochMs))} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
         <XAxis height={48} label={{ value: `Time (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, position: "insideBottom", offset: -16, fill: "var(--muted)", fontSize: 11 }} type="number" dataKey="epochMs" scale="time" ticks={ticks} domain={axisRange ? [axisRange.start, axisRange.end + (live && !showingRetained ? Math.min(300000, duration * .05) : 0)] : ['dataMin', 'dataMax']} allowDataOverflow axisLine={false} tickLine={false} minTickGap={65} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickMargin={14} tickFormatter={v => duration > 86400000 ? date(v, duration <= 3 * 86400000) : new Date(v).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} />
         <YAxis label={{ value: group[0].unit || "Unit unconfirmed", angle: -90, position: "insideLeft", fill: "var(--muted)", fontSize: 11 }} width={76} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--muted)' }} domain={['auto', 'auto']} tickFormatter={v => Number(v).toLocaleString('en-GB', { maximumSignificantDigits: 4, notation: Math.abs(v) >= 100000 ? 'compact' : 'standard' })} />
         <Tooltip content={({ active, label }) => {
@@ -187,7 +203,16 @@ export function MeasurementChart(props: MeasurementChartProps) {
           });
           return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.source && <small>{sourceLabel(row.source.status)}{row.source.at ? ' · ' + new Date(row.source.at).toLocaleTimeString('en-GB') : ''}</small>}{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
+        {props.zeroLine && <ReferenceLine y={0} stroke="var(--muted)" />}
         {group.map(c => {
+          if (props.bars) return <Bar key={c.id} dataKey={c.id} name={c.title} fill={c.color}
+            maxBarSize={36} isAnimationActive={false} activeBar={false}
+            shape={bar => {
+              const reused = bar.payload?.[c.id+'-reused'];
+              return <Rectangle x={bar.x} y={bar.y} width={bar.width} height={bar.height}
+                fill={c.color} fillOpacity={reused ? 0.25 : 0.83}
+                stroke={reused ? c.color : undefined} strokeDasharray={reused ? '5 3' : undefined}/>;
+            }}/>;
           const split = props.dashedGapFills && c.rows.some(row => row.source?.status === 'reused')
             ? readingLineData(c.rows, c.id) : undefined;
           const splitLines = split?.dashed.length ? split : undefined;
@@ -203,7 +228,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
         {forecastEnd && displayRange && <ReferenceLine x={displayRange.end} stroke="var(--muted)" strokeDasharray="3 3" label={{value:'Now',position:'insideTopRight',fill:'var(--muted)',fontSize:11}}/>}
         {!forecastEnd && live && !showingRetained && liveStarted !== null && displayRange && liveStarted >= displayRange.start && liveStarted <= displayRange.end && <ReferenceLine x={liveStarted} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Live started', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}
         {drag && <ReferenceArea x1={Math.min(drag.start, drag.end)} x2={Math.max(drag.start, drag.end)} fill="var(--brand)" fillOpacity={0.1} strokeOpacity={0} />}
-      </TimeseriesPlot></div>)}{forecastEnd && <div className="price-horizon-key" title="Published horizon from the latest Percepta cycle."><span>{props.forecastLabel==="Forecast"?"Recorded":"Recorded prices"}</span><span>{props.forecastLabel || "Published prices"}</span></div>}</div>}
+      </TimeseriesPlot></div>;})}{forecastEnd && <div className="price-horizon-key" title="Published horizon from the latest Percepta cycle."><span>{props.forecastLabel==="Forecast"?"Recorded":"Recorded prices"}</span><span>{props.forecastLabel || "Published prices"}</span></div>}</div>}
     <span className="chart-sr-only" role="status">{loading ? `Loading measurements${progress ? ` · ${progress.toLocaleString()} samples` : ''}` : ''}</span>
 
   </div>;

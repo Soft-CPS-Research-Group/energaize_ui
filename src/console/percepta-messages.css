@@ -71,3 +71,14 @@
   width: 18px;
   border-top: 2px dashed currentColor;
 }
+
+.energy-period-balance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.energy-period-balance > strong { color: var(--text); font-size: 15px; }
