@@ -15,6 +15,7 @@ import { KpiSegmented } from "../../components/kpi/KpiSegmented";
 import { KpiInfo } from "../../components/kpi/KpiInfo";
 import { KpiDelta } from "../../components/kpi/KpiDelta";
 import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
+import { LOWER_IS_BETTER } from "../../constants/kpiDirection";
 import {
   BuildingsField, CommunityField, DateRangeField, KpiFilterBar, KpiSelectField, toLocalDateString,
 } from "../../components/kpi/KpiFilters";
@@ -22,17 +23,6 @@ import {
 const defaultEnd  = new Date();
 const defaultStart = new Date();
 defaultStart.setDate(defaultStart.getDate() - 4);
-
-// KPIs where a lower value = better outcome.
-// Names must match the class names registered in kpi_factory.py._SCHEDULED_KPI_REGISTRY.
-const LOWER_IS_BETTER = new Set([
-  "EnergyCostKPI",             // lower cost = better
-  "DailyLoadFactorKPI",        // lower inefficiency = better (0 = flat profile)
-  "RampingKPI",                // lower ramping = smoother grid
-  "NoHarmIndicatorKPI",        // 0% = no member is worse off
-  "GiniBenefitsKPI",           // 0 = perfect equality
-  "BenefitConcentrationCR20KPI", // ~0.2 = proportional distribution
-]);
 
 type ViewMode = "table" | "chart";
 

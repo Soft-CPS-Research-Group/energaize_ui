@@ -4,12 +4,13 @@ import { Badge } from "../../components/ui/Badge";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
-import { Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Plus, Trash2, Edit2, Lock } from "lucide-react";
+import { Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Plus, Trash2, Edit2, Lock, History } from "lucide-react";
 import { api as axios } from "../../api/kpiApi";
 import { useCommunities } from "../../hooks/useCommunities";
 import { kpiDisplayName, useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
+import { JobRunsPanel } from "./JobRunsPanel";
 import { KpiSegmented } from "../../components/kpi/KpiSegmented";
 import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
 import { KpiField, KpiSelectField, KpiSwitch, communityLabel } from "../../components/kpi/KpiFilters";
@@ -244,18 +245,24 @@ function JobFormModal({ open, initial, onClose, onSave, isEdit }: {
 
 // ── Job card ─────────────────────────────────────────────────────────────────
 
-function JobCard({ job, triggering, triggerResult, deleting, onEdit, onDelete, onTrigger }: {
+function JobCard({ job, triggering, triggerResult, deleting, selected, onEdit, onDelete, onTrigger, onOpenRuns }: {
   job: JobStatus;
   triggering: boolean;
   triggerResult?: "ok" | "error";
   deleting: boolean;
+  selected: boolean;
+  onOpenRuns: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onTrigger: () => void;
 }) {
   const { kpis: kpiMeta } = useKpiMetadata();
   return (
-    <article className="kpi-job">
+    // A click on the card opens its runs; the buttons keep their own action
+    <article
+      className={`kpi-job is-clickable${selected ? " is-selected" : ""}`}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest("button, a")) onOpenRuns(); }}
+    >
       <header className="kpi-job-head">
         <div>
           <h3>
@@ -267,6 +274,10 @@ function JobCard({ job, triggering, triggerResult, deleting, onEdit, onDelete, o
           {triggerResult === "error" && <span className="kpi-text-danger" role="status"> · Trigger failed</span>}
         </div>
         <div className="kpi-job-actions">
+          <Button onClick={onOpenRuns} variant="secondary" size="sm" iconLeft={<History size={13} />}
+            aria-pressed={selected}>
+            Runs
+          </Button>
           {job.source === "ui" && (
             <>
               <Button onClick={onEdit} variant="secondary" size="sm" iconLeft={<Edit2 size={13} />}>Edit</Button>
@@ -326,6 +337,8 @@ export function SchedulerPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [runsJob, setRunsJob] = useState<string | null>(null);
+  const closeRuns = useCallback(() => setRunsJob(null), []);
   const [editJob, setEditJob] = useState<JobStatus | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -423,6 +436,8 @@ export function SchedulerPage() {
               triggering={triggeringJob === job.id}
               triggerResult={triggerResult[job.id]}
               deleting={deletingJob === job.id}
+              selected={runsJob === job.id}
+              onOpenRuns={() => setRunsJob(job.id)}
               onEdit={() => openEdit(job)}
               onDelete={() => { setDeleteError(null); setConfirmDelete(job.id); }}
               onTrigger={() => triggerJob(job.id)}
@@ -437,6 +452,8 @@ export function SchedulerPage() {
           message="Add jobs in the YAML configuration, or select Add job above."
         />
       )}
+
+      <JobRunsPanel jobId={runsJob} onClose={closeRuns} />
 
       <JobFormModal
         open={modalOpen}
