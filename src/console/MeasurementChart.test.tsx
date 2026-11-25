@@ -3,11 +3,32 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MeasurementChart } from './MeasurementChart';
 vi.mock('../components/charts/TimeseriesPlot', () => ({ TimeseriesPlot: ({children}: {children: ReactNode}) => <div>Chart{children}</div> }));
-vi.mock('recharts', () => ({ Line: ({data}:{data:unknown[]}) => <span data-testid="chart-series" data-points={JSON.stringify(data)}/>, ReferenceArea: () => null, ReferenceLine: () => <span>Live boundary</span>, Tooltip: () => null, XAxis: ({label}:{label:{value:string}}) => <span data-testid="x-axis-label">{label.value}</span>, YAxis: ({label}:{label:{value:string}}) => <span data-testid="y-axis-label">{label.value}</span> }));
+vi.mock('recharts', () => ({ Line: ({data, strokeDasharray, dot}:{data:unknown[]; strokeDasharray?:string; dot?:boolean}) => <span data-testid="chart-series" data-points={JSON.stringify(data)} data-dash={strokeDasharray} data-dot={dot}/>, ReferenceArea: () => null, ReferenceLine: () => <span>Live boundary</span>, Tooltip: () => null, XAxis: ({label}:{label:{value:string}}) => <span data-testid="x-axis-label">{label.value}</span>, YAxis: ({label}:{label:{value:string}}) => <span data-testid="y-axis-label">{label.value}</span> }));
 const now = Date.parse('2026-10-11T12:00:00Z');
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 afterEach(() => vi.useRealTimers());
 describe('Live chart lifecycle', () => {
+  it('draws only the carried intervals as dashed lines and uses no dots', async () => {
+    const values = [1, 2, 3, 4, null, 5, 6];
+    const request = vi.fn(async () => ({
+      points: values.map((value, index) => ({
+        id: String(index), timestamp: new Date(now + (index - 8) * 60000).toISOString(), value,
+        source: {status: index === 2 || index === 6 ? 'reused' as const : 'fresh' as const, at: null},
+      })),
+    }));
+    render(<MeasurementChart title="Grid import" endpoint="/a/series" initialEnd={now} request={request}
+      expectedSeconds={60} dashedGapFills />);
+    await flush();
+    const [solid, dashed] = screen.getAllByTestId('chart-series');
+    const valuesOf = (line: HTMLElement) =>
+      JSON.parse(line.getAttribute('data-points')!).map((point: {value: number | null}) => point.value);
+    expect(solid).not.toHaveAttribute('data-dash');
+    expect(dashed).toHaveAttribute('data-dash', '5 3');
+    expect(solid).toHaveAttribute('data-dot', 'false');
+    expect(dashed).toHaveAttribute('data-dot', 'false');
+    expect(valuesOf(solid)).toEqual([1, 2, null, 3, 4]);
+    expect(valuesOf(dashed)).toEqual([2, 3, null, 5, 6]);
+  });
   it('flags an incomplete archived interval and keeps its sample evidence', async () => {
     const request = vi.fn(async () => ({
       points: [{

@@ -72,6 +72,31 @@ export function plotRows(data: MeasurementSeries, expectedSeconds?: number | nul
   });
   return rows;
 }
+type ReadingRow = ReturnType<typeof plotRows>[number];
+
+export function readingLineData(rows: ReadingRow[], key: string) {
+  const solid: (ReadingRow & Record<string, unknown>)[] = [];
+  const dashed: typeof solid = [];
+  let previous: ReadingRow | undefined;
+  let lastLine: typeof solid | undefined;
+  for (const row of rows) {
+    if (previous?.value == null || row.value == null) {
+      lastLine = undefined;
+    } else {
+      const line = row.source?.status === 'reused' ? dashed : solid;
+      if (line !== lastLine) {
+        // A null separates runs of the same style without dropping either endpoint.
+        if (line.length) line.push({ ...previous, value: null, [key]: null });
+        line.push({ ...previous, [key]: previous.value });
+      }
+      line.push({ ...row, [key]: row.value });
+      lastLine = line;
+    }
+    previous = row;
+  }
+  return { solid, dashed };
+}
+
 export async function loadWindow(request: MeasurementRequest, endpoint: string, range: TimeWindow, signal: AbortSignal, progress: (count: number) => void = () => {}) {
   const query = new URLSearchParams({ from_ts: new Date(range.start).toISOString(), until_ts: new Date(range.end).toISOString(), limit: '1000' });
   const separator = endpoint.includes('?') ? '&' : '?';

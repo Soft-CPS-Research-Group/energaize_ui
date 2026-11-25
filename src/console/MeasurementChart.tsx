@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, History, Link2, Radio, RefreshCw, X } from 'lucide-react';
 import { DayPicker, type DateRange } from 'react-day-picker';
 import { Line, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 import { resolveAxisTickStepMs } from '../utils/timeseriesGranularity';
 import { TimeseriesPlot } from '../components/charts/TimeseriesPlot';
 import type { MeasurementChannel } from './measurementChannels';
-import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, sourceLabel, type ReadingSource, type MeasurementRequest, type MeasurementSeries, type TimeWindow } from './measurementData';
+import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, readingLineData, sourceLabel, type MeasurementRequest, type MeasurementSeries, type TimeWindow } from './measurementData';
 
 export interface MeasurementChartProps {
   compactHeader?: boolean; initialDurationMs?: number; startLive?: boolean; inlineHorizon?: boolean;
   showLatest?: boolean; forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
-  incremental?: boolean; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
+  incremental?: boolean; dashedGapFills?: boolean; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
   request: MeasurementRequest; endpoint?: string; latestEndpoint?: string; initialEnd?: number;
   title: string; unit?: string; note?: string; expectedSeconds?: number | null;
   onLink?: () => void; onUnlink?: () => void;
@@ -161,9 +161,8 @@ export function MeasurementChart(props: MeasurementChartProps) {
       const unchanged=series.id==='import' && !!reading.value && values.length>=15 && reading.epochMs-values[0].epochMs>=14*60000 && series.rows.every(r=>r.value===reading.value);
       return <div key={series.id}><small><i style={{background:series.color}}/>{series.title}</small><strong>{reading.value!.toLocaleString('en-GB',{maximumSignificantDigits:5})} {series.unit}</strong><time>{date(reading.epochMs)}</time>{unchanged && <span>Same value throughout this window</span>}</div>;
     })}</div>}
-    {rows.some(row => row.source) && <div className="reading-source-legend" aria-label="Reading source">
-      <span><i className="reading-source-symbol" data-status="fresh"/>{sourceLabel('fresh')}</span>
-      <span><i className="reading-source-symbol" data-status="reused"/>{sourceLabel('reused')}</span>
+    {props.dashedGapFills && rows.some(row => row.source?.status === 'reused') && <div className="reading-source-legend">
+      <span><i className="reading-source-line" aria-hidden="true"/>Previous reading used to fill a gap</span>
     </div>}
     {forecastRead?.failed && !forecastPending && <p role="status">Published horizon unavailable.</p>}
     {props.showLatest && props.note && <p className="telemetry-calendar-hint">{props.note}</p>}
@@ -188,12 +187,18 @@ export function MeasurementChart(props: MeasurementChartProps) {
           });
           return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.source && <small>{sourceLabel(row.source.status)}{row.source.at ? ' · ' + new Date(row.source.at).toLocaleTimeString('en-GB') : ''}</small>}{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
-        {group.map(c => <Line key={c.id} data={c.rows} name={c.title} type={c.curve || "linear"} dataKey={c.id} stroke={c.color} strokeWidth={2.2} dot={c.rows.length <= 400 && c.rows.some(row => row.source)
-          ? ({ cx, cy, payload }: { cx?: number; cy?: number; payload?: { value: number | null; source?: ReadingSource } }) =>
-            cx != null && cy != null && payload?.value != null && payload.source
-              ? <circle cx={cx} cy={cy} r={3} fill={payload.source.status === 'fresh' ? c.color : 'var(--surface, white)'} stroke={c.color} strokeWidth={1.5} strokeDasharray={payload.source.status === 'reused' ? '2 1' : undefined} />
-              : null
-          : c.rows.filter(r => r.value !== null).length === 1} activeDot={false} connectNulls={false} isAnimationActive={false} />)}
+        {group.map(c => {
+          const split = props.dashedGapFills && c.rows.some(row => row.source?.status === 'reused')
+            ? readingLineData(c.rows, c.id) : undefined;
+          const splitLines = split?.dashed.length ? split : undefined;
+          const style = { name: c.title, type: c.curve || 'linear', dataKey: c.id, stroke: c.color,
+            strokeWidth: 2.2, dot: !props.dashedGapFills && c.rows.filter(row => row.value !== null).length === 1,
+            activeDot: false, connectNulls: false, isAnimationActive: false } as const;
+          return <Fragment key={c.id}>
+            {(!splitLines || splitLines.solid.length > 0) && <Line {...style} data={splitLines?.solid ?? c.rows} />}
+            {splitLines && <Line {...style} data={splitLines.dashed} strokeDasharray="5 3" />}
+          </Fragment>;
+        })}
         {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name={props.forecastLabel || "Published prices"} type={c.curve || "stepAfter"} dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
         {forecastEnd && displayRange && <ReferenceLine x={displayRange.end} stroke="var(--muted)" strokeDasharray="3 3" label={{value:'Now',position:'insideTopRight',fill:'var(--muted)',fontSize:11}}/>}
         {!forecastEnd && live && !showingRetained && liveStarted !== null && displayRange && liveStarted >= displayRange.start && liveStarted <= displayRange.end && <ReferenceLine x={liveStarted} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Live started', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}

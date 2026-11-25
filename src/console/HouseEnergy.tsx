@@ -77,7 +77,7 @@ export function HouseEnergy({archive}:{archive:HouseArchive}){
   return <section className="surface chart-section house-energy">
     <nav className="tabs" aria-label="Energy data view">{['Energy','Electricity price'].map((name,i)=><button key={name} aria-pressed={prices===!!i} className={prices===!!i?'active':''} onClick={()=>setPrices(!!i)}>{name}</button>)}</nav>
     {!prices && <div className="telemetry-series-legend" role="group" aria-label="Visible measurements">{available.filter(s=>s.id!=='price').map(s=><button key={s.id} aria-pressed={selected.includes(s.id)} onClick={()=>setSelected(ids=>ids.includes(s.id)?ids.filter(id=>id!==s.id):[...ids,s.id])}><i style={{background:s.color}}/>{s.title}</button>)}</div>}
-    <MeasurementChart title={prices?'Electricity price':'House energy'} series={active} compactHeader startLive initialDurationMs={21600000} inlineHorizon
+    <MeasurementChart title={prices?'Electricity price':'House energy'} series={active} compactHeader startLive initialDurationMs={21600000} inlineHorizon dashedGapFills
       queryKey={[archive.site,archive.meter,archive.exportMeter].join('/')} request={request} endpoint="/series" latestEndpoint="/latest" expectedSeconds={period} forecastLabel={prices?'Published prices':'Forecast'}/>
   </section>;
 }

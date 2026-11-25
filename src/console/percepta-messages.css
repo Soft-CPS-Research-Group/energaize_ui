@@ -65,3 +65,9 @@
 }
 .reading-source-symbol[data-status="fresh"] { background: var(--brand, currentColor); }
 .reading-source-symbol[data-status="reused"] { border-style: dashed; }
+
+
+.reading-source-line {
+  width: 18px;
+  border-top: 2px dashed currentColor;
+}
