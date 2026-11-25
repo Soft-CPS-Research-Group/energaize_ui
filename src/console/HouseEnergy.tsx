@@ -144,6 +144,11 @@ export function HouseEnergy({archive}:{archive:HouseArchive}){
     if(archive.meter)query.set('grid_import',archive.meter);
     if(archive.exportMeter)query.set('grid_export',archive.exportMeter);
     const range={start:Date.parse(query.get('from_ts')!),end:Date.parse(query.get('until_ts')!)};
+    if (bars) {
+      // An interval closing on the range boundary belongs to the period just ended.
+      query.set('from_ts',new Date(range.start+1).toISOString());
+      query.set('until_ts',new Date(range.end+1).toISOString());
+    }
     const points:MeasurementPoint[]=[];
     const samples:Sample[]=[];
     const lanes=available.filter(s=>bars ? s.id!=='price' : true).map(s=>s.id);

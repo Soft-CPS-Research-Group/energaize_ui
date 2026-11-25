@@ -203,7 +203,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
           });
           return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.source && <small>{sourceLabel(row.source.status)}{row.source.at ? ' · ' + new Date(row.source.at).toLocaleTimeString('en-GB') : ''}</small>}{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
-        {props.zeroLine && <ReferenceLine y={0} stroke="var(--muted)" />}
+        {props.zeroLine && <ReferenceLine y={0} ifOverflow="extendDomain" stroke="var(--muted)" />}
         {group.map(c => {
           if (props.bars) return <Bar key={c.id} dataKey={c.id} name={c.title} fill={c.color}
             maxBarSize={36} isAnimationActive={false} activeBar={false}
