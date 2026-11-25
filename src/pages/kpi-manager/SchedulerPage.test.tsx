@@ -22,13 +22,19 @@ function renderPage() {
   );
 }
 
+const jobList = () => screen.findByRole("navigation", { name: "Jobs" });
+const openJob = async (id: string) =>
+  fireEvent.click(within(await jobList()).getByRole("button", { name: new RegExp(`^${id}`) }));
+
 describe("SchedulerPage", () => {
   let deleted: string[];
   let created: unknown[];
+  let triggered: string[];
 
   beforeEach(() => {
     deleted = [];
     created = [];
+    triggered = [];
     server.use(
       http.get("*/kpi-api/api/v1/scheduler/status", () =>
         HttpResponse.json({ status: "success", data: { running: true, jobs: [job("hourly_yaml", "yaml"), job("my_job", "ui")] } })),
@@ -36,10 +42,15 @@ describe("SchedulerPage", () => {
         deleted.push(String(params.id));
         return HttpResponse.json({ status: "success" });
       }),
+      http.post("*/kpi-api/api/v1/scheduler/jobs/:id/trigger", ({ params }) => {
+        triggered.push(String(params.id));
+        return HttpResponse.json({ status: "success" });
+      }),
       http.post("*/kpi-api/api/v1/scheduler/jobs", async ({ request }) => {
         created.push(await request.json());
         return HttpResponse.json({ status: "success" });
       }),
+      http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [] })),
       http.get("*/kpi-api/api/v1/kpis/metadata", () => HttpResponse.json({ status: "success", data: [
         { name: "EnergyCostKPI", display_name: "Energy cost", type: "scheduled", status: "available", registered: true },
       ] })),
@@ -47,21 +58,40 @@ describe("SchedulerPage", () => {
     );
   });
 
-  it("only offers edit and delete for jobs created in the UI", async () => {
+  it("opens the first job, and shows its KPIs and configuration in the Overview tab", async () => {
     renderPage();
-    const yamlCard = (await screen.findByRole("heading", { name: /hourly_yaml/ })).closest("article")!;
-    const uiCard = screen.getByRole("heading", { name: /my_job/ }).closest("article")!;
-    expect(within(yamlCard).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
-    expect(within(uiCard).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    const overview = await screen.findByRole("region", { name: "Overview of hourly_yaml" });
+    expect(within(overview).getByText("Energy cost")).toBeInTheDocument();
+    expect(within(overview).getByText(/Defined in kpi_schedule.yaml/)).toBeInTheDocument();
+    expect(within(overview).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
-  it("deletes a job after confirming in the app's dialog", async () => {
+  it("only offers edit and delete for jobs created in the UI, and deletes after confirming", async () => {
     renderPage();
-    const uiCard = (await screen.findByRole("heading", { name: /my_job/ })).closest("article")!;
-    fireEvent.click(within(uiCard).getByRole("button", { name: "Delete" }));
+    await openJob("my_job");
+    const overview = await screen.findByRole("region", { name: "Overview of my_job" });
+    fireEvent.click(within(overview).getByRole("button", { name: "Delete" }));
     const dialog = await screen.findByText(/This cannot be undone/);
     fireEvent.click(within(dialog.closest(".modal") as HTMLElement).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleted).toEqual(["my_job"]));
+  });
+
+  it("runs a job from its button in the sidebar, and every job with Run all", async () => {
+    renderPage();
+    fireEvent.click(within(await jobList()).getByRole("button", { name: "Run my_job now" }));
+    await waitFor(() => expect(triggered).toEqual(["my_job"]));
+    fireEvent.click(screen.getByRole("button", { name: "Run all" }));
+    const dialog = await screen.findByText(/Run all 2 jobs now/);
+    fireEvent.click(within(dialog.closest(".modal") as HTMLElement).getByRole("button", { name: "Run all" }));
+    await waitFor(() => expect(triggered).toEqual(["my_job", "hourly_yaml", "my_job"]));
+  });
+
+  it("shows the runs of the open job in the Runs tab", async () => {
+    renderPage();
+    await openJob("my_job");
+    fireEvent.click(await screen.findByRole("tab", { name: "Runs" }));
+    const runs = await screen.findByRole("region", { name: "Runs of my_job" });
+    expect(await within(runs).findByText(/No runs recorded yet/)).toBeInTheDocument();
   });
 
   it("creates a weekly job with a lookback string, not as one day", async () => {
@@ -75,17 +105,5 @@ describe("SchedulerPage", () => {
     await waitFor(() => expect(created).toHaveLength(1));
     expect(created[0]).toMatchObject({ id: "weekly_costs", kpis: ["EnergyCostKPI"], lookback: "1w" });
     expect(created[0]).not.toHaveProperty("lookback_days");
-  });
-
-  it("opens a job's runs beside a narrowed job list when its card is clicked", async () => {
-    server.use(http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [] })));
-    renderPage();
-    const card = (await screen.findByRole("heading", { name: /my_job/ })).closest("article")!;
-    fireEvent.click(card);
-    expect(await screen.findByRole("dialog", { name: "Runs of my_job" })).toBeInTheDocument();
-    // Beside the panel the cards only tell the jobs apart
-    expect(within(card).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(within(card).getByRole("button", { name: "Delete" })).toBeInTheDocument());
   });
 });

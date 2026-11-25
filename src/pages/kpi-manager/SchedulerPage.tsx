@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback, useId } from "react";
-import { AnimatePresence } from "framer-motion";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Modal } from "../../components/ui/Modal";
-import { Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Plus, Trash2, Edit2, Lock, History } from "lucide-react";
+import { Play, RefreshCw, Clock, CheckCircle, XCircle, Loader2, Plus, Trash2, Edit2, Lock } from "lucide-react";
 import { api as axios } from "../../api/kpiApi";
 import { useCommunities } from "../../hooks/useCommunities";
 import { kpiDisplayName, useKpiMetadata } from "../../hooks/useKpiMetadata";
 import { COMMUNITY_FALLBACK } from "../../constants/kpiCommunities";
 import { KpiPageHeader } from "../../components/kpi/KpiPageHeader";
-import { JobRunsPanel } from "./JobRunsPanel";
+import { JobRuns } from "./JobRuns";
 import { KpiSegmented } from "../../components/kpi/KpiSegmented";
 import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
 import { KpiField, KpiSelectField, KpiSwitch, communityLabel } from "../../components/kpi/KpiFilters";
@@ -244,92 +243,106 @@ function JobFormModal({ open, initial, onClose, onSave, isEdit }: {
   );
 }
 
-// ── Job card ─────────────────────────────────────────────────────────────────
+// ── Job list (sidebar) ───────────────────────────────────────────────────────
 
-function JobCard({ job, triggering, triggerResult, deleting, selected, compact, onEdit, onDelete, onTrigger, onOpenRuns }: {
+function JobListItem({ job, selected, triggering, triggerResult, onSelect, onTrigger }: {
   job: JobStatus;
+  selected: boolean;
   triggering: boolean;
   triggerResult?: "ok" | "error";
+  onSelect: () => void;
+  onTrigger: () => void;
+}) {
+  return (
+    <li className={`kpi-sched-job${selected ? " is-selected" : ""}`}>
+      <button type="button" className="kpi-sched-job-main" aria-current={selected ? "true" : undefined} onClick={onSelect}>
+        <span className="kpi-sched-job-name">{job.id}</span>
+        <span className="kpi-sched-job-meta">
+          <SourceBadge source={job.source} />
+          {job.bau && <Badge tone="info">BAU</Badge>}
+          <StatusBadge status={job.last_run_status} />
+        </span>
+        <span className="kpi-text-soft kpi-sched-job-next">
+          Next {fmt(job.next_run_time)}
+          {triggerResult === "ok" && <span className="kpi-text-ok" role="status"> · Triggered</span>}
+          {triggerResult === "error" && <span className="kpi-text-danger" role="status"> · Trigger failed</span>}
+        </span>
+      </button>
+      <Button
+        onClick={onTrigger}
+        disabled={triggering}
+        variant="secondary"
+        size="sm"
+        iconOnly
+        aria-label={`Run ${job.id} now`}
+        title="Run now"
+        iconLeft={triggering ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+      />
+    </li>
+  );
+}
+
+// ── Selected job ─────────────────────────────────────────────────────────────
+
+function JobOverview({ job, deleting, onEdit, onDelete }: {
+  job: JobStatus;
   deleting: boolean;
-  selected: boolean;
-  /** Beside the runs panel: only what tells the jobs apart */
-  compact: boolean;
-  onOpenRuns: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  onTrigger: () => void;
 }) {
   const { kpis: kpiMeta } = useKpiMetadata();
   return (
-    // A click on the card opens its runs; the buttons keep their own action
-    <article
-      className={`kpi-job is-clickable${selected ? " is-selected" : ""}${compact ? " is-compact" : ""}`}
-      onClick={(e) => { if (!(e.target as HTMLElement).closest("button, a")) onOpenRuns(); }}
-    >
-      <header className="kpi-job-head">
-        <div>
-          <h3>
-            {job.id} <SourceBadge source={job.source} /> <StatusBadge status={job.last_run_status} />
-            {job.bau && <> <Badge tone="info">BAU</Badge></>}
-          </h3>
-          <code className="kpi-text-soft">{job.cron}</code>
-          {triggerResult === "ok" && <span className="kpi-text-ok" role="status"> · Triggered</span>}
-          {triggerResult === "error" && <span className="kpi-text-danger" role="status"> · Trigger failed</span>}
-        </div>
-        {!compact && <div className="kpi-job-actions">
-          <Button onClick={onOpenRuns} variant="secondary" size="sm" iconLeft={<History size={13} />}
-            aria-pressed={selected}>
-            Runs
-          </Button>
-          {job.source === "ui" && (
-            <>
-              <Button onClick={onEdit} variant="secondary" size="sm" iconLeft={<Edit2 size={13} />}>Edit</Button>
-              <Button
-                onClick={onDelete}
-                disabled={deleting}
-                variant="danger"
-                size="sm"
-                iconLeft={deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              >
-                Delete
-              </Button>
-            </>
-          )}
-          <Button
-            onClick={onTrigger}
-            disabled={triggering}
-            variant="primary"
-            size="sm"
-            iconLeft={triggering ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-          >
-            Run now
-          </Button>
-        </div>}
-      </header>
-
-      {!compact && <>
+    <section className="kpi-sched-overview" aria-label={`Overview of ${job.id}`}>
       <dl className="kpi-job-facts">
         <div><dt>Community</dt><dd>{job.community === "*" ? "All" : communityLabel(job.community)}</dd></div>
+        <div><dt>Schedule (UTC)</dt><dd className="kpi-mono">{job.cron}</dd></div>
         <div><dt>Lookback</dt><dd>{job.lookback}</dd></div>
+        <div><dt>BAU</dt><dd>{job.bau ? "Requested for each window" : "Off"}</dd></div>
         <div><dt>Next run</dt><dd>{fmt(job.next_run_time)}</dd></div>
         <div><dt>Last run</dt><dd>{fmt(job.last_run_time)}</dd></div>
       </dl>
 
-      <ul className="kpi-job-kpis" aria-label="KPIs">
-        {job.kpis.map(kpi => (
-          <li key={kpi}>{kpiDisplayName(kpiMeta.find((m) => m.name === kpi), kpi)}</li>
-        ))}
-      </ul>
+      <div>
+        <h4 className="kpi-sched-subhead">KPIs</h4>
+        <ul className="kpi-job-kpis" aria-label="KPIs">
+          {job.kpis.map(kpi => (
+            <li key={kpi}>{kpiDisplayName(kpiMeta.find((m) => m.name === kpi), kpi)}</li>
+          ))}
+        </ul>
+      </div>
 
       {job.last_run_status === "error" && job.last_run_error && (
-        <pre className="kpi-job-error">{job.last_run_error}</pre>
+        <div>
+          <h4 className="kpi-sched-subhead">Last error</h4>
+          <pre className="kpi-job-error">{job.last_run_error}</pre>
+        </div>
       )}
-      </>}
-    </article>
+
+      {job.source === "ui" ? (
+        <div className="kpi-job-actions">
+          <Button onClick={onEdit} variant="secondary" size="sm" iconLeft={<Edit2 size={13} />}>Edit</Button>
+          <Button
+            onClick={onDelete}
+            disabled={deleting}
+            variant="danger"
+            size="sm"
+            iconLeft={deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+          >
+            Delete
+          </Button>
+        </div>
+      ) : (
+        <p className="kpi-text-soft">
+          {job.source === "yaml" ? "Defined in kpi_schedule.yaml: change it there." : "A job of the KPI module itself."}
+        </p>
+      )}
+    </section>
   );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+
+type Tab = "overview" | "runs";
 
 export function SchedulerPage() {
   const [status, setStatus] = useState<SchedulerStatus | null>(null);
@@ -340,11 +353,15 @@ export function SchedulerPage() {
   const [deletingJob, setDeletingJob] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmRunAll, setConfirmRunAll] = useState(false);
+  const [runningAll, setRunningAll] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [runsJob, setRunsJob] = useState<string | null>(null);
-  const closeRuns = useCallback(() => setRunsJob(null), []);
   const [editJob, setEditJob] = useState<JobStatus | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("overview");
+  // Bumped after a run is started, so the Runs tab shows it
+  const [runsRefresh, setRunsRefresh] = useState(0);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -364,6 +381,10 @@ export function SchedulerPage() {
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
+  const jobs = status?.jobs ?? [];
+  // The first job is open when the page loads, and when the open one is deleted
+  const selected = jobs.find((j) => j.id === selectedId) ?? jobs[0] ?? null;
+
   const clearTriggerResult = (jobId: string) =>
     setTriggerResult(p => { const n = { ...p }; delete n[jobId]; return n; });
 
@@ -372,11 +393,21 @@ export function SchedulerPage() {
     try {
       await axios.post(`api/v1/scheduler/jobs/${jobId}/trigger`);
       setTriggerResult(p => ({ ...p, [jobId]: "ok" }));
-      setTimeout(() => { clearTriggerResult(jobId); fetchStatus(); }, 3000);
+      setTimeout(() => { clearTriggerResult(jobId); fetchStatus(); setRunsRefresh((n) => n + 1); }, 3000);
     } catch {
       setTriggerResult(p => ({ ...p, [jobId]: "error" }));
       setTimeout(() => clearTriggerResult(jobId), 3000);
     } finally { setTriggeringJob(null); }
+  };
+
+  const runAll = async () => {
+    setRunningAll(true);
+    try {
+      for (const job of jobs) await triggerJob(job.id);
+    } finally {
+      setRunningAll(false);
+      setConfirmRunAll(false);
+    }
   };
 
   const deleteJob = async (jobId: string) => {
@@ -397,6 +428,7 @@ export function SchedulerPage() {
       await axios.put(`api/v1/scheduler/jobs/${data.id}`, payload);
     } else {
       await axios.post("api/v1/scheduler/jobs", payload);
+      setSelectedId(data.id);
     }
     await fetchStatus();
   };
@@ -415,6 +447,10 @@ export function SchedulerPage() {
               iconLeft={<RefreshCw className={loading ? "animate-spin" : ""} size={16} />}>
               Refresh
             </Button>
+            <Button onClick={() => setConfirmRunAll(true)} disabled={!jobs.length || runningAll} variant="secondary"
+              iconLeft={runningAll ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}>
+              Run all
+            </Button>
             <Button onClick={openCreate} variant="primary" iconLeft={<Plus size={16} />}>
               Add job
             </Button>
@@ -425,39 +461,72 @@ export function SchedulerPage() {
       {status && (
         <p className="kpi-scheduler-state" role="status">
           <span className={`kpi-live-dot${status.running ? " is-streaming" : ""}`} aria-hidden="true" />
-          Scheduler {status.running ? "running" : "stopped"} · {status.jobs.length} job{status.jobs.length !== 1 ? "s" : ""}
+          Scheduler {status.running ? "running" : "stopped"} · {jobs.length} job{jobs.length !== 1 ? "s" : ""}
         </p>
       )}
 
       {error && <KpiError message={error} onRetry={fetchStatus} />}
       {loading && !error && <KpiLoading label="Loading scheduler status…" />}
 
-      {status && status.jobs.length > 0 && (
-        <div className={`kpi-scheduler-split${runsJob ? " has-panel" : ""}`}>
-        <div className="kpi-results">
-          {status.jobs.map(job => (
-            <JobCard
-              key={job.id}
-              job={job}
-              triggering={triggeringJob === job.id}
-              triggerResult={triggerResult[job.id]}
-              deleting={deletingJob === job.id}
-              selected={runsJob === job.id}
-              compact={runsJob !== null}
-              onOpenRuns={() => setRunsJob(job.id)}
-              onEdit={() => openEdit(job)}
-              onDelete={() => { setDeleteError(null); setConfirmDelete(job.id); }}
-              onTrigger={() => triggerJob(job.id)}
+      {status && jobs.length > 0 && selected && (
+        <div className="kpi-sched">
+          <nav className="kpi-sched-jobs" aria-label="Jobs">
+            <ul>
+              {jobs.map(job => (
+                <JobListItem
+                  key={job.id}
+                  job={job}
+                  selected={job.id === selected.id}
+                  triggering={triggeringJob === job.id}
+                  triggerResult={triggerResult[job.id]}
+                  onSelect={() => setSelectedId(job.id)}
+                  onTrigger={() => triggerJob(job.id)}
+                />
+              ))}
+            </ul>
+          </nav>
+
+          <article className="kpi-sched-detail" aria-labelledby="kpi-sched-detail-title">
+            <header className="kpi-sched-detail-head">
+              <div>
+                <h3 id="kpi-sched-detail-title">
+                  {selected.id} <SourceBadge source={selected.source} />
+                  {selected.bau && <Badge tone="info">BAU</Badge>}
+                  <StatusBadge status={selected.last_run_status} />
+                </h3>
+                <code className="kpi-text-soft">{selected.cron} · lookback {selected.lookback}</code>
+              </div>
+              <Button
+                onClick={() => triggerJob(selected.id)}
+                disabled={triggeringJob === selected.id}
+                variant="primary"
+                size="sm"
+                iconLeft={triggeringJob === selected.id ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+              >
+                Run now
+              </Button>
+            </header>
+            <KpiSegmented
+              segments={[{ key: "overview", label: "Overview" }, { key: "runs", label: "Runs" }]}
+              value={tab}
+              onChange={setTab}
+              ariaLabel="Job view"
             />
-          ))}
-        </div>
-        <AnimatePresence>
-          {runsJob && <JobRunsPanel key={runsJob} jobId={runsJob} onClose={closeRuns} />}
-        </AnimatePresence>
+            {tab === "overview" ? (
+              <JobOverview
+                job={selected}
+                deleting={deletingJob === selected.id}
+                onEdit={() => openEdit(selected)}
+                onDelete={() => { setDeleteError(null); setConfirmDelete(selected.id); }}
+              />
+            ) : (
+              <JobRuns jobId={selected.id} refreshKey={runsRefresh} />
+            )}
+          </article>
         </div>
       )}
 
-      {status && status.jobs.length === 0 && (
+      {status && jobs.length === 0 && (
         <EmptyState
           title="No scheduled jobs"
           message="Add jobs in the YAML configuration, or select Add job above."
@@ -478,6 +547,16 @@ export function SchedulerPage() {
         isEdit={!!editJob}
         onClose={() => setModalOpen(false)}
         onSave={handleSaveJob}
+      />
+
+      <ConfirmDialog
+        open={confirmRunAll}
+        title="Run all jobs"
+        message={<>Run all {jobs.length} jobs now? Jobs that request the BAU also send their requests to AI Training.</>}
+        confirmLabel="Run all"
+        pending={runningAll}
+        onCancel={() => setConfirmRunAll(false)}
+        onConfirm={runAll}
       />
 
       <ConfirmDialog

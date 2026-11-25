@@ -1,6 +1,5 @@
 import { Component, useCallback, useEffect, useState, type ReactNode } from "react";
-import { motion } from "framer-motion";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { api as axios } from "../../api/kpiApi";
 import { Badge } from "../../components/ui/Badge";
 import { KpiDelta } from "../../components/kpi/KpiDelta";
@@ -50,22 +49,21 @@ class PanelBoundary extends Component<{ children: ReactNode; resetKey: string },
 }
 
 /**
- * The runs of a scheduler job and what each one did. Shown beside the job list
- * (the page lays both out side by side; on narrow screens it covers the list).
+ * The runs of a scheduler job and what each one did: the runs in a narrow column
+ * with its own scroll, the chosen run beside it. refreshKey reloads them (e.g. after Run now).
  */
-export function JobRunsPanel({ jobId, onClose }: { jobId: string; onClose: () => void }): JSX.Element {
+export function JobRuns({ jobId, refreshKey = 0 }: { jobId: string; refreshKey?: number }): JSX.Element {
   const [runs, setRuns] = useState<JobRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!jobId) return;
     setLoading(true);
     try {
       setError(null);
       const res = await axios.get<{ status: string; data: unknown }>(`api/v1/scheduler/jobs/${jobId}/runs`, {
-        params: { limit: 20 },
+        params: { limit: 50 },
       });
       const data = res?.data?.data;
       if (!Array.isArray(data)) throw new Error("The KPI API did not return the runs (is the KPI module up to date?)");
@@ -77,7 +75,8 @@ export function JobRunsPanel({ jobId, onClose }: { jobId: string; onClose: () =>
     }
   }, [jobId]);
 
-  useEffect(() => { setRuns(null); setSelected(null); load(); }, [load]);
+  useEffect(() => { setRuns(null); setSelected(null); }, [jobId]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   // While a run is still going (a BAU can take hours), keep it up to date
   const running = runs?.some((r) => r.status === "running");
@@ -87,70 +86,46 @@ export function JobRunsPanel({ jobId, onClose }: { jobId: string; onClose: () =>
     return () => clearInterval(timer);
   }, [running, load]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [jobId, onClose]);
-
   const run = runs?.find((r) => r.run_id === selected) ?? runs?.[0];
 
   return (
-        <motion.aside
-          className="kpi-drawer"
-          role="dialog"
-          aria-label={`Runs of ${jobId}`}
-          initial={{ opacity: 0, x: 24 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 24 }}
-          transition={{ type: "spring", stiffness: 260, damping: 32 }}
-        >
-          <header className="kpi-drawer-head">
-            <div>
-              <span className="kpi-text-soft">Runs</span>
-              <h3>{jobId}</h3>
+    <section className="kpi-runs" aria-label={`Runs of ${jobId}`}>
+      <PanelBoundary resetKey={jobId}>
+        {error && <KpiError message={error} onRetry={load} />}
+        {!runs && !error && <KpiLoading label="Loading runs…" />}
+        {runs && runs.length === 0 && (
+          <p className="kpi-text-soft">No runs recorded yet. Runs are recorded from this version on; select Run to start one.</p>
+        )}
+        {runs && runs.length > 0 && (
+          <div className="kpi-runs-layout">
+            <div className="kpi-runs-list">
+              <div className="kpi-runs-list-head">
+                <span className="kpi-text-soft">{runs.length} run{runs.length !== 1 ? "s" : ""}</span>
+                <button className="icon-btn" type="button" onClick={load} aria-label="Refresh runs" disabled={loading}>
+                  <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                </button>
+              </div>
+              <ol className="kpi-run-list" aria-label="Runs">
+                {runs.map((r) => (
+                  <li key={r.run_id}>
+                    <button
+                      type="button"
+                      className={`kpi-run-item${r.run_id === run?.run_id ? " is-selected" : ""}`}
+                      aria-pressed={r.run_id === run?.run_id}
+                      onClick={() => setSelected(r.run_id)}
+                    >
+                      <span>{when(r.started_at)}</span>
+                      <Badge tone={STATUS[r.status]?.tone ?? "neutral"}>{STATUS[r.status]?.label ?? r.status}</Badge>
+                    </button>
+                  </li>
+                ))}
+              </ol>
             </div>
-            <div className="kpi-drawer-actions">
-              <button className="icon-btn" type="button" onClick={load} aria-label="Refresh" disabled={loading}>
-                <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-              </button>
-              <button className="icon-btn" type="button" onClick={onClose} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-          </header>
-
-          <div className="kpi-drawer-body">
-            <PanelBoundary resetKey={jobId}>
-            {error && <KpiError message={error} onRetry={load} />}
-            {!runs && !error && <KpiLoading label="Loading runs…" />}
-            {runs && runs.length === 0 && (
-              <p className="kpi-text-soft">No runs recorded yet. Runs are recorded from this version on; select Run now to start one.</p>
-            )}
-
-            {runs && runs.length > 0 && (
-              <>
-                <ol className="kpi-run-list" aria-label="Runs">
-                  {runs.map((r) => (
-                    <li key={r.run_id}>
-                      <button
-                        type="button"
-                        className={`kpi-run-item${r.run_id === run?.run_id ? " is-selected" : ""}`}
-                        aria-pressed={r.run_id === run?.run_id}
-                        onClick={() => setSelected(r.run_id)}
-                      >
-                        <span>{when(r.started_at)}</span>
-                        <Badge tone={STATUS[r.status]?.tone ?? "neutral"}>{STATUS[r.status]?.label ?? r.status}</Badge>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-                {run && <PanelBoundary resetKey={run.run_id}><RunDetail run={run} /></PanelBoundary>}
-              </>
-            )}
-            </PanelBoundary>
+            {run && <PanelBoundary resetKey={run.run_id}><RunDetail run={run} /></PanelBoundary>}
           </div>
-        </motion.aside>
+        )}
+      </PanelBoundary>
+    </section>
   );
 }
 

@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { server } from "../../test/server";
-import { JobRunsPanel } from "./JobRunsPanel";
+import { JobRuns } from "./JobRuns";
 
 const RUN = {
   run_id: "r1", job_id: "daily_bau_demflex", status: "success",
@@ -23,10 +23,10 @@ const RUN = {
 
 function renderPanel(jobId: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><JobRunsPanel jobId={jobId} onClose={() => {}} /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><JobRuns jobId={jobId} /></QueryClientProvider>);
 }
 
-describe("JobRunsPanel", () => {
+describe("JobRuns", () => {
   it("shows what the selected run did, with the real vs BAU comparison", async () => {
     server.use(
       http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [RUN] })),
@@ -34,7 +34,7 @@ describe("JobRunsPanel", () => {
     );
     renderPanel("daily_bau_demflex");
 
-    const panel = await screen.findByRole("dialog", { name: "Runs of daily_bau_demflex" });
+    const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
     expect(await within(panel).findByText(/168 KPI windows stored · 4 of 7 buildings with data/)).toBeInTheDocument();
     expect(within(panel).getByText("BAU stored")).toBeInTheDocument();
     expect(within(panel).getByText(/of 2 houses simulated/)).toBeInTheDocument();
@@ -61,7 +61,7 @@ describe("JobRunsPanel with unexpected data", () => {
       http.get("*/kpi-api/*", () => HttpResponse.json({ status: "success", data: [] })),
     );
     renderPanel("daily_bau_demflex");
-    const panel = await screen.findByRole("dialog", { name: "Runs of daily_bau_demflex" });
+    const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
     expect(await within(panel).findByText("BAU stored")).toBeInTheDocument();
     expect(within(panel).getByText('{"code":500}')).toBeInTheDocument();
   });
@@ -81,7 +81,7 @@ describe("JobRunsPanel with unexpected data", () => {
       http.get("*/kpi-api/*", () => HttpResponse.json({ status: "success", data: [] })),
     );
     renderPanel("daily_bau_demflex");
-    const panel = await screen.findByRole("dialog", { name: "Runs of daily_bau_demflex" });
+    const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
     expect(await within(panel).findByText("BAU stored")).toBeInTheDocument();
     expect(within(panel).queryByText(/could not be shown/)).not.toBeInTheDocument();
   });
