@@ -117,7 +117,9 @@ export function normalizeRun(raw: any): JobRun {
 }
 
 /** Houses the BAU covered, and why the others were left out (reason → how many houses). */
-export function houseCoverage(houses: BauHouse[] = []) {
+export function houseCoverage(list?: BauHouse[] | null) {
+  // The API sends null when a request carries no house list (e.g. one stored by an earlier version)
+  const houses = Array.isArray(list) ? list : [];
   const included = houses.filter((h) => h.included > 0);
   const reasons: Record<string, number> = {};
   for (const h of houses) {

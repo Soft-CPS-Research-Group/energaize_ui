@@ -12,6 +12,7 @@ describe("job runs model", () => {
     expect(c.included.map((h) => h.house)).toEqual(["RH27"]);
     expect(c.excluded).toBe(3);
     expect(c.reasons).toEqual([["Missing or ambiguous main grid import channel", 2], ["Missing battery efficiency", 1]]);
+    expect(houseCoverage(null)).toEqual({ included: [], excluded: 0, reasons: [] });
   });
 
   it("compares real with BAU, the community first", () => {

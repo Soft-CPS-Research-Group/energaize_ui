@@ -71,4 +71,18 @@ describe("JobRunsPanel with unexpected data", () => {
     renderPanel("daily_bau_demflex");
     expect(await screen.findByText(/did not return the runs/)).toBeInTheDocument();
   });
+
+  it("shows a BAU request that came without its house list (houses: null)", async () => {
+    // As the KPI module returns a request stored before houses were recorded: the page went blank on this
+    const stored = { ...RUN, bau: { demflex: { id: "req-1", state: "completed", outcome: "stored", error: null,
+                                              houses: null, report: null, from_ts: null, until_ts: null } } };
+    server.use(
+      http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [stored] })),
+      http.get("*/kpi-api/*", () => HttpResponse.json({ status: "success", data: [] })),
+    );
+    renderPanel("daily_bau_demflex");
+    const panel = await screen.findByRole("dialog", { name: "Runs of daily_bau_demflex" });
+    expect(await within(panel).findByText("BAU stored")).toBeInTheDocument();
+    expect(within(panel).queryByText(/could not be shown/)).not.toBeInTheDocument();
+  });
 });
