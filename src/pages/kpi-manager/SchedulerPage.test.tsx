@@ -76,4 +76,16 @@ describe("SchedulerPage", () => {
     expect(created[0]).toMatchObject({ id: "weekly_costs", kpis: ["EnergyCostKPI"], lookback: "1w" });
     expect(created[0]).not.toHaveProperty("lookback_days");
   });
+
+  it("opens a job's runs beside a narrowed job list when its card is clicked", async () => {
+    server.use(http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [] })));
+    renderPage();
+    const card = (await screen.findByRole("heading", { name: /my_job/ })).closest("article")!;
+    fireEvent.click(card);
+    expect(await screen.findByRole("dialog", { name: "Runs of my_job" })).toBeInTheDocument();
+    // Beside the panel the cards only tell the jobs apart
+    expect(within(card).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(within(card).getByRole("button", { name: "Delete" })).toBeInTheDocument());
+  });
 });

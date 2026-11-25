@@ -52,6 +52,70 @@ export interface JobRun {
   bau: Record<string, BauRun>;
 }
 
+const isObject = (v: unknown): v is Record<string, any> => typeof v === "object" && v !== null && !Array.isArray(v);
+const text = (v: unknown): string | null => (v == null ? null : typeof v === "string" ? v : JSON.stringify(v));
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/**
+ * A run as the API returned it, with every field the panel reads in the shape it expects:
+ * runs recorded by other versions, or fields an upstream service fills differently,
+ * must never break the page.
+ */
+export function normalizeRun(raw: any): JobRun {
+  const communities: Record<string, CommunityRun> = {};
+  for (const [name, c] of Object.entries(isObject(raw?.communities) ? raw.communities : {})) {
+    const values: Record<string, KpiValue> = {};
+    for (const [kpi, v] of Object.entries(isObject((c as any)?.community) ? (c as any).community : {})) {
+      values[kpi] = { value: num(isObject(v) ? v.value : v), unit: isObject(v) ? text(v.unit) : null };
+    }
+    communities[name] = {
+      buildings: num((c as any)?.buildings) ?? 0,
+      buildings_with_data: num((c as any)?.buildings_with_data) ?? undefined,
+      windows: num((c as any)?.windows) ?? 0,
+      error: text((c as any)?.error) ?? undefined,
+      community: values,
+    };
+  }
+  const bau: Record<string, BauRun> = {};
+  for (const [name, b] of Object.entries(isObject(raw?.bau) ? raw.bau : {})) {
+    const report = isObject((b as any)?.report) ? (b as any).report : undefined;
+    const comparison: Record<string, Record<string, BauComparisonValue>> = {};
+    for (const [scope, kpis] of Object.entries(isObject(report?.comparison) ? report.comparison : {})) {
+      comparison[scope] = {};
+      for (const [kpi, v] of Object.entries(isObject(kpis) ? kpis : {})) {
+        comparison[scope][kpi] = { real: num(isObject(v) ? v.real : null), bau: num(isObject(v) ? v.bau : null),
+                                   unit: isObject(v) ? text(v.unit) : null };
+      }
+    }
+    bau[name] = {
+      id: text((b as any)?.id) ?? undefined,
+      state: text((b as any)?.state) ?? undefined,
+      outcome: text((b as any)?.outcome),
+      error: text((b as any)?.error),
+      houses: Array.isArray((b as any)?.houses)
+        ? (b as any).houses.filter(isObject).map((h: any) => ({
+            house: text(h.house) ?? "?", site_id: text(h.site_id) ?? "", included: num(h.included) ?? 0,
+            expected: num(h.expected) ?? 0, reasons: Array.isArray(h.reasons) ? h.reasons.map((r: unknown) => text(r) ?? "") : [],
+          }))
+        : undefined,
+      report: report ? { ...report, comparison } : undefined,
+    };
+  }
+  const status = raw?.status === "running" || raw?.status === "success" || raw?.status === "error" ? raw.status : "error";
+  return {
+    run_id: text(raw?.run_id) ?? Math.random().toString(36),
+    job_id: text(raw?.job_id) ?? "",
+    started_at: text(raw?.started_at) ?? "",
+    finished_at: text(raw?.finished_at) ?? undefined,
+    status,
+    error: text(raw?.error),
+    period_start: text(raw?.period_start) ?? undefined,
+    period_end: text(raw?.period_end) ?? undefined,
+    communities,
+    bau,
+  };
+}
+
 /** Houses the BAU covered, and why the others were left out (reason → how many houses). */
 export function houseCoverage(houses: BauHouse[] = []) {
   const included = houses.filter((h) => h.included > 0);

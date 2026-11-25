@@ -415,10 +415,20 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-job.is-clickable { cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
 .kpi-job.is-clickable:hover { border-color: color-mix(in srgb, var(--brand) 35%, var(--line)); }
 .kpi-job.is-selected { border-color: var(--brand); box-shadow: var(--shadow); }
+.kpi-job.is-compact { gap: 0; padding: 10px 14px; border-radius: 14px; }
+.kpi-job.is-compact .kpi-job-head h3 { font-size: 13px; }
+/* The job list narrows to the left and the runs panel sits beside it */
+.kpi-scheduler-split.has-panel { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.kpi-scheduler-split.has-panel > .kpi-results { gap: 8px; }
 .kpi-drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 60; width: min(480px, 100vw);
-  display: flex; flex-direction: column; background: var(--bg-elev); border-left: 1px solid var(--line);
-  box-shadow: -12px 0 36px color-mix(in srgb, var(--text) 10%, transparent);
+  position: sticky; top: 16px; max-height: calc(100vh - 32px); min-width: 0;
+  display: flex; flex-direction: column; border-radius: 18px; border: 1px solid var(--line);
+  background: var(--bg-elev); box-shadow: var(--shadow);
+}
+@media(max-width:900px) {
+  /* Too narrow for both: the panel covers the list */
+  .kpi-scheduler-split.has-panel { display: block; }
+  .kpi-drawer { position: fixed; inset: 0; z-index: 60; max-height: none; border-radius: 0; border: 0; }
 }
 .kpi-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .kpi-drawer-head h3 { margin: 2px 0 0; font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }

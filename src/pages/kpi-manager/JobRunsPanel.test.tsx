@@ -49,3 +49,26 @@ describe("JobRunsPanel", () => {
     expect(await screen.findByText(/No runs recorded yet/)).toBeInTheDocument();
   });
 });
+
+
+describe("JobRunsPanel with unexpected data", () => {
+  it("shows runs recorded in another shape instead of breaking the page", async () => {
+    const odd = { ...RUN, communities: { demflex: { windows: "many", community: null } },
+                  bau: { demflex: { outcome: "stored", error: { code: 500 }, houses: [{ house: "RH27", reasons: null }],
+                                    report: { comparison: { community: { EnergyCostKPI: { real: "1.7", bau: null } } } } } } };
+    server.use(
+      http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [odd] })),
+      http.get("*/kpi-api/*", () => HttpResponse.json({ status: "success", data: [] })),
+    );
+    renderPanel("daily_bau_demflex");
+    const panel = await screen.findByRole("dialog", { name: "Runs of daily_bau_demflex" });
+    expect(await within(panel).findByText("BAU stored")).toBeInTheDocument();
+    expect(within(panel).getByText('{"code":500}')).toBeInTheDocument();
+  });
+
+  it("explains an answer that is not a list of runs", async () => {
+    server.use(http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ detail: "Not Found" })));
+    renderPanel("daily_bau_demflex");
+    expect(await screen.findByText(/did not return the runs/)).toBeInTheDocument();
+  });
+});

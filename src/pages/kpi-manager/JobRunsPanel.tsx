@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { Component, useCallback, useEffect, useState, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import { RefreshCw, X } from "lucide-react";
 import { api as axios } from "../../api/kpiApi";
 import { Badge } from "../../components/ui/Badge";
@@ -10,7 +9,7 @@ import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
 import { LOWER_IS_BETTER } from "../../constants/kpiDirection";
 import { kpiDisplayName, useKpiMetadata } from "../../hooks/useKpiMetadata";
 import {
-  comparisonRows, comparisonScopes, duration, houseCoverage, scopeLabel, type BauRun, type JobRun,
+  comparisonRows, comparisonScopes, duration, houseCoverage, normalizeRun, scopeLabel, type BauRun, type JobRun,
 } from "./jobRunsModel";
 
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
@@ -35,8 +34,26 @@ const BAU_OUTCOME: Record<string, { tone: "success" | "warning" | "danger" | "in
   error: { tone: "danger", label: "BAU request failed" },
 };
 
-/** Side panel with the runs of a scheduler job and what each one did. */
-export function JobRunsPanel({ jobId, onClose }: { jobId: string | null; onClose: () => void }): JSX.Element {
+/** Keeps a rendering error inside the panel instead of blanking the whole page. */
+class PanelBoundary extends Component<{ children: ReactNode; resetKey: string }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidUpdate(prev: { resetKey: string }) {
+    if (prev.resetKey !== this.props.resetKey && this.state.error) this.setState({ error: null });
+  }
+  componentDidCatch(error: Error) { console.error("Job runs panel failed to render", error); }
+  render() {
+    return this.state.error
+      ? <KpiError message={`This run could not be shown: ${this.state.error.message}`} />
+      : this.props.children;
+  }
+}
+
+/**
+ * The runs of a scheduler job and what each one did. Shown beside the job list
+ * (the page lays both out side by side; on narrow screens it covers the list).
+ */
+export function JobRunsPanel({ jobId, onClose }: { jobId: string; onClose: () => void }): JSX.Element {
   const [runs, setRuns] = useState<JobRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,10 +64,12 @@ export function JobRunsPanel({ jobId, onClose }: { jobId: string | null; onClose
     setLoading(true);
     try {
       setError(null);
-      const res = await axios.get<{ status: string; data: JobRun[] }>(`api/v1/scheduler/jobs/${jobId}/runs`, {
+      const res = await axios.get<{ status: string; data: unknown }>(`api/v1/scheduler/jobs/${jobId}/runs`, {
         params: { limit: 20 },
       });
-      setRuns(res.data.data);
+      const data = res?.data?.data;
+      if (!Array.isArray(data)) throw new Error("The KPI API did not return the runs (is the KPI module up to date?)");
+      setRuns(data.map(normalizeRun));
     } catch (e: any) {
       setError(e?.response?.data?.detail || e?.message || "Failed to load the runs");
     } finally {
@@ -69,7 +88,6 @@ export function JobRunsPanel({ jobId, onClose }: { jobId: string | null; onClose
   }, [running, load]);
 
   useEffect(() => {
-    if (!jobId) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -77,16 +95,14 @@ export function JobRunsPanel({ jobId, onClose }: { jobId: string | null; onClose
 
   const run = runs?.find((r) => r.run_id === selected) ?? runs?.[0];
 
-  return createPortal(
-    <AnimatePresence>
-      {jobId ? (
+  return (
         <motion.aside
           className="kpi-drawer"
           role="dialog"
           aria-label={`Runs of ${jobId}`}
-          initial={{ x: "100%" }}
-          animate={{ x: 0 }}
-          exit={{ x: "100%" }}
+          initial={{ opacity: 0, x: 24 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 24 }}
           transition={{ type: "spring", stiffness: 260, damping: 32 }}
         >
           <header className="kpi-drawer-head">
@@ -105,6 +121,7 @@ export function JobRunsPanel({ jobId, onClose }: { jobId: string | null; onClose
           </header>
 
           <div className="kpi-drawer-body">
+            <PanelBoundary resetKey={jobId}>
             {error && <KpiError message={error} onRetry={load} />}
             {!runs && !error && <KpiLoading label="Loading runs…" />}
             {runs && runs.length === 0 && (
@@ -128,14 +145,12 @@ export function JobRunsPanel({ jobId, onClose }: { jobId: string | null; onClose
                     </li>
                   ))}
                 </ol>
-                {run && <RunDetail run={run} />}
+                {run && <PanelBoundary resetKey={run.run_id}><RunDetail run={run} /></PanelBoundary>}
               </>
             )}
+            </PanelBoundary>
           </div>
         </motion.aside>
-      ) : null}
-    </AnimatePresence>,
-    document.body,
   );
 }
 

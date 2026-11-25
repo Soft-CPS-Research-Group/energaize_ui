@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useId } from "react";
+import { AnimatePresence } from "framer-motion";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -245,12 +246,14 @@ function JobFormModal({ open, initial, onClose, onSave, isEdit }: {
 
 // ── Job card ─────────────────────────────────────────────────────────────────
 
-function JobCard({ job, triggering, triggerResult, deleting, selected, onEdit, onDelete, onTrigger, onOpenRuns }: {
+function JobCard({ job, triggering, triggerResult, deleting, selected, compact, onEdit, onDelete, onTrigger, onOpenRuns }: {
   job: JobStatus;
   triggering: boolean;
   triggerResult?: "ok" | "error";
   deleting: boolean;
   selected: boolean;
+  /** Beside the runs panel: only what tells the jobs apart */
+  compact: boolean;
   onOpenRuns: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -260,7 +263,7 @@ function JobCard({ job, triggering, triggerResult, deleting, selected, onEdit, o
   return (
     // A click on the card opens its runs; the buttons keep their own action
     <article
-      className={`kpi-job is-clickable${selected ? " is-selected" : ""}`}
+      className={`kpi-job is-clickable${selected ? " is-selected" : ""}${compact ? " is-compact" : ""}`}
       onClick={(e) => { if (!(e.target as HTMLElement).closest("button, a")) onOpenRuns(); }}
     >
       <header className="kpi-job-head">
@@ -273,7 +276,7 @@ function JobCard({ job, triggering, triggerResult, deleting, selected, onEdit, o
           {triggerResult === "ok" && <span className="kpi-text-ok" role="status"> · Triggered</span>}
           {triggerResult === "error" && <span className="kpi-text-danger" role="status"> · Trigger failed</span>}
         </div>
-        <div className="kpi-job-actions">
+        {!compact && <div className="kpi-job-actions">
           <Button onClick={onOpenRuns} variant="secondary" size="sm" iconLeft={<History size={13} />}
             aria-pressed={selected}>
             Runs
@@ -301,9 +304,10 @@ function JobCard({ job, triggering, triggerResult, deleting, selected, onEdit, o
           >
             Run now
           </Button>
-        </div>
+        </div>}
       </header>
 
+      {!compact && <>
       <dl className="kpi-job-facts">
         <div><dt>Community</dt><dd>{job.community === "*" ? "All" : communityLabel(job.community)}</dd></div>
         <div><dt>Lookback</dt><dd>{job.lookback}</dd></div>
@@ -320,6 +324,7 @@ function JobCard({ job, triggering, triggerResult, deleting, selected, onEdit, o
       {job.last_run_status === "error" && job.last_run_error && (
         <pre className="kpi-job-error">{job.last_run_error}</pre>
       )}
+      </>}
     </article>
   );
 }
@@ -428,6 +433,7 @@ export function SchedulerPage() {
       {loading && !error && <KpiLoading label="Loading scheduler status…" />}
 
       {status && status.jobs.length > 0 && (
+        <div className={`kpi-scheduler-split${runsJob ? " has-panel" : ""}`}>
         <div className="kpi-results">
           {status.jobs.map(job => (
             <JobCard
@@ -437,12 +443,17 @@ export function SchedulerPage() {
               triggerResult={triggerResult[job.id]}
               deleting={deletingJob === job.id}
               selected={runsJob === job.id}
+              compact={runsJob !== null}
               onOpenRuns={() => setRunsJob(job.id)}
               onEdit={() => openEdit(job)}
               onDelete={() => { setDeleteError(null); setConfirmDelete(job.id); }}
               onTrigger={() => triggerJob(job.id)}
             />
           ))}
+        </div>
+        <AnimatePresence>
+          {runsJob && <JobRunsPanel key={runsJob} jobId={runsJob} onClose={closeRuns} />}
+        </AnimatePresence>
         </div>
       )}
 
@@ -452,8 +463,6 @@ export function SchedulerPage() {
           message="Add jobs in the YAML configuration, or select Add job above."
         />
       )}
-
-      <JobRunsPanel jobId={runsJob} onClose={closeRuns} />
 
       <JobFormModal
         open={modalOpen}
