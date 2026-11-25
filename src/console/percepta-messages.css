@@ -42,3 +42,26 @@
 .percepta-message-equipment h4, .percepta-message-equipment dl { margin: 4px 0; }
 .percepta-message-equipment dl > div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
 .percepta-message-equipment dd { margin: 0; text-align: end; color: var(--muted); }
+
+.reading-source-label, .reading-source-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.reading-source-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 3px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.reading-source-symbol {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--brand, currentColor);
+  border-radius: 50%;
+  flex: 0 0 8px;
+}
+.reading-source-symbol[data-status="fresh"] { background: var(--brand, currentColor); }
+.reading-source-symbol[data-status="reused"] { border-style: dashed; }

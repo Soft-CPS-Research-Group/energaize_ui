@@ -1,9 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PerceptaMessages } from './PerceptaMessages';
 import { runtimeRequest } from '../api/runtimeApi';
+import {http, HttpResponse} from 'msw';
+import {server} from '../test/server';
 vi.mock('../api/runtimeApi', () => ({ runtimeRequest: vi.fn() }));
 const api = vi.mocked(runtimeRequest);
+const cycleArchive = '*/telemetry-api/api/measurements/sites/:site/cycle-archive';
+beforeEach(() => server.use(http.get(cycleArchive, () => HttpResponse.json({ messages: [] }))));
+
 const message = (id = 'one') => ({ id, timestamp: new Date().toISOString(), truncated: false, payload: { observations: { battery: { value: 68, generated: true } }, community: { energy_in_total: .01 }, forecasts: {}, decisions: {} } });
 const batch = (id = 'one', site = 'house') => ({ site_id: site, checked_at: new Date().toISOString(), available: true, source: 'living_lab/building_R-H-01', messages: [message(id)], notice: null });
 afterEach(() => { vi.useRealTimers(); vi.resetAllMocks(); });
@@ -124,4 +129,19 @@ it('separates the page check from the published house cycle',async()=>{
   api.mockResolvedValue(batch());
   render(<PerceptaMessages siteId="house" siteName="RH25" periodSeconds={900} onBack={()=>{}}/>);
   expect(await screen.findByText(/Page checks every 900 seconds.*900 seconds/)).toBeVisible();
+});
+
+it('uses the matching archived cycle to distinguish a new source reading from a previous one', async () => {
+  const response = batch();
+  const reading = {parameter_type_id: 'energy_in_total', measurement_unit: 'kWh', final_values: [{value: 1}]};
+  const input = {...reading, source_reading: {status: 'fresh', at: response.messages[0].timestamp}};
+  const carried = {...reading, source_reading: {status: 'reused', at: '2026-11-25T21:15:00Z'}};
+  const payload = (parameters: object) => ({entities: {meter: {entity_type_id: 'grid_meter', parameters}}});
+  api.mockResolvedValue({...response, messages: [{...response.messages[0], payload: payload({in: reading, out: reading})}]});
+  server.use(http.get(cycleArchive, () => HttpResponse.json({...response, messages: [
+    {...response.messages[0], payload: payload({in: input, out: carried})},
+  ]})));
+  render(<PerceptaMessages siteId="house" siteName="RH01" onBack={() => {}}/>);
+  expect(await screen.findByText(/New source reading/)).toHaveTextContent('New source reading');
+  expect(screen.getByText(/Previous reading/)).toHaveTextContent('Previous reading');
 });

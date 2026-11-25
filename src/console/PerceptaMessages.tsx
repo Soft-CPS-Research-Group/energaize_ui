@@ -5,6 +5,7 @@ import { EquipmentIcon, ProposalReceipt, readingValue } from './DeploymentEviden
 import { FieldValues, cyclePeriod, cycleRefreshSeconds } from './CycleReadings';
 import { runtimeRequest } from '../api/runtimeApi';
 import { displayMeasurementName } from './PerceptaMeasurementEditor';
+import { sourceLabel } from './measurementData';
 
 type Consumption = {
   value: number | null; unit: string; ev_charging_energy: number | null; missing_chargers: string[];
@@ -22,7 +23,7 @@ const hasValues = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v)
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
-export function MessageEquipment({ entities, names }: { entities: unknown; names: MeasurementNames }) {
+export function MessageEquipment({ entities, names, archiveEntities }: { entities: unknown; names: MeasurementNames; archiveEntities?: unknown }) {
   return <div className="evidence-stack" aria-label="Equipment readings">{!Object.keys(record(entities)).length && <p>No equipment readings in this cycle.</p>}
     {Object.entries(record(entities)).map(([key, entity]) => {
       const parameters = Object.entries(record(record(entity).parameters));
@@ -34,6 +35,9 @@ export function MessageEquipment({ entities, names }: { entities: unknown; names
           const measurement = record(data);
           const values = Array.isArray(measurement.final_values) ? measurement.final_values : [];
           const first = record(values[0]).value;
+          const archived = record(record(record(archiveEntities)[key]).parameters)[id];
+          const source = record(measurement.source_reading ?? record(archived).source_reading);
+          const status = source.status === 'fresh' || source.status === 'reused' ? source.status : null;
           const unit = typeof measurement.measurement_unit === 'string' ? measurement.measurement_unit : '';
           if (forecast) {
             const intervals = measurement.generated === false ? values.map(record).filter(v =>
@@ -54,7 +58,9 @@ export function MessageEquipment({ entities, names }: { entities: unknown; names
           }
           return <div key={id}><dt>{displayMeasurementName(names[id]?.measurement || String(measurement.parameter_type_id || id))}</dt>
             <dd><strong>{first == null ? 'No reading' : typeof first === 'object' ? <FieldValues value={first}/> : `${readingValue(first)} ${unit}`.trim()}</strong>
-              {measurement.generated === true ? <small>Generated</small> : first != null && measurement.generated === false ? <small>Measured</small> : null}
+              {first != null && status ? <small className="reading-source-label"><i className="reading-source-symbol" data-status={status}/>
+                {sourceLabel(status)}{typeof source.at === 'string' ? ' · ' + new Date(source.at).toLocaleTimeString('en-GB') : ''}
+              </small> : measurement.generated === true ? <small>Generated</small> : null}
               {values.length > 1 && <details><summary>{values.length} samples</summary><ul>{values.map((v,i) => <li key={i}><span>{record(v).period_start ? time(String(record(v).period_start)) : 'Sample '+(i+1)}</span><span>{record(v).value == null ? 'No reading' : readingValue(record(v).value)} {unit}</span></li>)}</ul></details>}</dd>
           </div>;
         })}</dl>
@@ -67,6 +73,7 @@ export function MessageEquipment({ entities, names }: { entities: unknown; names
 export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds, initialCycle }: { initialCycle?: string; siteId: string; siteName: string; periodSeconds?: number; onBack: () => void }) {
   const [batch, setBatch] = useState<MessageBatch | null>(null);
   const [selected, setSelected] = useState<PerceptaMessage | null>(null);
+  const [archived, setArchived] = useState<{ site: string; cycle: string; entities: unknown }>();
   const [paused, setPaused] = useState(false), [follow, setFollow] = useState(!initialCycle);
   const [query, setQuery] = useState(''), [mode, setMode] = useState<'sections' | 'json'>('sections');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [notice, setNotice] = useState('');
@@ -105,6 +112,25 @@ export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds, init
     document.addEventListener('visibilitychange',check);
     return ()=>{window.clearTimeout(timer);document.removeEventListener('visibilitychange',check);};
   }, [load, paused, busy, intervalSeconds]);
+  const selectedCycle = selected && !selected.truncated && hasValues(selected.payload.entities) ? selected.timestamp : null;
+  useEffect(() => {
+    if (!selectedCycle) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({ cycle: selectedCycle, limit: '1' });
+    void fetch(`/telemetry-api/api/measurements/sites/${encodeURIComponent(siteId)}/cycle-archive?${query}`, {
+      cache: 'no-store', signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) return;
+      const batch = await response.json() as MessageBatch;
+      const message = batch.messages?.[0];
+      if (!controller.signal.aborted && batch.site_id === siteId && message
+         && Date.parse(message.timestamp) === Date.parse(selectedCycle)) {
+        setArchived({ site: siteId, cycle: selectedCycle, entities: message.payload.entities });
+      }
+    }).catch(() => { /* Provenance is optional for non-archived cycles. */ });
+    return () => controller.abort();
+  }, [siteId, selectedCycle]);
+  const archiveEntities = archived?.site === siteId && archived.cycle === selectedCycle ? archived.entities : undefined;
   const names = batch?.measurement_names || {};
   const search = query.trim().toLowerCase();
   const items = (batch?.messages || []).filter(m => {
@@ -157,7 +183,7 @@ export function PerceptaMessages({ siteId, siteName, onBack, periodSeconds, init
           {!!consumption.missing_chargers.length&&<p>Missing charger readings: {consumption.missing_chargers.join(', ')}</p>}
         </section>}
         <div className="percepta-message-mode"><button aria-pressed={mode === 'sections'} onClick={() => setMode('sections')}>Sections</button><button aria-pressed={mode === 'json'} onClick={() => setMode('json')}>JSON</button></div>
-        {selected.truncated ? <p className="notice">This message exceeds the preview size limit. Its payload has been omitted.</p> : mode === 'json' ? <pre>{text}</pre> : <>{hasValues(selected.payload.entities)&&<MessageEquipment entities={selected.payload.entities} names={names}/>}
+        {selected.truncated ? <p className="notice">This message exceeds the preview size limit. Its payload has been omitted.</p> : mode === 'json' ? <pre>{text}</pre> : <>{hasValues(selected.payload.entities)&&<MessageEquipment entities={selected.payload.entities} names={names} archiveEntities={archiveEntities}/>}
           {sections.filter(s => hasValues(selected.payload[s])).map(s => <details key={s} open><summary>{title(s)}<small>{hasValues(selected.payload[s]) ? `${Object.keys(selected.payload[s] as object).length} entries` : 'No entries'}</small></summary><FieldValues value={selected.payload[s]}/></details>)}</>}
         {notice && <p role="status">{notice}</p>}
       </> : <div className="percepta-message-empty"><Radio size={28}/><p>Select a message to inspect its contents.</p></div>}</section>

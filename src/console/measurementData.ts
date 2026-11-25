@@ -1,3 +1,7 @@
+export type ReadingSource = { status: 'fresh' | 'reused'; at: string | null };
+export const sourceLabel = (status: ReadingSource['status']) =>
+  status === 'fresh' ? 'New source reading' : 'Previous reading';
+
 export interface MeasurementPoint {
   channelId?: string;
   id: string;
@@ -5,6 +9,7 @@ export interface MeasurementPoint {
   value: number | string | boolean | null;
   quality?: string;
   generated?: boolean | null;
+  source?: ReadingSource;
   source_samples?: number | null;
   expected_source_samples?: number | null;
   contributors?: number | null;
@@ -57,13 +62,13 @@ export function compactPoints(points: MeasurementPoint[], range: TimeWindow, bud
   return mergeWindow([], kept, range);
 }
 export function plotRows(data: MeasurementSeries, expectedSeconds?: number | null) {
-  const rows: { epochMs: number; value: number | null; qualityLabel?: string | null; generated?: boolean | null }[] = [];
+  const rows: { epochMs: number; value: number | null; qualityLabel?: string | null; generated?: boolean | null; source?: ReadingSource }[] = [];
   // Envelope points are intentionally separated within buckets; only larger gaps imply missing time.
   const gapMs = Math.max((expectedSeconds || 0) * 3, (data.bucket_seconds || 0) * 2) * 1000;
   data.points.forEach(p => {
     const epochMs = Date.parse(p.timestamp), previous = rows[rows.length - 1];
     if (gapMs && previous && epochMs - previous.epochMs > gapMs) rows.push({ epochMs: previous.epochMs + 1, value: null });
-    rows.push({ epochMs, value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : null, generated: p.generated, qualityLabel: qualityLabel(p) });
+    rows.push({ epochMs, value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : null, generated: p.generated, source: p.source, qualityLabel: qualityLabel(p) });
   });
   return rows;
 }
