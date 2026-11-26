@@ -85,7 +85,6 @@ function kpiPeriod(card) {
   const parts = [`${fmt(card.period.start)} – ${fmt(last)} (UTC)`];
   if (!site) parts.push(`${cov.houses_reporting} of ${cov.houses_total} houses reporting`);
   if (cov.hours_with_data < cov.hours_expected) parts.push(`data for ${cov.hours_with_data} of ${cov.hours_expected} hours`);
-  if (card.backfill?.pending_days) parts.push(`completing ${card.backfill.pending_days} missing day${card.backfill.pending_days === 1 ? "" : "s"}…`);
   parts.push(!bau ? "no BAU comparison yet"
     : site ? `BAU for ${bau.days_with_bau} of ${bau.days_expected} days`
       : `BAU on ${bau.houses_simulated} houses, ${bau.days_with_bau} of ${bau.days_expected} days`);
@@ -113,7 +112,9 @@ function energyIndicators(scope = "community", compact = false, site = null) {
   if (entry.status === "absent") return shell("absent", head(`Last ${days} days`) + `<p class="muted">KPIs are not available for this ${scope === "site" ? "house" : "community"} yet.</p>`);
   if (entry.status === "error") return shell("error", head(`Last ${days} days`) + `<p class="muted" role="alert">The KPIs could not be loaded. <button class="btn text" data-kpi-retry="${esc(key)}">Try again</button></p>`);
 
-  const card = entry.data, kpis = card.kpis || {};
+  const card = entry.data, kpis = card.kpis || {}, pending = card.backfill?.pending_days || 0;
+  // Values of a period still being completed would look final while they are not: show none until it is
+  if (pending) return shell("computing", head(`Last ${days} days`) + `<p class="muted" role="status">Calculating the KPIs for this period… ${pending} of ${days} day${days === 1 ? "" : "s"} still to calculate.</p>`);
   const updated = card.coverage?.updated_at ? ` · updated ${new Date(card.coverage.updated_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC` : "";
   const cards = KPI_CARDS.map(([keyName, label, direction, help]) => {
     const k = kpis[keyName], bau = k?.bau;

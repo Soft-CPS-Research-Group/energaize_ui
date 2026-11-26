@@ -405,13 +405,16 @@ test('the scorecard shows measured KPIs, the change against the BAU and how comp
  assert.doesNotMatch(html,/Within target tolerance|Departure shortfall|V2G/);
  }finally{dom.window.close();}
 });
-test('days the KPI module is still completing are said, and the previous values stay while it reloads',async()=>{
+test('a period still being completed shows no values until it is, then the final ones',async()=>{
  const {dom,run}=workspace();try{
  run(`communities[0].recId='rec-1';state.community=0;B.request=()=>Promise.resolve(Object.assign(${JSON.stringify(SCORECARD)},{backfill:{pending_days:3,running:true}}));render=()=>{};`);
  run('energyIndicators()');await run('Promise.resolve().then(()=>{}).then(()=>{})');
- assert.match(run('energyIndicators()'),/completing 3 missing days…/);
- // Asked again after the short retry: the values stay on screen while the new answer loads
- run(`for (const e of kpiScorecards.values()) e.at-=KPI_SCORECARD_BACKFILL_RETRY+1;B.request=()=>new Promise(()=>{});`);
+ const computing=run('energyIndicators()');
+ assert.match(computing,/data-values="computing"/);assert.match(computing,/3 of 7 days still to calculate/);
+ assert.doesNotMatch(computing,/107\.20|vs BAU/);
+ // Asked again after the short retry, now complete: the values appear
+ run(`for (const e of kpiScorecards.values()) e.at-=KPI_SCORECARD_BACKFILL_RETRY+1;B.request=()=>Promise.resolve(Object.assign(${JSON.stringify(SCORECARD)},{backfill:{pending_days:0,running:false}}));`);
+ run('energyIndicators()');await run('Promise.resolve().then(()=>{}).then(()=>{})');
  assert.match(run('energyIndicators()'),/107\.20/);
  }finally{dom.window.close();}
 });
