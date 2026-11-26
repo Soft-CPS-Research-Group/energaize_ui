@@ -10,7 +10,7 @@ import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, readingLi
 export interface MeasurementChartProps {
   compactHeader?: boolean; initialDurationMs?: number; startLive?: boolean; inlineHorizon?: boolean;
   showLatest?: boolean; forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
-  incremental?: boolean; dashedGapFills?: boolean; bars?: boolean; battery?: boolean; zeroLine?: boolean; liveRefreshMs?: number; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
+  incremental?: boolean; dashedGapFills?: boolean; bars?: boolean; battery?: boolean; houseOverview?: boolean; zeroLine?: boolean; liveRefreshMs?: number; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
   request: MeasurementRequest; endpoint?: string; latestEndpoint?: string; initialEnd?: number;
   title: string; unit?: string; note?: string; expectedSeconds?: number | null;
   onLink?: () => void; onUnlink?: () => void;
@@ -23,15 +23,16 @@ const batteryEnergyDomain = ([min,max]:readonly [number,number]): [number,number
   const peak = Math.max(...[min,max].filter(Number.isFinite).map(Math.abs), 0.02);
   return [-peak,peak];
 };
-function BatteryBar({bar, channel, color}: {bar:BarShapeProps;channel:string;color:string}) {
+function IntervalBar({bar, channel, color, slot=0, slots=1}: {bar:BarShapeProps;channel:string;color:string;slot?:number;slots?:number}) {
   const scale=useXAxisScale();
   const period=bar.payload?.[channel+'-period'] as [number,number] | undefined;
   if (!scale || !period || !bar.height) return null;
   const start=scale(period[0]), end=scale(period[1]);
   if (start == null || end == null || end <= start) return null;
-  const inset=Math.min(1,(end-start)*0.15);
+  const width=(end-start)/slots;
+  const inset=Math.min(1,width*0.15);
   const reused=bar.payload?.[channel+'-reused'];
-  return <Rectangle x={start+inset} y={bar.y} width={end-start-2*inset} height={bar.height}
+  return <Rectangle x={start+slot*width+inset} y={bar.y} width={width-2*inset} height={bar.height}
     fill={color} fillOpacity={reused?0.35:0.83} stroke={reused?color:undefined}
     strokeDasharray={reused?'5 3':undefined}/>;
 }
@@ -142,6 +143,9 @@ export function MeasurementChart(props: MeasurementChartProps) {
   const historyPending = !cache.current || cache.current.queryKey!==props.queryKey || cache.current.range!==range;
   const forecastPending = !!(live && props.forecastEndpoint && forecastRead?.key!==((props.queryKey || props.forecastEndpoint)+'@'+range?.end));
   const awaiting = loading || historyPending || forecastPending;
+  const bucketSeconds = displayResult.bucket_seconds ?? 0;
+  const intervalLabel = bucketSeconds >= 86400 ? 'Daily energy' : bucketSeconds >= 3600 ? 'Hourly energy' : 'Energy per 15 minutes';
+  const showGridDirection = props.houseOverview && plotSeries.some(s=>s.id==='grid_out'||s.id==='grid_net');
   const toggleLive = () => {
     cancelLatest();
     if (live) { if (showingRetained) { setRange(retainedHistory!.range); setResult(retainedHistory!.data); cache.current = retainedHistory!; } setLive(false); return; }
@@ -192,7 +196,10 @@ export function MeasurementChart(props: MeasurementChartProps) {
       const unchanged=series.id==='import' && !!reading.value && values.length>=15 && reading.epochMs-values[0].epochMs>=14*60000 && series.rows.every(r=>r.value===reading.value);
       return <div key={series.id}><small><i style={{background:series.color}}/>{series.title}</small><strong>{reading.value!.toLocaleString('en-GB',{maximumSignificantDigits:5})} {series.unit}</strong><time>{date(reading.epochMs)}</time>{unchanged && <span>Same value throughout this window</span>}</div>;
     })}</div>}
-    {props.bars && displayResult.period_total && <div className="energy-period-balance">
+    {props.houseOverview && ((props.bars && bucketSeconds > 0 && numeric.length > 0) || showGridDirection) &&
+      <p className="house-chart-context">{props.bars && bucketSeconds > 0 && numeric.length > 0 && <span>{intervalLabel}</span>}
+        {showGridDirection && <span>Grid export below zero</span>}</p>}
+    {props.bars && displayResult.period_total && (!props.houseOverview || plotSeries.some(s=>s.id==='grid_net')) && <div className="energy-period-balance">
       <span>Grid balance</span>
       <strong>{displayResult.period_total.value.toLocaleString('en-GB',{maximumFractionDigits:3})} kWh</strong>
       {displayResult.period_total.partial && <small>Partial or estimated coverage</small>}
@@ -216,6 +223,10 @@ export function MeasurementChart(props: MeasurementChartProps) {
         const isBatteryBar=(c:MeasurementChannel)=>c.batteryLane && c.batteryLane!=='state_of_charge';
         const hasEnergy=props.battery && group.some(isBatteryBar);
         const hasState=props.battery && group.some(c=>c.batteryLane==='state_of_charge');
+        const houseBars=props.houseOverview && props.bars;
+        const stack = (c:MeasurementChannel) => props.battery ? 'battery-flow'
+          : houseBars && (c.id==='grid_in'||c.id==='grid_out') ? 'grid-exchange' : undefined;
+        const barSlots=[...new Set(group.map(c=>stack(c)??c.id))];
         const byTime = new Map<number,Record<string,unknown>>();
         if (props.bars || props.battery) for (const c of group) for (const row of c.rows) {
           if (row.value == null) continue;
@@ -227,7 +238,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
         }
         const plotData = props.bars || props.battery ? [...byTime.values()] : group.flatMap(c => c.rows);
         return <div className="telemetry-unit-plot" key={group[0].id}>
-      <TimeseriesPlot data={plotData.sort((a,b)=>Number(a.epochMs)-Number(b.epochMs))} stackOffset={props.battery?'sign':undefined} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
+      <TimeseriesPlot data={plotData.sort((a,b)=>Number(a.epochMs)-Number(b.epochMs))} stackOffset={props.battery||houseBars?'sign':undefined} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: props.houseOverview?4:14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
         <XAxis height={48} label={{ value: `Time (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, position: "insideBottom", offset: -16, fill: "var(--muted)", fontSize: 11 }} type="number" dataKey="epochMs" scale="time" ticks={ticks} domain={axisRange ? [axisRange.start, axisRange.end + (live && !showingRetained ? Math.min(300000, duration * .05) : 0)] : ['dataMin', 'dataMax']} allowDataOverflow axisLine={false} tickLine={false} minTickGap={65} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickMargin={14} tickFormatter={v => duration > 86400000 ? date(v, duration <= 3 * 86400000) : new Date(v).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} />
         {props.battery ? <>
           {hasState && <YAxis yAxisId="battery-state" width={46} axisLine={false} tickLine={false} domain={[0,100]} ticks={[0,25,50,75,100]} tick={{fontSize:11,fill:'var(--muted)'}} tickFormatter={v=>v+'%'}/>}
@@ -242,20 +253,21 @@ export function MeasurementChart(props: MeasurementChartProps) {
             const pool=forecastEnd && displayRange && Number(label)>displayRange.end ? c.forecastRows : c.rows;
             const nearest = pool.reduce<(typeof c.rows)[number] | null>((best, row) => c.curve==='stepAfter' ? (row.epochMs<=Number(label)&&(!best||row.epochMs>best.epochMs)?row:best) : (!best || Math.abs(row.epochMs - Number(label)) < Math.abs(best.epochMs - Number(label)) ? row : best), null);
             const tolerance = Math.max(pool===c.forecastRows ? 900000 : 0, (c.expectedSeconds || 0) * 1500, (displayResult.bucket_seconds || 0) * 2000);
-            const match=isBatteryBar(c) && nearest?.periodStart!=null && nearest.periodEnd!=null ?
-              Number(label)>=nearest.periodStart && Number(label)<=nearest.periodEnd
+            const match=(isBatteryBar(c)||houseBars) && nearest?.periodStart!=null && nearest.periodEnd!=null ?
+              Number(label)>=nearest.periodStart && Number(label)<nearest.periodEnd
               : nearest && Math.abs(nearest.epochMs - Number(label)) <= tolerance;
             return { c, row: match ? nearest : null };
           });
-          return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : (isBatteryBar(c)?Math.abs(row.value):row.value).toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.periodStart!=null && row.periodEnd!=null && <small>{date(row.periodStart)} – {date(row.periodEnd)}</small>}{row?.source && <small>{sourceLabel(row.source.status)}{row.source.at ? ' · ' + new Date(row.source.at).toLocaleTimeString('en-GB') : ''}</small>}{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
+          return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : (isBatteryBar(c)||(props.houseOverview&&c.id==='grid_out')?Math.abs(row.value):row.value).toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.periodStart!=null && row.periodEnd!=null && <small>{date(row.periodStart)} – {date(row.periodEnd)}</small>}{row?.source && <small>{sourceLabel(row.source.status)}{row.source.at ? ' · ' + new Date(row.source.at).toLocaleTimeString('en-GB') : ''}</small>}{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
         {(props.zeroLine || hasEnergy) && <ReferenceLine y={0} yAxisId={hasEnergy?'battery-energy':undefined} ifOverflow="extendDomain" stroke="var(--muted)" />}
         {(props.battery ? [...group.filter(isBatteryBar),...group.filter(c=>!isBatteryBar(c))] : group).map(c => {
           if (props.bars || isBatteryBar(c)) return <Bar key={c.id} dataKey={c.id} name={c.title} fill={c.color}
-            yAxisId={props.battery?'battery-energy':undefined} stackId={props.battery?'battery-flow':undefined}
-            maxBarSize={36} barSize={props.battery?4:undefined} isAnimationActive={false} activeBar={false}
+            yAxisId={props.battery?'battery-energy':undefined} stackId={stack(c)}
+            maxBarSize={36} barSize={props.battery||houseBars?4:undefined} isAnimationActive={false} activeBar={false}
             shape={bar => {
-              if (props.battery) return <BatteryBar bar={bar} channel={c.id} color={c.color}/>;
+              if (props.battery || houseBars) return <IntervalBar bar={bar} channel={c.id} color={c.color}
+                slot={barSlots.indexOf(stack(c)??c.id)} slots={barSlots.length}/>;
               const reused = bar.payload?.[c.id+'-reused'];
               return <Rectangle x={bar.x} y={bar.y} width={bar.width} height={bar.height}
                 fill={c.color} fillOpacity={reused ? 0.25 : 0.83}
@@ -274,7 +286,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
         })}
         {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name={props.forecastLabel || "Published prices"} type={c.curve || "stepAfter"} dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
         {forecastEnd && displayRange && <ReferenceLine x={displayRange.end} stroke="var(--muted)" strokeDasharray="3 3" label={{value:'Now',position:'insideTopRight',fill:'var(--muted)',fontSize:11}}/>}
-        {!forecastEnd && live && !showingRetained && liveStarted !== null && displayRange && liveStarted >= displayRange.start && liveStarted <= displayRange.end && <ReferenceLine x={liveStarted} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Live started', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}
+        {!props.houseOverview && !forecastEnd && live && !showingRetained && liveStarted !== null && displayRange && liveStarted >= displayRange.start && liveStarted <= displayRange.end && <ReferenceLine x={liveStarted} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Live started', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}
         {drag && <ReferenceArea yAxisId={hasState?'battery-state':hasEnergy?'battery-energy':undefined} x1={Math.min(drag.start, drag.end)} x2={Math.max(drag.start, drag.end)} fill="var(--brand)" fillOpacity={0.1} strokeOpacity={0} />}
       </TimeseriesPlot></div>;})}{forecastEnd && <div className="price-horizon-key" title="Published horizon from the latest Percepta cycle."><span>{props.forecastLabel==="Forecast"?"Recorded":"Recorded prices"}</span><span>{props.forecastLabel || "Published prices"}</span></div>}</div>}
     <span className="chart-sr-only" role="status">{loading ? `Loading measurements${progress ? ` · ${progress.toLocaleString()} samples` : ''}` : ''}</span>

@@ -4,7 +4,7 @@ import type {MeasurementChannel} from './measurementChannels';
 import {compactPoints, type MeasurementPoint, type ReadingSource, type TimeWindow} from './measurementData';
 import {type Feed, readJson} from './DeploymentFlow';
 
-export interface HouseArchive {site:string; database:string; collection:string; meter?:string; exportMeter?:string; period?:number}
+export interface HouseArchive {site:string; database:string; collection:string; meter?:string; exportMeter?:string; period?:number; hasSolar?:boolean}
 type ArchiveLane = 'grid_in' | 'grid_out' | 'load' | 'solar' | 'price';
 type Lane = ArchiveLane | 'grid_net';
 type View = 'power' | 'energy' | 'price';
@@ -14,11 +14,11 @@ interface Interval {lane:'load'|'solar'|'price';start:string;end:string;value:nu
 interface WindowPage {samples:Sample[];horizon:Interval[];next_cursor?:string|null}
 
 const series:Series[] = [
-  {id:'grid_net',title:'Grid balance',color:'#326c8a',unit:'kW'},
+  {id:'load',title:'Estimated base load',color:'#5361a8',unit:'kW',curve:'linear',forecastEndpoint:'/forecast'},
+  {id:'solar',title:'Solar production',color:'#a97113',unit:'kW',curve:'linear',forecastEndpoint:'/forecast'},
+  {id:'grid_net',title:'Grid balance',color:'#397582',unit:'kW'},
   {id:'grid_in',title:'Grid import',color:'#166d87',unit:'kW'},
   {id:'grid_out',title:'Grid export',color:'#a34578',unit:'kW'},
-  {id:'load',title:'Estimated base load',color:'#5361a8',unit:'kW',curve:'monotone',forecastEndpoint:'/forecast'},
-  {id:'solar',title:'Solar production',color:'#ac741e',unit:'kW',curve:'monotone',forecastEndpoint:'/forecast'},
   {id:'price',title:'Electricity price',color:'#437c70',unit:'€/kWh',curve:'stepAfter',forecastEndpoint:'/forecast'}
 ];
 export function forecastPoints(intervals:Interval[],now:number):MeasurementPoint[] {
@@ -46,7 +46,8 @@ export function cyclePoint(row:Sample,id:Lane,range:TimeWindow):MeasurementPoint
   const sources = inputs.map(lane => row.source_readings?.[lane]);
   const source = sources.find(value => value?.status === 'reused') ??
     (sources.every(value => value?.status === 'fresh') ? sources[0] : undefined);
-  const value = id === 'grid_net' ? (paired ? row.grid_in! - row.grid_out! : null) : row[id];
+  const value = id === 'grid_net' ? (paired ? row.grid_in! - row.grid_out! : null)
+    : id === 'grid_out' && row.grid_out != null ? -row.grid_out : row[id];
   return {channelId:id,id:id+'@'+row.at,timestamp,value,source,
     quality:inputs.some(lane => row.partial.includes(lane)) ? 'partial' : undefined};
 }
@@ -56,12 +57,13 @@ const day = 24 * hour;
 
 export function energyBuckets(samples:Sample[], lanes:Lane[], range:TimeWindow) {
   const daily = range.end - range.start > 48 * hour;
+  const width = range.end - range.start <= 12 * hour ? hour / 4 : hour;
   const bucketStart = (time:number) => {
-    if (!daily) return Math.floor(time / hour) * hour;
+    if (!daily) return Math.floor(time / width) * width;
     return new Date(time).setHours(0, 0, 0, 0);
   };
   const bucketEnd = (time:number) => {
-    if (!daily) return time + hour;
+    if (!daily) return time + width;
     const next = new Date(time);
     return next.setDate(next.getDate() + 1);
   };
@@ -82,7 +84,7 @@ export function energyBuckets(samples:Sample[], lanes:Lane[], range:TimeWindow) 
         if (typeof point.value !== 'number') continue;
         const lane = point.channelId as Lane;
         const entry = values.get(lane) ?? {value:0,covered:0,reused:false,partial:false};
-        entry.value += point.value * overlap / hour * (lane === 'grid_out' ? -1 : 1);
+        entry.value += point.value * overlap / hour;
         entry.covered += overlap;
         entry.reused ||= point.source?.status === 'reused';
         entry.partial ||= point.quality === 'partial';
@@ -100,6 +102,7 @@ export function energyBuckets(samples:Sample[], lanes:Lane[], range:TimeWindow) 
     for (const [lane, entry] of values) {
       points.push({
         channelId:lane, id:lane+'@'+bucket, timestamp, value:entry.value,
+        period_start:new Date(start).toISOString(), period_end:new Date(end).toISOString(),
         source:entry.reused ? {status:'reused',at:null} : undefined,
         quality:entry.partial || entry.covered < end - start ? 'partial' : undefined,
       });
@@ -111,7 +114,7 @@ export function energyBuckets(samples:Sample[], lanes:Lane[], range:TimeWindow) 
     }
   }
   return {
-    points, bucket_seconds: (daily ? day : hour) / 1000,
+    points, bucket_seconds: (daily ? day : width) / 1000,
     period_total: netCovered ? {value:net, partial:netPartial || netCovered < range.end - range.start} : undefined,
   };
 }
@@ -119,18 +122,23 @@ export function energyBuckets(samples:Sample[], lanes:Lane[], range:TimeWindow) 
 export function HouseEnergy({archive}:{archive:HouseArchive}){
   const [view,setView]=useState<View>('power');
   const hasBalance=!!(archive.meter && archive.exportMeter);
-  const [powerSeries,setPowerSeries]=useState<Lane[]>(()=>hasBalance ? ['grid_net','solar'] : ['grid_in','solar']);
-  const [energySeries,setEnergySeries]=useState<Lane[]>(['grid_in','grid_out']);
+  const hasSolar=archive.hasSolar!==false;
+  const [powerSeries,setPowerSeries]=useState<Lane[]>(()=>[
+    ...(archive.meter?['load',hasBalance?'grid_net':'grid_in'] as const:[]),
+    ...(hasSolar?['solar'] as const:[]),
+  ]);
+  const [energySeries,setEnergySeries]=useState<Lane[]>(()=>['grid_in','grid_out',...(hasSolar?['solar'] as const:[])]);
   const bars=view==='energy';
   const prices=view==='price';
   const selected=bars ? energySeries : powerSeries;
   const setSelected=bars ? setEnergySeries : setPowerSeries;
   const period=archive.period||60;
   const available=useMemo(()=>series.filter(s=>(s.id!=='grid_in'||archive.meter)
-    && (s.id!=='grid_out'||archive.exportMeter) && (s.id!=='grid_net'||hasBalance)),
-    [archive.meter,archive.exportMeter,hasBalance]);
+    && (s.id!=='grid_out'||archive.exportMeter) && (s.id!=='grid_net'||hasBalance)
+    && (s.id!=='solar'||hasSolar) && (s.id!=='load'||archive.meter)),
+    [archive.meter,archive.exportMeter,hasBalance,hasSolar]);
   const active=useMemo(()=>available.filter(s=>prices?s.id==='price':s.id!=='price'&&selected.includes(s.id))
-    .map(s=>({...s,unit:bars?'kWh':s.unit,expectedSeconds:bars?3600:period})),
+    .map(s=>({...s,unit:bars?'kWh':s.unit,expectedSeconds:bars?undefined:period})),
     [available,prices,selected,bars,period]);
   const prefix='/telemetry-api/api/measurements/sites/'+encodeURIComponent(archive.site);
   const request=useCallback(async(path:string,signal:AbortSignal)=>{
@@ -170,15 +178,15 @@ export function HouseEnergy({archive}:{archive:HouseArchive}){
     return {points:compactPoints(points,range,budget),horizon,bucket_seconds:points.length>budget?(range.end-range.start)/200000:0};
   },[prefix,available,archive.meter,archive.exportMeter,bars]);
   const tabs = [{id:'power',label:'Power · kW'},{id:'energy',label:'Energy · kWh'},{id:'price',label:'Electricity price'}] as const;
-  return <section className="surface chart-section house-energy">
+  return <section className="surface chart-section house-energy" data-view={view}>
     <nav className="tabs" aria-label="Energy data view">{tabs.map(tab=><button key={tab.id} aria-pressed={view===tab.id}
       className={view===tab.id?'active':''} onClick={()=>setView(tab.id)}>{tab.label}</button>)}</nav>
     {!prices && <div className="telemetry-series-legend" role="group" aria-label="Visible measurements">
       {available.filter(s=>s.id!=='price').map(s=><button key={s.id} aria-pressed={selected.includes(s.id)}
         onClick={()=>setSelected(ids=>ids.includes(s.id)?ids.filter(id=>id!==s.id):[...ids,s.id])}><i style={{background:s.color}}/>{s.title}</button>)}</div>}
     <MeasurementChart title={prices?'Electricity price':bars?'House energy':'House power'} series={active}
-      compactHeader startLive initialDurationMs={21600000} inlineHorizon dashedGapFills bars={bars}
-      zeroLine={bars || active.some(s=>s.id==='grid_net')} incremental={!bars} liveRefreshMs={bars?60000:undefined}
+      compactHeader startLive initialDurationMs={21600000} inlineHorizon dashedGapFills bars={bars} houseOverview
+      zeroLine={bars || active.some(s=>s.id==='grid_net'||s.id==='grid_out')} incremental={!bars} liveRefreshMs={bars?60000:undefined}
       queryKey={[archive.site,archive.meter,archive.exportMeter,bars?'energy':'power'].join('/')}
       request={request} endpoint="/series" latestEndpoint="/latest" expectedSeconds={period}
       forecastLabel={prices?'Published prices':'Forecast'}/>

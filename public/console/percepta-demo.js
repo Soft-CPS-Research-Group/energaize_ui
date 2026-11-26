@@ -69,7 +69,8 @@ siteGraph=function(site){
   const meters=siteGridChannels({...site,assets}).filter(c=>c.enabled && c.mongo_binding);
   const meter=type=>{const matches=meters.filter(c=>(c.collection?.parameter_type_id||c.quantity)===type);return matches.length===1?matches[0].backendId:undefined;};
   const key='site:'+site.id;
-  const archive={site:site.id,database:first.database,collection:first.collection,meter:meter('energy_in_total'),exportMeter:meter('energy_out_total')};
+  const archive={site:site.id,database:first.database,collection:first.collection,meter:meter('energy_in_total'),exportMeter:meter('energy_out_total'),
+   hasSolar:assets.some(a=>['pv_system','solar_pv','pv_panel','solar_panel'].includes(ceramicAssetType(a)))};
   return ceramicSiteScene(site)+ceramicChartToggle(key,'Energy data')+(ceramicCharts.has(key)?`<div class="ceramic-chart-content" data-house-energy="${esc(JSON.stringify(archive))}"></div>`:'');
  }
  if(!perceptaSource(site))return perceptaSiteGraph(site);
