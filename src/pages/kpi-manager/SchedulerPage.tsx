@@ -243,6 +243,12 @@ function JobFormModal({ open, initial, onClose, onSave, isEdit }: {
   );
 }
 
+/** A job id that wraps after its underscores instead of in the middle of a word. */
+function JobName({ id }: { id: string }) {
+  const parts = id.split("_");
+  return <>{parts.map((part, i) => <span key={i}>{part}{i < parts.length - 1 ? <>_<wbr /></> : null}</span>)}</>;
+}
+
 // ── Job list (sidebar) ───────────────────────────────────────────────────────
 
 function JobListItem({ job, selected, triggering, triggerResult, onSelect, onTrigger }: {
@@ -256,7 +262,7 @@ function JobListItem({ job, selected, triggering, triggerResult, onSelect, onTri
   return (
     <li className={`kpi-sched-job${selected ? " is-selected" : ""}`}>
       <button type="button" className="kpi-sched-job-main" aria-current={selected ? "true" : undefined} onClick={onSelect}>
-        <span className="kpi-sched-job-name">{job.id}</span>
+        <span className="kpi-sched-job-name"><JobName id={job.id} /></span>
         <span className="kpi-sched-job-meta">
           <SourceBadge source={job.source} />
           {job.bau && <Badge tone="info">BAU</Badge>}
@@ -490,7 +496,7 @@ export function SchedulerPage() {
             <header className="kpi-sched-detail-head">
               <div>
                 <h3 id="kpi-sched-detail-title">
-                  {selected.id} <SourceBadge source={selected.source} />
+                  <JobName id={selected.id} /> <SourceBadge source={selected.source} />
                   {selected.bau && <Badge tone="info">BAU</Badge>}
                   <StatusBadge status={selected.last_run_status} />
                 </h3>
@@ -520,7 +526,7 @@ export function SchedulerPage() {
                 onDelete={() => { setDeleteError(null); setConfirmDelete(selected.id); }}
               />
             ) : (
-              <JobRuns jobId={selected.id} refreshKey={runsRefresh} />
+              <JobRuns jobId={selected.id} kpis={selected.kpis} refreshKey={runsRefresh} />
             )}
           </article>
         </div>

@@ -24,7 +24,8 @@ function renderPage() {
 
 const jobList = () => screen.findByRole("navigation", { name: "Jobs" });
 const openJob = async (id: string) =>
-  fireEvent.click(within(await jobList()).getByRole("button", { name: new RegExp(`^${id}`) }));
+  // The name may wrap after its underscores (<wbr>), which the accessible name can space out
+  fireEvent.click(within(await jobList()).getByRole("button", { name: (n) => n.replace(/\s/g, "").startsWith(id) }));
 
 describe("SchedulerPage", () => {
   let deleted: string[];

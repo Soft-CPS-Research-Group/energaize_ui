@@ -52,7 +52,9 @@ class PanelBoundary extends Component<{ children: ReactNode; resetKey: string },
  * The runs of a scheduler job and what each one did: the runs in a narrow column
  * with its own scroll, the chosen run beside it. refreshKey reloads them (e.g. after Run now).
  */
-export function JobRuns({ jobId, refreshKey = 0 }: { jobId: string; refreshKey?: number }): JSX.Element {
+export function JobRuns({ jobId, kpis, refreshKey = 0 }: {
+  jobId: string; kpis?: string[]; refreshKey?: number;
+}): JSX.Element {
   const [runs, setRuns] = useState<JobRun[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -121,7 +123,7 @@ export function JobRuns({ jobId, refreshKey = 0 }: { jobId: string; refreshKey?:
                 ))}
               </ol>
             </div>
-            {run && <PanelBoundary resetKey={run.run_id}><RunDetail run={run} /></PanelBoundary>}
+            {run && <PanelBoundary resetKey={run.run_id}><RunDetail run={run} kpis={kpis} /></PanelBoundary>}
           </div>
         )}
       </PanelBoundary>
@@ -129,7 +131,7 @@ export function JobRuns({ jobId, refreshKey = 0 }: { jobId: string; refreshKey?:
   );
 }
 
-function RunDetail({ run }: { run: JobRun }) {
+function RunDetail({ run, kpis }: { run: JobRun; kpis?: string[] }) {
   const { kpis: kpiMeta } = useKpiMetadata();
   const name = (kpi: string) => kpiDisplayName(kpiMeta.find((m) => m.name === kpi), kpi);
   const communities = Object.entries(run.communities ?? {});
@@ -145,30 +147,37 @@ function RunDetail({ run }: { run: JobRun }) {
       {communities.map(([community, c]) => (
         <div key={community} className="kpi-run-block">
           <h4>{communityLabel(community)}</h4>
-          {c.error ? (
-            <p className="kpi-text-danger">{c.error}</p>
-          ) : c.windows === 0 ? (
-            <p className="kpi-text-soft">No data in this period: nothing was computed.</p>
-          ) : (
-            <>
-              <p className="kpi-text-soft">
-                {c.windows} KPI windows stored · {c.buildings_with_data ?? c.buildings} of {c.buildings} buildings with data
-              </p>
-              {Object.keys(c.community).length > 0 && (
-                <div className="kpi-table-wrap">
-                  <table className="kpi-table">
-                    <thead><tr><th>KPI (community)</th><th>Value</th></tr></thead>
-                    <tbody>
-                      {Object.entries(c.community).map(([kpi, v]) => (
-                        <tr key={kpi}><td>{name(kpi)}</td><td>{show(v.value, v.unit)}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
+
+          <div className="kpi-run-section">
+            <h5>Real KPIs <span className="kpi-text-soft">· every building with data</span></h5>
+            {c.error ? (
+              <p className="kpi-text-danger">{c.error}</p>
+            ) : c.windows === 0 ? (
+              <p className="kpi-text-soft">No data in this period: nothing was computed.</p>
+            ) : (
+              <>
+                <p className="kpi-text-soft">
+                  {c.buildings_with_data ?? c.buildings} of {c.buildings} buildings with data · {c.windows} KPI windows stored
+                </p>
+                {Object.keys(c.community).length > 0 && (
+                  <div className="kpi-table-wrap">
+                    <table className="kpi-table">
+                      <thead><tr><th>KPI (community)</th><th>Value</th></tr></thead>
+                      <tbody>
+                        {Object.entries(c.community).map(([kpi, v]) => (
+                          <tr key={kpi}><td>{name(kpi)}</td><td>{show(v.value, v.unit)}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {run.bau?.[community] && (
+            <BauBlock bau={run.bau[community]} kpis={kpis} name={name} running={run.status === "running"} />
           )}
-          {run.bau?.[community] && <BauBlock bau={run.bau[community]} name={name} running={run.status === "running"} />}
         </div>
       ))}
       {run.status === "running" && communities.length === 0 && <KpiLoading label="Computing…" />}
@@ -176,15 +185,22 @@ function RunDetail({ run }: { run: JobRun }) {
   );
 }
 
-function BauBlock({ bau, name, running }: { bau: BauRun; name: (kpi: string) => string; running: boolean }) {
-  const scopes = comparisonScopes(bau);
+function BauBlock({ bau, kpis, name, running }: {
+  bau: BauRun; kpis?: string[]; name: (kpi: string) => string; running: boolean;
+}) {
+  // Only the job's KPIs (runs recorded before the module filtered them carry every BAU KPI)
+  const wanted = kpis && kpis.length ? new Set(kpis) : null;
+  const rowsOf = (s?: string) => comparisonRows(bau, s).filter((r) => !wanted || wanted.has(r.kpi));
+  const scopes = comparisonScopes(bau).filter((s) => rowsOf(s).length > 0);
   const [scope, setScope] = useState("community");
+  const current = scopes.includes(scope) ? scope : scopes[0];
+  const rows = current ? rowsOf(current) : [];
   const coverage = houseCoverage(bau.houses);
   const outcome = bau.outcome ? BAU_OUTCOME[bau.outcome] : undefined;
-  const rows = comparisonRows(bau, scopes.includes(scope) ? scope : scopes[0]);
+  const simulated = coverage.included.length;
 
   return (
-    <div className="kpi-run-bau">
+    <div className="kpi-run-section kpi-run-bau">
       <h5>
         Real vs BAU{" "}
         {outcome ? <Badge tone={outcome.tone}>{outcome.label}</Badge>
@@ -195,27 +211,31 @@ function BauBlock({ bau, name, running }: { bau: BauRun; name: (kpi: string) => 
       {bau.houses && bau.houses.length > 0 && (
         <div className="kpi-run-coverage">
           <p>
-            <strong>{coverage.included.length}</strong> of {bau.houses.length} houses simulated
-            {coverage.included.length > 0 && (
+            Compared on the <strong>{simulated}</strong> of {bau.houses.length} houses the BAU simulated, over the same
+            quarter-hours on both sides
+            {simulated > 0 && (
               <span className="kpi-text-soft">
                 {" "}· {coverage.included.map((h) => `${h.house} ${Math.round((100 * h.included) / (h.expected || 1))}%`).join(", ")}
               </span>
             )}
           </p>
           {coverage.excluded > 0 && (
-            <ul className="kpi-text-soft">
-              {coverage.reasons.map(([reason, count]) => <li key={reason}>{count} × {reason}</li>)}
-            </ul>
+            <details className="kpi-run-excluded">
+              <summary>{coverage.excluded} house{coverage.excluded !== 1 ? "s" : ""} left out, and why</summary>
+              <ul className="kpi-text-soft">
+                {coverage.reasons.map(([reason, count]) => <li key={reason}>{count} × {reason}</li>)}
+              </ul>
+            </details>
           )}
         </div>
       )}
 
-      {rows.length > 0 && (
+      {rows.length > 0 ? (
         <>
           {scopes.length > 1 && (
             <label className="kpi-run-scope">
               <span className="kpi-text-soft">Scope</span>
-              <select value={scopes.includes(scope) ? scope : scopes[0]} onChange={(e) => setScope(e.target.value)}>
+              <select value={current} onChange={(e) => setScope(e.target.value)}>
                 {scopes.map((s) => <option key={s} value={s}>{scopeLabel(s)}</option>)}
               </select>
             </label>
@@ -236,7 +256,9 @@ function BauBlock({ bau, name, running }: { bau: BauRun; name: (kpi: string) => 
             </table>
           </div>
         </>
-      )}
+      ) : outcome?.label === "BAU stored" ? (
+        <p className="kpi-text-soft">None of this job's KPIs could be compared with the BAU.</p>
+      ) : null}
     </div>
   );
 }

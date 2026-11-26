@@ -427,7 +427,7 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
   border: 0; border-radius: 12px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
 }
 .kpi-sched-job-main:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
-.kpi-sched-job-name { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.kpi-sched-job-name { font-size: 13px; font-weight: 500; overflow-wrap: break-word; }
 .kpi-sched-job-meta { display: flex; flex-wrap: wrap; gap: 4px; }
 .kpi-sched-job-next { font-size: 11px; }
 .kpi-sched-detail {
@@ -459,7 +459,10 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-run-block h4 { margin: 0; font-size: 13px; font-weight: 500; }
 .kpi-run-block p { margin: 0; font-size: 12px; }
 .kpi-run-bau { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); }
-.kpi-run-bau h5 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 500; }
+.kpi-run-section { display: flex; flex-direction: column; gap: 8px; }
+.kpi-run-section h5 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 500; }
+.kpi-run-excluded summary { cursor: pointer; font-size: 12px; color: var(--text-soft); }
+.kpi-run-excluded[open] summary { margin-bottom: 4px; }
 .kpi-run-coverage ul { margin: 6px 0 0; padding-left: 18px; font-size: 11px; }
 .kpi-run-scope { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 

@@ -35,9 +35,10 @@ describe("JobRuns", () => {
     renderPanel("daily_bau_demflex");
 
     const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
-    expect(await within(panel).findByText(/168 KPI windows stored · 4 of 7 buildings with data/)).toBeInTheDocument();
+    expect(await within(panel).findByText(/4 of 7 buildings with data · 168 KPI windows stored/)).toBeInTheDocument();
     expect(within(panel).getByText("BAU stored")).toBeInTheDocument();
-    expect(within(panel).getByText(/of 2 houses simulated/)).toBeInTheDocument();
+    expect(within(panel).getByText(/of 2 houses the BAU simulated/)).toBeInTheDocument();
+    expect(within(panel).getByText(/1 house left out, and why/)).toBeInTheDocument();
     expect(within(panel).getByText(/1 × Missing or ambiguous main grid import channel/)).toBeInTheDocument();
     // The cost was lower than in the BAU: an improvement
     expect(within(panel).getByTitle("improvement")).toHaveTextContent("-0.180");
@@ -84,5 +85,22 @@ describe("JobRunsPanel with unexpected data", () => {
     const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
     expect(await within(panel).findByText("BAU stored")).toBeInTheDocument();
     expect(within(panel).queryByText(/could not be shown/)).not.toBeInTheDocument();
+  });
+
+  it("shows only the job's KPIs in the comparison, also for runs that carry every BAU KPI", async () => {
+    const all = { ...RUN, bau: { demflex: { ...RUN.bau.demflex, report: { comparison: {
+      community: { EnergyCostKPI: { real: 1.74, bau: 1.92, unit: "€" }, RampingKPI: { real: 1, bau: 2, unit: "kW" } },
+      building_demflex_rh27: { RampingKPI: { real: 1, bau: 2, unit: "kW" } },
+    } } } } };
+    server.use(
+      http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [all] })),
+      http.get("*/kpi-api/*", () => HttpResponse.json({ status: "success", data: [] })),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><JobRuns jobId="daily_bau_demflex" kpis={["EnergyCostKPI"]} /></QueryClientProvider>);
+    const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
+    expect(await within(panel).findByText("Real vs BAU")).toBeInTheDocument();
+    expect(within(panel).queryByText(/Ramping/)).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("combobox")).not.toBeInTheDocument();     // no house has the job's KPI
   });
 });
