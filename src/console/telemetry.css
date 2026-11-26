@@ -28,6 +28,35 @@
 .telemetry-sensor-config button{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font:500 10px var(--font);padding:7px 10px;cursor:pointer}.telemetry-sensor-config button:hover{background:var(--soft)}
 @media(max-width:800px){.telemetry-channel-row{flex-wrap:wrap;gap:8px 16px}.telemetry-channel-actions{width:100%;justify-content:flex-start}}
 .telemetry-axis-label{font-size:11px;color:var(--muted);padding-left:18px;margin-top:12px}.telemetry-unit-plot+.telemetry-unit-plot{border-top:1px solid var(--line);margin-top:14px;padding-top:10px}.telemetry-tooltip>div{display:grid;gap:4px}.telemetry-series-errors{font-size:11px;color:var(--warn)}
+
+.battery-chart .telemetry-series-legend i[data-battery-lane="state_of_charge"] {
+  width: 14px;
+  height: 2px;
+}
+.battery-chart .telemetry-series-legend i:is([data-battery-lane="energy_in"],[data-battery-lane="energy_out"]) {
+  width: 6px;
+  height: 10px;
+  border-radius: 1px;
+}
+.battery-chart-summary {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: clamp(18px, 4vw, 48px);
+  row-gap: 12px;
+  margin: 0;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--line);
+}
+.battery-chart-summary :is(dt,.battery-chart-quality) { color: var(--muted); font-size: 11px; }
+.battery-chart-summary dd {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 23px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.battery-chart-summary dd span { font-size: 12px; color: var(--muted); }
+.battery-chart-note { margin: 0; color: var(--muted); font-size: 11px; }
 .telemetry-origin{margin:0 0 12px;color:var(--muted);font-size:11px}.channel-simulation{margin:16px 0;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.channel-simulation>summary{font-size:12px;cursor:pointer}
 
 .charger-observations{margin-top:28px;padding-top:24px;border-top:1px solid var(--line)}

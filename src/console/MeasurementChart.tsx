@@ -10,7 +10,7 @@ import { compactPoints, incomplete, loadWindow, mergeWindow, plotRows, readingLi
 export interface MeasurementChartProps {
   compactHeader?: boolean; initialDurationMs?: number; startLive?: boolean; inlineHorizon?: boolean;
   showLatest?: boolean; forecastLabel?: string; forecastEndpoint?: string; forecastRequest?: MeasurementRequest; activityEndpoint?: string; onWindowChange?: (range: TimeWindow | null) => void;
-  incremental?: boolean; dashedGapFills?: boolean; bars?: boolean; zeroLine?: boolean; liveRefreshMs?: number; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
+  incremental?: boolean; dashedGapFills?: boolean; bars?: boolean; battery?: boolean; zeroLine?: boolean; liveRefreshMs?: number; queryKey?: string; series?: (MeasurementChannel & {color: string})[];
   request: MeasurementRequest; endpoint?: string; latestEndpoint?: string; initialEnd?: number;
   title: string; unit?: string; note?: string; expectedSeconds?: number | null;
   onLink?: () => void; onUnlink?: () => void;
@@ -18,6 +18,11 @@ export interface MeasurementChartProps {
 const presets = [{ label: '1h', ms: 3600000 }, { label: '6h', ms: 21600000 }, { label: '24h', ms: 86400000 }, { label: '7d', ms: 604800000 }, { label: '30d', ms: 2592000000 }];
 const date = (t: number, time = true) => new Date(t).toLocaleString('en-GB', { day: '2-digit', month: 'short', ...(time ? { hour: '2-digit', minute: '2-digit' } : {}) });
 const emptyResult: MeasurementSeries = {points:[]};
+const batteryNumber = (value:number) => value.toLocaleString('en-GB',{maximumFractionDigits:2});
+const batteryEnergyDomain = ([min,max]:readonly [number,number]): [number,number] => {
+  const peak = Math.max(...[min,max].filter(Number.isFinite).map(Math.abs), 0.02);
+  return [-peak,peak];
+};
 const localInput = (t: number) => { const d = new Date(t); return new Date(t - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 export function MeasurementChart(props: MeasurementChartProps) {
   const [externalForecast, setForecast] = useState<MeasurementSeries>({points:[]});
@@ -97,15 +102,27 @@ export function MeasurementChart(props: MeasurementChartProps) {
   const forecastEnd=live&&forecast.points.length&&displayRange ? Math.min(displayRange.end+Math.min(duration,86400000),Math.max(...forecast.points.map(p=>Date.parse(p.timestamp)))) : null;
   const axisRange=displayRange ? {...displayRange,end:forecastEnd||displayRange.end} : null;
   const plotSeries = useMemo(() => {
-    const channels = props.series || [{ id: 'value', title: props.title, unit: props.unit, expectedSeconds: props.expectedSeconds, color: 'var(--brand)',forecastEndpoint:props.forecastEndpoint,curve:undefined,note:undefined }];
+    const channels: (MeasurementChannel & {color:string})[] = props.series || [{ id: 'value', title: props.title, unit: props.unit, expectedSeconds: props.expectedSeconds, color: 'var(--brand)',forecastEndpoint:props.forecastEndpoint }];
     return channels.map(c => ({ ...c, forecastRows: (c.forecastEndpoint ? forecast.points : []).filter(p=>displayRange && (!p.channelId || p.channelId===c.id) && Date.parse(p.timestamp)>=displayRange.end-900000 && Date.parse(p.timestamp)<= (forecastEnd||0)).map(p=>({epochMs:Math.max(displayRange?.end||0,Date.parse(p.timestamp)), value:typeof p.value==='number'?p.value:null,generated:p.generated,[c.id]:typeof p.value==='number'?p.value:null})), rows: plotRows({ ...displayResult, points: props.series ? displayResult.points.filter(p => p.channelId === c.id) : displayResult.points }, c.expectedSeconds).map(r => ({ ...r, [c.id]: r.value })) }));
   }, [displayResult, props.series, props.title, props.unit, props.expectedSeconds, props.forecastEndpoint, forecast, forecastEnd, displayRange]);
   const rows = useMemo(() => plotSeries.flatMap(c => c.rows).sort((a, b) => a.epochMs - b.epochMs), [plotSeries]);
   const unitGroups = useMemo(() => {
+    if (props.battery) return plotSeries.length ? [plotSeries] : [];
     const groups = new Map<string, typeof plotSeries>();
     plotSeries.forEach(c => { const key = c.unit && !/unconfirmed|unknown/i.test(c.unit) ? c.unit : c.id; groups.set(key, [...(groups.get(key) || []), c]); });
     return [...groups.values()];
-  }, [plotSeries]);
+  }, [plotSeries,props.battery]);
+  const batterySummary = props.battery ? plotSeries.flatMap(series => {
+    const valid=series.rows.filter(row=>row.value!==null);
+    const last=valid[valid.length-1];
+    if (!series.batteryLane || !last) return [];
+    const isState=series.batteryLane==='state_of_charge';
+    return [{label:isState?'Last state of charge':series.batteryLane==='energy_in'?'Charged in window':'Discharged in window',
+      value:isState?last.value!:Math.abs(valid.reduce((sum,row)=>sum+row.value!,0)),unit:series.unit,
+      qualification:isState ? (last.source?.status==='reused'?'Previous reading':undefined)
+        : ((displayRange && displayResult.bucket_seconds && valid.length<Math.floor((displayRange.end-displayRange.start)/(1000*displayResult.bucket_seconds)))
+          || valid.some(row=>row.qualityLabel||row.source?.status==='reused')?'Partial or estimated':undefined)}];
+  }) : [];
   const ticks = useMemo(() => { if (!axisRange) return []; const step = resolveAxisTickStepMs(axisRange.start, axisRange.end, 60000); const values: number[] = []; for (let t = Math.ceil(axisRange.start / step) * step; t < axisRange.end; t += step) values.push(t); return values; }, [axisRange?.start, axisRange?.end]);
   const numeric = rows.filter(r => r.value !== null), last = numeric[numeric.length - 1];
   const hasFuture = plotSeries.some(series => series.forecastRows.some(row => row.value !== null));
@@ -168,6 +185,10 @@ export function MeasurementChart(props: MeasurementChartProps) {
       <strong>{displayResult.period_total.value.toLocaleString('en-GB',{maximumFractionDigits:3})} kWh</strong>
       {displayResult.period_total.partial && <small>Partial or estimated coverage</small>}
     </div>}
+    {batterySummary.length>0 && <dl className="battery-chart-summary">{batterySummary.map(item=><div key={item.label}>
+      <dt>{item.label}</dt><dd>{batteryNumber(item.value)} <span>{item.unit}</span></dd>
+      {item.qualification && <dd className="battery-chart-quality">{item.qualification}</dd>}
+    </div>)}</dl>}
     {props.dashedGapFills && rows.some(row => row.source?.status === 'reused') && <div className="reading-source-legend">
       <span><i className="reading-source-line" aria-hidden="true"/>Previous reading used to fill a gap</span>
     </div>}
@@ -180,32 +201,44 @@ export function MeasurementChart(props: MeasurementChartProps) {
       <p className="telemetry-live-context" role="status">Some readings in this window are incomplete or unverified.</p>}
     {props.series && !props.series.length ? <div className="telemetry-empty"><h3>Select a measurement</h3><p>Choose a series to display.</p></div> : !props.endpoint ? <div className="telemetry-empty"><Link2 size={26} /><h3>No measurement source linked</h3><p>Connect this sensor to a stored field to see its readings.</p></div> : error ? <div className="telemetry-empty" role="alert"><h3>Could not load measurements</h3><p>{error}</p><button onClick={() => { if (!range) void latestWindow(); else setRefresh(v => v + 1); }}>Retry</button></div> : !numeric.length && !hasFuture ? <div className="telemetry-empty"><Radio size={26} /><h3>{awaiting ? 'Loading measurements' : (displayResult.errors?.length ? 'No readings from available sources' : 'No readings in this window')}</h3><p>{awaiting ? 'Reading the selected measurements through Telemetry.' : live ? 'Live is on. New readings will appear here automatically.' : 'Choose another period or turn on Live.'}</p></div> : <div className="telemetry-canvas" aria-label="Measurement chart">
       {unitGroups.map(group => {
+        const isBatteryBar=(c:MeasurementChannel)=>c.batteryLane && c.batteryLane!=='state_of_charge';
+        const hasEnergy=props.battery && group.some(isBatteryBar);
+        const hasState=props.battery && group.some(c=>c.batteryLane==='state_of_charge');
         const byTime = new Map<number,Record<string,unknown>>();
-        if (props.bars) for (const c of group) for (const row of c.rows) {
+        if (props.bars || props.battery) for (const c of group) for (const row of c.rows) {
           if (row.value == null) continue;
           const bar = byTime.get(row.epochMs) ?? {epochMs:row.epochMs};
           bar[c.id] = row.value;
           bar[c.id+'-reused'] = row.source?.status === 'reused';
           byTime.set(row.epochMs,bar);
         }
-        const plotData = props.bars ? [...byTime.values()] : group.flatMap(c => c.rows);
+        const plotData = props.bars || props.battery ? [...byTime.values()] : group.flatMap(c => c.rows);
         return <div className="telemetry-unit-plot" key={group[0].id}>
-      <TimeseriesPlot data={plotData.sort((a,b)=>Number(a.epochMs)-Number(b.epochMs))} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
+      <TimeseriesPlot data={plotData.sort((a,b)=>Number(a.epochMs)-Number(b.epochMs))} stackOffset={props.battery?'sign':undefined} height={unitGroups.length > 1 ? 270 : 350} margin={{ top: 18, right: 24, left: 14, bottom: 28 }} onMouseDown={s => { const t = Number(s.activeLabel); if (Number.isFinite(t)) setDrag({ start: t, end: t }); }} onMouseMove={s => { const t = Number(s.activeLabel); if (drag && Number.isFinite(t)) setDrag({ ...drag, end: t }); }} onMouseUp={zoom} onMouseLeave={() => setDrag(null)}>
         <XAxis height={48} label={{ value: `Time (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, position: "insideBottom", offset: -16, fill: "var(--muted)", fontSize: 11 }} type="number" dataKey="epochMs" scale="time" ticks={ticks} domain={axisRange ? [axisRange.start, axisRange.end + (live && !showingRetained ? Math.min(300000, duration * .05) : 0)] : ['dataMin', 'dataMax']} allowDataOverflow axisLine={false} tickLine={false} minTickGap={65} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickMargin={14} tickFormatter={v => duration > 86400000 ? date(v, duration <= 3 * 86400000) : new Date(v).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} />
-        <YAxis label={{ value: group[0].unit || "Unit unconfirmed", angle: -90, position: "insideLeft", fill: "var(--muted)", fontSize: 11 }} width={76} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--muted)' }} domain={['auto', 'auto']} tickFormatter={v => Number(v).toLocaleString('en-GB', { maximumSignificantDigits: 4, notation: Math.abs(v) >= 100000 ? 'compact' : 'standard' })} />
+        {props.battery ? <>
+          {hasState && <YAxis yAxisId="battery-state" width={46} axisLine={false} tickLine={false} domain={[0,100]} ticks={[0,25,50,75,100]} tick={{fontSize:11,fill:'var(--muted)'}} tickFormatter={v=>v+'%'}/>}
+          {hasEnergy && <YAxis yAxisId="battery-energy" orientation="right" width={63} axisLine={false} tickLine={false}
+            tick={{fontSize:11,fill:'var(--muted)'}} tickFormatter={v=>batteryNumber(v)+' kWh'}
+            domain={batteryEnergyDomain}/>}
+        </> : <YAxis label={{ value: group[0].unit || "Unit unconfirmed", angle: -90, position: "insideLeft", fill: "var(--muted)", fontSize: 11 }} width={76} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--muted)' }} domain={['auto', 'auto']} tickFormatter={v => Number(v).toLocaleString('en-GB', { maximumSignificantDigits: 4, notation: Math.abs(v) >= 100000 ? 'compact' : 'standard' })} />}
         <Tooltip content={({ active, label }) => {
           if (!active || !Number.isFinite(Number(label))) return null;
           const hits = group.map(c => {
             const pool=forecastEnd && displayRange && Number(label)>displayRange.end ? c.forecastRows : c.rows;
             const nearest = pool.reduce<(typeof c.rows)[number] | null>((best, row) => c.curve==='stepAfter' ? (row.epochMs<=Number(label)&&(!best||row.epochMs>best.epochMs)?row:best) : (!best || Math.abs(row.epochMs - Number(label)) < Math.abs(best.epochMs - Number(label)) ? row : best), null);
             const tolerance = Math.max(pool===c.forecastRows ? 900000 : 0, (c.expectedSeconds || 0) * 1500, (displayResult.bucket_seconds || 0) * 2000);
-            return { c, row: nearest && Math.abs(nearest.epochMs - Number(label)) <= tolerance ? nearest : null };
+            const match=isBatteryBar(c) && nearest?.periodStart!=null && nearest.periodEnd!=null ?
+              Number(label)>=nearest.periodStart && Number(label)<=nearest.periodEnd
+              : nearest && Math.abs(nearest.epochMs - Number(label)) <= tolerance;
+            return { c, row: match ? nearest : null };
           });
-          return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : row.value.toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.source && <small>{sourceLabel(row.source.status)}{row.source.at ? ' · ' + new Date(row.source.at).toLocaleTimeString('en-GB') : ''}</small>}{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
+          return <div className="telemetry-tooltip"><small>{date(Number(label))}</small>{hits.map(({ c, row }) => <div key={c.id}><small style={{ color: c.color }}>{c.title}</small><strong>{row?.value == null ? 'No reading' : (isBatteryBar(c)?Math.abs(row.value):row.value).toLocaleString('en-GB', { maximumSignificantDigits: 6 })} <span>{c.unit || 'Unit unconfirmed'}</span></strong>{row?.periodStart!=null && row.periodEnd!=null && <small>{date(row.periodStart)} – {date(row.periodEnd)}</small>}{row?.source && <small>{sourceLabel(row.source.status)}{row.source.at ? ' · ' + new Date(row.source.at).toLocaleTimeString('en-GB') : ''}</small>}{row?.qualityLabel && <small>{row.qualityLabel}</small>}</div>)}</div>;
         }} />
-        {props.zeroLine && <ReferenceLine y={0} ifOverflow="extendDomain" stroke="var(--muted)" />}
-        {group.map(c => {
-          if (props.bars) return <Bar key={c.id} dataKey={c.id} name={c.title} fill={c.color}
+        {(props.zeroLine || hasEnergy) && <ReferenceLine y={0} yAxisId={hasEnergy?'battery-energy':undefined} ifOverflow="extendDomain" stroke="var(--muted)" />}
+        {(props.battery ? [...group.filter(isBatteryBar),...group.filter(c=>!isBatteryBar(c))] : group).map(c => {
+          if (props.bars || isBatteryBar(c)) return <Bar key={c.id} dataKey={c.id} name={c.title} fill={c.color}
+            yAxisId={props.battery?'battery-energy':undefined} stackId={props.battery?'battery-flow':undefined}
             maxBarSize={36} isAnimationActive={false} activeBar={false}
             shape={bar => {
               const reused = bar.payload?.[c.id+'-reused'];
@@ -216,7 +249,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
           const split = props.dashedGapFills && c.rows.some(row => row.source?.status === 'reused')
             ? readingLineData(c.rows, c.id) : undefined;
           const splitLines = split?.dashed.length ? split : undefined;
-          const style = { name: c.title, type: c.curve || 'linear', dataKey: c.id, stroke: c.color,
+          const style = { name: c.title, type: c.curve || 'linear', dataKey: c.id, stroke: c.color, yAxisId:hasState?'battery-state':undefined,
             strokeWidth: 2.2, dot: !props.dashedGapFills && c.rows.filter(row => row.value !== null).length === 1,
             activeDot: false, connectNulls: false, isAnimationActive: false } as const;
           return <Fragment key={c.id}>
@@ -227,7 +260,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
         {forecastEnd && group.map(c => c.forecastRows.length ? <Line key={c.id+':forecast'} data={c.forecastRows} name={props.forecastLabel || "Published prices"} type={c.curve || "stepAfter"} dataKey={c.id} stroke={c.color} strokeDasharray="6 5" strokeOpacity={.65} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false}/> : null)}
         {forecastEnd && displayRange && <ReferenceLine x={displayRange.end} stroke="var(--muted)" strokeDasharray="3 3" label={{value:'Now',position:'insideTopRight',fill:'var(--muted)',fontSize:11}}/>}
         {!forecastEnd && live && !showingRetained && liveStarted !== null && displayRange && liveStarted >= displayRange.start && liveStarted <= displayRange.end && <ReferenceLine x={liveStarted} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Live started', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 10 }} />}
-        {drag && <ReferenceArea x1={Math.min(drag.start, drag.end)} x2={Math.max(drag.start, drag.end)} fill="var(--brand)" fillOpacity={0.1} strokeOpacity={0} />}
+        {drag && <ReferenceArea yAxisId={hasState?'battery-state':hasEnergy?'battery-energy':undefined} x1={Math.min(drag.start, drag.end)} x2={Math.max(drag.start, drag.end)} fill="var(--brand)" fillOpacity={0.1} strokeOpacity={0} />}
       </TimeseriesPlot></div>;})}{forecastEnd && <div className="price-horizon-key" title="Published horizon from the latest Percepta cycle."><span>{props.forecastLabel==="Forecast"?"Recorded":"Recorded prices"}</span><span>{props.forecastLabel || "Published prices"}</span></div>}</div>}
     <span className="chart-sr-only" role="status">{loading ? `Loading measurements${progress ? ` · ${progress.toLocaleString()} samples` : ''}` : ''}</span>
 

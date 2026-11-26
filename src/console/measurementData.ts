@@ -14,6 +14,8 @@ export interface MeasurementPoint {
   expected_source_samples?: number | null;
   contributors?: number | null;
   expected_contributors?: number | null;
+  period_start?: string;
+  period_end?: string;
 }
 export interface MeasurementSeries {
   points: MeasurementPoint[]; next_cursor?: string | null; truncated?: boolean; unit?: string | null;
@@ -63,13 +65,14 @@ export function compactPoints(points: MeasurementPoint[], range: TimeWindow, bud
   return mergeWindow([], kept, range);
 }
 export function plotRows(data: MeasurementSeries, expectedSeconds?: number | null) {
-  const rows: { epochMs: number; value: number | null; qualityLabel?: string | null; generated?: boolean | null; source?: ReadingSource }[] = [];
+  const rows: { epochMs: number; value: number | null; qualityLabel?: string | null; generated?: boolean | null; source?: ReadingSource; periodStart?: number; periodEnd?: number }[] = [];
   // Envelope points are intentionally separated within buckets; only larger gaps imply missing time.
   const gapMs = Math.max((expectedSeconds || 0) * 3, (data.bucket_seconds || 0) * 2) * 1000;
   data.points.forEach(p => {
     const epochMs = Date.parse(p.timestamp), previous = rows[rows.length - 1];
     if (gapMs && previous && epochMs - previous.epochMs > gapMs) rows.push({ epochMs: previous.epochMs + 1, value: null });
-    rows.push({ epochMs, value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : null, generated: p.generated, source: p.source, qualityLabel: qualityLabel(p) });
+    rows.push({ epochMs, value: typeof p.value === 'number' && Number.isFinite(p.value) ? p.value : null, generated: p.generated, source: p.source, qualityLabel: qualityLabel(p),
+      ...(p.period_start && p.period_end ? {periodStart:Date.parse(p.period_start),periodEnd:Date.parse(p.period_end)} : {}) });
   });
   return rows;
 }

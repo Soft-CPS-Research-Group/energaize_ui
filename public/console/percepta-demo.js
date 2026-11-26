@@ -14,8 +14,8 @@ function perceptaChartChannels(channels,assetType){
  const defaults=new Set((meters.length?meters:linked.filter(c=>(c.collection?.parameter_type_id||c.name)==='state_of_charge')).map(c=>c.backendId));
  return linked.map(c=>{
   const result={...channelForChart(c),defaultVisible:defaults.has(c.backendId)};
+  const kind=c.collection?.parameter_type_id||c.quantity||c.name;
   if(c.mongo_binding?.field?.startsWith('payload.entities.')){
-   const kind=c.collection?.parameter_type_id||c.quantity||c.name;
    const names={energy_in_total:'Grid import',energy_out_total:'Grid export',state_of_charge:'State of charge',...(assetType==='battery'?{energy_in:'Charge energy',energy_out:'Discharge energy'}:{}),...(assetType==='pv_system'?{energy:'Solar production'}:{})};
    result.title=names[kind]||result.title;
    result.unit=c.mongo_binding.value_unit||result.unit;
@@ -97,6 +97,21 @@ tLoad=function(panel){
  const asset=key.startsWith('asset:')?currentAssets().find(a=>a.id===key.slice(6)):null;
  const activityEndpoint=perceptaChargerActivity(asset);
  const site=key.startsWith('site:')?scoped().find(s=>s.id===key.slice(5)):chosen();
+ const battery=asset?.assetType==='battery'&&asset.backendId
+  ? channels.filter(c=>c.enabled && c.mongo_binding?.field?.startsWith('payload.entities.')
+    && ['state_of_charge','energy_in','energy_out'].includes(c.collection?.parameter_type_id||c.quantity||c.name)) : [];
+ if(battery.length){
+  const mapped=perceptaChartChannels(battery,'battery').map(c=>{
+   const source=battery.find(row=>row.backendId===c.id);
+   const batteryLane=source.collection?.parameter_type_id||source.quantity||source.name;
+   return {...c,batteryLane,unit:batteryLane==='state_of_charge'?'%':'kWh',defaultVisible:true};
+  });
+  window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{
+   request:tRequest,title:'Battery',channels:mapped,batteryEndpoint:'/assets/'+encodeURIComponent(asset.backendId)+'/battery-window',
+   initialDurationMs:21600000,startLive:true,compactHeader:true,dashedGapFills:true,showChannelConfiguration:false
+  },key);
+  return;
+ }
  if(!activityEndpoint&&!perceptaSource(site)&&!channels.some(c=>c.mongo_binding?.field?.startsWith('payload.entities.'))){perceptaLoad(panel);return;}
  window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{request:tRequest,title:asset?.name||site?.name||'Measurements',showChannelConfiguration:false,activityEndpoint,compactHeader:true,initialDurationMs:21600000,startLive:channels.some(c=>c.mongo_binding?.field?.startsWith('payload.entities.')),
   channels:perceptaChartChannels(channels,asset?.assetType),onConfigureChannel:cid=>tConfigure(cid),onLinkChannel:cid=>tBind(panel,cid),onUnlinkChannel:cid=>tUnbind(panel,cid)},key);

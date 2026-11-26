@@ -1,5 +1,6 @@
 import { loadWindow, type MeasurementRequest, type MeasurementSeries } from './measurementData';
 export interface MeasurementChannel {
+  batteryLane?: 'state_of_charge' | 'energy_in' | 'energy_out';
   defaultVisible?: boolean; displayScale?: number; curve?: 'linear' | 'stepAfter' | 'monotone'; forecastEndpoint?: string;
   incremental?: boolean; id: string; title: string; unit?: string; endpoint?: string; latestEndpoint?: string;
   expectedSeconds?: number | null; note?: string; name?: string;
