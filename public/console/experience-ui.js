@@ -6,6 +6,8 @@
 // scenario without a controller), only on the houses and hours that simulation covers.
 const kpiScorecards = new Map();
 const KPI_SCORECARD_TTL = 10 * 60 * 1000;
+// While the KPI module completes missing days in the background, ask again this often
+const KPI_SCORECARD_BACKFILL_RETRY = 30 * 1000;
 // Answers that mean the Community API does not offer the scorecard (yet), not a failure
 const KPI_SCORECARD_ABSENT = [403, 404, 405, 501];
 const KPI_CARDS = [
@@ -36,18 +38,28 @@ const KPI_DECIMALS = { "€": 2, "%": 1, kW: 1, kWh: 1 };
 
 function kpiScorecardKey(recId, siteId, days) { return [recId, siteId || "", days].join("|"); }
 
+function kpiScorecardVisible(key) {
+  return [...document.querySelectorAll("[data-kpi-scorecard]")].some((n) => n.dataset.kpiScorecard === key);
+}
+
 function kpiScorecard(recId, siteId, days) {
   const key = kpiScorecardKey(recId, siteId, days), entry = kpiScorecards.get(key);
-  if (entry && (entry.status === "loading" || Date.now() - entry.at < KPI_SCORECARD_TTL)) return entry;
-  const loading = { status: "loading", at: Date.now() };
+  const ttl = entry?.data?.backfill?.pending_days ? KPI_SCORECARD_BACKFILL_RETRY : KPI_SCORECARD_TTL;
+  if (entry && (entry.status === "loading" || Date.now() - entry.at < ttl)) return entry;
+  // Keep showing the previous values while the new ones load
+  const loading = { status: "loading", at: Date.now(), data: entry?.data };
   kpiScorecards.set(key, loading);
   const query = `?days=${days}${siteId ? "&site_id=" + encodeURIComponent(siteId) : ""}`;
   B.request("community", `/api/recs/${encodeURIComponent(recId)}/kpi-scorecard${query}`)
-    .then((data) => kpiScorecards.set(key, { status: "ready", data, at: Date.now() }))
+    .then((data) => {
+      kpiScorecards.set(key, { status: "ready", data, at: Date.now() });
+      // Missing days are being computed: look again shortly, if the scorecard is still on screen
+      if (data?.backfill?.pending_days) setTimeout(() => { if (kpiScorecardVisible(key)) render(); }, KPI_SCORECARD_BACKFILL_RETRY);
+    })
     .catch((error) => kpiScorecards.set(key, {
       status: KPI_SCORECARD_ABSENT.includes(error?.status) ? "absent" : "error", error, at: Date.now() }))
     // Only redraw when this scorecard is still on screen
-    .finally(() => { if ([...document.querySelectorAll("[data-kpi-scorecard]")].some((n) => n.dataset.kpiScorecard === key)) render(); });
+    .finally(() => { if (kpiScorecardVisible(key)) render(); });
   return loading;
 }
 
@@ -73,6 +85,7 @@ function kpiPeriod(card) {
   const parts = [`${fmt(card.period.start)} – ${fmt(last)} (UTC)`];
   if (!site) parts.push(`${cov.houses_reporting} of ${cov.houses_total} houses reporting`);
   if (cov.hours_with_data < cov.hours_expected) parts.push(`data for ${cov.hours_with_data} of ${cov.hours_expected} hours`);
+  if (card.backfill?.pending_days) parts.push(`completing ${card.backfill.pending_days} missing day${card.backfill.pending_days === 1 ? "" : "s"}…`);
   parts.push(!bau ? "no BAU comparison yet"
     : site ? `BAU for ${bau.days_with_bau} of ${bau.days_expected} days`
       : `BAU on ${bau.houses_simulated} houses, ${bau.days_with_bau} of ${bau.days_expected} days`);

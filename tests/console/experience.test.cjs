@@ -405,6 +405,16 @@ test('the scorecard shows measured KPIs, the change against the BAU and how comp
  assert.doesNotMatch(html,/Within target tolerance|Departure shortfall|V2G/);
  }finally{dom.window.close();}
 });
+test('days the KPI module is still completing are said, and the previous values stay while it reloads',async()=>{
+ const {dom,run}=workspace();try{
+ run(`communities[0].recId='rec-1';state.community=0;B.request=()=>Promise.resolve(Object.assign(${JSON.stringify(SCORECARD)},{backfill:{pending_days:3,running:true}}));render=()=>{};`);
+ run('energyIndicators()');await run('Promise.resolve().then(()=>{}).then(()=>{})');
+ assert.match(run('energyIndicators()'),/completing 3 missing days…/);
+ // Asked again after the short retry: the values stay on screen while the new answer loads
+ run(`for (const e of kpiScorecards.values()) e.at-=KPI_SCORECARD_BACKFILL_RETRY+1;B.request=()=>new Promise(()=>{});`);
+ assert.match(run('energyIndicators()'),/107\.20/);
+ }finally{dom.window.close();}
+});
 test('a house asks for its own scorecard, and a missing Community route is not an error',async()=>{
  const {dom,run}=workspace();try{
  run(`communities[0].recId='rec-1';state.community=0;var asked=[];B.request=(service,path)=>{asked.push(path);return Promise.reject(Object.assign(new Error('community: Not Found'),{status:404}));};render=()=>{};`);
