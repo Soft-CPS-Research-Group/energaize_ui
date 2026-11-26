@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, History, Link2, Radio, RefreshCw, X } from 'lucide-react';
 import { DayPicker, type DateRange } from 'react-day-picker';
-import { Bar, Line, Rectangle, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, Line, Rectangle, ReferenceArea, ReferenceLine, Tooltip, XAxis, YAxis, useXAxisScale, type BarShapeProps } from 'recharts';
 import { resolveAxisTickStepMs } from '../utils/timeseriesGranularity';
 import { TimeseriesPlot } from '../components/charts/TimeseriesPlot';
 import type { MeasurementChannel } from './measurementChannels';
@@ -23,6 +23,18 @@ const batteryEnergyDomain = ([min,max]:readonly [number,number]): [number,number
   const peak = Math.max(...[min,max].filter(Number.isFinite).map(Math.abs), 0.02);
   return [-peak,peak];
 };
+function BatteryBar({bar, channel, color}: {bar:BarShapeProps;channel:string;color:string}) {
+  const scale=useXAxisScale();
+  const period=bar.payload?.[channel+'-period'] as [number,number] | undefined;
+  if (!scale || !period || !bar.height) return null;
+  const start=scale(period[0]), end=scale(period[1]);
+  if (start == null || end == null || end <= start) return null;
+  const inset=Math.min(1,(end-start)*0.15);
+  const reused=bar.payload?.[channel+'-reused'];
+  return <Rectangle x={start+inset} y={bar.y} width={end-start-2*inset} height={bar.height}
+    fill={color} fillOpacity={reused?0.35:0.83} stroke={reused?color:undefined}
+    strokeDasharray={reused?'5 3':undefined}/>;
+}
 const localInput = (t: number) => { const d = new Date(t); return new Date(t - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 export function MeasurementChart(props: MeasurementChartProps) {
   const [externalForecast, setForecast] = useState<MeasurementSeries>({points:[]});
@@ -210,6 +222,7 @@ export function MeasurementChart(props: MeasurementChartProps) {
           const bar = byTime.get(row.epochMs) ?? {epochMs:row.epochMs};
           bar[c.id] = row.value;
           bar[c.id+'-reused'] = row.source?.status === 'reused';
+          if (row.periodStart != null && row.periodEnd != null) bar[c.id+'-period']=[row.periodStart,row.periodEnd];
           byTime.set(row.epochMs,bar);
         }
         const plotData = props.bars || props.battery ? [...byTime.values()] : group.flatMap(c => c.rows);
@@ -218,8 +231,9 @@ export function MeasurementChart(props: MeasurementChartProps) {
         <XAxis height={48} label={{ value: `Time (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, position: "insideBottom", offset: -16, fill: "var(--muted)", fontSize: 11 }} type="number" dataKey="epochMs" scale="time" ticks={ticks} domain={axisRange ? [axisRange.start, axisRange.end + (live && !showingRetained ? Math.min(300000, duration * .05) : 0)] : ['dataMin', 'dataMax']} allowDataOverflow axisLine={false} tickLine={false} minTickGap={65} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickMargin={14} tickFormatter={v => duration > 86400000 ? date(v, duration <= 3 * 86400000) : new Date(v).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} />
         {props.battery ? <>
           {hasState && <YAxis yAxisId="battery-state" width={46} axisLine={false} tickLine={false} domain={[0,100]} ticks={[0,25,50,75,100]} tick={{fontSize:11,fill:'var(--muted)'}} tickFormatter={v=>v+'%'}/>}
-          {hasEnergy && <YAxis yAxisId="battery-energy" orientation="right" width={63} axisLine={false} tickLine={false}
-            tick={{fontSize:11,fill:'var(--muted)'}} tickFormatter={v=>batteryNumber(v)+' kWh'}
+          {hasEnergy && <YAxis yAxisId="battery-energy" orientation="right" width={57} axisLine={false} tickLine={false}
+            label={{value:'kWh',angle:-90,position:'insideRight',fill:'var(--muted)',fontSize:11}}
+            tick={{fontSize:11,fill:'var(--muted)'}} tickFormatter={batteryNumber}
             domain={batteryEnergyDomain}/>}
         </> : <YAxis label={{ value: group[0].unit || "Unit unconfirmed", angle: -90, position: "insideLeft", fill: "var(--muted)", fontSize: 11 }} width={76} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--muted)' }} domain={['auto', 'auto']} tickFormatter={v => Number(v).toLocaleString('en-GB', { maximumSignificantDigits: 4, notation: Math.abs(v) >= 100000 ? 'compact' : 'standard' })} />}
         <Tooltip content={({ active, label }) => {
@@ -239,8 +253,9 @@ export function MeasurementChart(props: MeasurementChartProps) {
         {(props.battery ? [...group.filter(isBatteryBar),...group.filter(c=>!isBatteryBar(c))] : group).map(c => {
           if (props.bars || isBatteryBar(c)) return <Bar key={c.id} dataKey={c.id} name={c.title} fill={c.color}
             yAxisId={props.battery?'battery-energy':undefined} stackId={props.battery?'battery-flow':undefined}
-            maxBarSize={36} isAnimationActive={false} activeBar={false}
+            maxBarSize={36} barSize={props.battery?4:undefined} isAnimationActive={false} activeBar={false}
             shape={bar => {
+              if (props.battery) return <BatteryBar bar={bar} channel={c.id} color={c.color}/>;
               const reused = bar.payload?.[c.id+'-reused'];
               return <Rectangle x={bar.x} y={bar.y} width={bar.width} height={bar.height}
                 fill={c.color} fillOpacity={reused ? 0.25 : 0.83}

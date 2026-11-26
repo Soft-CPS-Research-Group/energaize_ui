@@ -101,11 +101,12 @@ tLoad=function(panel){
   ? channels.filter(c=>c.enabled && c.mongo_binding?.field?.startsWith('payload.entities.')
     && ['state_of_charge','energy_in','energy_out'].includes(c.collection?.parameter_type_id||c.quantity||c.name)) : [];
  if(battery.length){
+  const order=['state_of_charge','energy_in','energy_out'];
   const mapped=perceptaChartChannels(battery,'battery').map(c=>{
    const source=battery.find(row=>row.backendId===c.id);
    const batteryLane=source.collection?.parameter_type_id||source.quantity||source.name;
    return {...c,batteryLane,unit:batteryLane==='state_of_charge'?'%':'kWh',defaultVisible:true};
-  });
+  }).sort((a,b)=>order.indexOf(a.batteryLane)-order.indexOf(b.batteryLane));
   window.TelemetryCharts.mount(panel.querySelector('[data-t-chart]'),{
    request:tRequest,title:'Battery',channels:mapped,batteryEndpoint:'/assets/'+encodeURIComponent(asset.backendId)+'/battery-window',
    initialDurationMs:21600000,startLive:true,compactHeader:true,dashedGapFills:true,showChannelConfiguration:false
