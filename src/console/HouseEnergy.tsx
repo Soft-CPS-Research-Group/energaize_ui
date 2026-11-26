@@ -178,7 +178,7 @@ export function HouseEnergy({archive}:{archive:HouseArchive}){
     return {points:compactPoints(points,range,budget),horizon,bucket_seconds:points.length>budget?(range.end-range.start)/200000:0};
   },[prefix,available,archive.meter,archive.exportMeter,bars]);
   const tabs = [{id:'power',label:'Power · kW'},{id:'energy',label:'Energy · kWh'},{id:'price',label:'Electricity price'}] as const;
-  return <section className="surface chart-section house-energy" data-view={view}>
+  return <section className="surface chart-section house-energy" data-house-energy-view={view}>
     <nav className="tabs" aria-label="Energy data view">{tabs.map(tab=><button key={tab.id} aria-pressed={view===tab.id}
       className={view===tab.id?'active':''} onClick={()=>setView(tab.id)}>{tab.label}</button>)}</nav>
     {!prices && <div className="telemetry-series-legend" role="group" aria-label="Visible measurements">
