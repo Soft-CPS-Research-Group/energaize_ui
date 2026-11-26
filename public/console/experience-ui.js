@@ -1,41 +1,117 @@
-/* Chart-first workspaces with compact configuration status and explicitly marked KPI previews. */
+/* Chart-first workspaces with compact configuration status and the KPI scorecard. */
 "use strict";
-// Presentation-only examples: never used as measured KPIs or sent to the API.
-function energyIndicators(scope = "community", compact = false) {
-  const days = state.kpiDays || 7, site = scope === "site", month = days === 30;
-  const items = [
-    ["Energy cost", site ? (month ? "86.40" : "21.60") : (month ? "428.80" : "107.20"), "€", "↓", "12.4%", "improved", "Lower cost"],
-    ["Solar self-consumption", month ? "74" : "78", "%", "↑", "6 pp", "improved", "More solar used locally"],
-    ["Self-sufficiency", month ? "58" : "62", "%", "↑", "4 pp", "improved", "Less reliance on the grid"],
-    ["Peak demand", site ? "4.8" : "18.6", "kW", "↑", "3.2%", "worse", "Higher peak demand"],
-  ];
-  const end = new Date(); end.setHours(0, 0, 0, 0);
-  const start = new Date(end); start.setDate(start.getDate() - days);
-  const stamp = d => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  return `<section class="energy-indicators" data-values="illustrative" aria-label="${site ? "Site" : "Community"} energy indicators"><div class="sectionhead"><div><div class="kpi-section-title"><h2>Scorecard</h2></div><p class="subtitle">${stamp(start)} – ${stamp(new Date(end - 1))} · vs simulated reference · no controller</p></div><div class="pilltabs" aria-label="KPI period">${[7,30].map(n=>`<button data-kpi-days="${n}" aria-pressed="${n===days}" class="${n===days?'active':''}">Last ${n} days</button>`).join('')}</div></div><div class="energy-indicator-row">${items.map(([name,value,unit,arrow,delta,tone,meaning],index)=>`<div><span>${name}</span><strong>${value} <small>${unit}</small></strong><span class="kpi-trend is-${tone}" title="${meaning} compared with the simulated scenario without a controller, for the same period"><span aria-hidden="true">${arrow}</span> ${delta}<span class="chart-sr-only"> · ${meaning}</span></span><small class="kpi-reference">Reference ${num(index===0?Number(value)/.876:index===1?Number(value)-6:index===2?Number(value)-4:Number(value)/1.032)} ${unit}</small></div>`).join('')}</div>${compact?`<details class="personal-scorecard-details"><summary>More indicators</summary>${supportingIndicators(scope,days)}</details>`:supportingIndicators(scope,days)}</section>`;
+// KPI scorecard: measured values from the KPI module, asked through the Community API, which
+// checks who may see which community or house (GET /api/recs/{rec}/kpi-scorecard).
+// The period is the last N whole UTC days; the change is against the BAU (the simulated
+// scenario without a controller), only on the houses and hours that simulation covers.
+const kpiScorecards = new Map();
+const KPI_SCORECARD_TTL = 10 * 60 * 1000;
+// Answers that mean the Community API does not offer the scorecard (yet), not a failure
+const KPI_SCORECARD_ABSENT = [403, 404, 405, 501];
+const KPI_CARDS = [
+  ["EnergyCostKPI", "Energy cost", "lower", "Cost of the energy bought, with the community's sharing rules."],
+  ["SelfSufficiencyRateKPI", "Self-sufficiency", "higher", "Share of the consumption covered without the grid."],
+  ["SolarSelfConsumptionRateKPI", "Solar self-consumption", "higher", "Share of the solar energy generated that was used locally."],
+  ["PeakDemandKPI", "Peak demand", "lower", "Highest power imported from the grid in a quarter-hour."],
+];
+const KPI_GROUPS = [
+  ["EV service", [
+    ["ChargingSuccessRateKPI", "Minimum service met", "Departures that reached the requested state of charge."],
+    ["ChargingOptimizationRateKPI", "Within target tolerance", "Departures within ±5% of the requested state of charge."]]],
+  ["Energy", [
+    ["SolarGenerationKPI", "Solar generation", "Solar energy generated during the period."],
+    ["AverageHourlyImportedEnergyKPI", "Grid import", "Energy imported from the grid during the period."],
+    ["AverageHourlyExportedEnergyKPI", "Grid export", "Energy exported to the grid during the period."],
+    ["SelfConsumptionKPI", "Net grid exchange", "Imports minus exports during the period."]]],
+  ["Grid & storage", [
+    ["DailyLoadFactorKPI", "Load factor", "How flat the daily grid profile is: average over peak (1 is flat)."],
+    ["BatteryThroughputKPI", "Battery throughput", "Energy charged plus discharged by the batteries."]]],
+  ["Fairness", [
+    ["NoHarmIndicatorKPI", "Members worse off", "Share of members paying more inside the community than on their own. 0% is best."],
+    ["GiniBenefitsKPI", "Benefit inequality", "Gini index of the members' benefits: 0 is equal, 1 is all to one member."],
+    ["BenefitParityRatioKPI", "Benefit parity", "Benefit of members without equipment relative to members with it. 1 is parity."],
+    ["BenefitConcentrationCR20KPI", "Top-20% benefit share", "Share of the benefits that goes to the 20% who gain most."]]],
+];
+const KPI_DECIMALS = { "€": 2, "%": 1, kW: 1, kWh: 1 };
+
+function kpiScorecardKey(recId, siteId, days) { return [recId, siteId || "", days].join("|"); }
+
+function kpiScorecard(recId, siteId, days) {
+  const key = kpiScorecardKey(recId, siteId, days), entry = kpiScorecards.get(key);
+  if (entry && (entry.status === "loading" || Date.now() - entry.at < KPI_SCORECARD_TTL)) return entry;
+  const loading = { status: "loading", at: Date.now() };
+  kpiScorecards.set(key, loading);
+  const query = `?days=${days}${siteId ? "&site_id=" + encodeURIComponent(siteId) : ""}`;
+  B.request("community", `/api/recs/${encodeURIComponent(recId)}/kpi-scorecard${query}`)
+    .then((data) => kpiScorecards.set(key, { status: "ready", data, at: Date.now() }))
+    .catch((error) => kpiScorecards.set(key, {
+      status: KPI_SCORECARD_ABSENT.includes(error?.status) ? "absent" : "error", error, at: Date.now() }))
+    // Only redraw when this scorecard is still on screen
+    .finally(() => { if ([...document.querySelectorAll("[data-kpi-scorecard]")].some((n) => n.dataset.kpiScorecard === key)) render(); });
+  return loading;
 }
 
-// Metric meanings follow src/utils/kpiScorecard.ts; examples remain presentation-only.
-function supportingIndicators(scope, days) {
-  const factor=(scope==='site'?1:5)*(days===30?4:1), value=n=>num(n*factor);
-  const groups=[
-    ['EV service',[
-      ['Minimum service met','99','%','Feasible departures meeting the minimum acceptable state of charge.'],
-      ['Within target tolerance','96','%','Feasible departures within ±5 percentage points of the target state of charge.'],
-      ['Departure shortfall','0.4','pp','Mean state-of-charge shortfall beyond the accepted tolerance. Lower is better.'],
-      ['V2G export',value(3.2),'kWh','Energy returned from vehicles to the community or grid.']]],
-    ['Energy & cost',[
-      ['Solar generation',value(110),'kWh','Solar energy generated during the selected period.'],
-      ['Grid import',value(82),'kWh','Total energy imported during the selected period.'],
-      ['Grid export',value(18),'kWh','Total energy exported during the selected period.'],
-      ['Net grid exchange',value(64),'kWh','Imports minus exports during the selected period.']]],
-    ['Grid & storage',[
-      ['Battery throughput',value(34),'kWh','Total charging and discharging energy.'],
-      ['Electrical violations','0','kWh','Energy associated with electrical service phase violations.'],
-      ['Daily peak ratio','0.86','×','Average daily peak relative to the simulated scenario without a controller for the same period. Below 1 is lower.'],
-      ['Load factor penalty','0.92','×','Load-factor penalty relative to the simulated scenario without a controller for the same period. Below 1 is better.']]]
-  ];
-  return `<div class="supporting-indicators">${groups.map(([name,items])=>`<section><h3>${name}</h3><dl>${items.map(([label,n,unit,help])=>`<div title="${esc(help)}"><dt>${label}</dt><dd>${n} <small>${unit}</small></dd></div>`).join('')}</dl></section>`).join('')}</div>`;
+function kpiValue(value, unit) {
+  if (value == null) return "—";
+  return `${num(value, KPI_DECIMALS[unit] ?? 2)} <small>${esc(unit || "")}</small>`;
+}
+
+function kpiTrend(kpi, direction) {
+  const bau = kpi?.bau;
+  if (!bau || bau.delta_pct == null) return `<span class="kpi-trend is-neutral">No BAU comparison yet</span>`;
+  const d = bau.delta_pct, still = Math.abs(d) < 0.05;
+  const better = direction === "lower" ? d < 0 : d > 0;
+  const tone = still ? "neutral" : better ? "improved" : "worse";
+  const meaning = still ? "Same as the BAU" : better ? "Better than the BAU" : "Worse than the BAU";
+  return `<span class="kpi-trend is-${tone}" title="${meaning}: the real value against the simulated scenario without a controller, on the houses and hours it covers"><span aria-hidden="true">${still ? "→" : d < 0 ? "↓" : "↑"}</span> ${num(Math.abs(d), 1)}% vs BAU<span class="chart-sr-only"> · ${meaning}</span></span>`;
+}
+
+function kpiPeriod(card) {
+  const fmt = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+  const last = new Date(Date.parse(card.period.end) - 1).toISOString();
+  const cov = card.coverage, bau = card.bau, site = card.scope !== "community";
+  const parts = [`${fmt(card.period.start)} – ${fmt(last)} (UTC)`];
+  if (!site) parts.push(`${cov.houses_reporting} of ${cov.houses_total} houses reporting`);
+  if (cov.hours_with_data < cov.hours_expected) parts.push(`data for ${cov.hours_with_data} of ${cov.hours_expected} hours`);
+  parts.push(!bau ? "no BAU comparison yet"
+    : site ? `BAU for ${bau.days_with_bau} of ${bau.days_expected} days`
+      : `BAU on ${bau.houses_simulated} houses, ${bau.days_with_bau} of ${bau.days_expected} days`);
+  return parts.join(" · ");
+}
+
+function kpiSupporting(kpis) {
+  const groups = KPI_GROUPS.map(([name, items]) => [name, items.filter(([key]) => kpis[key]?.value != null)])
+    .filter(([, items]) => items.length);
+  if (!groups.length) return "";
+  return `<div class="supporting-indicators">${groups.map(([name, items]) => `<section><h3>${name}</h3><dl>${items.map(([key, label, help]) => {
+    const k = kpis[key], sessions = k.sessions ? ` · ${k.sessions} departures` : "";
+    return `<div title="${esc(help + sessions)}"><dt>${label}</dt><dd>${kpiValue(k.value, k.unit)}</dd></div>`;
+  }).join("")}</dl></section>`).join("")}</div>`;
+}
+
+function energyIndicators(scope = "community", compact = false, site = null) {
+  const days = state.kpiDays || 7, recId = comm()?.recId, siteId = scope === "site" ? (site?.backendId || site?.id) : null;
+  const key = kpiScorecardKey(recId, siteId, days);
+  const head = (subtitle) => `<div class="sectionhead"><div><div class="kpi-section-title"><h2>Scorecard</h2></div><p class="subtitle">${subtitle}</p></div><div class="pilltabs" aria-label="KPI period">${[7, 30].map((n) => `<button data-kpi-days="${n}" aria-pressed="${n === days}" class="${n === days ? "active" : ""}">Last ${n} days</button>`).join("")}</div></div>`;
+  const shell = (status, body) => `<section class="energy-indicators" data-values="${status}" data-kpi-scorecard="${esc(key)}" aria-label="${scope === "site" ? "Site" : "Community"} energy indicators">${body}</section>`;
+  if (!recId) return shell("absent", head("Measured KPIs") + `<p class="muted">KPIs are calculated for communities registered in the platform.</p>`);
+  const entry = kpiScorecard(recId, siteId, days);
+  if (entry.status === "loading" && !entry.data) return shell("loading", head(`Last ${days} days`) + `<p class="muted" role="status">Loading the KPIs…</p>`);
+  if (entry.status === "absent") return shell("absent", head(`Last ${days} days`) + `<p class="muted">KPIs are not available for this ${scope === "site" ? "house" : "community"} yet.</p>`);
+  if (entry.status === "error") return shell("error", head(`Last ${days} days`) + `<p class="muted" role="alert">The KPIs could not be loaded. <button class="btn text" data-kpi-retry="${esc(key)}">Try again</button></p>`);
+
+  const card = entry.data, kpis = card.kpis || {};
+  const updated = card.coverage?.updated_at ? ` · updated ${new Date(card.coverage.updated_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC` : "";
+  const cards = KPI_CARDS.map(([keyName, label, direction, help]) => {
+    const k = kpis[keyName], bau = k?.bau;
+    const reference = bau && bau.bau != null && bau.real != null
+      ? `<small class="kpi-reference" title="Only the houses and hours the BAU simulates">On the simulated houses: ${num(bau.real, KPI_DECIMALS[k.unit] ?? 2)} vs BAU ${num(bau.bau, KPI_DECIMALS[k.unit] ?? 2)} ${esc(k.unit || "")}</small>` : "";
+    return `<div title="${esc(help)}"><span>${label}</span><strong>${kpiValue(k?.value, k?.unit)}</strong>${kpiTrend(k, direction)}${reference}</div>`;
+  }).join("");
+  const supporting = kpiSupporting(kpis);
+  const body = head(kpiPeriod(card) + updated) + `<div class="energy-indicator-row">${cards}</div>` +
+    (supporting ? (compact ? `<details class="personal-scorecard-details"><summary>More indicators</summary>${supporting}</details>` : supporting) : "");
+  return shell("measured", body);
 }
 function identityIcon(label, action, symbol='edit') {
  return `<button type="button" class="identity-icon" data-action="${action}" aria-label="${label}" title="${label}">${icon(symbol)}</button>`;
@@ -65,6 +141,11 @@ document.addEventListener("click", (e) => {
     state.kpiDays = Number(b.dataset.kpiDays);
     render();
   }
+  const retry = e.target.closest("[data-kpi-retry]");
+  if (retry) {
+    kpiScorecards.delete(retry.dataset.kpiRetry);
+    render();
+  }
 });
 healthSection = function () {
   const list = scoped(),
@@ -78,7 +159,7 @@ siteDetailOriginal = function () {
     const end = html.indexOf("</nav>") + 6;
     html =
       html.slice(0, end) +
-      `<div class="energy-overview site-energy">${siteGraph(chosen())}${energyIndicators("site")}<div class="site-services-links"><button data-tab="percepta">${icon("network")}<span><strong>Data collection</strong><small>Percepta and connected sources</small></span>${icon("right")}</button><button data-tab="algorithm">${icon("cpu")}<span><strong>Energy control</strong><small>Algorithm and execution state</small></span>${icon("right")}</button></div></div></div></div>`;
+      `<div class="energy-overview site-energy">${siteGraph(chosen())}${energyIndicators("site", false, chosen())}<div class="site-services-links"><button data-tab="percepta">${icon("network")}<span><strong>Data collection</strong><small>Percepta and connected sources</small></span>${icon("right")}</button><button data-tab="algorithm">${icon("cpu")}<span><strong>Energy control</strong><small>Algorithm and execution state</small></span>${icon("right")}</button></div></div></div></div>`;
   }
   const site = chosen();
   const inventoryNotice = isDeploymentView() ? '' : configurationNotice(siteConfiguration(site), site.name, '<button class="btn text" data-tab="assets">Review equipment</button>');
@@ -105,7 +186,7 @@ personalSiteView = function () {
     );
   if (state.personalSiteTab !== "topology" && selectedPersonalSite()) {
     const tail = html.lastIndexOf("</div>");
-    html = html.slice(0, tail) + energyIndicators("site", true) + personalChargingPlan(site) + `<div data-resident-services="${esc(site.id)}"></div>` + html.slice(tail);
+    html = html.slice(0, tail) + energyIndicators("site", true, site) + personalChargingPlan(site) + `<div data-resident-services="${esc(site.id)}"></div>` + html.slice(tail);
   }
   return html;
 };

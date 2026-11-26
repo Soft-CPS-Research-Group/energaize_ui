@@ -258,7 +258,7 @@ test("generic create dialog keeps fields and requires review before submitting",
     dom.window.close();
   }
 });
-test("overview has chart first, four preview KPIs and compact actionable configuration status", () => {
+test("overview has chart first, the scorecard and compact actionable configuration status", () => {
   const { dom, run } = workspace();
   try {
     run(
@@ -271,11 +271,9 @@ test("overview has chart first, four preview KPIs and compact actionable configu
       /Community sites|Linked channels|Power totals|overview-metrics/,
     );
     assert.doesNotMatch(html, /Calculations not connected|data needed|health-quiet/);
-    assert.match(html, /data-values="illustrative"/);
-    assert.doesNotMatch(html, />Preview</);
-    assert.match(html,/Within target tolerance/);assert.match(html,/Departure shortfall/);assert.match(html,/Battery throughput/);
-    assert.equal((html.match(/class="kpi-trend/g)||[]).length, 4);
-    assert.match(html, /is-improved/); assert.match(html, /is-worse/);
+    // The scorecard asks the KPI module (still loading here); no example values stand in for it
+    assert.match(html, /data-values="loading"/);
+    assert.doesNotMatch(html, /107\.20|Reference/);
     assert.match(html, /data-action="edit-community-details"/);
     assert.match(html, /Community · Inventory details missing/);
   } finally {
@@ -381,13 +379,40 @@ test('grid meter shows missing electrical details explicitly and header actions 
  const button=run(`identityIcon('Edit site','edit-site')`);assert.match(button,/aria-label="Edit site"/);assert.doesNotMatch(button,/>Edit site</);
  }finally{dom.window.close();}
 });
-test('scorecard comparisons always use the simulated no-controller reference, with optional personal details',()=>{
+const SCORECARD={community:'demflex',scope:'community',period:{start:'2026-11-19T00:00:00+00:00',end:'2026-11-26T00:00:00+00:00',days:7},
+ coverage:{hours_expected:168,hours_with_data:160,houses_total:35,houses_reporting:24,updated_at:'2026-11-26T04:12:00+00:00'},
+ bau:{days_expected:7,days_with_bau:5,houses_simulated:7},
+ kpis:{EnergyCostKPI:{value:107.2,unit:'€',bau:{real:30,bau:34,delta_pct:-11.76,windows:120}},
+  SelfSufficiencyRateKPI:{value:62,unit:'%',bau:{real:60,bau:58,delta_pct:3.45,windows:120}},
+  SolarSelfConsumptionRateKPI:{value:78,unit:'%',bau:null},
+  PeakDemandKPI:{value:18.6,unit:'kW',bau:{real:5,bau:4.8,delta_pct:4.17,windows:120}},
+  ChargingSuccessRateKPI:{value:99,unit:'%',sessions:12,bau:null},ChargingOptimizationRateKPI:{value:null,unit:'%',bau:null},
+  GiniBenefitsKPI:{value:0.31,unit:'0–1',bau:null},BatteryThroughputKPI:{value:170,unit:'kWh',bau:null}}};
+test('the scorecard shows measured KPIs, the change against the BAU and how complete they are',async()=>{
  const {dom,run}=workspace();try{
- const html=run('energyIndicators("site",true)');
- assert.match(html,/vs simulated reference · no controller/);assert.match(html,/same period/);
- assert.doesNotMatch(html,/previous|last week|Cost saving vs reference/i);
- assert.match(html,/<details class="personal-scorecard-details">/);
- assert.equal((html.match(/class="kpi-reference"/g)||[]).length,4);
+ run(`communities[0].recId='rec-1';state.community=0;var asked=[];B.request=(service,path)=>{asked.push(service+' '+path);return Promise.resolve(${JSON.stringify(SCORECARD)});};render=()=>{};`);
+ assert.match(run('energyIndicators()'),/Loading the KPIs/);
+ await run('Promise.resolve().then(()=>{}).then(()=>{})');
+ const html=run('energyIndicators()');
+ assert.deepEqual(JSON.parse(run('JSON.stringify(asked)')),['community /api/recs/rec-1/kpi-scorecard?days=7']);
+ assert.match(html,/data-values="measured"/);assert.match(html,/107\.20/);
+ assert.match(html,/24 of 35 houses reporting/);assert.match(html,/data for 160 of 168 hours/);assert.match(html,/BAU on 7 houses, 5 of 7 days/);
+ // Cost went down against the BAU: an improvement; peak went up: worse; no BAU: said so
+ assert.match(html,/is-improved[^]*11\.8% vs BAU/);assert.match(html,/is-worse[^]*4\.2% vs BAU/);assert.match(html,/No BAU comparison yet/);
+ assert.match(html,/On the simulated houses: 30\.00 vs BAU 34\.00/);
+ assert.match(html,/Fairness/);assert.match(html,/Benefit inequality/);
+ // KPIs without values are left out instead of showing a dash or an example
+ assert.doesNotMatch(html,/Within target tolerance|Departure shortfall|V2G/);
+ }finally{dom.window.close();}
+});
+test('a house asks for its own scorecard, and a missing Community route is not an error',async()=>{
+ const {dom,run}=workspace();try{
+ run(`communities[0].recId='rec-1';state.community=0;var asked=[];B.request=(service,path)=>{asked.push(path);return Promise.reject(Object.assign(new Error('community: Not Found'),{status:404}));};render=()=>{};`);
+ run(`energyIndicators("site",true,{id:'local',backendId:'site-27'})`);
+ await run('Promise.resolve().then(()=>{}).then(()=>{})');
+ const html=run(`energyIndicators("site",true,{id:'local',backendId:'site-27'})`);
+ assert.equal(run('asked[0]'),'/api/recs/rec-1/kpi-scorecard?days=7&site_id=site-27');
+ assert.match(html,/KPIs are not available for this house yet/);assert.doesNotMatch(html,/role="alert"/);
  }finally{dom.window.close();}
 });
 test('personal site navigation excludes other households and equipment',()=>{

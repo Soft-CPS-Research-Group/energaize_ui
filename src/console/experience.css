@@ -1114,6 +1114,7 @@
 .energy-indicator-row .kpi-trend { font-size:12px;font-weight:600;display:flex;gap:5px;align-items:center }
 .kpi-trend.is-improved { color:#23784e }
 .kpi-trend.is-worse { color:#bf5147 }
+.kpi-trend.is-neutral { color:var(--muted, #6c756d); font-weight:500 }
 .equipment-heading .equipment-product-art { width:84px;height:84px;flex:none }
 .equipment-heading { align-items:center }
 .equipment-dialog-art { width:64px;height:64px;flex:none }
