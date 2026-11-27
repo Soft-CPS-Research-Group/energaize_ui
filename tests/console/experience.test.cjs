@@ -401,8 +401,9 @@ test('the scorecard shows measured KPIs, the change against the BAU and how comp
  assert.match(html,/is-improved[^]*11\.8% vs BAU/);assert.match(html,/is-worse[^]*4\.2% vs BAU/);assert.match(html,/No BAU comparison yet/);
  assert.match(html,/On the simulated houses: 30\.00 vs BAU 34\.00/);
  assert.match(html,/Fairness/);assert.match(html,/Benefit inequality/);
- // KPIs without values are left out instead of showing a dash or an example
- assert.doesNotMatch(html,/Within target tolerance|Departure shortfall|V2G/);
+ // A KPI without a value in the period shows a dash; KPIs with no data source are not on the card
+ assert.match(html,/Within target tolerance<\/dt><dd>—/);assert.match(html,/No value in this period/);
+ assert.doesNotMatch(html,/Departure shortfall|V2G/);
  }finally{dom.window.close();}
 });
 test('a period still being completed shows no values until it is, then the final ones',async()=>{

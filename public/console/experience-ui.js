@@ -92,12 +92,15 @@ function kpiPeriod(card) {
 }
 
 function kpiSupporting(kpis) {
-  const groups = KPI_GROUPS.map(([name, items]) => [name, items.filter(([key]) => kpis[key]?.value != null)])
+  // Every KPI the card has is shown, a dash when the period has no value for it (e.g. no departures):
+  // a missing row would read as "not measured", a dash says "nothing to report in this period"
+  const groups = KPI_GROUPS.map(([name, items]) => [name, items.filter(([key]) => key in kpis)])
     .filter(([, items]) => items.length);
   if (!groups.length) return "";
   return `<div class="supporting-indicators">${groups.map(([name, items]) => `<section><h3>${name}</h3><dl>${items.map(([key, label, help]) => {
     const k = kpis[key], sessions = k.sessions ? ` · ${k.sessions} departures` : "";
-    return `<div title="${esc(help + sessions)}"><dt>${label}</dt><dd>${kpiValue(k.value, k.unit)}</dd></div>`;
+    const empty = k.value == null ? " · No value in this period" : "";
+    return `<div title="${esc(help + sessions + empty)}"><dt>${label}</dt><dd>${kpiValue(k.value, k.unit)}</dd></div>`;
   }).join("")}</dl></section>`).join("")}</div>`;
 }
 
