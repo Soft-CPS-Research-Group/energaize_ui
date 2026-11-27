@@ -457,6 +457,7 @@ body[data-workspace="ai"] .kpi-heading-actions { gap: 10px; }
 .kpi-run-detail { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .kpi-run-block { display: flex; flex-direction: column; gap: 10px; }
 .kpi-run-block h4 { margin: 0; font-size: 13px; font-weight: 500; }
+.kpi-run-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .kpi-run-block p { margin: 0; font-size: 12px; }
 .kpi-run-bau { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); }
 .kpi-run-section { display: flex; flex-direction: column; gap: 8px; }

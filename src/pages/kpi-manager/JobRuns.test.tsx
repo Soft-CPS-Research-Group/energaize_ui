@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { server } from "../../test/server";
@@ -101,6 +101,28 @@ describe("JobRunsPanel with unexpected data", () => {
     const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
     expect(await within(panel).findByText("Real vs BAU")).toBeInTheDocument();
     expect(within(panel).queryByText(/Ramping/)).not.toBeInTheDocument();
-    expect(within(panel).queryByRole("combobox")).not.toBeInTheDocument();     // no house has the job's KPI
+    // The house has only a KPI that is not the job's: it says so instead of showing it
+    fireEvent.change(within(panel).getByRole("combobox"), { target: { value: "building_demflex_rh27" } });
+    expect(within(panel).getByText(/No BAU comparison of this job's KPIs for this house/)).toBeInTheDocument();
+  });
+
+  it("shows any house of the run, its real values and its comparison with the BAU", async () => {
+    const run = { ...RUN, communities: { demflex: { ...RUN.communities.demflex,
+      by_building: { "building_demflex-rh27": { EnergyCostKPI: { value: 0.42, unit: "€" } } } } },
+      bau: { demflex: { ...RUN.bau.demflex, report: { comparison: {
+        community: { EnergyCostKPI: { real: 1.74, bau: 1.92, unit: "€" } },
+        "building_demflex-rh27": { EnergyCostKPI: { real: 0.4, bau: 0.5, unit: "€" } },
+      } } } } };
+    server.use(
+      http.get("*/kpi-api/api/v1/scheduler/jobs/:id/runs", () => HttpResponse.json({ status: "success", data: [run] })),
+      http.get("*/kpi-api/*", () => HttpResponse.json({ status: "success", data: [] })),
+    );
+    renderPanel("daily_bau_demflex");
+    const panel = await screen.findByRole("region", { name: "Runs of daily_bau_demflex" });
+    fireEvent.change(await within(panel).findByRole("combobox", { name: "Scope of demflex" }),
+                     { target: { value: "building_demflex-rh27" } });
+    expect(within(panel).getByText("KPI (demflex-rh27)")).toBeInTheDocument();
+    expect(within(panel).getByText(/0[.,]42 €/)).toBeInTheDocument();
+    expect(within(panel).getByTitle("improvement")).toHaveTextContent("-0.100");
   });
 });

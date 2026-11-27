@@ -9,6 +9,8 @@ export interface CommunityRun {
   windows: number;
   error?: string;
   community: Record<string, KpiValue>;
+  /** Each house's values: building -> KPI -> value */
+  by_building?: Record<string, Record<string, KpiValue>>;
 }
 
 export interface BauHouse {
@@ -62,11 +64,19 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
  * must never break the page.
  */
 export function normalizeRun(raw: any): JobRun {
+  const kpiValues = (source: unknown): Record<string, KpiValue> => {
+    const values: Record<string, KpiValue> = {};
+    for (const [kpi, v] of Object.entries(isObject(source) ? source : {})) {
+      values[kpi] = { value: num(isObject(v) ? v.value : v), unit: isObject(v) ? text(v.unit) : null };
+    }
+    return values;
+  };
   const communities: Record<string, CommunityRun> = {};
   for (const [name, c] of Object.entries(isObject(raw?.communities) ? raw.communities : {})) {
-    const values: Record<string, KpiValue> = {};
-    for (const [kpi, v] of Object.entries(isObject((c as any)?.community) ? (c as any).community : {})) {
-      values[kpi] = { value: num(isObject(v) ? v.value : v), unit: isObject(v) ? text(v.unit) : null };
+    const values = kpiValues((c as any)?.community);
+    const byBuilding: Record<string, Record<string, KpiValue>> = {};
+    for (const [building, kpis] of Object.entries(isObject((c as any)?.by_building) ? (c as any).by_building : {})) {
+      byBuilding[building] = kpiValues(kpis);
     }
     communities[name] = {
       buildings: num((c as any)?.buildings) ?? 0,
@@ -74,6 +84,7 @@ export function normalizeRun(raw: any): JobRun {
       windows: num((c as any)?.windows) ?? 0,
       error: text((c as any)?.error) ?? undefined,
       community: values,
+      by_building: byBuilding,
     };
   }
   const bau: Record<string, BauRun> = {};
@@ -145,6 +156,12 @@ export function comparisonRows(bau: BauRun | undefined, scope = "community"): Co
     delta: v.real != null && v.bau != null ? v.real - v.bau : null,
     unit: v.unit,
   }));
+}
+
+/** The scopes a run can be looked at in: the community first, then every house it has values for. */
+export function runScopes(c: CommunityRun | undefined, bau: BauRun | undefined): string[] {
+  const houses = new Set([...Object.keys(c?.by_building ?? {}), ...comparisonScopes(bau).filter((s) => s !== "community")]);
+  return ["community", ...[...houses].sort()];
 }
 
 /** Scopes of a BAU comparison: the community first, then the houses. */

@@ -8,7 +8,7 @@ import { KpiError, KpiLoading } from "../../components/kpi/KpiStates";
 import { LOWER_IS_BETTER } from "../../constants/kpiDirection";
 import { kpiDisplayName, useKpiMetadata } from "../../hooks/useKpiMetadata";
 import {
-  comparisonRows, comparisonScopes, duration, houseCoverage, normalizeRun, scopeLabel, type BauRun, type JobRun,
+  comparisonRows, duration, houseCoverage, normalizeRun, runScopes, scopeLabel, type BauRun, type CommunityRun, type JobRun,
 } from "./jobRunsModel";
 
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
@@ -145,56 +145,80 @@ function RunDetail({ run, kpis }: { run: JobRun; kpis?: string[] }) {
       {run.error && <pre className="kpi-job-error">{run.error}</pre>}
 
       {communities.map(([community, c]) => (
-        <div key={community} className="kpi-run-block">
-          <h4>{communityLabel(community)}</h4>
-
-          <div className="kpi-run-section">
-            <h5>Real KPIs <span className="kpi-text-soft">· every building with data</span></h5>
-            {c.error ? (
-              <p className="kpi-text-danger">{c.error}</p>
-            ) : c.windows === 0 ? (
-              <p className="kpi-text-soft">No data in this period: nothing was computed.</p>
-            ) : (
-              <>
-                <p className="kpi-text-soft">
-                  {c.buildings_with_data ?? c.buildings} of {c.buildings} buildings with data · {c.windows} KPI windows stored
-                </p>
-                {Object.keys(c.community).length > 0 && (
-                  <div className="kpi-table-wrap">
-                    <table className="kpi-table">
-                      <thead><tr><th>KPI (community)</th><th>Value</th></tr></thead>
-                      <tbody>
-                        {Object.entries(c.community).map(([kpi, v]) => (
-                          <tr key={kpi}><td>{name(kpi)}</td><td>{show(v.value, v.unit)}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {run.bau?.[community] && (
-            <BauBlock bau={run.bau[community]} kpis={kpis} name={name} running={run.status === "running"} />
-          )}
-        </div>
+        <CommunityRunBlock key={community} community={community} c={c} bau={run.bau?.[community]} kpis={kpis}
+          name={name} running={run.status === "running"} />
       ))}
       {run.status === "running" && communities.length === 0 && <KpiLoading label="Computing…" />}
     </section>
   );
 }
 
-function BauBlock({ bau, kpis, name, running }: {
-  bau: BauRun; kpis?: string[]; name: (kpi: string) => string; running: boolean;
+/** One community of a run: its real KPIs and the comparison with the BAU, for the community or one house. */
+function CommunityRunBlock({ community, c, bau, kpis, name, running }: {
+  community: string; c: CommunityRun; bau?: BauRun; kpis?: string[]; name: (kpi: string) => string; running: boolean;
+}) {
+  const scopes = runScopes(c, bau);
+  const [chosen, setChosen] = useState("community");
+  const scope = scopes.includes(chosen) ? chosen : "community";
+  const values = scope === "community" ? c.community : c.by_building?.[scope] ?? {};
+  const label = scope === "community" ? "community" : scopeLabel(scope);
+
+  return (
+    <div className="kpi-run-block">
+      <div className="kpi-run-block-head">
+        <h4>{communityLabel(community)}</h4>
+        {scopes.length > 1 && (
+          <label className="kpi-run-scope">
+            <span className="kpi-text-soft">Show</span>
+            <select value={scope} onChange={(e) => setChosen(e.target.value)} aria-label={"Scope of " + community}>
+              {scopes.map((s) => <option key={s} value={s}>{scopeLabel(s)}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+
+      <div className="kpi-run-section">
+        <h5>Real KPIs <span className="kpi-text-soft">· {scope === "community" ? "every building with data" : label}</span></h5>
+        {c.error ? (
+          <p className="kpi-text-danger">{c.error}</p>
+        ) : c.windows === 0 ? (
+          <p className="kpi-text-soft">No data in this period: nothing was computed.</p>
+        ) : (
+          <>
+            {scope === "community" && (
+              <p className="kpi-text-soft">
+                {c.buildings_with_data ?? c.buildings} of {c.buildings} buildings with data · {c.windows} KPI windows stored
+              </p>
+            )}
+            {Object.keys(values).length > 0 ? (
+              <div className="kpi-table-wrap">
+                <table className="kpi-table">
+                  <thead><tr><th>KPI ({label})</th><th>Value</th></tr></thead>
+                  <tbody>
+                    {Object.entries(values).map(([kpi, v]) => (
+                      <tr key={kpi}><td>{name(kpi)}</td><td>{show(v.value, v.unit)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : scope !== "community" ? (
+              <p className="kpi-text-soft">No data for this house in this period.</p>
+            ) : null}
+          </>
+        )}
+      </div>
+
+      {bau && <BauBlock bau={bau} scope={scope} kpis={kpis} name={name} running={running} />}
+    </div>
+  );
+}
+
+function BauBlock({ bau, scope, kpis, name, running }: {
+  bau: BauRun; scope: string; kpis?: string[]; name: (kpi: string) => string; running: boolean;
 }) {
   // Only the job's KPIs (runs recorded before the module filtered them carry every BAU KPI)
   const wanted = kpis && kpis.length ? new Set(kpis) : null;
-  const rowsOf = (s?: string) => comparisonRows(bau, s).filter((r) => !wanted || wanted.has(r.kpi));
-  const scopes = comparisonScopes(bau).filter((s) => rowsOf(s).length > 0);
-  const [scope, setScope] = useState("community");
-  const current = scopes.includes(scope) ? scope : scopes[0];
-  const rows = current ? rowsOf(current) : [];
+  const rows = comparisonRows(bau, scope).filter((r) => !wanted || wanted.has(r.kpi));
   const coverage = houseCoverage(bau.houses);
   const outcome = bau.outcome ? BAU_OUTCOME[bau.outcome] : undefined;
   const simulated = coverage.included.length;
@@ -232,14 +256,6 @@ function BauBlock({ bau, kpis, name, running }: {
 
       {rows.length > 0 ? (
         <>
-          {scopes.length > 1 && (
-            <label className="kpi-run-scope">
-              <span className="kpi-text-soft">Scope</span>
-              <select value={current} onChange={(e) => setScope(e.target.value)}>
-                {scopes.map((s) => <option key={s} value={s}>{scopeLabel(s)}</option>)}
-              </select>
-            </label>
-          )}
           <div className="kpi-table-wrap">
             <table className="kpi-table">
               <thead><tr><th>KPI</th><th>Real</th><th>BAU</th><th>Real − BAU</th></tr></thead>
@@ -257,7 +273,10 @@ function BauBlock({ bau, kpis, name, running }: {
           </div>
         </>
       ) : outcome?.label === "BAU stored" ? (
-        <p className="kpi-text-soft">None of this job's KPIs could be compared with the BAU.</p>
+        <p className="kpi-text-soft">
+          {scope === "community" ? "None of this job's KPIs could be compared with the BAU."
+            : "No BAU comparison of this job's KPIs for this house (it may not have been simulated)."}
+        </p>
       ) : null}
     </div>
   );
